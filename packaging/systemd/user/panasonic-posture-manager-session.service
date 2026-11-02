@@ -1,0 +1,28 @@
+# Unprivileged GNOME session adapter.
+#
+# It owns the per-uid name work.mmoe.panasonic.Posture.Session.u<uid> on the
+# system bus, keeps the three second lease up to date, drives Mutter display
+# transactions and shows the tent-mode notification.  No root privileges are
+# involved.
+[Unit]
+Description=Panasonic 2-in-1 posture session adapter
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python -m panasonic_posture.session.agent
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX
+UMask=0077
+SystemCallArchitectures=native
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=graphical-session.target

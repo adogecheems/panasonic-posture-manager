@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Panasonic 2-in-1 Tablet Posture Management Tool
+Name[zh_CN]=松下二合一平板电脑姿态管理工具
+Comment=Posture management and screen orientation for Panasonic 2-in-1 tablets
+Comment[zh_CN]=为松下二合一平板电脑提供姿态识别、平板模式与屏幕方向管理
+Exec=/usr/bin/panasonic-posture-manager
+Icon=work.mmoe.panasonic.PostureManager
+Categories=Settings;HardwareSettings;
+Keywords=posture;tablet;rotation;convertible;panasonic;
+Keywords[zh_CN]=姿态;平板;旋转;翻转;松下;
+Terminal=false
+StartupNotify=true
+StartupWMClass=work.mmoe.panasonic.PostureManager

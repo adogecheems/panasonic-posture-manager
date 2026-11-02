@@ -1,0 +1,57 @@
+# Privileged posture manager system service.
+#
+# The daemon runs as root because it owns the D-Bus system name and starts the
+# privileged relay, which creates a uinput switch and grabs the internal
+# keyboard/touchpad.  The capability bounding set is empty; the uinput module
+# is requested at boot via packaging/modules-load.d instead of an
+# ExecStartPre=+/usr/bin/modprobe line.
+[Unit]
+Description=Panasonic 2-in-1 posture management service
+After=dbus.service
+Requires=dbus.service
+
+[Service]
+Type=dbus
+BusName=work.mmoe.panasonic.Posture
+ExecStart=/usr/bin/python -m panasonic_posture.service.daemon
+# Best-effort native switch repair after the daemon (and its relay child) has
+# gone away; the relay handles a missing physical switch gracefully.
+ExecStopPost=-/usr/lib/panasonic-posture-manager/relay --recover
+KillMode=mixed
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+StateDirectory=panasonic-posture-manager
+StateDirectoryMode=0700
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Bound the long-running root service's footprint; normal operation uses only
+# a few tens of MiB, the cgroup limit only catches pathological behaviour.
+MemoryHigh=192M
+MemoryMax=256M
+
+# --- Sandboxing -------------------------------------------------------------
+# /sys stays writable for the IIO buffer setup and /dev is required by the
+# relay for uinput/evdev, therefore PrivateDevices= and ProtectKernelTunables=
+# are intentionally not set.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+UMask=0077
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+ProtectProc=invisible
+ProcSubset=pid
+
+[Install]
+WantedBy=multi-user.target

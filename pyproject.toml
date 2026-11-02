@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "panasonic-posture-manager"
+version = "0.3.0"
+description = "Posture management and screen orientation for Panasonic 2-in-1 tablets on GNOME Wayland"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "adogecheems" }]
+classifiers = [
+  "Environment :: X11 Applications :: Gnome",
+  "Environment :: Wayland",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Desktop Environment :: Gnome",
+]
+# PyGObject is provided by the distribution (python-gobject); it is intentionally
+# not a pip dependency so package builds never try to compile it.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/adogecheems/panasonic-posture-manager"
+Repository = "https://github.com/adogecheems/panasonic-posture-manager"
+
+[project.scripts]
+panasonic-posture-manager = "panasonic_posture.cli:launch_ui"
+panasonic-posture-manager-probe = "panasonic_posture.hardware.probe:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["panasonic_posture*"]

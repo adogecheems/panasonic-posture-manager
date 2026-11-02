@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=work.mmoe.panasonic.Posture
+Exec=/usr/bin/false
+User=root
+SystemdService=panasonic-posture-manager.service

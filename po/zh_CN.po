@@ -1,0 +1,171 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: panasonic-posture-manager 0.3.0\n"
+"PO-Revision-Date: 2026-11-01 00:00+0800\n"
+"Last-Translator: Project contributors\n"
+"Language-Team: Chinese\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Tent"
+msgstr "帐篷"
+
+msgid "Stand"
+msgstr "支架"
+
+msgid "Tablet"
+msgstr "平板"
+
+msgid "Waiting for posture"
+msgstr "等待姿态数据"
+
+msgid "Current posture"
+msgstr "当前姿态"
+
+msgid "Settings"
+msgstr "设置"
+
+msgid "Panasonic 2-in-1 Tablet Posture Management Tool"
+msgstr "松下二合一平板电脑姿态管理工具"
+
+msgid "Connecting to background service…"
+msgstr "正在连接后台服务…"
+
+msgid "Background service unavailable"
+msgstr "后台服务未连接"
+
+msgid "Enter tent mode"
+msgstr "进入帐篷模式"
+
+msgid "Retry"
+msgstr "重试"
+
+msgid "Applying mode…"
+msgstr "正在切换模式…"
+
+msgid "Retrying…"
+msgstr "正在重试…"
+
+msgid "Mode change failed"
+msgstr "模式切换失败"
+
+msgid "Unable to change settings"
+msgstr "无法修改设置"
+
+msgid "Tent mode notification"
+msgstr "帐篷模式提示"
+
+msgid "Offer tent mode when the base is upright"
+msgstr "底座接近竖直时提示进入帐篷模式"
+
+msgid "Mode selection"
+msgstr "模式选择"
+
+msgid "Automatic"
+msgstr "自动"
+
+msgid "Switch automatically to suit the current posture"
+msgstr "根据设备姿态自动切换"
+
+msgid "Best for typing and precise work"
+msgstr "适合打字和精细操作"
+
+msgid "Best for watching video and touch use"
+msgstr "适合观影和触控操作"
+
+msgid "Best for viewing and touch use"
+msgstr "适合观看和触控操作"
+
+msgid "Best for handheld or flat use"
+msgstr "适合手持或平放使用"
+
+msgid "About"
+msgstr "关于"
+
+msgid "Author"
+msgstr "作者"
+
+msgid "GitHub"
+msgstr "GitHub"
+
+msgid "Visit repository"
+msgstr "访问仓库"
+
+msgid "Tap to enable tent mode"
+msgstr "轻触以启用帐篷模式"
+
+msgid "Enable tent mode"
+msgstr "启用帐篷模式"
+
+msgid "Waiting for the desktop to get ready…"
+msgstr "正在等待桌面功能就绪…"
+
+msgid "This model does not support automatic mode changes."
+msgstr "当前机型不支持自动切换模式。"
+
+msgid "This mode is not available right now."
+msgstr "当前无法选择该模式。"
+
+msgid "Please switch back to the local desktop and try again."
+msgstr "请切回本机桌面后重试。"
+
+msgid "The tablet switch currently controls the mode."
+msgstr "当前模式由平板开关控制。"
+
+msgid "The tent prompt has expired. Wait for it to appear again."
+msgstr "帐篷模式提示已失效，请等待再次出现。"
+
+msgid "The setting could not be saved. Please try again."
+msgstr "设置保存失败，请重试。"
+
+msgid "The internal keyboard and touchpad could not be controlled. Please try again."
+msgstr "暂时无法控制内置键盘和触摸板，请重试。"
+
+msgid "Internal input control stopped. Please try again."
+msgstr "内置输入控制已停止，请重试。"
+
+msgid "Internal input control stopped responding. Please try again."
+msgstr "内置输入控制无响应，请重试。"
+
+msgid "The internal keyboard and touchpad could not be disabled. Please try again."
+msgstr "暂时无法停用内置键盘和触摸板，请重试。"
+
+msgid "The tablet switch state could not be restored. Restart the service if input behaves unexpectedly."
+msgstr "平板开关状态恢复失败；如键盘或触摸板异常，请重启服务。"
+
+msgid "No posture data is available right now."
+msgstr "暂时没有姿态数据。"
+
+msgid "This screen arrangement cannot be rotated. Please adjust the display settings."
+msgstr "当前屏幕布局无法旋转，请先调整显示设置。"
+
+msgid "The external display arrangement does not allow this mode."
+msgstr "当前外接显示器布局不允许该模式。"
+
+msgid "The screen rotation could not be applied. Please try again."
+msgstr "屏幕方向调整失败，请重试。"
+
+msgid "The rotation lock could not be changed. Please try again."
+msgstr "旋转锁定切换失败，请重试。"
+
+msgid "Screen rotation is not available right now."
+msgstr "暂时无法调整屏幕方向。"
+
+msgid "This display mode is not supported."
+msgstr "不支持该显示模式。"
+
+msgid "The internal screen changed while applying the mode. Please try again."
+msgstr "应用模式时内屏发生变化，请重试。"
+
+msgid "Something went wrong. Please try again."
+msgstr "操作失败，请重试。"
+
+msgid "Laptop"
+msgstr "笔记本"
+
+msgid "Tent mode"
+msgstr "帐篷模式"
+

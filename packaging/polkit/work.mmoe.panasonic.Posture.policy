@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+ <vendor>Panasonic Posture Manager community project</vendor>
+ <!-- The daemon additionally requires the caller to be the active local
+      graphical session on seat0 (logind); this policy action is the second
+      gate and deliberately does not prompt: allow_active=yes. -->
+ <action id="work.mmoe.panasonic.Posture.configure">
+  <description>Configure convertible posture management</description>
+  <description xml:lang="zh_CN">配置二合一计算机姿态管理</description>
+  <message>An active local session is required.</message>
+  <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>yes</allow_active></defaults>
+ </action>
+</policyconfig>

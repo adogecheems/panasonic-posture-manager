@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" role="img" aria-label="帐篷姿态线条示意图" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+<path d="M62.09,30.23 L257.91,72.51 L293.95,155.54 L98.14,113.27 Z" stroke-width="1.8" fill="var(--app-bg, white)"/>
+<path d="M62.09,25.00 L257.91,67.28 L293.95,150.31 L98.14,108.04 Z" stroke-width="1.8" fill="var(--app-bg, white)"/>
+<path d="M98.14,108.04 L98.14,113.27" stroke-width="1.2" fill="none"/>
+<path d="M293.95,150.31 L293.95,155.54" stroke-width="1.2" fill="none"/>
+<path d="M62.09,27.61 L257.91,69.89 L221.86,207.00 L26.05,164.72 Z" stroke-width="1.8" fill="var(--app-bg, white)"/>
+<path d="M62.09,25.00 L257.91,67.28 L221.86,204.39 L26.05,162.11 Z" stroke-width="1.8" fill="var(--app-bg, white)"/>
+<path d="M67.37,37.64 L246.86,76.40 L216.58,191.57 L37.09,152.81 Z" stroke-width="1.05" fill="none"/>
+<path d="M122.95,177.06 L127.84,178.12" stroke-width="1.25" fill="none"/>
+<path d="M81.67,29.23 L107.78,34.86" stroke-width="3.1" fill="none"/>
+<path d="M212.22,57.41 L238.33,63.05" stroke-width="3.1" fill="none"/>
+</svg>

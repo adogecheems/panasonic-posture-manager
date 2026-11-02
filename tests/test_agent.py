@@ -1,0 +1,678 @@
+"""Tests for the session adapter state machine and the D-Bus client.
+
+The adapter is driven with fake D-Bus/display/notification objects and a fake
+clock; no real GNOME session, hardware or system bus is involved.
+"""
+
+import copy
+import unittest
+from unittest import mock
+
+from gi.repository import Gio, GLib
+
+from panasonic_posture import protocol
+from panasonic_posture.model import StateSnapshot, Target
+from panasonic_posture.protocol import ErrorCode
+from panasonic_posture.session.agent import Agent
+from panasonic_posture.session.client import SystemClient
+from panasonic_posture.session.display import DisplayError
+from panasonic_posture.session.errors import ServiceError
+
+
+def make_state(
+    generation=1,
+    instance="instance-a",
+    pending_notification=None,
+    error_code=None,
+    target=None,
+    session_connected=True,
+):
+    return StateSnapshot(
+        instance=instance,
+        generation=generation,
+        pose="tent",
+        manual="auto",
+        tent_prompt=True,
+        target=target
+        or Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True),
+        pending_notification=pending_notification,
+        error_code=error_code,
+        error_detail=None,
+        session_connected=session_connected,
+    ).to_dict()
+
+
+class Ticker:
+    def __init__(self, now=0.0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+class FakeSystemBus:
+    """Minimal system bus: GetNameOwner/GetConnectionUnixUser for the adapter."""
+
+    def __init__(self, owner=None, owner_uid=1000, error=None, uid_error=None):
+        self.owner = owner
+        self.owner_uid = owner_uid
+        self.error = error
+        self.uid_error = uid_error
+        self.calls = []
+
+    def call_sync(self, dest, path, iface, method, params, reply_type, flags, timeout, cancellable):
+        self.calls.append((method, params))
+        if method == "GetNameOwner":
+            if self.error is not None:
+                raise self.error
+            return FakeReply((self.owner,))
+        if method == "GetConnectionUnixUser":
+            if self.uid_error is not None:
+                raise self.uid_error
+            return FakeReply((self.owner_uid,))
+        raise AssertionError(f"unexpected bus call {method}")
+
+
+class FakeLoop:
+    def __init__(self, events):
+        self.events = events
+
+    def run(self):
+        self.events.append("run")
+
+    def quit(self):
+        self.events.append("quit")
+
+
+class FakeClient:
+    def __init__(self, state, events=None):
+        self.state = state
+        self.events = events
+        self.updates = []
+        self.update_error = None
+        self.get_error = None
+        self.confirmations = []
+        self.get_calls = 0
+
+    def get_state(self):
+        self.get_calls += 1
+        if self.events is not None:
+            self.events.append("get_state")
+        if self.get_error is not None:
+            raise self.get_error
+        return copy.deepcopy(self.state)
+
+    def session_update(self, generation, ready, error_code, error_detail):
+        self.updates.append((generation, ready, error_code, error_detail))
+        if self.update_error is not None:
+            raise self.update_error
+
+    def confirm_tent(self, epoch):
+        self.confirmations.append(epoch)
+
+
+class FakeDisplay:
+    def __init__(self, errors=()):
+        self.errors = list(errors)
+        self.attempts = []
+        self.applied = []
+        self.restores = 0
+
+    def apply(self, target):
+        self.attempts.append(target)
+        if self.errors:
+            error = self.errors.pop(0)
+            if error is not None:
+                raise error
+        self.applied.append(target)
+
+    def restore(self, normal=False):
+        self.restores += 1
+
+
+class FakeNotifier:
+    def __init__(self):
+        self.sync_calls = []
+        self.close_calls = 0
+        self.notification = 0
+        self.epoch = None
+        self.shown_epoch = None
+
+    def sync(self, epoch, allow_retry=True, now=None):
+        self.sync_calls.append((epoch, allow_retry))
+
+    def close(self):
+        self.close_calls += 1
+        self.notification = 0
+        self.epoch = None
+        self.shown_epoch = None
+
+
+class Harness:
+    def __init__(self, state, *, locked=False, display=None):
+        self.clock = Ticker()
+        self.events = []
+        self.lock_state = {"locked": locked}
+        self.client = FakeClient(state, self.events)
+        self.display = display or FakeDisplay()
+        self.notifier = FakeNotifier()
+        self.agent = Agent(
+            uid=1000,
+            clock=self.clock,
+            screen_locked=lambda: self.lock_state["locked"],
+            install_signals=False,
+        )
+        self.agent.attach(self.client, self.display, self.notifier)
+
+    def tick(self, now=None):
+        self.agent.tick(self.clock.now if now is None else now)
+
+    def set_state(self, state):
+        self.client.state = state
+
+
+class AdapterTickTests(unittest.TestCase):
+    def test_generation_change_applies_target_and_reports_ready(self):
+        harness = Harness(make_state(pending_notification=7))
+        harness.tick(0.0)
+        self.assertEqual(len(harness.display.applied), 1)
+        target = harness.display.applied[0]
+        self.assertEqual(target.mode, "tent")
+        self.assertTrue(target.tablet)
+        self.assertEqual(target.rotation, 180)
+        self.assertEqual(harness.client.updates[-1], (1, True, "", ""))
+        self.assertEqual(harness.notifier.sync_calls[-1][0], 7)
+        self.assertTrue(harness.agent.ready)
+
+    def test_heartbeat_is_throttled(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        sent = len(harness.client.updates)
+        harness.tick(0.1)
+        self.assertEqual(len(harness.client.updates), sent)
+        harness.tick(protocol.AGENT_HEARTBEAT_SECONDS + 0.1)
+        self.assertGreater(len(harness.client.updates), sent)
+
+    def test_display_failure_reports_code_and_retries_with_backoff(self):
+        display = FakeDisplay(
+            errors=[DisplayError(ErrorCode.DISPLAY_TRANSFORM, "readback-mismatch")]
+        )
+        harness = Harness(make_state(), display=display)
+        harness.tick(0.0)
+        self.assertEqual(
+            harness.client.updates[-1],
+            (1, False, ErrorCode.DISPLAY_TRANSFORM, "readback-mismatch"),
+        )
+        harness.tick(0.5)
+        self.assertEqual(len(display.attempts), 1)  # still backing off
+        harness.tick(protocol.DISPLAY_RETRY_BASE_SECONDS + 0.1)
+        self.assertEqual(len(display.attempts), 2)
+        self.assertEqual(len(display.applied), 1)
+        self.assertEqual(harness.client.updates[-1], (1, True, "", ""))
+        self.assertTrue(harness.agent.ready)
+
+    def test_lease_failure_stops_transactions_and_recovers(self):
+        harness = Harness(make_state())
+        harness.client.update_error = ServiceError(
+            ErrorCode.INTERNAL, "denied", name="org.freedesktop.DBus.Error.AccessDenied"
+        )
+        harness.tick(0.0)
+        self.assertEqual(len(harness.display.applied), 1)
+        self.assertEqual(harness.display.restores, 1)
+        self.assertGreaterEqual(harness.notifier.close_calls, 1)
+        self.assertTrue(harness.agent._failure_active)
+        calls_after_failure = harness.client.get_calls
+        # Inside the backoff window no display work and no service calls happen.
+        harness.tick(1.0)
+        self.assertEqual(harness.client.get_calls, calls_after_failure)
+        self.assertEqual(len(harness.display.applied), 1)
+        # Recover: the probe succeeds, the state is re-read and the target reapplied.
+        harness.client.update_error = None
+        harness.tick(protocol.DISPLAY_RETRY_BASE_SECONDS + 0.1)
+        self.assertFalse(harness.agent._failure_active)
+        self.assertEqual(len(harness.display.applied), 2)
+        self.assertTrue(harness.agent.ready)
+        self.assertEqual(harness.client.updates[-1], (1, True, "", ""))
+
+    def test_access_denied_is_an_immediate_lease_failure(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        self.assertTrue(harness.agent.ready)
+        harness.client.get_error = ServiceError(
+            ErrorCode.ACCESS_DENIED, "inactive-session", name=protocol.DBUS_ERROR)
+        harness.tick(0.6)
+        self.assertTrue(harness.agent._failure_active)
+        self.assertFalse(harness.agent.ready)
+        self.assertEqual(harness.display.restores, 1)
+
+    def test_identity_rejection_detail_is_an_immediate_lease_failure(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        harness.client.update_error = ServiceError(
+            ErrorCode.INTERNAL, "not-session-adapter")
+        harness.tick(0.6)
+        self.assertTrue(harness.agent._failure_active)
+        self.assertEqual(harness.display.restores, 1)
+
+    def test_single_transient_get_state_error_does_not_restore_display(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        self.assertTrue(harness.agent.ready)
+        calls = harness.client.get_calls
+        harness.client.get_error = ServiceError(
+            ErrorCode.INTERNAL, "timed out",
+            name="org.freedesktop.DBus.Error.NoReply")
+        harness.tick(0.1)
+        self.assertFalse(harness.agent._failure_active)
+        self.assertEqual(harness.display.restores, 0)
+        self.assertTrue(harness.agent.ready)
+        # The transient retry is throttled instead of hammering the service.
+        harness.tick(0.2)
+        self.assertEqual(harness.client.get_calls, calls + 1)
+        # Recovery within the grace keeps the display untouched.
+        harness.client.get_error = None
+        harness.tick(0.7)
+        self.assertFalse(harness.agent._failure_active)
+        self.assertEqual(harness.display.restores, 0)
+
+    def test_continuous_transient_failure_restores_after_grace(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        harness.client.get_error = ServiceError(
+            ErrorCode.INTERNAL, "timed out",
+            name="org.freedesktop.DBus.Error.NoReply")
+        for moment in (0.1, 0.7, 1.4, 2.2, 3.0):
+            harness.tick(moment)
+        self.assertFalse(harness.agent._failure_active)
+        self.assertEqual(harness.display.restores, 0)
+        harness.tick(3.2)  # > AGENT_FAILURE_GRACE_SECONDS of continuous failure
+        self.assertTrue(harness.agent._failure_active)
+        self.assertEqual(harness.display.restores, 1)
+
+    def test_single_transient_session_update_error_does_not_restore(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        harness.client.update_error = ServiceError(
+            ErrorCode.INTERNAL, "timed out",
+            name="org.freedesktop.DBus.Error.NoReply")
+        harness.tick(0.6)  # heartbeat fails transiently
+        self.assertFalse(harness.agent._failure_active)
+        self.assertEqual(harness.display.restores, 0)
+        self.assertTrue(harness.agent.ready)
+        harness.client.update_error = None
+        harness.tick(1.2)
+        self.assertFalse(harness.agent._failure_active)
+        self.assertTrue(harness.agent.ready)
+
+    def test_continuous_session_update_failure_escalates_after_grace(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        harness.client.update_error = ServiceError(
+            ErrorCode.INTERNAL, "timed out",
+            name="org.freedesktop.DBus.Error.NoReply")
+        for moment in (0.6, 1.2, 1.9, 2.7, 3.5):
+            harness.tick(moment)
+        self.assertFalse(harness.agent._failure_active)
+        self.assertEqual(harness.display.restores, 0)
+        harness.tick(4.2)  # > grace of continuous heartbeat failures
+        self.assertTrue(harness.agent._failure_active)
+        self.assertEqual(harness.display.restores, 1)
+
+    def test_lease_failure_backoff_doubles_and_is_capped(self):
+        harness = Harness(make_state())
+        harness.client.update_error = ServiceError(ErrorCode.ACCESS_DENIED, "inactive")
+        harness.tick(0.0)
+        self.assertEqual(harness.agent._failure_retry_at, 2.0)
+        harness.tick(2.0)
+        self.assertEqual(harness.agent._failure_retry_at, 6.0)
+        harness.tick(6.0)
+        self.assertEqual(harness.agent._failure_retry_at, 14.0)
+        harness.tick(14.0)
+        self.assertEqual(
+            harness.agent._failure_retry_at,
+            14.0 + protocol.DISPLAY_RETRY_MAX_SECONDS,
+        )
+
+    def test_tick_guard_keeps_the_glib_source_alive(self):
+        harness = Harness(make_state())
+        harness.client.get_error = RuntimeError("boom")
+        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+            self.assertIs(harness.agent._tick(), GLib.SOURCE_CONTINUE)
+        # The next tick works again.
+        harness.client.get_error = None
+        self.assertIs(harness.agent._tick(), GLib.SOURCE_CONTINUE)
+        self.assertEqual(len(harness.display.applied), 1)
+
+    def test_echoed_agent_error_does_not_block_display_retry(self):
+        display = FakeDisplay(
+            errors=[DisplayError(ErrorCode.DISPLAY_TRANSFORM, "readback-mismatch")]
+        )
+        harness = Harness(make_state(), display=display)
+        harness.tick(0.0)
+        self.assertEqual(harness.client.updates[-1][2], ErrorCode.DISPLAY_TRANSFORM)
+        # The daemon may echo the last SessionUpdate error in the state document.
+        harness.set_state(make_state(error_code=ErrorCode.DISPLAY_TRANSFORM))
+        harness.tick(protocol.DISPLAY_RETRY_BASE_SECONDS + 0.1)
+        self.assertEqual(len(display.applied), 1)
+        self.assertTrue(harness.agent.ready)
+        self.assertEqual(harness.client.updates[-1], (1, True, "", ""))
+
+    def test_stale_echo_after_generation_bump_does_not_block_apply(self):
+        display = FakeDisplay(
+            errors=[DisplayError(ErrorCode.DISPLAY_TRANSFORM, "readback-mismatch")]
+        )
+        harness = Harness(make_state(), display=display)
+        harness.tick(0.0)
+        # The daemon bumped the generation but still carries the old report.
+        harness.set_state(make_state(generation=2, error_code=ErrorCode.DISPLAY_TRANSFORM))
+        harness.tick(protocol.DISPLAY_RETRY_BASE_SECONDS + 0.1)
+        self.assertEqual(len(display.applied), 1)
+        self.assertTrue(harness.agent.ready)
+
+    def test_genuine_backend_error_is_not_treated_as_echo(self):
+        display = FakeDisplay(
+            errors=[DisplayError(ErrorCode.DISPLAY_TRANSFORM, "readback-mismatch")]
+        )
+        harness = Harness(make_state(), display=display)
+        harness.tick(0.0)
+        # A different code comes from the privileged backend, not from us.
+        harness.set_state(make_state(error_code=ErrorCode.RELAY_EXITED))
+        harness.tick(protocol.DISPLAY_RETRY_BASE_SECONDS + 0.1)
+        self.assertEqual(len(display.applied), 0)
+        self.assertFalse(harness.agent.ready)
+
+    def test_daemon_error_restores_display_and_waits_for_recovery(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        self.assertTrue(harness.agent.ready)
+        error_state = make_state(error_code=ErrorCode.RELAY_EXITED)
+        harness.set_state(error_state)
+        harness.tick(0.6)
+        self.assertEqual(harness.display.restores, 1)
+        self.assertFalse(harness.agent.ready)
+        # While the privileged backend reports an error no display transaction runs.
+        harness.tick(1.2)
+        self.assertEqual(len(harness.display.attempts), 1)
+        # Once the error clears the target is applied again.
+        harness.set_state(make_state())
+        harness.tick(1.8)
+        self.assertEqual(len(harness.display.applied), 2)
+        self.assertTrue(harness.agent.ready)
+
+    def test_instance_change_resets_generation_and_notification(self):
+        harness = Harness(make_state(instance="a", pending_notification=7))
+        harness.tick(0.0)
+        self.assertEqual(len(harness.display.applied), 1)
+        harness.set_state(make_state(instance="b", pending_notification=None))
+        harness.tick(0.2)
+        self.assertEqual(len(harness.display.applied), 2)
+        self.assertGreaterEqual(harness.notifier.close_calls, 2)
+
+    def test_locked_screen_closes_prompt_and_does_not_show(self):
+        harness = Harness(make_state(pending_notification=7), locked=True)
+        harness.tick(0.0)
+        self.assertTrue(harness.agent.locked)
+        self.assertEqual(harness.notifier.sync_calls, [])
+        self.assertGreaterEqual(harness.notifier.close_calls, 1)
+
+
+class AgentLifecycleTests(unittest.TestCase):
+    def build_agent(self, events, own_name, system_bus=None):
+        harness = Harness(make_state())
+        harness.client.events = events
+
+        def build(agent):
+            events.append("build")
+            agent.attach(harness.client, harness.display, harness.notifier)
+
+        loop = FakeLoop(events)
+        agent = Agent(
+            system_bus=system_bus if system_bus is not None else FakeSystemBus(),
+            session_bus=object(),
+            uid=1000,
+            own_name=own_name,
+            unown_name=lambda token: events.append("unown"),
+            loop_factory=lambda: loop,
+            timeout_add=lambda _ms, _callback: events.append("timer"),
+            install_signals=False,
+            screen_locked=lambda: False,
+            build=build,
+        )
+        return agent, harness
+
+    def test_bus_name_is_acquired_before_display_and_first_tick(self):
+        events = []
+        names = []
+
+        def own_name(bus, name, flags, acquired, lost):
+            events.append("own")
+            names.append(name)
+            acquired(bus, name)
+            return 7
+
+        agent, harness = self.build_agent(events, own_name)
+        code = agent.serve()
+        self.assertEqual(code, 0)
+        self.assertLess(events.index("own"), events.index("build"))
+        self.assertLess(events.index("build"), events.index("timer"))
+        self.assertLess(events.index("timer"), events.index("get_state"))
+        self.assertLess(events.index("get_state"), events.index("run"))
+        self.assertEqual(len(harness.display.applied), 1)
+        self.assertIn("unown", events)
+        self.assertEqual(names, [protocol.session_name(1000)])
+
+    def test_duplicate_instance_exits_cleanly_without_building(self):
+        events = []
+
+        def own_name(bus, name, flags, acquired, lost):
+            events.append("own")
+            lost(bus, name)
+            return 7
+
+        agent, harness = self.build_agent(
+            events, own_name,
+            system_bus=FakeSystemBus(owner=":1.42", owner_uid=1000))
+        self.assertEqual(agent.serve(), 0)
+        self.assertNotIn("build", events)
+        self.assertNotIn("run", events)
+        self.assertIn("unown", events)
+        self.assertEqual(harness.display.applied, [])
+
+    def test_policy_denied_name_acquisition_fails_loudly(self):
+        events = []
+        denied = GLib.Error.new_literal(
+            domain=Gio.dbus_error_quark(),
+            code=Gio.DBusError.NAME_HAS_NO_OWNER,
+            message="GDBus.Error:org.freedesktop.DBus.Error.NameHasNoOwner: no owner",
+        )
+
+        def own_name(bus, name, flags, acquired, lost):
+            events.append("own")
+            lost(bus, name)
+            return 7
+
+        agent, _harness = self.build_agent(
+            events, own_name, system_bus=FakeSystemBus(error=denied))
+        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+            self.assertEqual(agent.serve(), 1)
+
+    def test_name_owned_by_another_user_fails_so_systemd_retries(self):
+        events = []
+
+        def own_name(bus, name, flags, acquired, lost):
+            events.append("own")
+            lost(bus, name)
+            return 7
+
+        agent, _harness = self.build_agent(
+            events, own_name,
+            system_bus=FakeSystemBus(owner=":1.99", owner_uid=2000))
+        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+            self.assertEqual(agent.serve(), 1)
+        self.assertNotIn("run", events)
+
+    def test_unknown_name_owner_uid_fails_conservatively(self):
+        events = []
+        uid_error = GLib.Error.new_literal(
+            domain=Gio.dbus_error_quark(),
+            code=Gio.DBusError.NAME_HAS_NO_OWNER,
+            message="GDBus.Error:org.freedesktop.DBus.Error.NameHasNoOwner: gone",
+        )
+
+        def own_name(bus, name, flags, acquired, lost):
+            events.append("own")
+            lost(bus, name)
+            return 7
+
+        agent, _harness = self.build_agent(
+            events, own_name,
+            system_bus=FakeSystemBus(owner=":1.42", uid_error=uid_error))
+        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+            self.assertEqual(agent.serve(), 1)
+
+    def test_losing_the_name_after_acquiring_exits_with_failure(self):
+        events = []
+
+        def own_name(bus, name, flags, acquired, lost):
+            events.append("own")
+            acquired(bus, name)
+            lost(bus, name)
+            return 7
+
+        agent, _harness = self.build_agent(events, own_name)
+        self.assertEqual(agent.serve(), 1)
+        self.assertIn("quit", events)
+        self.assertNotIn("run", events)
+
+
+class NotificationActionTests(unittest.TestCase):
+    def setUp(self):
+        self.harness = Harness(make_state())
+        self.harness.notifier.notification = 42
+        self.harness.notifier.epoch = 7
+
+    def action(self, notification, name):
+        self.harness.agent._on_action(
+            None, None, None, None, None, GLib.Variant("(us)", (notification, name))
+        )
+
+    def test_matching_click_confirms_epoch_then_closes(self):
+        self.action(42, "tent")
+        self.assertEqual(self.harness.client.confirmations, [7])
+        self.assertEqual(self.harness.notifier.close_calls, 1)
+        self.assertEqual(self.harness.notifier.notification, 0)
+
+    def test_default_body_click_confirms(self):
+        self.action(42, "default")
+        self.assertEqual(self.harness.client.confirmations, [7])
+
+    def test_old_notification_is_ignored(self):
+        self.action(41, "tent")
+        self.assertEqual(self.harness.client.confirmations, [])
+        self.assertEqual(self.harness.notifier.close_calls, 0)
+
+    def test_other_action_is_ignored(self):
+        self.action(42, "open-settings")
+        self.assertEqual(self.harness.client.confirmations, [])
+
+    def test_expired_epoch_is_ignored(self):
+        self.harness.notifier.epoch = None
+        self.action(42, "tent")
+        self.assertEqual(self.harness.client.confirmations, [])
+
+    def test_runtime_failure_is_logged_not_propagated(self):
+        runtime = self.harness.agent.runtime
+        self.assertIsNotNone(runtime)
+        runtime.handle_action = mock.Mock(side_effect=RuntimeError("boom"))
+        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+            self.action(42, "tent")
+
+
+class SystemClientTests(unittest.TestCase):
+    def test_state_is_validated(self):
+        good = make_state()
+        client = SystemClient(FakeConnection(good))
+        self.assertEqual(client.get_state()["generation"], 1)
+
+    def test_old_state_version_is_rejected(self):
+        client = SystemClient(FakeConnection([{"version": 1}]))
+        with self.assertRaises(ServiceError) as caught:
+            client.get_state()
+        self.assertEqual(caught.exception.code, ErrorCode.INTERNAL)
+
+    def test_dbus_error_is_split_into_stable_code(self):
+        error = GLib.Error.new_literal(
+            domain=Gio.dbus_error_quark(),
+            code=Gio.DBusError.SERVICE_UNKNOWN,
+            message=(
+                "GDBus.Error:work.mmoe.panasonic.Posture.Error: "
+                "display-transform-not-applied: readback-mismatch"
+            ),
+        )
+        client = SystemClient(FakeConnection(error=error))
+        with self.assertRaises(ServiceError) as caught:
+            client.get_state()
+        self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_TRANSFORM)
+        self.assertEqual(caught.exception.detail, "readback-mismatch")
+        self.assertEqual(caught.exception.name, protocol.DBUS_ERROR)
+
+    def test_access_denied_keeps_the_dbus_error_name(self):
+        error = GLib.Error.new_literal(
+            domain=Gio.dbus_error_quark(),
+            code=Gio.DBusError.ACCESS_DENIED,
+            message="GDBus.Error:org.freedesktop.DBus.Error.AccessDenied: not allowed",
+        )
+        client = SystemClient(FakeConnection(error=error))
+        with self.assertRaises(ServiceError) as caught:
+            client.session_update(1, True, "", "")
+        self.assertEqual(caught.exception.name, "org.freedesktop.DBus.Error.AccessDenied")
+        self.assertEqual(caught.exception.code, ErrorCode.INTERNAL)
+
+    def test_session_update_uses_the_new_signature(self):
+        connection = FakeConnection()
+        client = SystemClient(connection)
+        client.session_update(7, True, ErrorCode.DISPLAY_LOCK, "readback")
+        call = connection.calls[-1]
+        self.assertEqual(call[0], "SessionUpdate")
+        self.assertEqual(call[1].get_type_string(), "(ubss)")
+        self.assertEqual(
+            call[1].unpack(), (7, True, ErrorCode.DISPLAY_LOCK, "readback")
+        )
+
+    def test_confirm_tent_sends_epoch(self):
+        connection = FakeConnection()
+        SystemClient(connection).confirm_tent(9)
+        self.assertEqual(connection.calls[-1][0], "ConfirmTent")
+        self.assertEqual(connection.calls[-1][1].unpack(), (9,))
+
+
+class FakeReply:
+    def __init__(self, value):
+        self._value = value
+
+    def unpack(self):
+        return self._value
+
+
+class FakeConnection:
+    def __init__(self, state=None, error=None):
+        self.state = state
+        self.error = error
+        self.calls = []
+
+    def call_sync(self, dest, path, iface, method, params, reply_type, flags, timeout, cancellable):
+        self.calls.append((method, params))
+        if self.error is not None:
+            raise self.error
+        if method == "GetState":
+            import json
+
+            return FakeReply((json.dumps(self.state),))
+        return FakeReply(())
+
+
+if __name__ == "__main__":
+    unittest.main()

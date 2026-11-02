@@ -1,0 +1,31 @@
+pkgbase = panasonic-posture-manager
+	pkgdesc = Posture management and screen orientation for Panasonic 2-in-1 tablets
+	pkgver = 0.3.0
+	pkgrel = 1
+	url = https://github.com/adogecheems/panasonic-posture-manager
+	install = panasonic-posture-manager.install
+	arch = x86_64
+	license = AGPL-3.0-or-later
+	makedepends = git
+	makedepends = gcc
+	makedepends = gettext
+	makedepends = python-build
+	makedepends = python-installer
+	makedepends = python-setuptools
+	makedepends = python-wheel
+	depends = gjs
+	depends = gtk4
+	depends = libadwaita
+	depends = python
+	depends = python-gobject
+	depends = systemd
+	depends = polkit
+	depends = dbus
+	depends = iio-sensor-proxy
+	optdepends = gnome-shell: session notifications, screensaver lock detection and the GNOME shell session
+	optdepends = mutter: display rotation through org.gnome.Mutter.DisplayConfig
+	optdepends = gnome-settings-daemon: touchscreen orientation-lock GSettings schema
+	source = panasonic-posture-manager::git+https://github.com/adogecheems/panasonic-posture-manager.git#tag=v0.3.0
+	sha256sums = SKIP
+
+pkgname = panasonic-posture-manager
