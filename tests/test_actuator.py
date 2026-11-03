@@ -304,17 +304,14 @@ class ActuatorLifecycleTests(FakeRelayTestCase):
         os.environ["FAKE_RELAY_MODE"] = "exit"
         actuator = self.make()
         actuator.keep(self.clock.value)
-        error = None
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline and error is None:
-            self.clock.value += 0.2
-            try:
-                actuator.keep(self.clock.value)
-            except ActuatorError as caught:
-                error = caught
-            time.sleep(0.01)
-        self.assertIsNotNone(error)
-        self.assertEqual(error.code, ErrorCode.RELAY_EXITED)
+        self.assertTrue(
+            wait_for(lambda: actuator.process is not None and actuator.process.poll() is not None),
+            "fake relay did not exit",
+        )
+        self.clock.value += 0.1
+        with self.assertRaises(ActuatorError) as caught:
+            actuator.keep(self.clock.value)
+        self.assertEqual(caught.exception.code, ErrorCode.RELAY_EXITED)
         self.assertIn("status 3", actuator.error_detail or "")
 
     def test_start_failure_sets_stable_error(self) -> None:

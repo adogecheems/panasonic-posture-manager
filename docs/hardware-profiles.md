@@ -140,6 +140,7 @@ cat /sys/class/dmi/id/{sys_vendor,product_name}
 
 ## 发布状态
 
-`v1.0.0` 是历史发布 tag；`2.0.0` 包元数据已同步，但 `v2.0.0` tag、AUR 提交、
-clean-chroot 构建和最终物理验收仍未完成。提交前请按
+`v1.0.0` 是历史发布 tag；`2.0.0` 包元数据已同步，当前提交也通过了本地与
+clean-rootfs 构建、隔离安装验收和 `namcap`。`v2.0.0` tag、AUR 提交、tag 固定源
+复验和最终物理验收仍未完成。提交前请按
 [../packaging/aur/README.md](../packaging/aur/README.md) 执行检查清单。

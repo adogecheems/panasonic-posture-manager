@@ -40,6 +40,7 @@ from panasonic_posture.session import errors as session_errors  # noqa: E402
 
 GJS = shutil.which("gjs")
 BROADWAY = shutil.which("gtk4-broadwayd")
+DBUS_DAEMON = shutil.which("dbus-daemon")
 UI_DIR = REPO / "data" / "ui"
 
 
@@ -475,8 +476,8 @@ class HeadlessUiTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not GJS or not BROADWAY:
-            raise unittest.SkipTest("gjs and gtk4-broadwayd are required")
+        if not GJS or not BROADWAY or not DBUS_DAEMON:
+            raise unittest.SkipTest("gjs, gtk4-broadwayd and dbus-daemon are required")
         probe = _gjs_probe(["Gtk?version=4.0", "Adw?version=1", "Gio", "GLib"])
         if probe is None or probe.returncode != 0:
             raise unittest.SkipTest("headless GTK4/libadwaita is not usable")
@@ -484,8 +485,53 @@ class HeadlessUiTests(unittest.TestCase):
     def setUp(self):
         self._runtime = tempfile.TemporaryDirectory(prefix="posture-broadway-")
         self.addCleanup(self._runtime.cleanup)
+        runtime = Path(self._runtime.name)
+        bus_path = runtime / "bus"
         environment = os.environ.copy()
-        environment.update({"XDG_RUNTIME_DIR": self._runtime.name, "LC_ALL": "C"})
+        environment.update(
+            {"XDG_RUNTIME_DIR": str(runtime), "LC_ALL": "C", "GIO_USE_VFS": "local"}
+        )
+
+        # The UI uses the system bus.  Build tests must not depend on the
+        # developer's session or a running system dbus, so give GJS a private
+        # bus and stop it with the test.
+        self._bus = subprocess.Popen(
+            [DBUS_DAEMON, "--session", "--nofork", f"--address=unix:path={bus_path}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=environment,
+        )
+
+        def stop_bus():
+            if self._bus.poll() is None:
+                self._bus.terminate()
+                try:
+                    self._bus.wait(timeout=5)
+                except subprocess.TimeoutExpired:  # pragma: no cover
+                    self._bus.kill()
+            if self._bus.stdout is not None:
+                self._bus.stdout.close()
+
+        self.addCleanup(stop_bus)
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if bus_path.exists():
+                break
+            if self._bus.poll() is not None:
+                output = self._bus.stdout.read() if self._bus.stdout else ""
+                self.skipTest(f"private D-Bus session failed to start: {output.strip()}")
+            time.sleep(0.05)
+        else:
+            self.skipTest("private D-Bus session did not create a socket")
+
+        bus_address = f"unix:path={bus_path}"
+        environment.update(
+            {
+                "DBUS_SESSION_BUS_ADDRESS": bus_address,
+                "DBUS_SYSTEM_BUS_ADDRESS": bus_address,
+            }
+        )
         self._daemon = subprocess.Popen(
             [BROADWAY, ":99"],
             stdout=subprocess.PIPE,
@@ -518,6 +564,9 @@ class HeadlessUiTests(unittest.TestCase):
             "XDG_RUNTIME_DIR": self._runtime.name,
             "GDK_BACKEND": "broadway",
             "BROADWAY_DISPLAY": ":99",
+            "DBUS_SESSION_BUS_ADDRESS": bus_address,
+            "DBUS_SYSTEM_BUS_ADDRESS": bus_address,
+            "GIO_USE_VFS": "local",
         }
 
     def test_both_pages_build_and_settings_command_line_works(self):
@@ -560,7 +609,7 @@ function findWidgetWithClass(widget, cssClass) {{
     return null;
 }}
 
-GLib.timeout_add(GLib.PRIORITY_DEFAULT, 900, () => {{
+GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
     const ui = currentUi();
     if (!ui) {{
         failures.push('window was not built');

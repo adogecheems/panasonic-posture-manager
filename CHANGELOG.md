@@ -31,7 +31,8 @@
 
 - CFQV8-1L 的最终物理验收、QV9/QV1 同族回归，以及 Plasma 6 Wayland 真机
   验证仍需完成；当前证据见 [硬件验证记录](docs/hardware-validation.md)。
-- AUR 提交、clean-chroot 构建、`namcap` 和最终真机验收尚未完成。
+- AUR 提交和最终真机验收尚未完成。当前提交已通过本地与 clean-rootfs 构建、
+  隔离安装验收和 `namcap`；创建 `v2.0.0` tag 后仍需从正式发布源复跑构建验收。
 
 ## [1.0.0] - 2026-11-03
 

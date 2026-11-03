@@ -20,8 +20,9 @@
 - 代码由 Python 3.11+、C11 relay 和 GJS/GTK 4/libadwaita UI 组成。
 - 仅支持 GNOME Wayland 和 Plasma 6 Wayland。X11、Plasma 5 Wayland 和其他
   Wayland 合成器均为 `unsupported`。
-- `v1.0.0` 是已发布的不可变 tag；`2.0.0` 发布元数据已同步，但 `v2.0.0` tag、
-  AUR 提交和最终真机验收仍未完成。
+- `v1.0.0` 是已发布的不可变 tag；`2.0.0` 发布元数据及当前提交的本地/clean-rootfs
+  构建、包验收和 `namcap` 已完成，但 `v2.0.0` tag、AUR 提交、tag 固定源复验和
+  最终真机验收仍未完成。
 - 内部契约的事实来源是代码、测试、`src/panasonic_posture/protocol.py` 和
   `backend/common.h`。
 

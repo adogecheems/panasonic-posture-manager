@@ -1,7 +1,8 @@
 # AUR 打包与发布说明
 
-> **状态：2.0.0 发布准备中。** 包元数据已同步，1.0.0 的本地安装包验收曾通过；
-> 源码 tag、clean-chroot 构建、`namcap`、AUR 提交和最终真机验收尚未完成。
+> **状态：2.0.0 发布准备中。** 包元数据已同步，当前提交的本地与 clean-rootfs
+> 构建、隔离安装验收和 `namcap` 已通过；`v2.0.0` 源码 tag、tag 固定源复验、
+> AUR 提交和最终真机验收尚未完成。
 
 相关文档：
 
@@ -18,16 +19,18 @@
 | 上游仓库 | 可匿名克隆 |
 | 版本 tag | `v1.0.0` 是历史发布；`v2.0.0` 待最终验收后创建 |
 | 构建脚本 | `build()`、`check()`、`package()` 已编写 |
-| clean chroot | 尚未运行 `makepkg`、`namcap` 和完整安装验收 |
-| 安装包验收 | 1.0.0 的本地 `makepkg` 与 `make check-package` 已通过；2.0.0 待新 tag 后重跑 |
+| clean chroot | 当前提交已在临时 Arch clean rootfs 中通过 `make WERROR=1 check`、wheel、`makepkg` 和 `namcap`；正式 tag 后需复跑 |
+| 安装包验收 | 1.0.0 与当前 2.0.0 构建的 `make check-package` 已通过；正式 tag 后需复跑 |
 | AUR 提交 | 尚未提交 |
 | 真机验收 | CFQV8-1L 最终物理验收、QV9/QV1 回归和桌面后端验收未完成 |
 
 ## AUR 提交前待办
 
-1. **clean chroot 未验收。** 需要在干净 Arch/devtools 环境中构建，运行
-   `make WERROR=1 check`、`makepkg`、`make check-package` 和 `namcap`，再检查真实
-   安装脚本、D-Bus 激活、会话启动、休眠/唤醒和卸载。
+1. **正式 tag 后复跑 clean rootfs。** 当前提交已在隔离的 Arch bootstrap 环境中
+   通过 `make WERROR=1 check`、wheel、`makepkg`、`make check-package` 和
+   `namcap`。创建 `v2.0.0` tag 后，必须从固定 tag 源再跑一次，确认发布源与验证
+   源一致；真实安装脚本、D-Bus 激活、会话启动、休眠/唤醒和卸载仍需在目标系统
+   验收。
 2. **源码 tag 与 AUR 尚未提交。** 最终验收通过后创建 `v2.0.0` 发布 tag，再将
    `PKGBUILD`、`.SRCINFO`、安装脚本和打包说明提交到 AUR；`v1.0.0` 是不可变
    历史 tag，不要移动或重写。
@@ -78,13 +81,18 @@ trap 'rm -rf -- "$stage"' EXIT
 python -m installer --destdir="$stage" dist/*.whl
 ```
 
-完整布局必须在 tag 就绪后，从仓库根目录使用 clean chroot 验证：
+当前提交已用临时本地源码包在隔离 Arch bootstrap 中按同等流程验证。正式发布前，
+仍须在 `v2.0.0` tag 就绪后，从仓库根目录使用 clean chroot 复跑：
 
 ```sh
 (cd packaging/aur && makepkg --cleanbuild)
 make check-package
 namcap packaging/aur/panasonic-posture-manager-*.pkg.tar.zst
 ```
+
+当前 clean-rootfs 运行中，`namcap` 对 `PKGBUILD` 无告警；包级告警仅涉及静态
+检查无法识别的 GJS/桌面运行时依赖、由依赖链满足的 `glibc`/`glib2`/
+`hicolor-icon-theme`，以及 wheel 生成入口脚本的模块误报。
 
 ## 安装包验收
 
@@ -177,11 +185,12 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 - [x] 确认许可证在 `LICENSE`、`PKGBUILD`、`.SRCINFO` 和 `pyproject.toml` 中一致。
 - [x] 复核 Maintainer、依赖、可选依赖、安装脚本和全部安装路径。
 - [x] 运行 `makepkg --printsrcinfo`，确认 `.SRCINFO` 与 `PKGBUILD` 同步。
-- [ ] 在本地构建 wheel 和 AUR 包，运行 `make check-package` 验证包内容与隔离安装。
-- [ ] 在 clean chroot 中运行 `make WERROR=1 check`、wheel 构建、`makepkg`、
-  `make check-package` 和 `namcap`。
+- [x] 在本地构建 wheel 和 AUR 包，运行 `make check-package` 验证包内容与隔离安装。
+- [x] 对当前提交在 clean rootfs 中运行 `make WERROR=1 check`、wheel 构建、
+  `makepkg`、`make check-package` 和 `namcap`。
+- [ ] 在 `v2.0.0` tag 就绪后从固定 tag 源复跑 clean-rootfs 构建与包验收。
 - [ ] 验证全新安装、升级、D-Bus 自动激活、用户会话适配器、休眠/唤醒和卸载。
 - [ ] 验证 GNOME Wayland 和 Plasma 6 Wayland 的旋转、恢复、锁屏通知及外接屏路径。
-- [ ] 确认发布源码没有预构建 relay、残留 `.mo`、`build/` 或 `dist/`，安装树没有
-  `/usr/local` 引用。
+- [x] 确认当前提交的发布源码没有预构建 relay、残留 `.mo`、`build/` 或 `dist/`，
+  安装树没有 `/usr/local` 引用。
 - [ ] 补齐 CFQV8-1L 物理验收和 QV9/QV1 同族回归。
