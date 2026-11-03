@@ -189,12 +189,17 @@ class Controller:
             # The physical switch has priority over every manual selection.
             self.manual = Mode.AUTO
         self.hardware = hardware
+        # Manual tent, stand and tablet selections are explicit non-laptop
+        # origins.  Only automatic or manual laptop operation may prompt on the
+        # next change, otherwise switching back to auto would resurrect a stale
+        # prompt for a transition the user already made explicitly.
+        prompt_from_laptop = self.manual in (Mode.AUTO, Mode.LAPTOP)
         self.policy.update(
             now,
             reading,
             hardware,
-            tent_prompt=bool(self.tent_prompt),
-            stand_prompt=bool(self.stand_prompt),
+            tent_prompt=bool(self.tent_prompt) and prompt_from_laptop,
+            stand_prompt=bool(self.stand_prompt) and prompt_from_laptop,
         )
 
         if hardware is True:

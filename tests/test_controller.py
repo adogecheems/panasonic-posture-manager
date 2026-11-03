@@ -7,6 +7,7 @@ from panasonic_posture.controller import Controller
 from panasonic_posture.model import Mode, SensorReading, SensorSource, Target
 from panasonic_posture.policy import (
     MODE_DISABLED,
+    MODE_STAND,
     MODE_STAND_PROMPT,
     MODE_TENT,
     MODE_TENT_PROMPT,
@@ -199,11 +200,11 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertEqual(self.controller.target.mode, "stand")
         self.assertIsNone(self.controller.pending_notification)
 
-    def test_stand_prompt_is_suppressed_in_manual_mode(self):
+    def test_manual_stand_enters_stand_without_prompt(self):
         self.controller.stand_prompt = True
         self.controller.set_manual(Mode.STAND)
         self.hold(175.0)
-        self.assertEqual(self.controller.policy.mode, MODE_STAND_PROMPT)
+        self.assertEqual(self.controller.policy.mode, MODE_STAND)
         self.assertEqual(self.controller.target.mode, "stand")
         self.assertIsNone(self.controller.pending_prompt)
         self.assertFalse(self.controller.confirm_stand(self.controller.policy.epoch))
@@ -215,6 +216,35 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertEqual(self.controller.policy.mode, "T")
         self.assertEqual(self.controller.target.mode, "tent")
         self.assertIsNone(self.controller.pending_notification)
+
+    def test_manual_non_laptop_modes_return_to_tent_without_prompt(self):
+        for mode in (Mode.TENT, Mode.STAND, Mode.TABLET):
+            with self.subTest(mode=mode):
+                controller = Controller()
+                controller.set_manual(mode)
+                now = 0.0
+                for _ in range(30):
+                    now += 0.1
+                    controller.update(now, sample(80.0, stamp=now), False)
+
+                self.assertEqual(controller.policy.mode, MODE_TENT)
+                controller.set_manual(Mode.AUTO)
+                now += 0.1
+                _, target = controller.update(now, sample(80.0, stamp=now), False)
+                self.assertEqual(target.mode, "tent")
+                self.assertIsNone(controller.pending_prompt)
+                self.assertIsNone(controller.pending_notification)
+
+    def test_manual_laptop_origin_still_prompts_for_tent(self):
+        self.controller.set_manual(Mode.LAPTOP)
+        self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
+
+        self.controller.set_manual(Mode.AUTO)
+        self.step(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
+        self.assertEqual(self.controller.pending_prompt, "tent")
+        self.assertIsNotNone(self.controller.pending_notification)
 
     def test_auto_returns_to_laptop(self):
         self.hold(175.0)
@@ -248,10 +278,10 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertIsNone(self.controller.pending_prompt)
         self.assertEqual(target.mode, "tent")
 
-    def test_manual_mode_suppresses_prompt(self):
+    def test_manual_tent_enters_tent_without_prompt(self):
         self.controller.set_manual(Mode.TENT)
         self.hold(80.0)
-        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT)
         self.assertIsNone(self.controller.pending_notification)
         self.assertFalse(self.controller.confirm_tent(self.controller.policy.epoch))
 
