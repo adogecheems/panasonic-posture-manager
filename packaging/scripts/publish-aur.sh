@@ -3,7 +3,7 @@
 #
 # Required environment:
 #   AUR_SSH_PRIVATE_KEY  private SSH key registered with the AUR account
-#   RELEASE_TAG          release tag such as v2.0.0
+#   RELEASE_TAG          release tag such as v2.1.0
 #
 # Optional environment:
 #   AUR_GIT_NAME         commit author name  (default: adogecheems)

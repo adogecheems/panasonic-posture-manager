@@ -79,7 +79,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--tag",
-        help="require an exact v<version> release tag (for example v2.0.0)",
+        help="require an exact v<version> release tag (for example v2.1.0)",
     )
     return parser.parse_args(argv)
 

@@ -2,14 +2,14 @@
 
 > 面向维护者。普通用户请先看 [README](../../README.md)。
 
-**2.0.0 已发布。** GitHub Release 和 AUR 包均已上线；真机验收状态以文末清单
-为准。仓库现在包含 `.deb`、`.rpm` 和 Arch 包的自动发布工作流；它从下一个
-`v*` tag 起生效，不会改写已有 2.0.0 release。
+**2.1.0 发布流程。** 推送 `v2.1.0` tag 后，GitHub Actions 会生成三种预构建包、
+GitHub Release 和 AUR 元数据；真机验收状态以文末清单为准。已有 2.0.0 release
+不会被改写。
 
 ## 预构建包
 
-从包含发布工作流的版本起，每个 release 附带三种 x86_64 包和 `SHA256SUMS`；
-已有 `v2.0.0` release 不含新增的 `.deb`/`.rpm` 资产。
+从 2.1.0 起，每个 release 附带三种 x86_64 包和 `SHA256SUMS`；已有 `v2.0.0`
+release 不含新增的 `.deb`/`.rpm` 资产。
 
 - `panasonic-posture-manager-<version>-1-x86_64.pkg.tar.zst`（Arch Linux）
 - `panasonic-posture-manager_<version>-1_amd64.deb`（Ubuntu 24.04+/Debian 13+）
@@ -79,7 +79,7 @@ make WERROR=1 check
 python3 -m build --wheel --no-isolation
 (cd packaging/aur && makepkg --cleanbuild)
 make check-package \
-  PACKAGE=packaging/aur/panasonic-posture-manager-2.0.0-1-x86_64.pkg.tar.zst
+  PACKAGE=packaging/aur/panasonic-posture-manager-2.1.0-1-x86_64.pkg.tar.zst
 namcap packaging/aur/panasonic-posture-manager-*.pkg.tar.zst
 ```
 
@@ -100,7 +100,7 @@ make package-rpm   # Fedora，需要 rpm-build/python3-devel
 升级和卸载；它不会执行安装钩子或访问真实硬件。仅做静态检查时加
 `PACKAGE_NO_INSTALL=1`，验证升级时加 `PREVIOUS_PACKAGE=旧包路径`。
 
-`PKGBUILD` 固定使用当前版本 tag，构建前清除预构建产物。创建 `v2.0.0` tag 后，
+`PKGBUILD` 固定使用当前版本 tag，构建前清除预构建产物。创建 `v2.1.0` tag 后，
 必须从固定 tag 源重跑 clean-rootfs 构建和验收。
 
 ## 安装布局
@@ -128,6 +128,15 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 ```
 
 ## 发布清单
+
+### 2.1.0
+
+- [x] 2.1.0 版本、许可证和打包元数据一致。
+- [x] 本地 `.deb`、`.rpm` 构建和文件布局检查通过。
+- [ ] GitHub Actions 已发布 2.1.0 三种包和 `SHA256SUMS`。
+- [ ] 2.1.0 AUR 元数据已推送。
+
+### 历史版本
 
 - [x] 版本、许可证和打包元数据一致。
 - [x] `v2.0.0` tag 已通过本地与 clean-rootfs 构建、包验收和 `namcap`。

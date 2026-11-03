@@ -3,14 +3,15 @@
 正式版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，日期格式为
 `YYYY-MM-DD`。
 
-## [未发布]
+## [2.1.0] - 2026-11-04
+
+新增 Debian/Ubuntu 和 Fedora 预构建包，并启用自动发布。
 
 ### 打包
 
 - 新增 Debian/Ubuntu 的 `.deb` 和 Fedora 的 `.rpm` 预构建包。
 - 新增 tag 驱动的 GitHub Actions 发布工作流：构建 Arch、Deb、RPM 三种包，
-  上传 GitHub Release，并将校验后的元数据推送到 AUR；从下一个包含该工作流的
-  发布 tag 起生效。
+  上传 GitHub Release，并将校验后的元数据推送到 AUR。
 - 系统服务和用户会话单元改用各发行版都提供的 `/usr/bin/python3`。
 
 ## [2.0.0] - 2026-11-03
