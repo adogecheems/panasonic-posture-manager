@@ -42,6 +42,10 @@ GJS = shutil.which("gjs")
 BROADWAY = shutil.which("gtk4-broadwayd")
 DBUS_DAEMON = shutil.which("dbus-daemon")
 UI_DIR = REPO / "data" / "ui"
+GLYCIN_NO_BWRAP_WARNING = (
+    "WARNING: Glycin running without sandbox. "
+    "Bubblewrap (bwrap) doesn't work in the environment.\n"
+)
 
 
 def read(relative: str) -> str:
@@ -473,7 +477,11 @@ System.exit(0);
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout, "")
-        self.assertEqual(completed.stderr, "")
+        # Glycin falls back to an unsandboxed worker when the CI container
+        # cannot create the namespaces used by bubblewrap.  Keep the
+        # self-check strict about every other stderr message.
+        stderr = completed.stderr.replace(GLYCIN_NO_BWRAP_WARNING, "")
+        self.assertEqual(stderr, "")
 
 
 class HeadlessUiTests(unittest.TestCase):

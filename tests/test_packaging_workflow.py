@@ -153,6 +153,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         for artifact in ("arch-package", "deb-package", "rpm-package"):
             with self.subTest(artifact=artifact):
                 self.assertIn(f"name: {artifact}", self.workflow)
+        arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
+        self.assertIn('su - builder -c "cd /tmp/ppm-arch && make WERROR=1 check"', arch)
+        rpm = self.workflow.split("  package-rpm:", 1)[1].split("  release:", 1)[0]
+        self.assertIn('rpm_files=$(rpm -qlp "$package")', rpm)
+        self.assertNotIn('rpm -qlp "$package" | grep', rpm)
 
     def test_release_waits_for_all_packages_and_writes_assets(self) -> None:
         release = self.workflow.split("  release:", 1)[1].split("  aur:", 1)[0]

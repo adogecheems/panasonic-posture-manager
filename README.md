@@ -3,7 +3,7 @@
 在 Linux 翻转本上自动切换屏幕方向和内置输入，重点支持 Panasonic QV 系列。
 关闭窗口后继续在后台运行。
 
-> **当前版本：2.1.0。** 支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6
+> **当前版本：2.1.1。** 支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6
 > Wayland。
 
 ![当前姿态界面（浅色主题）](docs/screenshots/current-light.png)
@@ -30,16 +30,16 @@
 
 ## 安装
 
-从 `2.1.0` 起，[GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases)
+从 `2.1.1` 起，[GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases)
 会发布 Arch、Debian/Ubuntu 和 Fedora 包及 `SHA256SUMS`。也可以使用 AUR helper
-安装 `panasonic-posture-manager`，或从 `v2.1.0` 源码构建。完成后注销并重新登录。
+安装 `panasonic-posture-manager`，或从 `v2.1.1` 源码构建。完成后注销并重新登录。
 
 ### 预构建包
 
 从 release 页面下载对应文件，将示例版本替换为实际版本后执行：
 
 ```sh
-version=2.1.0  # 替换为下载文件中的版本号
+version=2.1.1  # 替换为下载文件中的版本号
 
 # Arch Linux
 sudo pacman -U "./panasonic-posture-manager-${version}-1-x86_64.pkg.tar.zst"
@@ -69,7 +69,7 @@ yay -S panasonic-posture-manager
 需要 Arch Linux、`base-devel` 和网络连接。
 
 ```sh
-git clone --branch v2.1.0 --depth 1 \
+git clone --branch v2.1.1 --depth 1 \
   https://github.com/adogecheems/panasonic-posture-manager.git
 cd panasonic-posture-manager/packaging/aur
 makepkg -si
