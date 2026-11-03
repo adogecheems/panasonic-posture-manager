@@ -133,8 +133,8 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 
 - [x] 2.1.1 版本、许可证和打包元数据一致。
 - [x] 本地 `.deb`、`.rpm` 构建和文件布局检查通过。
-- [ ] GitHub Actions 已发布 2.1.1 三种包和 `SHA256SUMS`。
-- [ ] 2.1.1 AUR 元数据已推送。
+- [x] GitHub Actions 已发布 2.1.1 三种包和 `SHA256SUMS`。
+- [x] 2.1.1 AUR 元数据已推送。
 
 ### 2.1.0（未发布）
 
