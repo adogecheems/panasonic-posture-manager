@@ -1,44 +1,36 @@
 # 硬件适配与 profile
 
-更新：2026-11-03。正式支持 Panasonic QV8/QV9/QV1 系列；CFQV8-1L 已完成主要
-功能实测，QV9/QV1 按同族硬件画像纳入支持范围但尚未逐机物理验收。其他翻转本
-走能力发现，必要时补 JSON profile。
+更新：2026-11-03。
 
-## 支持策略
+Panasonic QV8、QV9、QV1 使用同族硬件画像。QV8 已完成主要功能实测；QV9/QV1
+纳入正式支持范围，但尚未逐机物理验收。其他翻转本按硬件能力适配，必要时补充 JSON
+profile。
 
-| 层 | 策略 |
+## 支持等级
+
+| 等级 | 含义 |
 | --- | --- |
-| 支持等级 | `validated`：正式纳入支持范围的内置 QV8/QV9/QV1 profile，不代表已逐机物理验收；`compatible`：无专用 profile 时按能力发现，支持但不保证；`unsupported`：profile 显式关闭，不产生特权目标、不通知。 |
-| 机型匹配 | 只依据 profile 匹配，不依据厂商白名单。内置 profile 使用 `product_glob` 匹配 QV 型号及其 `CF-`/SKU 变体。 |
-| 平板开关 | 只接管 **switch-only** 设备：capability 恰好包含 `SW_TABLET_MODE` 且没有 `EV_KEY`；带 lid/power 的开关不接管。 |
-| 内置键盘 | 非 USB/蓝牙、具备字母键能力；profile 名称只用于消歧，仍必须通过能力校验。 |
-| 内置触摸板 | 多点触摸、非 DIRECT、非 USB/蓝牙；profile 名称同上。 |
-| 加速计 | 优先使用 profile 指定名称（默认 `accel_3d`）的 IIO 设备缓冲区（约 10 Hz）；名称不匹配时，仅在恰好存在一个完整三轴 IIO 加速计时安全回退。失败/2 s 无样本回退 sysfs（约 2 Hz），每 60 s 重试 IIO。软件姿势接管与硬件平板态固定使用 sysfs。 |
-| 虚拟开关 | relay 创建 `name="Panasonic posture managed switch"`、`phys="panasonic-posture-manager/relay"` 的设备；所有发现逻辑必须排除它（generic 机型安全的关键）。`--recover` 先发一次已知 ON、再发最终状态（物理 ON→ON，OFF/缺席/不可读→OFF），确保 GNOME 观察到残留软件 ON 的清除。 |
-| 显示 | 后端按桌面会话选择：GNOME/Mutter 按 `is-builtin`，Plasma 6/KScreen 按 Panel 类型与内置标记，X11/RandR 按 `eDP`/`LVDS`/`DSI` 连接器名并在单屏时回退唯一活动输出。不能假定所有桌面都提供自动旋转锁；X11 仅做显式旋转，安装 `xorg-xinput` 时还会同步唯一 `INPUT_PROP_DIRECT` 物理组的触摸矩阵。 |
+| `validated` | 正式纳入支持范围的内置 profile。它不代表每台同型号设备都完成物理验收；验收结果单独记录。 |
+| `compatible` | 按硬件能力运行，但没有经过完整验证的专用 profile。功能可能可用，不保证所有硬件兼容。 |
+| `unsupported` | 显式禁用。系统服务报告模型不受支持，不建立软件姿态接管。 |
 
-## 安全边界（重要）
+`validated` 和 `compatible` 的 `supported` 均为真；`unsupported` 为假。
 
-- 开关设备必须只有平板开关位、没有键位；复合设备不会被 grab（避免吞掉 lid/
-  power 等无关事件），软件平板模式仍可用。
-- profile 里的精确名称**不会绕过**能力/总线校验：自动发现要求已知的内置设备特征
-  （名称/phys 或触摸板属性），USB/蓝牙按 bus/phys 排除；同一槽位出现多项匹配时
-  拒绝接管，而不是猜测。
-- 外接 USB/蓝牙键盘、触摸板被排除；程序不读取按键内容。
-- relay 必须排除自己创建的虚拟设备，否则“物理开关缺席（首次折叠前）”会被自身
-  输出误判为硬件 ON，generic 机型也会因两个匹配设备失败。
+## profile 查找
+
+查找顺序：
+
+1. `/etc/panasonic-posture-manager/profiles/`
+2. 源码树 `data/profiles/`（从检出目录运行时）
+3. `/usr/share/panasonic-posture-manager/profiles/`
+
+管理员覆盖始终优先。源码树路径在安装后的 wheel 中不存在，因此正常安装只读取
+`/usr/share`。目录中的 `*.json` 按文件名排序，第一个有效匹配生效。
 
 ## profile 格式
 
-内置 profile 源码在 `data/profiles/`，安装到
-`/usr/share/panasonic-posture-manager/profiles/`；管理员覆盖放在
-`/etc/panasonic-posture-manager/profiles/`（优先）。查找顺序：
-`/etc/panasonic-posture-manager/profiles/` → 源码树 `data/profiles/`（从检出目录
-运行时）→ `/usr/share/panasonic-posture-manager/profiles/`。源码树优先可避免旧版
-已安装 profile 遮蔽当前开发中的验证等级；安装包中源码树路径不存在，因此正常安装
-仍读取 `/usr/share`。
-
-字段（实现：`src/panasonic_posture/hardware/profile.py`）：
+内置 profile 位于 `data/profiles/`。示例（字段值与当前 QV profile 接近，省略了
+可选的 `mount_matrix`）：
 
 ```json
 {
@@ -50,80 +42,104 @@
   "switch_name": "Intel HID switches",
   "keyboard_name": "AT Translated Set 2 keyboard",
   "touchpad_name": "Synaptics TM3562-001",
-  "accel_name": "accel_3d",
-  "mount_matrix": [1, 0, 0, 0, 1, 0, 0, 0, 1]
+  "accel_name": "accel_3d"
 }
 ```
 
-- `match` 可以是对象（`vendor`/`product` 精确字符串，或 `product_glob` 通配符
-  字符串/数组），也可以是**裸字符串**简写：`"match": "CFQV8-1L"` 等价于只匹配
-  该 `product`。通配符不区分大小写；未知 `match` 键会被忽略（debug 日志）；
-  `match` 为 list/int 等非法类型时整个 profile 视为无效并被跳过。
-- `match` 缺省/null/空对象/空白字符串按“不匹配任何机型”处理并记录 WARNING
-  （不会磁吸所有机器、不会遮蔽内置 profile）；没有任何 profile 命中时使用
-  generic 能力发现。
-- 可选 `version` 字段：缺省视为 1；存在但 ≠1 时该 profile 被跳过并记录日志。
-- 可选 `support_tier`：`validated`、`compatible`（缺省）或 `unsupported`。
-  `validated` 是正式支持范围声明，不是逐机物理验收记录。其他值会使 profile
-  失效。`unsupported` 适合管理员对已知问题机型做显式禁用。
-- `switch_name` / `keyboard_name` / `touchpad_name` 可选：不填则按能力发现；
-  填写后仍会校验能力与该设备是否外接。
-- `accel_name` 默认 `accel_3d`，作为优先匹配名称；若内核驱动使用其它名称，
-  唯一的完整三轴 IIO 加速计会被自动选用。多个候选时拒绝猜测。
-- `mount_matrix` 为行优先 3×3 矩阵，用于不同传感器安装方向；不填时若 IIO 设备
-  提供 `in_accel_mount_matrix` 则读取之，否则按单位矩阵处理。要求 9 个有限值、
-  近似正交（正交性容差 `abs <= 1e-3`；非正交/NaN/Infinity 的 profile 会被
-  拒绝并跳过，记录 WARNING）。
-- 非法 JSON、非对象、字段类型错误、损坏的 profile 会被跳过并记录日志，不会
-  阻止服务启动；匹配到的第一个有效 profile 生效。
+| 字段 | 说明 |
+| --- | --- |
+| `id` | profile 标识；缺省为文件名。必须是非空字符串。 |
+| `match` | 必填。可写精确 `vendor`/`product`、`product_glob`，或直接写产品字符串。 |
+| `version` | 可选，当前只接受 `1`。缺省视为 1。 |
+| `support_tier` | `validated`、`compatible` 或 `unsupported`；缺省为 `compatible`。 |
+| `switch_name` | 可选。平板开关名称提示；仍必须通过能力校验。 |
+| `keyboard_name` | 可选。内置键盘名称提示；仍必须通过能力校验。 |
+| `touchpad_name` | 可选。内置触控板名称提示；仍必须通过能力校验。 |
+| `accel_name` | 可选，默认 `accel_3d`。用于优先选择 IIO/sysfs 加速计。 |
+| `mount_matrix` | 可选，行优先 3×3 矩阵，用于修正传感器安装方向。 |
+
+匹配规则：
+
+- `"match": "CFQV8-1L"` 等价于只匹配该 `product`。精确字符串比较区分大小写。
+- `product_glob` 使用 shell 通配符，不区分大小写；可写字符串或字符串数组。
+- 未知 `match` 键会被忽略并写入 debug 日志。
+- `match` 缺失、为 `null`、空对象或空字符串时，不匹配任何机器，并记录 WARNING。
+- 非法 JSON、错误类型、未知版本或损坏字段会导致 profile 被跳过并记录日志，
+  不会阻止服务启动。
+- 没有 profile 命中时使用 generic 能力发现。profile 中的名称只用于消歧，不能
+  绕过总线、phys 和能力校验。
+
+`mount_matrix` 要求 9 个有限数值，行向量近似正交（绝对容差 `1e-3`）。未填写时，
+程序优先读取设备的 `in_accel_mount_matrix`，否则使用单位矩阵。传感器校准由
+用户触发的平放校准单独保存，不复写 profile。
+
+## 设备发现与安全边界
+
+- **平板开关**：只接管 capability 恰好包含 `SW_TABLET_MODE` 且没有 `EV_KEY`
+  的 switch-only 设备。带 lid/power 键位的复合开关不抓取，以免吞掉其他事件。
+- **虚拟开关**：relay 创建名为 `Panasonic posture managed switch`、phys 为
+  `panasonic-posture-manager/relay` 的设备。Python 和 C 的设备发现都必须排除
+  它，否则 generic 机型会把自己的输出误判为硬件开关。
+- **内置键盘**：必须具备字母键能力，并排除 USB、Bluetooth 和外部 phys 设备。
+- **内置触控板**：必须支持多点触控、不是 DIRECT 设备，并排除 USB/Bluetooth。
+- **歧义处理**：同一槽位出现多个候选时拒绝猜测。profile 名称不能绕过能力检查。
+- **加速计**：优先匹配 profile 名称；名称不匹配时，只接受唯一的完整三轴设备。
+  多个候选时拒绝猜测。
+- **输入读取**：relay 只检查设备身份、能力位和开关状态，不读取按键内容。
 
 ## 只读探针
 
-安装后（AUR 包）：
+安装后：
 
 ```sh
-panasonic-posture-manager-probe > /tmp/panasonic-posture-manager-probe.json
+panasonic-posture-manager-probe > /tmp/posture-probe.json
 ```
 
-源码开发（无需安装）：
+源码开发：
 
 ```sh
 PYTHONPATH=src python -m panasonic_posture.hardware.probe --probe
 ```
 
-探针不需要 root，只读 sysfs/JSON，不打开 `/dev/input`，输出 JSON
-（`panasonic-posture-manager-probe [--probe]`）：
+探针不需要 root，不打开 `/dev/input`，只读取 sysfs 和 profile。输出 schema
+版本为 2：
 
 | 字段 | 内容 |
 | --- | --- |
-| `version` / `read_only` | 探针输出 schema 版本（当前 2）与只读标记。 |
-| `dmi` | `vendor`、`product`（来自 `/sys/class/dmi/id`）。 |
-| `profile` | 命中的 id/vendor/product/`support_tier`/`supported`、最终生效的开关/键盘/触摸板/加速计名称、mount matrix、`search_order`。 |
-| `input` | 每个输入设备的 `node/sysfs/name/phys/bustype/bustype_value/vendor/product/virtual`；原始能力 `capabilities{ev,key,rel,abs,msc,sw,led,snd,ff}` 及兼容字段 `switches/keys/abs/props/properties`（整数）；解析后的 `features{event_switch,event_key,event_abs,tablet_switch,switch_only,keyboard_keys,multitouch,direct,pointer,buttonpad,external_bus}`；读取失败时带 `capabilities_error`/`properties_error`。 |
-| `iio` | 每个 IIO 设备：`device/name/scan_types/scan_indices/scale/offset/sampling_frequency/mount_matrix/trigger/buffer_enabled`。 |
-| `summary` | 便于快速浏览的计数/候选判断：`input_count`、`tablet_switch_candidates`、`internal_keyboard_candidates`、`internal_touchpad_candidates`、`iio_count`。 |
+| `version` / `read_only` | 输出版本和只读标记 |
+| `dmi` | DMI `vendor`、`product` |
+| `profile` | 命中的 profile、支持等级、最终设备名称和查找顺序 |
+| `input` | 输入设备的节点、名称、phys、总线、能力和解析后的特征 |
+| `iio` | IIO 设备的扫描类型、比例、频率、mount matrix 和 trigger |
+| `summary` | 候选设备计数，便于快速浏览 |
 
-给新机型报 issue 时请附：完整 probe JSON、`journalctl -u
-panasonic-posture-manager.service`、`hardware_status`/`sensor_source`/`error_code`
-（可用 `gdbus call ... GetState` 获取）以及 `cat /sys/class/dmi/id/{sys_vendor,product_name}`。
+提交机型适配 issue 时，请附完整探针 JSON，以及：
 
-## 新机型验收清单
+```sh
+journalctl -u panasonic-posture-manager.service
+gdbus call --system --dest work.mmoe.panasonic.Posture \
+  --object-path /work/mmoe/panasonic/Posture \
+  --method work.mmoe.panasonic.Posture.GetState
+cat /sys/class/dmi/id/{sys_vendor,product_name}
+```
 
-1. 运行 probe，保留 JSON；确认 `support_tier`（无专用 profile 时为 `compatible`）、平板开关候选，以及 profile 指定名称或唯一的三轴 IIO 加速计。
-2. 确认 switch-only 设备可被 grab；带 lid/power 的设备不使用。
-3. 确认内置键盘/触摸板是唯一的非 USB/蓝牙匹配；外接键鼠不受影响。
-4. 验证帐篷/支架角度与传感器轴向；必要时补充 `mount_matrix`。
-5. 验证 360° 物理折叠、通知点按、180° 触摸坐标、休眠/唤醒、外接显示器布局。
-6. 验证软件模式（帐篷/支架/平板）与硬件开关的优先级、租约丢失后的撤销。
-7. 再添加 profile 到 `data/profiles/`（随包发布）或 `/etc/.../profiles/`
-   （本机实验）。只有正式纳入维护与支持范围时才将 `support_tier` 设为
-   `validated`；物理验收结果必须单独记录，不能把该字段当作逐机验收证明。
+## 新机型验收
 
-## AUR
+1. 运行探针并保存 JSON。确认 DMI、profile、开关候选、内置输入和加速计。
+2. 验证平板开关：物理折叠/展开能产生正确状态；首次折叠前诊断状态为 `absent`
+   属于正常现象。
+3. 验证内置键盘和触控板只抓取目标设备，外接 USB/Bluetooth 设备不受影响。
+4. 检查帐篷、支架和四种旋转方向；必要时添加 `mount_matrix` 或做用户校准。
+5. 验证通知、锁屏、180° 触摸坐标、外接屏布局和休眠/唤醒。
+6. 验证软件模式与硬件平板开关的优先级，以及租约丢失后的撤销。
+7. 将 profile 放入 `data/profiles/`（随包发布）或
+   `/etc/panasonic-posture-manager/profiles/`（本机实验）。
 
-`packaging/aur/` 是 `/usr` 布局的 pacman 包，不运行 `/usr/local` 自安装器；
-许可证已确定为 `AGPL-3.0-or-later`，构建时从固定 Git tag 拉取源码并在本地
-编译。上游仓库与版本 tag 尚未公开；发布前需按 `packaging/aur/README.md` 创建
-公开仓库与版本 tag、完成 clean-chroot 和 CFQV8-1L 最终物理验收，并补齐 QV9/QV1
-同族回归。
-历史硬件验证记录见上游开发期文档（`docs/hardware-validation.md`）。
+只有正式纳入长期支持范围时才使用 `validated`。物理验收结果应记录在
+[hardware-validation.md](hardware-validation.md)，不能把字段值当作验收证明。
+
+## 发布状态
+
+`v1.0.0` 源码 tag 已发布，包元数据已同步。AUR 提交、clean-chroot 构建和最终
+物理验收仍未完成。提交前请按
+[../packaging/aur/README.md](../packaging/aur/README.md) 执行检查清单。

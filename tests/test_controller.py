@@ -283,7 +283,7 @@ class UnknownHardwareTests(ControllerTestCase):
         self.controller.set_manual(Mode.TENT)
         _, target = self.step(0.0)
         self.assertEqual(target.mode, "tent")
-        self.now += 4.0
+        self.now += self.controller.config.stale_seconds + 0.1
         _, target = self.controller.update(self.now, SensorReading(), False)
         self.assertEqual(target.mode, "unavailable")
         self.assertIsNone(target.tablet)

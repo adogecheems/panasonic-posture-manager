@@ -272,7 +272,8 @@ class ProtocolUiParityTests(unittest.TestCase):
         self.assertNotIn("window.set_icon_name(APPLICATION_ID)", app)
         self.assertIn("removeWindowIconFromDecoration(header)", app)
         self.assertIn("header.pack_start(windowMark)", app)
-        self.assertIn("const WINDOW_MARK_WIDTH = 80;", app)
+        self.assertIn("const WINDOW_MARK_WIDTH = 72;", app)
+        self.assertIn("margin_start: 12,", app)
         self.assertIn("theme.add_search_path(ASSETS_DIR)", app)
 
         desktop = read("packaging/desktop/work.mmoe.panasonic.PostureManager.desktop")
@@ -585,7 +586,7 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 900, () => {{
         const windowMark = findWidgetWithClass(ui.window, 'window-mark');
         if (!windowMark)
             failures.push('window mark is missing');
-        else if (windowMark.get_width() !== 80)
+        else if (windowMark.get_width() !== 72)
             failures.push('window mark width is ' + windowMark.get_width());
         const header = findWidget(ui.window, 'headerbar');
         const decoration = header?.get_decoration_layout() || '';

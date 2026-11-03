@@ -23,6 +23,7 @@ from panasonic_posture.policy import (
     geometry,
     in_tent_zone,
 )
+from panasonic_posture.protocol import IIO_NO_SAMPLE_SECONDS
 
 GRAVITY = 9.80665
 
@@ -191,6 +192,16 @@ class InitialStateTests(PolicyTestCase):
         self.assertEqual(self.policy.config, PolicyConfig())
         self.assertGreater(self.policy.config.stale_seconds, 0)
 
+    def test_iio_failover_starts_before_the_policy_stale_window(self):
+        # Regression: both deadlines used to be 2.0 seconds.  On a stalled IIO
+        # stream the policy therefore marked the target unavailable before the
+        # sysfs fallback could provide a replacement sample.
+        config = PolicyConfig()
+        self.assertLess(IIO_NO_SAMPLE_SECONDS, config.stale_seconds)
+        self.assertGreaterEqual(
+            config.stale_seconds - IIO_NO_SAMPLE_SECONDS, 2.0
+        )
+
     def test_controller_style_injection(self):
         config = PolicyConfig(stale_seconds=1.0)
         policy = Policy(config)
@@ -249,9 +260,23 @@ class PostureClassificationTests(PolicyTestCase):
     def test_sensor_timeout_releases_software_only(self):
         self.hold(175.0)
         self.assertEqual(self.policy.mode, MODE_STAND)
-        self.now += 3.0
+        self.now += self.config.stale_seconds + 0.1
         self.policy.update(self.now, SensorReading(), False)
         self.assertEqual(self.policy.mode, MODE_DISABLED)
+
+    def test_stand_survives_an_iio_to_sysfs_handoff(self):
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+        # Live traces showed a 2.3 second IIO silence before sysfs supplied
+        # the next sample.  That must not release the stand takeover, even
+        # though it exceeds the old two-second stale window.
+        for _ in range(23):
+            self.feed_invalid("missing")
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
 
     def test_wrap_does_not_exit_stand(self):
         self.hold(179.0)
@@ -313,6 +338,22 @@ class PostureClassificationTests(PolicyTestCase):
         self.assertEqual(self.policy.mode, MODE_STAND)
         self.hold(135.0)
         self.assertEqual(self.policy.mode, MODE_STAND)
+
+    def test_stand_does_not_leave_on_an_unstable_departure(self):
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+        # Rapid, alternating samples below the hold edge look like motion or
+        # sensor noise, not a settled laptop posture.  They must not release
+        # the takeover even when the excursion lasts longer than leave_seconds.
+        for _ in range(30):
+            self.step(100.0)
+            self.step(125.0)
+            self.assertEqual(self.policy.mode, MODE_STAND)
+
+        # A settled departure is still accepted.
+        self.hold(120.0, seconds=self.config.stand_leave_seconds + 0.2)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
 
     def test_stand_to_tent_enters_without_prompt(self):
         self.hold(175.0)
@@ -619,19 +660,18 @@ class InvalidSampleTests(PolicyTestCase):
         self.hold(175.0)
         self.assertEqual(self.policy.mode, MODE_STAND)
         # Still inside the stale window: a single bad frame never releases.
-        for _ in range(19):
+        stale_steps = math.ceil(self.config.stale_seconds / 0.1)
+        for _ in range(stale_steps):
             self.feed_invalid("missing")
         self.assertEqual(self.policy.mode, MODE_STAND)
-        self.feed_invalid("missing")
-        self.assertEqual(self.policy.mode, MODE_STAND)
         # More than stale_seconds without a valid sample: disabled.
-        self.feed_invalid("missing")
         self.feed_invalid("missing")
         self.assertEqual(self.policy.mode, MODE_DISABLED)
 
     def test_sustained_invalid_clears_all_anchors(self):
+        stale_steps = math.ceil(self.config.stale_seconds / 0.1)
         self.hold(175.0)
-        for _ in range(25):
+        for _ in range(stale_steps + 1):
             self.feed_invalid("zero")
         self.assertEqual(self.policy.mode, MODE_DISABLED)
         self.assertEqual(len(self.policy.history), 0)
@@ -642,8 +682,9 @@ class InvalidSampleTests(PolicyTestCase):
         self.assertFalse(self.policy.fresh)
 
     def test_recovery_after_stale_window_rebuilds_run(self):
+        stale_steps = math.ceil(self.config.stale_seconds / 0.1)
         self.hold(175.0)
-        for _ in range(25):
+        for _ in range(stale_steps + 1):
             self.feed_invalid("nan")
         self.assertEqual(self.policy.mode, MODE_DISABLED)
         self.hold(0.0)
@@ -700,7 +741,7 @@ class BoundedHistoryTests(unittest.TestCase):
         feed(175.0, False, 200)  # stand
         feed(180.0, True, 200)  # hardware tablet
         feed(0.0, None, 100)  # hardware unknown -> disabled
-        for _ in range(100):  # sustained invalid -> disabled
+        for _ in range(120):  # sustained invalid -> disabled
             now += 0.05
             policy.update(now, SensorReading(), False)
             self.assertLessEqual(len(policy.history), limit)

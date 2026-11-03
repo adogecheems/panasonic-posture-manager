@@ -105,7 +105,12 @@ class PolicyConfig:
     # device briefly leaves and re-enters the tent zone (for example while the
     # user adjusts the hinge).  A stale exit never skips confirmation.
     tent_reentry_seconds: float = 5.0
-    stale_seconds: float = 2.0
+    # The IIO/sysfs hand-off on this sensor hub can take more than two
+    # seconds.  Releasing a software takeover on the first short gap makes the
+    # relay stop and start again, which looks like the posture itself is
+    # alternating between stand and laptop.  Keep the last decision through a
+    # full hand-off, but still release it when the sensor is genuinely gone.
+    stale_seconds: float = 5.0
     history_seconds: float = 0.75
     stable_seconds: float = 0.45
     history_max_samples: int = 128
@@ -495,7 +500,11 @@ class Policy:
                 if self.mode == MODE_STAND
                 else self.config.leave_seconds
             )
-            if now - self.leave_since >= leave_seconds:
+            # A departure only counts after the sensor has produced a stable
+            # run in the new posture.  Without this gate, several seconds of
+            # noisy samples below the hold edge could release stand mode and
+            # immediately re-enter it when the signal settles.
+            if self.stable and now - self.leave_since >= leave_seconds:
                 self._set_mode(MODE_LAPTOP, now)
                 self._clear_timers()
         else:

@@ -66,7 +66,10 @@ AGENT_FAILURE_GRACE_SECONDS = 3.0
 RELAY_HEARTBEAT_SECONDS = 0.5
 RELAY_REPORT_TIMEOUT_SECONDS = 2.5
 RELAY_LEASE_SECONDS = 3.0
-IIO_NO_SAMPLE_SECONDS = 2.0
+#: Detect a stalled IIO stream well before the policy's stale window.  The
+#: sysfs fallback itself can take seconds on this sensor hub; waiting the full
+#: stale window guarantees an unnecessary software-takeover release.
+IIO_NO_SAMPLE_SECONDS = 1.0
 SENSOR_RETRY_SECONDS = 60.0
 HARDWARE_UNKNOWN_DEBOUNCE_SECONDS = 0.5
 DISPLAY_RETRY_BASE_SECONDS = 2.0

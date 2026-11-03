@@ -573,6 +573,15 @@ class Engine:
         generation, target = self._controller.update(boot_now, reading, hardware)
         if not self.supported:
             target = Target(mode="unavailable")
+        if target != self._target:
+            self._log.info(
+                "target changed %s -> %s (policy=%s generation=%s sensor=%s)",
+                self._target.mode,
+                target.mode,
+                getattr(self._controller.policy, "mode", "?"),
+                generation,
+                reading.source,
+            )
         self._sync_prefer_shared(hardware, target)
         lease = self._lease_active(now)
 

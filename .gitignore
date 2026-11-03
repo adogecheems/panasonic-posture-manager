@@ -1,6 +1,10 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
 /dist/
 /build/
 /.backup/
@@ -8,4 +12,8 @@ __pycache__/
 /backend/relay
 /backend/*.gch
 /locale/
+/packaging/aur/pkg/
+/packaging/aur/src/
+/packaging/aur/*.pkg.tar.zst
+/packaging/aur/*.pkg.tar.zst.sig
 *.log

@@ -141,9 +141,16 @@ class UnavailableSensorTests(PresentationTestCase):
         p = self.presentation
         p.update(0.0, Pose.LAPTOP, False, 0.0)
         p.update(0.7, Pose.TENT, False, 0.7)
-        self.assertEqual(p.update(3.0, Pose.TENT, False, 0.7), Pose.LAPTOP)
-        self.assertEqual(p.update(3.1, Pose.TENT, False, 3.1), Pose.LAPTOP)
-        self.assertEqual(p.update(3.41, Pose.TENT, False, 3.41), Pose.TENT)
+        resumed = 0.7 + p.stale_seconds + 0.1
+        self.assertEqual(p.update(resumed, Pose.TENT, False, 0.7), Pose.LAPTOP)
+        self.assertEqual(
+            p.update(resumed + 0.1, Pose.TENT, False, resumed + 0.1),
+            Pose.LAPTOP,
+        )
+        self.assertEqual(
+            p.update(resumed + 0.41, Pose.TENT, False, resumed + 0.41),
+            Pose.TENT,
+        )
 
 
 if __name__ == "__main__":

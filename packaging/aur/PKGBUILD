@@ -1,11 +1,11 @@
 # Maintainer: adogecheems <adogecheems@outlook.com>
 #
-# AUR source-build package for the 0.4.x series. Read README.md in this
-# directory before submitting. The upstream repository and release tag are
-# not public yet; clean-chroot acceptance is pending.
+# AUR source-build package for the 1.0.x series. Read README.md in this
+# directory before submitting. The source is pinned to the immutable v1.0.0
+# tag; clean-chroot acceptance and AUR submission are still pending.
 
 pkgname=panasonic-posture-manager
-pkgver=0.4.0
+pkgver=1.0.0
 pkgrel=1
 pkgdesc='Posture management and screen orientation for convertible Linux 2-in-1 laptops'
 arch=('x86_64')
@@ -41,7 +41,6 @@ install="${pkgname}.install"
 
 # Build directly from the tagged upstream source. This is a VCS source, so
 # SKIP is the correct checksum entry; the tag pins the release revision.
-# TODO(RELEASE): publish the repository and create the v${pkgver} tag.
 source=("${pkgname}::git+https://github.com/adogecheems/${pkgname}.git#tag=v${pkgver}")
 sha256sums=('SKIP')
 

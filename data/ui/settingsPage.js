@@ -12,8 +12,7 @@ import {_} from './i18n.js';
 import {describeError} from './errors.js';
 
 export const AUTHOR_NAME = 'adogecheems';
-// The repository has not been published yet.  Keep the final URL here so the
-// button starts working as soon as that repository is created.
+export const APP_VERSION = '1.0.0';
 export const GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager';
 
 const MODES = [
@@ -195,6 +194,10 @@ export class SettingsPage {
 
         const aboutGroup = new Adw.PreferencesGroup({title: _('About')});
         this._page.add(aboutGroup);
+        aboutGroup.add(new Adw.ActionRow({
+            title: _('Version'),
+            subtitle: APP_VERSION,
+        }));
         aboutGroup.add(new Adw.ActionRow({
             title: _('Author'),
             subtitle: AUTHOR_NAME,

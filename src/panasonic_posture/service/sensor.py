@@ -51,8 +51,8 @@ LOG = logging.getLogger(__name__)
 
 SYSFS_RETRY_SECONDS = 1.0
 #: Real Intel-ISH sysfs reads on the supported CFQV8 take 0.57-0.66 s.
-#: Keep the watchdog comfortably above that normal jitter while staying below
-#: the policy's two-second staleness horizon.
+#: Keep the watchdog comfortably above that normal jitter while staying well
+#: below the policy's stale window.
 #: Minimum spacing between source reads.  Most sources block naturally, but a
 #: source that returns ``None`` immediately must not turn the worker into a
 #: busy loop; 20 Hz is also a hard upper bound for duplicate samples.

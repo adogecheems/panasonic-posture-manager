@@ -23,7 +23,7 @@ import {PostureService} from './service.js';
 export const APPLICATION_ID = 'work.mmoe.panasonic.PostureManager';
 const WINDOW_ICON_NAME = 'lets-note-window-icon';
 const WINDOW_ICON_DARK_NAME = 'lets-note-window-icon-dark';
-const WINDOW_MARK_WIDTH = 80;
+const WINDOW_MARK_WIDTH = 72;
 const ASSETS_DIR = `${DATA_ROOT}/assets`;
 
 let window = null;
@@ -68,6 +68,7 @@ function createWindowMark() {
         content_height: height,
         halign: Gtk.Align.CENTER,
         valign: Gtk.Align.CENTER,
+        margin_start: 12,
         accessible_role: Gtk.AccessibleRole.IMG,
     });
     mark.add_css_class('window-mark');

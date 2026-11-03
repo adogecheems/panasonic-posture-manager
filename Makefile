@@ -7,6 +7,14 @@
 PYTHON ?= /usr/bin/python
 CC ?= cc
 MSG_FMT ?= msgfmt
+PACKAGE ?= $(firstword \
+	$(wildcard packaging/aur/panasonic-posture-manager-[0-9]*.pkg.tar.zst) \
+	$(wildcard panasonic-posture-manager-[0-9]*.pkg.tar.zst))
+PREVIOUS_PACKAGE ?=
+PACKAGE_NO_INSTALL ?= 0
+PACKAGE_CHECK_ARGS = \
+	$(if $(PREVIOUS_PACKAGE),--previous "$(PREVIOUS_PACKAGE)",) \
+	$(if $(filter 1,$(PACKAGE_NO_INSTALL)),--no-install,)
 
 # Distribution build flags (makepkg exports CFLAGS/LDFLAGS) are preserved:
 # the project only appends its own required flags instead of replacing them.
@@ -22,7 +30,7 @@ RELAY_SOURCES := $(wildcard backend/*.c)
 RELAY_HEADERS := $(wildcard backend/*.h)
 MO := locale/zh_CN/LC_MESSAGES/panasonic-posture-manager.mo
 
-.PHONY: all check check-c check-compile check-unit check-dbus check-i18n clean
+.PHONY: all check check-c check-compile check-unit check-dbus check-i18n check-package clean
 
 all: backend/relay $(MO)
 
@@ -57,6 +65,17 @@ check-dbus:
 
 check-i18n:
 	PYTHONPATH=src $(PYTHON) tests/check_i18n.py
+
+# Validate a built AUR package without touching the host installation.  Set
+# PREVIOUS_PACKAGE to an older package to exercise an actual upgrade.
+check-package:
+	@test -n "$(PACKAGE)" || { \
+		echo "usage: make check-package PACKAGE=/path/to/package.pkg.tar.zst" >&2; \
+		echo "       [PREVIOUS_PACKAGE=/path/to/old.pkg.tar.zst] [PACKAGE_NO_INSTALL=1]" >&2; \
+		exit 2; \
+	}
+	PYTHONPATH=src $(PYTHON) tests/package/check_package.py \
+		--package "$(PACKAGE)" $(PACKAGE_CHECK_ARGS)
 
 clean:
 	rm -f backend/relay
