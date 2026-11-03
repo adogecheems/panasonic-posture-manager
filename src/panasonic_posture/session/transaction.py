@@ -42,16 +42,13 @@ class DisplayState:
     ``transform`` uses the Mutter numbering (0=normal, 1=90, 2=180, 3=270)
     because it is already the journal format used by GNOME.  ``lock`` is a
     bool for on/off backends or the native policy string for Plasma; it is
-    ``None`` when the backend cannot control automatic rotation.  ``auxiliary``
-    is backend-private, JSON-serializable state that must be restored with the
-    rotation (X11 uses it for touchscreen coordinate matrices).
+    ``None`` when the backend cannot control automatic rotation.
     """
 
     identity: tuple[str, ...]
     transform: int
     lock: bool | str | None = None
     lock_supported: bool = False
-    auxiliary: dict | None = None
 
 
 class SoftwareDisplay:
@@ -90,16 +87,6 @@ class SoftwareDisplay:
         """Reject unsupported layouts before the ownership journal is written."""
 
         del state, mode, transform
-
-    def _write_auxiliary(self, state: DisplayState) -> None:
-        """Apply backend-private state after the rotation is visible."""
-
-        del state
-
-    def _restore_auxiliary(self, state: DisplayState, original: dict) -> None:
-        """Restore backend-private state captured in the journal."""
-
-        del state, original
 
     # -- public API -------------------------------------------------------
 
@@ -147,18 +134,6 @@ class SoftwareDisplay:
             self._persist()
             if state.transform != transform:
                 self._write_rotation(state, transform)
-            if state.auxiliary is not None:
-                if "original_auxiliary" not in self.owned:
-                    # The first capture may have failed while the display
-                    # transaction already existed.  Adopt the current state
-                    # before mapping so every write remains recoverable.
-                    self.owned["original_auxiliary"] = state.auxiliary
-                    self.owned["written_auxiliary"] = None
-                    self._persist()
-                if self.owned.get("written_auxiliary") is not True:
-                    self.owned["written_auxiliary"] = True
-                    self._persist()
-                self._write_auxiliary(state)
             if mode == "tablet" and state.lock_supported:
                 # Release automatic rotation only after landscape is stable.
                 self.owned["written_lock"] = False
@@ -192,16 +167,6 @@ class SoftwareDisplay:
             self._persist()
             if state.transform != 0:
                 self._write_rotation(state, 0)
-            original_auxiliary = self.owned.get("original_auxiliary")
-            if (
-                self.owned.get("written_auxiliary") is True
-                and isinstance(original_auxiliary, dict)
-            ):
-                self._restore_auxiliary(state, original_auxiliary)
-                # The original matrix is active again.  A later software mode
-                # must re-apply it after rotating.
-                self.owned["written_auxiliary"] = False
-                self._persist()
         except (DisplayError, OSError, ValueError):
             self._rollback()
             raise
@@ -210,10 +175,10 @@ class SoftwareDisplay:
         """Release the panel to native hardware tablet mode.
 
         The physical switch means the platform should own rotation.  Restore
-        the pre-takeover transform and input mapping, but override a locked
-        orientation policy with the unlocked equivalent so automatic rotation
-        keeps working in tablet mode.  The journal stays in place so leaving
-        hardware mode can restore the user's original lock policy.
+        the pre-takeover transform, but override a locked orientation policy
+        with the unlocked equivalent so automatic rotation keeps working in
+        tablet mode.  The journal stays in place so leaving hardware mode can
+        restore the user's original lock policy.
         """
 
         state = self._read_transaction_state()
@@ -225,9 +190,7 @@ class SoftwareDisplay:
                 self.owned["written_lock"] = True
             self._persist()
         # Only a controllable orientation policy needs a deferred journal:
-        # leaving hardware mode must restore the user's original lock.  X11
-        # has no lock policy, so its transform/input transaction is complete
-        # once restore() returns and the journal must be cleared as usual.
+        # leaving hardware mode must restore the user's original lock.
         self.restore(release_lock=True, keep_journal=state.lock_supported)
 
     def restore(
@@ -264,15 +227,6 @@ class SoftwareDisplay:
                 log.debug("display rotation already %s; not restoring", state.transform)
             else:
                 log.warning("display output changed; leaving rotation untouched")
-
-        if (
-            owned.get("written_auxiliary") is True
-            and isinstance(owned.get("original_auxiliary"), dict)
-        ):
-            try:
-                self._restore_auxiliary(state, owned["original_auxiliary"])
-            except DisplayError as error:
-                failure = failure or error
 
         if owned.get("written_lock") is not None:
             try:
@@ -333,9 +287,6 @@ class SoftwareDisplay:
         }
         if isinstance(state.lock, str):
             document["original_policy"] = state.lock
-        if state.auxiliary is not None:
-            document["original_auxiliary"] = state.auxiliary
-            document["written_auxiliary"] = None
         return document
 
     def _persist(self) -> None:

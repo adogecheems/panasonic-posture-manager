@@ -3,6 +3,14 @@
 正式版本遵循 [语义化版本](https://semver.org/lang/zh-CN/)，日期格式为
 `YYYY-MM-DD`。
 
+## [Unreleased]
+
+### 变更
+
+- 取消 X11 会话支持。移除 RandR/`xrandr` 显示后端、`xinput` 触摸映射和 X11
+  会话授权；GNOME、Plasma 6 及其他桌面的 X11 会话现在均返回“显示不可用”。
+- 移除打包元数据中的 `xorg-xrandr`、`xorg-xinput` 可选依赖和 X11 分类信息。
+
 ## [1.0.0] - 2026-11-03
 
 首个公开发行版。该版本将此前的设备支持、桌面集成和稳定性工作整理为可构建、

@@ -180,8 +180,7 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 - [ ] 在 clean chroot 中运行 `make WERROR=1 check`、wheel 构建、`makepkg`、
   `make check-package` 和 `namcap`。
 - [ ] 验证全新安装、升级、D-Bus 自动激活、用户会话适配器、休眠/唤醒和卸载。
-- [ ] 验证 GNOME Wayland/X11、Plasma 6 Wayland 和普通 X11 的旋转、恢复、锁屏
-  通知、外接屏路径，以及 X11 每个旋转角的触摸、多指和手写笔映射。
+- [ ] 验证 GNOME Wayland 和 Plasma 6 Wayland 的旋转、恢复、锁屏通知及外接屏路径。
 - [ ] 确认发布源码没有预构建 relay、残留 `.mo`、`build/` 或 `dist/`，安装树没有
   `/usr/local` 引用。
 - [ ] 补齐 CFQV8-1L 物理验收和 QV9/QV1 同族回归。

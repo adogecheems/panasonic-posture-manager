@@ -13,23 +13,31 @@ from panasonic_posture.session.desktop import (
 from panasonic_posture.session.display import Display
 from panasonic_posture.session.errors import DisplayError
 from panasonic_posture.session.plasma import KScreenCtlCommand, PlasmaDisplay
-from panasonic_posture.session.x11 import X11Display
-from panasonic_posture.session.x11_touch import X11TouchMapping
 
 
 class DetectionTests(unittest.TestCase):
-    def test_gnome_wayland_and_x11_use_the_mutter_backend(self):
-        for session_type in ("wayland", "x11"):
-            with self.subTest(session_type=session_type):
-                self.assertEqual(
-                    detect_backend(
-                        {
-                            "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
-                            "XDG_SESSION_TYPE": session_type,
-                        }
-                    ),
-                    "gnome",
-                )
+    def test_gnome_wayland_uses_the_mutter_backend(self):
+        self.assertEqual(
+            detect_backend(
+                {
+                    "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
+                    "XDG_SESSION_TYPE": "wayland",
+                }
+            ),
+            "gnome",
+        )
+
+    def test_gnome_x11_is_unsupported(self):
+        self.assertEqual(
+            detect_backend(
+                {
+                    "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
+                    "XDG_SESSION_TYPE": "x11",
+                    "DISPLAY": ":0",
+                }
+            ),
+            "unsupported",
+        )
 
     def test_plasma_6_wayland(self):
         self.assertEqual(
@@ -55,7 +63,7 @@ class DetectionTests(unittest.TestCase):
             "unsupported",
         )
 
-    def test_plasma_x11_uses_xrandr(self):
+    def test_plasma_x11_is_unsupported(self):
         self.assertEqual(
             detect_backend(
                 {
@@ -64,15 +72,15 @@ class DetectionTests(unittest.TestCase):
                     "KDE_SESSION_VERSION": "6",
                 }
             ),
-            "x11",
+            "unsupported",
         )
 
-    def test_other_x11_desktops(self):
+    def test_other_x11_desktops_are_unsupported(self):
         self.assertEqual(
             detect_backend({"XDG_CURRENT_DESKTOP": "XFCE", "XDG_SESSION_TYPE": "x11"}),
-            "x11",
+            "unsupported",
         )
-        self.assertEqual(detect_backend({"DISPLAY": ":0"}), "x11")
+        self.assertEqual(detect_backend({"DISPLAY": ":0"}), "unsupported")
 
     def test_unknown_wayland_is_unsupported(self):
         self.assertEqual(
@@ -84,12 +92,24 @@ class DetectionTests(unittest.TestCase):
         self.assertEqual(
             detect_backend(
                 {
+                    "PANASONIC_POSTURE_DISPLAY_BACKEND": "plasma",
+                    "XDG_CURRENT_DESKTOP": "GNOME",
+                    "XDG_SESSION_TYPE": "wayland",
+                }
+            ),
+            "plasma",
+        )
+
+    def test_x11_cannot_be_forced_with_an_override(self):
+        self.assertEqual(
+            detect_backend(
+                {
                     "PANASONIC_POSTURE_DISPLAY_BACKEND": "x11",
                     "XDG_CURRENT_DESKTOP": "GNOME",
                     "XDG_SESSION_TYPE": "wayland",
                 }
             ),
-            "x11",
+            "unsupported",
         )
 
 
@@ -108,15 +128,17 @@ class FactoryTests(unittest.TestCase):
         )
         self.assertIsInstance(display, Display)
 
-    def test_x11_factory(self):
+    def test_x11_session_gets_a_stable_unsupported_backend(self):
         display = create_display(
             None,
             self.path,
             lambda text: text,
             environ={"XDG_CURRENT_DESKTOP": "XFCE", "XDG_SESSION_TYPE": "x11"},
         )
-        self.assertIsInstance(display, X11Display)
-        self.assertIsInstance(display._touch, X11TouchMapping)
+        self.assertIsInstance(display, UnsupportedDisplay)
+        with self.assertRaises(DisplayError) as caught:
+            display.apply(None)
+        self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_UNAVAILABLE)
 
     def test_plasma_factory_prefers_kscreenctl(self):
         display = create_display(

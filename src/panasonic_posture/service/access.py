@@ -54,7 +54,7 @@ DBUS_PATH = "/org/freedesktop/DBus"
 DBUS_IFACE = "org.freedesktop.DBus"
 
 SEAT = "seat0"
-SESSION_TYPES = ("wayland", "x11")
+SESSION_TYPES = ("wayland",)
 
 #: systemd *user* unit that runs the unprivileged session adapter.
 SESSION_UNIT = "panasonic-posture-manager-session.service"

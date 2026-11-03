@@ -23,12 +23,10 @@ pkgbase = panasonic-posture-manager
 	depends = dbus
 	depends = iio-sensor-proxy
 	optdepends = gnome-shell: GNOME session notification server and desktop integration
-	optdepends = mutter: display rotation and orientation lock on GNOME Wayland and X11
+	optdepends = mutter: display rotation and orientation lock on GNOME Wayland
 	optdepends = gnome-settings-daemon: touchscreen orientation-lock GSettings schema on GNOME
 	optdepends = kscreen: display rotation and auto-rotate policy on Plasma 6.8+ (kscreenctl)
 	optdepends = libkscreen: display rotation and auto-rotate policy on Plasma 6.0-6.7 (kscreen-doctor)
-	optdepends = xorg-xrandr: display rotation on other X11 sessions
-	optdepends = xorg-xinput: touchscreen coordinate mapping on other X11 sessions
 	source = panasonic-posture-manager::git+https://github.com/adogecheems/panasonic-posture-manager.git#tag=v1.0.0
 	sha256sums = SKIP
 

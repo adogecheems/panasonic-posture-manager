@@ -17,8 +17,6 @@ from .display import Display
 from .errors import DisplayError, ErrorCode
 from .journal import Journal
 from .plasma import PlasmaDisplay, build_plasma_command
-from .x11 import X11Display
-from .x11_touch import X11TouchMapping
 
 BACKEND_OVERRIDE_ENV = "PANASONIC_POSTURE_DISPLAY_BACKEND"
 
@@ -52,15 +50,17 @@ def _session_type(environ: Mapping[str, str]) -> str:
         return value
     if environ.get("WAYLAND_DISPLAY"):
         return "wayland"
-    if environ.get("DISPLAY"):
-        return "x11"
     return ""
 
 
 def detect_backend(environ: Mapping[str, str] | None = None) -> str:
-    """Return ``gnome``, ``x11``, ``plasma`` or ``unsupported``."""
+    """Return ``gnome``, ``plasma`` or ``unsupported``."""
 
     environment = os.environ if environ is None else environ
+    session_type = _session_type(environment)
+    if session_type != "wayland":
+        return "unsupported"
+
     override = str(environment.get(BACKEND_OVERRIDE_ENV, "")).strip().lower()
     if override and override != "auto":
         return override if override in SUPPORTED_BACKENDS else "unsupported"
@@ -70,25 +70,15 @@ def detect_backend(environ: Mapping[str, str] | None = None) -> str:
         for part in str(environment.get("XDG_CURRENT_DESKTOP", "")).split(":")
         if part.strip()
     }
-    session_type = _session_type(environment)
-
     if "GNOME" in desktops:
-        # Mutter exports DisplayConfig on both Wayland and X11, and gsd owns
-        # the orientation lock on both, so GNOME stays on its native backend.
         return "gnome"
 
     if "KDE" in desktops or "PLASMA" in desktops:
-        if session_type == "x11":
-            return "x11"
         version = str(environment.get("KDE_SESSION_VERSION", "")).strip()
         if version and version != "6":
             return "unsupported"
         return "plasma"
 
-    if session_type == "x11":
-        return "x11"
-    if environment.get("DISPLAY") and not environment.get("WAYLAND_DISPLAY"):
-        return "x11"
     return "unsupported"
 
 
@@ -109,20 +99,6 @@ def _build_gnome(context: DisplayContext) -> DisplayBackend:
     return Display(context.session_bus, None, context.journal, context.gettext)
 
 
-def _build_x11(context: DisplayContext) -> DisplayBackend:
-    return X11Display(
-        runner=context.runner,
-        journal=context.journal,
-        gettext=context.gettext,
-        environ=context.environment,
-        touch=X11TouchMapping(
-            runner=context.runner,
-            which=context.which,
-            environ=context.environment,
-        ),
-    )
-
-
 def _build_plasma(context: DisplayContext) -> DisplayBackend:
     return PlasmaDisplay(
         build_plasma_command(which=context.which, runner=context.runner),
@@ -134,7 +110,6 @@ def _build_plasma(context: DisplayContext) -> DisplayBackend:
 
 DISPLAY_BACKENDS: Mapping[str, BackendFactory] = {
     "gnome": _build_gnome,
-    "x11": _build_x11,
     "plasma": _build_plasma,
 }
 SUPPORTED_BACKENDS = frozenset(DISPLAY_BACKENDS)

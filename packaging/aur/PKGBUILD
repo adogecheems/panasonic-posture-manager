@@ -28,12 +28,10 @@ depends=(
 # optional and let users install the set for their session.
 optdepends=(
   'gnome-shell: GNOME session notification server and desktop integration'
-  'mutter: display rotation and orientation lock on GNOME Wayland and X11'
+  'mutter: display rotation and orientation lock on GNOME Wayland'
   'gnome-settings-daemon: touchscreen orientation-lock GSettings schema on GNOME'
   'kscreen: display rotation and auto-rotate policy on Plasma 6.8+ (kscreenctl)'
   'libkscreen: display rotation and auto-rotate policy on Plasma 6.0-6.7 (kscreen-doctor)'
-  'xorg-xrandr: display rotation on other X11 sessions'
-  'xorg-xinput: touchscreen coordinate mapping on other X11 sessions'
 )
 # Build tooling: Git source, C relay, gettext catalog and the PEP 517 wheel.
 makedepends=('git' 'gcc' 'gettext' 'python-build' 'python-installer' 'python-setuptools' 'python-wheel')

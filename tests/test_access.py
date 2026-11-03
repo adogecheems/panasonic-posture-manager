@@ -230,9 +230,10 @@ class ActiveSessionTests(unittest.TestCase):
                 with self.assertRaises(AccessDenied):
                     self.access.active_session(UI_UID)
 
-    def test_x11_session_is_accepted(self) -> None:
+    def test_x11_session_is_denied(self) -> None:
         self._set(("c1", UI_UID, "u", "seat0", SESSION_PATH), Type="x11")
-        self.assertEqual(self.access.active_session(UI_UID).type, "x11")
+        with self.assertRaises(AccessDenied):
+            self.access.active_session(UI_UID)
 
     def test_no_sessions_is_denied(self) -> None:
         self._set()

@@ -25,21 +25,20 @@
   适配，但不保证所有传感器、开关和内置输入设备都兼容。
 - **系统**：Arch Linux x86_64。AUR 提交完成后可通过 AUR 安装；当前可直接从
   源码 tag 构建安装包。
-- **桌面**：GNOME Wayland/X11、KDE Plasma 6 Wayland，以及其他 X11 桌面。最低
-  声明为 GNOME 45、GTK 4.12、libadwaita 1.4。
+- **桌面**：GNOME Wayland、KDE Plasma 6 Wayland。仅支持 Wayland 会话，X11 不受
+  支持。最低声明为 GNOME 45、GTK 4.12、libadwaita 1.4。
 
 桌面显示后端自动选择：
 
 | 会话 | 后端 | 能力 |
 | --- | --- | --- |
-| GNOME Wayland/X11 | Mutter DisplayConfig | 显式旋转和方向锁 |
+| GNOME Wayland | Mutter DisplayConfig | 显式旋转和方向锁 |
 | Plasma 6 Wayland | KScreen（`kscreenctl` 或 `kscreen-doctor`） | 显式旋转和自动旋转策略 |
-| 其他 X11，包括 Plasma 6 X11 | RandR / `xrandr` | 仅显式旋转；安装 `xorg-xinput` 后可同步触摸映射 |
 | 其他 Wayland 合成器 | 无 | 不支持屏幕姿态控制 |
+| X11（包括 GNOME/Plasma 6 X11） | 无 | 不支持 |
 
-界面基于 GTK 4/libadwaita，可在 Plasma 和非 GNOME 的 X11 桌面上运行，但不会套用
-这些桌面的原生控件风格。Plasma 6.8 及以后使用 `kscreenctl`；6.0–6.7 使用
-`kscreen-doctor`。实机验证主要基于 GNOME 51.1；其他后端的测试状态见
+界面基于 GTK 4/libadwaita。Plasma 6.8 及以后使用 `kscreenctl`；6.0–6.7 使用
+`kscreen-doctor`。实机验证主要基于 GNOME 51.1；Plasma 6 Wayland 的测试状态见
 [docs/hardware-validation.md](docs/hardware-validation.md)。
 
 如需在某台机器上临时禁用自动控制，可在 `/etc/panasonic-posture-manager/profiles/`
@@ -54,7 +53,7 @@
 | 笔记本 | 打字、精细操作 | 横屏，内置键盘和触控板可用 |
 | 帐篷 | 观影、触控 | 旋转 180°，停用内置键盘和触控板 |
 | 支架 | 桌面观看、触控 | 保持横屏，停用内置键盘和触控板 |
-| 平板 | 手持、平放 | GNOME/Plasma 6 交给系统自动旋转；X11 保持横屏，停用内置键盘和触控板 |
+| 平板 | 手持、平放 | GNOME/Plasma 6 交给系统自动旋转，停用内置键盘和触控板 |
 
 帐篷、支架和软件平板模式由程序接管。硬件平板开关打开时，硬件状态优先，手动
 模式暂不可用。
@@ -101,7 +100,6 @@ AUR 包提交完成后，可直接安装 `panasonic-posture-manager`。首次安
 
 - GNOME：`gnome-shell`（通知）、`mutter`、`gnome-settings-daemon`。
 - Plasma 6 Wayland：`kscreen`（6.8+）或 `libkscreen`（6.0–6.7）。
-- 其他 X11：`xorg-xrandr`；触摸坐标同步需要 `xorg-xinput`。
 
 AUR 包会将这些桌面组件声明为可选依赖。装好对应依赖后，通常无需额外配置。首次
 使用时建议将设备完整折叠、展开一次，以便平板开关被识别。
@@ -131,16 +129,16 @@ systemctl --user status panasonic-posture-manager-session.service
 
 **一直显示“正在等待桌面功能就绪”**
 
-确认当前会话受支持。GNOME 需要 `mutter` 和 `gnome-settings-daemon`；Plasma 6
-需要 `kscreenctl` 或 `kscreen-doctor`；其他 X11 桌面需要 `xorg-xrandr`。其他
-Wayland 合成器暂不支持。快速切换用户后，请回到本机桌面再操作。
+确认当前会话受支持。GNOME Wayland 需要 `mutter` 和 `gnome-settings-daemon`；
+Plasma 6 Wayland 需要 `kscreenctl` 或 `kscreen-doctor`。X11 和其他 Wayland
+合成器暂不支持。快速切换用户后，请回到本机桌面再操作。
 
 **屏幕方向没有改变**
 
 先点击“重试”。使用外接显示器时，请关闭镜像并检查显示器排列；GNOME 会拒绝
-无法安全应用的内屏旋转。X11 可检查 `xrandr --query`；Plasma 可检查
-`kscreenctl list-outputs --json` 或 `kscreen-doctor -j` 是否识别到内屏。若处于
-硬件平板模式，请检查桌面自身的自动旋转设置。
+无法安全应用的内屏旋转。Plasma 可检查 `kscreenctl list-outputs --json` 或
+`kscreen-doctor -j` 是否识别到内屏。若处于硬件平板模式，请检查桌面自身的自动
+旋转设置。
 
 **帐篷或支架提示没有出现**
 
@@ -166,11 +164,6 @@ Wayland 合成器暂不支持。快速切换用户后，请回到本机桌面再
 - 程序判断的是底座方向，不是铰链角度。少数特殊摆放方式可能被归入相近模式。
 - GNOME 下镜像内屏、内屏未启用或外接屏布局冲突时，旋转会被拒绝。各桌面后端的
   外接屏布局仍需逐机验收。
-- 其他 X11 桌面没有通用的自动旋转锁，只能执行显式旋转；桌面自身的自动旋转
-  可能覆盖程序设置。
-- X11 触摸映射依赖 `xorg-xinput`。存在多个无关触摸屏时自动映射会停用，可用
-  `PANASONIC_POSTURE_TOUCH_DEVICE` 指定 `xinput` 设备名，多个名称以逗号分隔；
-  该路径仍需逐桌面真机验收。
 - 硬件平板模式下的自动旋转取决于固件及 GNOME/Plasma 6 的实现，个别机型可能
   不可用。
 

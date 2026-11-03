@@ -30,9 +30,9 @@ JOURNAL_NAME = "display.json"
 _SPEC_FIELDS = 4
 
 #: The journal is shared by all display backends.  ``backend`` was added when
-#: X11 and Plasma support landed; documents written by 0.3.0 GNOME builds do
-#: not contain it and are treated as GNOME journals.
-BACKEND_SPEC_FIELDS = {"gnome": _SPEC_FIELDS, "x11": 1, "plasma": 1}
+#: Plasma support landed; documents written by 0.3.0 GNOME builds do not
+#: contain it and are treated as GNOME journals.
+BACKEND_SPEC_FIELDS = {"gnome": _SPEC_FIELDS, "plasma": 1}
 
 
 def default_path() -> Path:
@@ -79,12 +79,6 @@ def _validate(data: Any) -> dict:
     original_policy = data.get("original_policy", None)
     if original_policy is not None and not isinstance(original_policy, str):
         raise ValueError("journal original_policy must be a string or null")
-    original_auxiliary = data.get("original_auxiliary", None)
-    if original_auxiliary is not None and not isinstance(original_auxiliary, dict):
-        raise ValueError("journal original_auxiliary must be an object or null")
-    written_auxiliary = data.get("written_auxiliary", None)
-    if written_auxiliary is not None and not isinstance(written_auxiliary, bool):
-        raise ValueError("journal written_auxiliary must be a boolean or null")
     return data
 
 

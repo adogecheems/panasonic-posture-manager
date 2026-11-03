@@ -25,18 +25,25 @@ from typing import Callable, Mapping
 from .errors import DisplayError, ErrorCode
 from .journal import Journal
 from .transaction import DisplayState, SoftwareDisplay
-from .x11 import (
-    COMMAND_TIMEOUT_SECONDS,
-    READBACK_DELAY_SECONDS,
-    TRANSFORM_TO_ROTATION,
-    run_command,
-)
+
+COMMAND_TIMEOUT_SECONDS = 2.5
+READBACK_DELAY_SECONDS = 0.15
 
 _INTERNAL_NAME = re.compile(r"^(?:edp|ldp|lvds|dsi)-?\d*$", re.IGNORECASE)
 _DOCTOR_ROTATIONS = {0: "normal", 1: "left", 2: "inverted", 3: "right"}
 _CTL_ROTATIONS = {0: "normal", 1: "90", 2: "180", 3: "270"}
 _DOCTOR_POLICIES = {"never": "never", "in-tablet-mode": "inTabletMode", "always": "always"}
 _CTL_POLICIES = {"never": "never", "in-tablet-mode": "in-tablet-mode", "always": "always"}
+
+
+def run_command(args: list[str], timeout: float):
+    return subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
 
 
 @dataclass(frozen=True)

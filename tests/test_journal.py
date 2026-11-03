@@ -52,31 +52,6 @@ class JournalTests(unittest.TestCase):
         self.journal.save(updated)
         self.assertEqual(self.journal.load(), updated)
 
-    def test_x11_document_round_trip(self):
-        data = document(backend="x11", spec=["eDP-1"], written_lock=None)
-        self.journal.save(data)
-        self.assertEqual(self.journal.load(), data)
-
-    def test_x11_touch_auxiliary_round_trip(self):
-        auxiliary = {
-            "kind": "x11-touch-mapping",
-            "devices": [
-                {
-                    "name": "Panel Touchscreen",
-                    "matrix": ["1.000000"] * 9,
-                }
-            ],
-        }
-        data = document(
-            backend="x11",
-            spec=["eDP-1"],
-            written_lock=None,
-            original_auxiliary=auxiliary,
-            written_auxiliary=True,
-        )
-        self.journal.save(data)
-        self.assertEqual(self.journal.load(), data)
-
     def test_plasma_document_round_trip_with_policy(self):
         data = document(
             backend="plasma",
@@ -125,9 +100,7 @@ class JournalTests(unittest.TestCase):
             {"written_lock": "true"},
             {"written_transform": 2.5},
             {"original_policy": 0},
-            {"backend": "x11", "spec": ["eDP-1", "extra"]},
-            {"original_auxiliary": []},
-            {"written_auxiliary": "true"},
+            {"backend": "plasma", "spec": ["eDP-1", "extra"]},
         ):
             with self.subTest(override=override):
                 self.directory.mkdir(parents=True, exist_ok=True)
