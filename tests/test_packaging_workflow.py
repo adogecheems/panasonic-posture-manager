@@ -160,6 +160,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
             'makepkg --cleanbuild --noconfirm --nodeps"',
             arch,
         )
+        self.assertIn("! -name '*-debug-*'", arch)
+        self.assertIn(
+            'make check-package PACKAGE="/work/dist/release/$(basename "$package")"',
+            arch,
+        )
         rpm = self.workflow.split("  package-rpm:", 1)[1].split("  release:", 1)[0]
         self.assertIn('rpm_files=$(rpm -qlp "$package")', rpm)
         self.assertNotIn('rpm -qlp "$package" | grep', rpm)

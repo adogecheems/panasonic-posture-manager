@@ -61,16 +61,18 @@ jobs:
               su - builder -c "cd /tmp/ppm-arch/packaging/aur && makepkg --cleanbuild --noconfirm --nodeps"
 
               install -d /work/dist/release /work/dist/aur
-              install -m644 /tmp/ppm-arch/packaging/aur/panasonic-posture-manager-*.pkg.tar.zst \
-                /work/dist/release/
+              package=$(find /tmp/ppm-arch/packaging/aur -maxdepth 1 \
+                -name 'panasonic-posture-manager-[0-9]*.pkg.tar.zst' \
+                ! -name '*-debug-*' -print -quit)
+              test -n "$package"
+              install -m644 "$package" /work/dist/release/
               su - builder -c "cd /tmp/ppm-arch/packaging/aur && makepkg --printsrcinfo" \
                 >/work/dist/aur/SRCINFO
               install -m644 /tmp/ppm-arch/packaging/aur/PKGBUILD /work/dist/aur/PKGBUILD
               install -m644 /tmp/ppm-arch/packaging/aur/panasonic-posture-manager.install \
                 /work/dist/aur/panasonic-posture-manager.install
 
-              package=$(find /work/dist/release -name "*.pkg.tar.zst" -print -quit)
-              make check-package PACKAGE="$package"
+              make check-package PACKAGE="/work/dist/release/$(basename "$package")"
             '
 
       - name: Upload Arch package
