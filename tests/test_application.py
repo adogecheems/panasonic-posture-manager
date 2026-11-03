@@ -75,7 +75,7 @@ class ApplicationTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.profile = SimpleNamespace(
             id="cfqv8",
-            product="CFQV8-1L",
+            product="CFQV8",
             vendor="Panasonic Corporation",
             support_tier="validated",
             switch_name="Intel HID switches",

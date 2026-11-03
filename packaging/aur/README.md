@@ -1,148 +1,19 @@
-# AUR 打包与发布说明
+# 安装、打包与运维
 
-> **状态：2.0.0 发布准备中。** 包元数据已同步，当前提交的本地与 clean-rootfs
-> 构建、隔离安装验收和 `namcap` 已通过；`v2.0.0` 源码 tag、tag 固定源复验、
-> AUR 提交和最终真机验收尚未完成。
+> 面向维护者。普通用户请先看 [README](../../README.md)。
 
-相关文档：
+**2.0.0 发布准备中。** 当前提交已通过本地与 clean-rootfs 构建、隔离安装验收
+和 `namcap`；`v2.0.0` tag、AUR 提交、固定 tag 复验和最终真机验收仍未完成。
 
-- 用户说明：[../../README.md](../../README.md)
-- AI agent 边界：[../../agent.md](../../agent.md)
-- 机型适配：[../../docs/hardware-profiles.md](../../docs/hardware-profiles.md)
-- 实机记录：[../../docs/hardware-validation.md](../../docs/hardware-validation.md)
+## 安装后
 
-## 当前状态
-
-| 项目 | 状态 |
-| --- | --- |
-| 许可证 | `AGPL-3.0-or-later`；`LICENSE`、`PKGBUILD`、`.SRCINFO` 和 `pyproject.toml` 一致 |
-| 上游仓库 | 可匿名克隆 |
-| 版本 tag | `v1.0.0` 是历史发布；`v2.0.0` 待最终验收后创建 |
-| 构建脚本 | `build()`、`check()`、`package()` 已编写 |
-| clean chroot | 当前提交已在临时 Arch clean rootfs 中通过 `make WERROR=1 check`、wheel、`makepkg` 和 `namcap`；正式 tag 后需复跑 |
-| 安装包验收 | 1.0.0 与当前 2.0.0 构建的 `make check-package` 已通过；正式 tag 后需复跑 |
-| AUR 提交 | 尚未提交 |
-| 真机验收 | CFQV8-1L 最终物理验收、QV9/QV1 回归和桌面后端验收未完成 |
-
-## AUR 提交前待办
-
-1. **正式 tag 后复跑 clean rootfs。** 当前提交已在隔离的 Arch bootstrap 环境中
-   通过 `make WERROR=1 check`、wheel、`makepkg`、`make check-package` 和
-   `namcap`。创建 `v2.0.0` tag 后，必须从固定 tag 源再跑一次，确认发布源与验证
-   源一致；真实安装脚本、D-Bus 激活、会话启动、休眠/唤醒和卸载仍需在目标系统
-   验收。
-2. **源码 tag 与 AUR 尚未提交。** 最终验收通过后创建 `v2.0.0` 发布 tag，再将
-   `PKGBUILD`、`.SRCINFO`、安装脚本和打包说明提交到 AUR；`v1.0.0` 是不可变
-   历史 tag，不要移动或重写。
-3. **真机验收未完成。** 详见
-   [../../docs/hardware-validation.md](../../docs/hardware-validation.md)。
-
-## 安装布局
-
-| 源 | 安装位置 |
-| --- | --- |
-| Python wheel | `/usr/lib/pythonX.Y/site-packages/panasonic_posture/`，由 `python-installer` 决定 |
-| wheel 入口点 | `/usr/bin/panasonic-posture-manager`、`/usr/bin/panasonic-posture-manager-probe` |
-| `data/ui`、`data/assets`、`data/profiles` | `/usr/share/panasonic-posture-manager/` |
-| 应用图标 | `/usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png` |
-| `backend/relay` | `/usr/lib/panasonic-posture-manager/relay` |
-| 翻译目录 | `/usr/share/locale/` |
-| systemd unit | `/usr/lib/systemd/{system,user}/` |
-| D-Bus policy/activation | `/usr/share/dbus-1/{system.d,system-services}/` |
-| polkit action | `/usr/share/polkit-1/actions/` |
-| desktop entry | `/usr/share/applications/` |
-| uinput modules-load 配置 | `/usr/lib/modules-load.d/panasonic-posture-manager.conf` |
-| `LICENSE` | `/usr/share/licenses/panasonic-posture-manager/LICENSE` |
-
-## 打包行为
-
-- `build()` 从固定 tag 获取源码，删除可能误入源码树的构建产物，再运行 `make` 和
-  PEP 517 wheel 构建。
-- `check()` 运行 `make check`，覆盖 relay 主机侧测试、Python 单元测试、session-bus
-  集成和 i18n。构建环境需要 gcc、gettext、PyGObject 和 `dbus-run-session`。
-- `package()` 使用 `python-installer` 安装 wheel，再安装 UI、relay、翻译、systemd、
-  D-Bus、polkit、desktop、modules-load 和许可证文件。
-- 构建前会删除源码树中可能误入的预构建 relay、旧 `.mo`、`build/` 和 `dist/`；
-  最终只安装本次构建生成的可执行文件和翻译文件。
-- 安装树不允许出现 `/usr/local` 引用。
-- 源码由不可变 tag 固定，因此 `sha256sums=('SKIP')` 可以接受；若 tag 被重写，
-  可复现构建即失效。
-
-## 本地检查
-
-以下命令只验证构建和 wheel；它不会安装 UI、relay、systemd、D-Bus 或 polkit 文件。
-
-```sh
-make clean
-make WERROR=1 check
-python -m build --wheel --no-isolation
-stage="$(mktemp -d)"
-trap 'rm -rf -- "$stage"' EXIT
-python -m installer --destdir="$stage" dist/*.whl
-```
-
-当前提交已用临时本地源码包在隔离 Arch bootstrap 中按同等流程验证。正式发布前，
-仍须在 `v2.0.0` tag 就绪后，从仓库根目录使用 clean chroot 复跑：
-
-```sh
-(cd packaging/aur && makepkg --cleanbuild)
-make check-package
-namcap packaging/aur/panasonic-posture-manager-*.pkg.tar.zst
-```
-
-当前 clean-rootfs 运行中，`namcap` 对 `PKGBUILD` 无告警；包级告警仅涉及静态
-检查无法识别的 GJS/桌面运行时依赖、由依赖链满足的 `glibc`/`glib2`/
-`hicolor-icon-theme`，以及 wheel 生成入口脚本的模块误报。
-
-## 安装包验收
-
-构建出 `.pkg.tar.zst` 后，运行：
-
-```sh
-make check-package PACKAGE=/path/to/panasonic-posture-manager-2.0.0-1-x86_64.pkg.tar.zst
-```
-
-如果提供了上一版安装包，还应验证真实升级路径：
-
-```sh
-make check-package \
-  PACKAGE=/path/to/panasonic-posture-manager-2.0.0-1-x86_64.pkg.tar.zst \
-  PREVIOUS_PACKAGE=/path/to/panasonic-posture-manager-1.0.0-1-x86_64.pkg.tar.zst
-```
-
-只做静态包检查、不执行 pacman 事务时：
-
-```sh
-make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
-```
-
-验收脚本会核对：
-
-- `.PKGINFO`、`.SRCINFO` 和 `pyproject.toml` 的版本、许可证、依赖与安装脚本是否
-  一致；
-- 包内文件集合、权限、ELF/脚本类型，以及 Python 模块、UI、资源、profile、
-  翻译和命令入口是否完整；
-- 包内文件是否与当前源码逐字节一致；
-- systemd unit、D-Bus 激活文件与策略、polkit 策略、desktop entry 和
-  `modules-load.d` 配置；
-- 在临时 pacman 根目录中执行全新安装、重装，或在提供 `PREVIOUS_PACKAGE` 时执行
-  升级，并验证卸载不残留包文件。普通用户环境下会使用 `unshare --map-root-user`，
-  不写入宿主机的 `/usr`。
-
-该检查不会执行 `.install` 中的 systemctl 命令，也不会启动系统服务、D-Bus
-激活、用户会话适配器或访问真实硬件。这些仍须在 clean chroot 或目标机上按
-“发布检查清单”手工验收。`namcap` 仍需单独运行。
-
-## 首次安装后的会话
-
-`.install` 会立即启用并启动系统服务，并全局启用用户会话单元。pacman 不会为当前
-已登录会话启动新的用户单元，因此首次安装后需要重新登录，或执行：
+首次安装后注销并重新登录，或启动当前会话的用户服务：
 
 ```sh
 systemctl --user start panasonic-posture-manager-session.service
 ```
 
-检查服务：
+检查系统服务和会话状态：
 
 ```sh
 systemctl status panasonic-posture-manager.service
@@ -152,22 +23,61 @@ gdbus call --system --dest work.mmoe.panasonic.Posture \
   --method work.mmoe.panasonic.Posture.GetState
 ```
 
-确认 `session_connected` 为 `true`，且配置窗口不再提示后台不可用或等待桌面就绪。
-若系统服务正常但窗口仍离线，关闭并重新打开窗口。
+`session_connected` 应为 `true`。若服务正常但窗口仍显示离线，重新打开窗口。
 
-## 升级与卸载
+## 故障排查
 
-如果在 0.2.x 时期使用过 `/usr/local` 手工安装，pacman 不会清理旧文件。升级前
-先停用旧服务，删除旧 unit、wants 链接和 `/usr/local` 下的程序文件，再确认
-`systemctl cat panasonic-posture-manager.service` 指向 `/usr/lib`。
+- **后台服务未连接**：重新打开程序；仍无效时注销并重新登录，再检查上面的
+  systemd 服务状态。
+- **一直等待桌面就绪**：仅支持 GNOME Wayland 和 Plasma 6 Wayland。GNOME 需要
+  `mutter`、`gnome-shell` 和 `gnome-settings-daemon`；Plasma 需要
+  `kscreenctl` 或 `kscreen-doctor`。
+- **屏幕方向不变**：点击“重试”；使用外接屏时关闭镜像并检查布局。Plasma 可用
+  `kscreenctl list-outputs --json` 或 `kscreen-doctor -j` 检查内屏。
+- **提示没有出现**：确认对应开关已开启，并保持姿态稳定；提示只在从笔记本
+  姿态进入目标姿态时出现。
+- **内置键盘或触控板未恢复**：在设置中选择“自动”；仍无效时注销并重新登录。
+- **平板开关未识别**：完整折叠、展开一次后再试。
 
-卸载：
+## 构建与验收
+
+```sh
+make clean
+make WERROR=1 check
+python -m build --wheel --no-isolation
+(cd packaging/aur && makepkg --cleanbuild)
+make check-package \
+  PACKAGE=packaging/aur/panasonic-posture-manager-2.0.0-1-x86_64.pkg.tar.zst
+namcap packaging/aur/panasonic-posture-manager-*.pkg.tar.zst
+```
+
+修改 `PKGBUILD` 后，用 `makepkg --printsrcinfo > .SRCINFO` 同步 AUR 元数据。
+
+`make WERROR=1 check` 覆盖 C、Python、会话总线和翻译检查。`make check-package`
+核对版本、文件布局、systemd/D-Bus/polkit 配置，并在隔离环境中验证安装、
+升级和卸载；它不会执行安装钩子或访问真实硬件。仅做静态检查时加
+`PACKAGE_NO_INSTALL=1`，验证升级时加 `PREVIOUS_PACKAGE=旧包路径`。
+
+`PKGBUILD` 固定使用当前版本 tag，构建前清除预构建产物。创建 `v2.0.0` tag 后，
+必须从固定 tag 源重跑 clean-rootfs 构建和验收。
+
+## 安装布局
+
+| 内容 | 位置 |
+| --- | --- |
+| 程序入口 | `/usr/bin/` |
+| Relay | `/usr/lib/panasonic-posture-manager/relay` |
+| UI、资源与 profile | `/usr/share/panasonic-posture-manager/` |
+| systemd、D-Bus、polkit、desktop | `/usr/lib/systemd/`、`/usr/share/dbus-1/`、`/usr/share/polkit-1/`、`/usr/share/applications/` |
+| 许可证 | `/usr/share/licenses/panasonic-posture-manager/` |
+
+## 卸载与清理
 
 ```sh
 sudo pacman -Rns panasonic-posture-manager
 ```
 
-运行期数据不会被 pacman 删除。需要彻底清理时：
+pacman 不会删除设置、校准和恢复日志。需要彻底清理时：
 
 ```sh
 sudo rm -rf -- /var/lib/panasonic-posture-manager
@@ -175,22 +85,13 @@ state_root="${XDG_STATE_HOME:-${HOME:?HOME must be set}/.local/state}"
 rm -rf -- "$state_root/panasonic-posture-manager"
 ```
 
-`journalctl` 日志需按需另行清理。删除 `/var/lib` 前请确认不再需要提示设置和
-传感器校准。
+## 发布清单
 
-## 发布检查清单
-
-- [ ] 确认上游仓库可匿名克隆，`v2.0.0` tag 指向最终提交。
-- [x] 确认 `pkgver`、源码 tag 和 `pyproject.toml` 版本一致。
-- [x] 确认许可证在 `LICENSE`、`PKGBUILD`、`.SRCINFO` 和 `pyproject.toml` 中一致。
-- [x] 复核 Maintainer、依赖、可选依赖、安装脚本和全部安装路径。
-- [x] 运行 `makepkg --printsrcinfo`，确认 `.SRCINFO` 与 `PKGBUILD` 同步。
-- [x] 在本地构建 wheel 和 AUR 包，运行 `make check-package` 验证包内容与隔离安装。
-- [x] 对当前提交在 clean rootfs 中运行 `make WERROR=1 check`、wheel 构建、
-  `makepkg`、`make check-package` 和 `namcap`。
-- [ ] 在 `v2.0.0` tag 就绪后从固定 tag 源复跑 clean-rootfs 构建与包验收。
-- [ ] 验证全新安装、升级、D-Bus 自动激活、用户会话适配器、休眠/唤醒和卸载。
-- [ ] 验证 GNOME Wayland 和 Plasma 6 Wayland 的旋转、恢复、锁屏通知及外接屏路径。
-- [x] 确认当前提交的发布源码没有预构建 relay、残留 `.mo`、`build/` 或 `dist/`，
-  安装树没有 `/usr/local` 引用。
-- [ ] 补齐 CFQV8-1L 物理验收和 QV9/QV1 同族回归。
+- [x] 版本、许可证和打包元数据一致。
+- [x] 当前提交通过本地与 clean-rootfs 构建、包验收和 `namcap`。
+- [ ] 创建 `v2.0.0` tag，并从固定 tag 源重跑 clean-rootfs 验收。
+- [ ] 验证全新安装、升级、D-Bus 激活、会话启动和卸载。
+- [ ] 验证休眠/唤醒、异常恢复、锁屏通知和外接屏布局。
+- [ ] 验证 GNOME Wayland 和 Plasma 6 Wayland。
+- [ ] 完成 CFQV8 物理验收和 QV9/QV1 同族回归。
+- [ ] 提交 AUR。

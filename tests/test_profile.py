@@ -42,24 +42,24 @@ def matching_profile(identifier="custom", **extra):
 
 class BuiltinProfileTests(unittest.TestCase):
     def test_cfqv8_profile_is_found(self):
-        profile = load_profile(("Panasonic Corporation", "CFQV8-1L"), [PROFILES])
+        profile = load_profile(("Panasonic Corporation", "CFQV8"), [PROFILES])
         self.assertIsInstance(profile, Profile)
         self.assertEqual(profile.id, "cfqv8")
         self.assertEqual(profile.vendor, "Panasonic Corporation")
-        self.assertEqual(profile.product, "CFQV8-1L")
+        self.assertEqual(profile.product, "CFQV8")
         self.assertEqual(profile.switch_name, "Intel HID switches")
         self.assertEqual(profile.keyboard_name, "AT Translated Set 2 keyboard")
         self.assertEqual(profile.accel_name, "accel_3d")
         self.assertEqual(profile.support_tier, "validated")
         self.assertTrue(profile.supported)
-        self.assertEqual(profile.label, "CFQV8-1L")
+        self.assertEqual(profile.label, "CFQV8")
 
     def test_qv9_and_qv1_profiles_are_found(self):
         for product, identifier in (
-            ("CFQV9-1L", "cfqv9"),
-            ("CF-QV9-2L", "cfqv9"),
-            ("CFQV1-1L", "cfqv1"),
-            ("CF-QV1-2L", "cfqv1"),
+            ("CFQV9", "cfqv9"),
+            ("CF-QV9-TEST", "cfqv9"),
+            ("CFQV1", "cfqv1"),
+            ("CF-QV1-TEST", "cfqv1"),
         ):
             with self.subTest(product=product):
                 profile = load_profile(("Panasonic Corporation", product), [PROFILES])
@@ -97,19 +97,19 @@ class BuiltinProfileTests(unittest.TestCase):
             write_json(
                 installed,
                 "cfqv8.json",
-                {"id": "stale", "match": {"product": "CFQV8-1L"}},
+                {"id": "stale", "match": {"product": "CFQV8"}},
             )
             write_json(
                 source,
                 "cfqv8.json",
                 dict(
                     matching_profile("cfqv8"),
-                    match={"product": "CFQV8-1L"},
+                    match={"product": "CFQV8"},
                     support_tier="validated",
                 ),
             )
             profile = load_profile(
-                ("Panasonic Corporation", "CFQV8-1L"), [source, installed]
+                ("Panasonic Corporation", "CFQV8"), [source, installed]
             )
         self.assertEqual(profile.id, "cfqv8")
         self.assertEqual(profile.support_tier, "validated")
@@ -202,7 +202,7 @@ class MatchSemanticsTests(unittest.TestCase):
                     },
                 },
             )
-            for product in ("CFQV8", "cfqv8-1l", "CF-QV8-2L"):
+            for product in ("CFQV8", "cfqv8-test", "CF-QV8-TEST"):
                 with self.subTest(product=product):
                     profile = load_profile(("Any Vendor", product), [tmp])
                     self.assertEqual(profile.id, "family")
@@ -214,14 +214,14 @@ class MatchSemanticsTests(unittest.TestCase):
                 "family.json",
                 {"id": "family", "match": {"product_glob": "CFQV9-*"}},
             )
-            profile = load_profile(("Any Vendor", "CFQV8-1L"), [tmp])
+            profile = load_profile(("Any Vendor", "CFQV8"), [tmp])
         self.assertEqual(profile.id, "generic")
 
     def test_empty_match_matches_no_machine_and_warns(self):
         with tempfile.TemporaryDirectory() as tmp:
             write_json(Path(tmp), "empty.json", {"id": "empty", "match": {}})
             with self.assertLogs(LOGGER, level="WARNING") as caught:
-                profile = load_profile(("Panasonic Corporation", "CFQV8-1L"), [tmp])
+                profile = load_profile(("Panasonic Corporation", "CFQV8"), [tmp])
         self.assertEqual(profile.id, "generic")
         self.assertIn("empty match", "\n".join(caught.output))
 

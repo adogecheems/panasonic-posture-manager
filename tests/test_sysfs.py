@@ -519,7 +519,7 @@ class ProbeSummaryTests(unittest.TestCase):
                        phys=RELAY_VIRTUAL_PHYS,
                        capabilities=switch_capabilities())
             report = hardware_probe.probe(
-                dmi=("Panasonic Corporation", "CFQV8-1L"),
+                dmi=("Panasonic Corporation", "CFQV8"),
                 profile_dirs=[],
                 sysfs_root=tmp,
                 iio_root=Path(tmp) / "iio",

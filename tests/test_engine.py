@@ -257,7 +257,7 @@ def validated_profile() -> SimpleNamespace:
     return SimpleNamespace(
         support_tier="validated",
         id="cfqv8",
-        product="CFQV8-1L",
+        product="CFQV8",
         vendor="Panasonic Corporation",
         accel_name="accel_3d",
         mount_matrix=None,
@@ -336,7 +336,7 @@ class StateSnapshotTests(EngineTestCase):
         self.assertEqual(state["support_tier"], "validated")
         self.assertEqual(state["backend"], "ready")
         self.assertEqual(state["profile"], "cfqv8")
-        self.assertEqual(state["model"], "CFQV8-1L")
+        self.assertEqual(state["model"], "CFQV8")
         self.assertEqual(state["vendor"], "Panasonic Corporation")
         self.assertEqual(state["sensor_source"], "starting")
         self.assertEqual(state["pose"], "laptop")
