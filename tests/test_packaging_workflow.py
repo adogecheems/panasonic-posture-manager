@@ -155,6 +155,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 self.assertIn(f"name: {artifact}", self.workflow)
         arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
         self.assertIn('su - builder -c "cd /tmp/ppm-arch && make WERROR=1 check"', arch)
+        self.assertIn(
+            'su - builder -c "cd /tmp/ppm-arch/packaging/aur && '
+            'makepkg --cleanbuild --noconfirm --nodeps"',
+            arch,
+        )
         rpm = self.workflow.split("  package-rpm:", 1)[1].split("  release:", 1)[0]
         self.assertIn('rpm_files=$(rpm -qlp "$package")', rpm)
         self.assertNotIn('rpm -qlp "$package" | grep', rpm)
