@@ -2,8 +2,7 @@
 #
 # AUR source-build package for the 2.0.x series. Read README.md in this
 # directory before submitting. The source is pinned to the v2.0.0 release tag;
-# current-commit clean-rootfs acceptance has passed, while tag creation, a
-# tag-based rebuild and AUR submission are still pending.
+# the AUR package has not been submitted yet.
 
 pkgname=panasonic-posture-manager
 pkgver=2.0.0

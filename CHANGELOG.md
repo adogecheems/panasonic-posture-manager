@@ -25,7 +25,8 @@
 ### 已知限制
 
 - QV8 最终物理验收、QV9/QV1 回归和 Plasma 6 Wayland 真机验证尚未完成。
-- AUR 提交和正式发布仍未完成，详见[硬件验证记录](docs/hardware-validation.md)。
+- AUR 包尚未发布；当前可从 `v2.0.0` 标签源码构建。真机验收状态详见
+  [硬件验证记录](docs/hardware-validation.md)。
 
 ## [1.0.0] - 2026-11-03
 
