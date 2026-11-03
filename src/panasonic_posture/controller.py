@@ -51,6 +51,7 @@ class Controller:
         self.policy = policy if policy is not None else Policy(config)
         self.config = self.policy.config
         self.manual = Mode.AUTO
+        self._manual_origin: bool | None = None
         self.tent_prompt = True
         self.stand_prompt = False
         self.target = Target()
@@ -102,6 +103,10 @@ class Controller:
         if self.hardware is True and normalized != Mode.AUTO:
             raise ValueError(ErrorCode.HARDWARE_PRIORITY)
         self.manual = normalized
+        if normalized in (Mode.TENT, Mode.STAND, Mode.TABLET):
+            self._manual_origin = True
+        elif normalized == Mode.LAPTOP:
+            self._manual_origin = False
 
     def confirm_tent(self, epoch: int) -> bool:
         """Accept the tent prompt when every precondition still holds."""
@@ -153,6 +158,7 @@ class Controller:
 
         self.policy.reset_after_suspend()
         self.manual = Mode.AUTO
+        self._manual_origin = None
         self.hardware = None
         self.generation += 1
         self.applied = None
@@ -177,9 +183,11 @@ class Controller:
             self.manual = Mode.AUTO
         self.hardware = hardware
         # Manual tent, stand and tablet selections are explicit non-laptop
-        # origins.  Only automatic or manual laptop operation may prompt on the
-        # next change, otherwise switching back to auto would resurrect a stale
-        # prompt for a transition the user already made explicitly.
+        # origins.  Let the policy remember them until the device settles into a
+        # laptop pose; otherwise switching back to auto before the sensor
+        # reaches the tent zone resurrects a stale laptop-to-tent prompt.
+        manual_origin = self._manual_origin
+        self._manual_origin = None
         prompt_from_laptop = self.manual in (Mode.AUTO, Mode.LAPTOP)
         self.policy.update(
             now,
@@ -187,6 +195,7 @@ class Controller:
             hardware,
             tent_prompt=bool(self.tent_prompt) and prompt_from_laptop,
             stand_prompt=bool(self.stand_prompt) and prompt_from_laptop,
+            non_laptop_origin=manual_origin,
         )
 
         if hardware is True:

@@ -80,6 +80,10 @@ STAND_MIN_FLAT = 155.0
 # leave timer let one or two noisy samples release the relay and the display
 # transaction, which immediately re-enters stand and repeats the cycle.
 STAND_HOLD_MIN_FLAT = 130.0
+# A stable pose flatter than the tent hold band is a real laptop pose.  A
+# non-laptop origin survives intermediate hinge angles, but must not survive
+# the user settling back into laptop form.
+LAPTOP_MAX_FLAT = TENT_HOLD_MIN_PITCH
 
 # Consecutive unit vectors within this angle are considered a stable run.
 SETTLE_MAX_ANGLE_DEGREES = 8.0
@@ -232,6 +236,10 @@ class Policy:
         # Remember that the stand candidate began outside laptop mode so it
         # does not turn into a spurious stand prompt after a transient L.
         self._direct_stand_candidate = False
+        # An explicit manual tablet/tent/stand selection or a released hardware
+        # tablet switch is a non-laptop origin.  Keep that origin through
+        # intermediate hinge angles so the eventual tent entry is still direct.
+        self._non_laptop_origin = False
 
     # -- public state --------------------------------------------------------
 
@@ -319,6 +327,7 @@ class Policy:
         self._tent_exit_at = None
         self._direct_tent_candidate = False
         self._direct_stand_candidate = False
+        self._non_laptop_origin = False
         self._reset_all()
 
     def update(
@@ -329,6 +338,7 @@ class Policy:
         *,
         tent_prompt: bool = True,
         stand_prompt: bool = False,
+        non_laptop_origin: bool | None = None,
     ) -> None:
         """Ingest one sample and advance the state machine.
 
@@ -338,6 +348,11 @@ class Policy:
         before entering the corresponding mode from laptop posture.  When a
         prompt is disabled, a stable candidate is accepted automatically and a
         pending prompt for that mode resolves on the next stable sample.
+
+        ``non_laptop_origin`` records a source outside the posture state
+        machine: ``True`` for manual tablet/tent/stand mode and ``False`` for
+        manual laptop mode.  ``None`` leaves the remembered origin untouched,
+        so it survives a switch back to automatic mode.
         """
 
         # Invariant (P1-3): every return path prunes the smoothing history.
@@ -346,10 +361,15 @@ class Policy:
         previous_mode = self.mode
         previous_hardware = self.hardware
         self.hardware = hardware
+        if non_laptop_origin is not None:
+            self._non_laptop_origin = non_laptop_origin
         if previous_hardware is True and hardware is not True:
             # Leaving hardware tablet mode: everything sampled before the fold
-            # is meaningless, require a fresh stable run.
+            # is meaningless, require a fresh stable run.  The switch may
+            # release before the hinge reaches the tent zone, so retain the
+            # tablet origin until a settled laptop pose proves otherwise.
             self._clear_run()
+            self._non_laptop_origin = True
         elif previous_hardware is not True and hardware is True:
             # Entering hardware tablet mode: the switch takes over.
             self._clear_run()
@@ -396,6 +416,8 @@ class Policy:
             self._set_mode(MODE_LAPTOP)
 
         pitch, roll, flat = self._classify()
+        if self.stable and flat is not None and flat < LAPTOP_MAX_FLAT:
+            self._non_laptop_origin = False
         tent = in_tent_zone(pitch, roll)
         tent_hold = (
             pitch is not None
@@ -453,6 +475,7 @@ class Policy:
                 stand_prompt
                 and self.mode == MODE_LAPTOP
                 and not self._direct_stand_candidate
+                and not self._non_laptop_origin
             ):
                 # An explicit posture change from tent/stand already carries
                 # intent; only the initial laptop-to-stand transition asks.
@@ -464,10 +487,15 @@ class Policy:
             # explicit posture change, so it does not need the laptop-mode
             # confirmation prompt.  Re-entering shortly after a confirmed tent
             # mode is likewise a debounce and restores T directly.
-            if not tent_prompt or self._direct_tent_candidate or (
-                self._tent_exit_at is not None
-                and 0.0 <= now - self._tent_exit_at
-                <= self.config.tent_reentry_seconds
+            if (
+                not tent_prompt
+                or self._non_laptop_origin
+                or self._direct_tent_candidate
+                or (
+                    self._tent_exit_at is not None
+                    and 0.0 <= now - self._tent_exit_at
+                    <= self.config.tent_reentry_seconds
+                )
             ):
                 desired = MODE_TENT
             else:

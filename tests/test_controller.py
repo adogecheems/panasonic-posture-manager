@@ -234,6 +234,53 @@ class AutomaticModeTests(ControllerTestCase):
                 self.assertIsNone(controller.pending_prompt)
                 self.assertIsNone(controller.pending_notification)
 
+    def test_manual_tablet_origin_survives_return_to_auto_before_tent(self):
+        self.controller.set_manual(Mode.TABLET)
+        # Selecting automatic before the sensor reaches a stable tent pose must
+        # not silently replace the manual tablet origin with laptop posture.
+        for _ in range(3):
+            self.step(30.0)
+        self.controller.set_manual(Mode.AUTO)
+        self.step(30.0)
+
+        self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT)
+        self.assertEqual(self.controller.target.mode, "tent")
+        self.assertIsNone(self.controller.pending_prompt)
+        self.assertIsNone(self.controller.pending_notification)
+
+    def test_manual_tablet_origin_survives_auto_before_first_sample(self):
+        self.controller.set_manual(Mode.TABLET)
+        self.controller.set_manual(Mode.AUTO)
+
+        self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT)
+        self.assertEqual(self.controller.target.mode, "tent")
+        self.assertIsNone(self.controller.pending_prompt)
+
+    def test_manual_tablet_then_tent_then_auto_has_no_stale_prompt(self):
+        self.controller.set_manual(Mode.TABLET)
+        self.hold(0.0)
+        self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT)
+        self.assertEqual(self.controller.target.mode, "tablet")
+
+        self.controller.set_manual(Mode.AUTO)
+        self.step(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT)
+        self.assertEqual(self.controller.target.mode, "tent")
+        self.assertIsNone(self.controller.pending_prompt)
+        self.assertIsNone(self.controller.pending_notification)
+
+    def test_manual_tablet_origin_clears_after_settled_laptop(self):
+        self.controller.set_manual(Mode.TABLET)
+        self.hold(0.0)
+        self.controller.set_manual(Mode.AUTO)
+
+        self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
+        self.assertEqual(self.controller.pending_prompt, "tent")
+
     def test_manual_laptop_origin_still_prompts_for_tent(self):
         self.controller.set_manual(Mode.LAPTOP)
         self.hold(80.0)

@@ -380,6 +380,28 @@ class PostureClassificationTests(PolicyTestCase):
         self.assertEqual(self.policy.mode, MODE_TENT)
         self.assertNotIn(MODE_TENT_PROMPT, modes)
 
+    def test_hardware_release_through_intermediate_pose_keeps_direct_tent(self):
+        self.hold(180.0, hardware=True)
+        self.assertEqual(self.policy.mode, MODE_HARDWARE)
+
+        # The switch can turn off before the hinge reaches the tent zone.  A
+        # transient L must not turn the rest of the fold into a laptop-origin
+        # tent transition that prompts again.
+        self.step(30.0, hardware=False)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        modes = [self.step(80.0) for _ in range(30)]
+
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.assertNotIn(MODE_TENT_PROMPT, modes)
+
+    def test_hardware_release_after_settled_laptop_still_prompts(self):
+        self.hold(180.0, hardware=True)
+        self.hold(0.0, hardware=False)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+
     def test_epoch_changes_only_on_mode_change(self):
         self.hold(0.0)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
