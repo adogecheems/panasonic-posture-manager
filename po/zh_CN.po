@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: panasonic-posture-manager 0.4.0\n"
-"PO-Revision-Date: 2026-11-01 00:00+0800\n"
+"Project-Id-Version: panasonic-posture-manager 2.0.0\n"
+"PO-Revision-Date: 2026-11-03 00:00+0800\n"
 "Last-Translator: Project contributors\n"
 "Language-Team: Chinese\n"
 "Language: zh_CN\n"
@@ -59,13 +59,13 @@ msgid "Tent mode notification"
 msgstr "帐篷模式提示"
 
 msgid "Offer tent mode when the base is upright"
-msgstr "底座接近竖直时提示进入帐篷模式"
+msgstr "底座立起时，提示进入帐篷模式"
 
 msgid "Stand mode notification"
 msgstr "支架模式提示"
 
 msgid "Ask before switching to stand mode when the base is folded back"
-msgstr "底座向后平放时，先询问是否进入支架模式"
+msgstr "底座倒置平放时，先询问是否进入支架模式"
 
 msgid "Sensor"
 msgstr "传感器"
@@ -110,13 +110,13 @@ msgid "Sensor direction calibrated."
 msgstr "传感器方向已校准。"
 
 msgid "Sensor direction reset."
-msgstr "传感器方向已恢复默认。"
+msgstr "传感器校准已恢复默认。"
 
 msgid "Unable to calibrate sensor"
 msgstr "无法校准传感器"
 
 msgid "Unable to reset sensor calibration"
-msgstr "无法恢复传感器默认校准"
+msgstr "无法恢复传感器校准默认值"
 
 msgid "Mode selection"
 msgstr "模式选择"
@@ -154,6 +154,9 @@ msgstr "GitHub"
 msgid "Visit repository"
 msgstr "访问仓库"
 
+msgid "Let's note is a trademark of Panasonic Corporation. The author does not claim any rights to the trademark and is not associated with it."
+msgstr "Let's note 是松下电器株式会社（Panasonic Corporation）的商标；本项目作者不主张该商标的任何权利，亦与该商标无关联。"
+
 msgid "Tap to enable tent mode"
 msgstr "轻触以启用帐篷模式"
 
@@ -173,7 +176,7 @@ msgid "This model does not support automatic mode changes."
 msgstr "当前机型不支持自动切换模式。"
 
 msgid "Compatibility mode: this model is supported but has not been individually validated."
-msgstr "兼容模式：支持当前机型，但尚未单独验证。"
+msgstr "兼容模式：当前机型可用，但尚未逐机验证。"
 
 msgid "This mode is not available right now."
 msgstr "当前无法选择该模式。"
@@ -185,13 +188,13 @@ msgid "The tablet switch currently controls the mode."
 msgstr "当前模式由平板开关控制。"
 
 msgid "The posture prompt has expired. Wait for it to appear again."
-msgstr "姿态提示已失效，请等待再次出现。"
+msgstr "姿态提示已失效，请等待提示再次出现。"
 
 msgid "The setting could not be saved. Please try again."
 msgstr "设置保存失败，请重试。"
 
 msgid "The internal keyboard and touchpad could not be controlled. Please try again."
-msgstr "暂时无法控制内置键盘和触摸板，请重试。"
+msgstr "暂时无法控制内置键盘和触控板，请重试。"
 
 msgid "Internal input control stopped. Please try again."
 msgstr "内置输入控制已停止，请重试。"
@@ -200,19 +203,19 @@ msgid "Internal input control stopped responding. Please try again."
 msgstr "内置输入控制无响应，请重试。"
 
 msgid "The internal keyboard and touchpad could not be disabled. Please try again."
-msgstr "暂时无法停用内置键盘和触摸板，请重试。"
+msgstr "暂时无法停用内置键盘和触控板，请重试。"
 
 msgid "The tablet switch state could not be restored. Restart the service if input behaves unexpectedly."
-msgstr "平板开关状态恢复失败；如键盘或触摸板异常，请重启服务。"
+msgstr "平板开关状态恢复失败；如键盘或触控板异常，请重启服务。"
 
 msgid "No posture data is available right now."
-msgstr "暂时没有姿态数据。"
+msgstr "当前无法获取姿态数据。"
 
 msgid "Hold the device in laptop form on a flat desk, then try calibrating again."
 msgstr "请将设备以笔记本形态稳定平放在桌面上，然后再校准。"
 
 msgid "This screen arrangement cannot be rotated. Please adjust the display settings."
-msgstr "当前屏幕布局无法旋转，请先调整显示设置。"
+msgstr "当前屏幕布局无法旋转，请调整显示设置。"
 
 msgid "The external display arrangement does not allow this mode."
 msgstr "当前外接显示器布局不允许该模式。"

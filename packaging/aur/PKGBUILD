@@ -1,11 +1,11 @@
 # Maintainer: adogecheems <adogecheems@outlook.com>
 #
-# AUR source-build package for the 1.0.x series. Read README.md in this
-# directory before submitting. The source is pinned to the immutable v1.0.0
-# tag; clean-chroot acceptance and AUR submission are still pending.
+# AUR source-build package for the 2.0.x series. Read README.md in this
+# directory before submitting. The source is pinned to the v2.0.0 release tag;
+# tag creation, clean-chroot acceptance and AUR submission are still pending.
 
 pkgname=panasonic-posture-manager
-pkgver=1.0.0
+pkgver=2.0.0
 pkgrel=1
 pkgdesc='Posture management and screen orientation for convertible Linux 2-in-1 laptops'
 arch=('x86_64')

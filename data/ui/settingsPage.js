@@ -12,7 +12,7 @@ import {_} from './i18n.js';
 import {describeError} from './errors.js';
 
 export const AUTHOR_NAME = 'adogecheems';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '2.0.0';
 export const GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager';
 
 const MODES = [
@@ -215,6 +215,19 @@ export class SettingsPage {
         });
         githubRow.add_suffix(githubButton);
         aboutGroup.add(githubRow);
+
+        const trademarkNotice = new Gtk.Label({
+            label: _("Let's note is a trademark of Panasonic Corporation. The author does not claim any rights to the trademark and is not associated with it."),
+            wrap: true,
+            xalign: 0,
+            margin_start: 12,
+            margin_end: 12,
+            margin_top: 8,
+            margin_bottom: 12,
+        });
+        trademarkNotice.add_css_class('dim-label');
+        trademarkNotice.add_css_class('caption');
+        aboutGroup.add(trademarkNotice);
     }
 
     // -- actions ----------------------------------------------------------
@@ -232,11 +245,14 @@ export class SettingsPage {
         this._resetButton.sensitive = enabled;
     }
 
-    _setCalibrationBusy(busy, label = null) {
+    _setCalibrationBusy(busy, action = null) {
         this._calibrating = busy;
-        this._calibrateButton.label = busy
-            ? (label || _('Calibrating…'))
+        this._calibrateButton.label = busy && action === 'calibrate'
+            ? _('Calibrating…')
             : _('Calibrate');
+        this._resetButton.label = busy && action === 'reset'
+            ? _('Resetting…')
+            : _('Reset');
         if (busy) {
             this._calibrateButton.sensitive = false;
             this._resetButton.sensitive = false;
@@ -269,7 +285,7 @@ export class SettingsPage {
     async _calibrateSensor() {
         if (this._calibrating || !this._latestState)
             return;
-        this._setCalibrationBusy(true);
+        this._setCalibrationBusy(true, 'calibrate');
         try {
             await this._service.call('CalibrateSensor');
             this._toast(_('Sensor direction calibrated.'));
@@ -284,7 +300,7 @@ export class SettingsPage {
     async _resetSensorCalibration() {
         if (this._calibrating || !this._latestState)
             return;
-        this._setCalibrationBusy(true, _('Resetting…'));
+        this._setCalibrationBusy(true, 'reset');
         try {
             await this._service.call('ResetSensorCalibration');
             this._toast(_('Sensor direction reset.'));

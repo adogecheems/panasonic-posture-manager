@@ -60,19 +60,6 @@ class Controller:
         self.error_detail: str | None = None
         self.hardware: bool | None = None
 
-    # -- compatibility -------------------------------------------------------
-
-    @property
-    def error(self) -> str | None:
-        """Compatibility alias for :attr:`error_code` (old 0.2.x field)."""
-
-        return self.error_code
-
-    @error.setter
-    def error(self, value: str | None) -> None:
-        self.error_code = value
-        self.error_detail = None
-
     # -- derived state -------------------------------------------------------
 
     @property

@@ -1,7 +1,7 @@
 # AUR 打包与发布说明
 
-> **状态：AUR 提交准备中。** 1.0.0 源码 tag、包元数据和本地安装包验收已收口；
-> clean-chroot 构建、`namcap`、AUR 提交和最终真机验收尚未完成。
+> **状态：2.0.0 发布准备中。** 包元数据已同步，1.0.0 的本地安装包验收曾通过；
+> 源码 tag、clean-chroot 构建、`namcap`、AUR 提交和最终真机验收尚未完成。
 
 相关文档：
 
@@ -16,10 +16,10 @@
 | --- | --- |
 | 许可证 | `AGPL-3.0-or-later`；`LICENSE`、`PKGBUILD`、`.SRCINFO` 和 `pyproject.toml` 一致 |
 | 上游仓库 | 可匿名克隆 |
-| 版本 tag | `v1.0.0` 指向 1.0.0 发布提交 |
+| 版本 tag | `v1.0.0` 是历史发布；`v2.0.0` 待最终验收后创建 |
 | 构建脚本 | `build()`、`check()`、`package()` 已编写 |
 | clean chroot | 尚未运行 `makepkg`、`namcap` 和完整安装验收 |
-| 安装包验收 | 本地 `makepkg` 与 `make check-package` 已通过；clean-chroot 复验待完成 |
+| 安装包验收 | 1.0.0 的本地 `makepkg` 与 `make check-package` 已通过；2.0.0 待新 tag 后重跑 |
 | AUR 提交 | 尚未提交 |
 | 真机验收 | CFQV8-1L 最终物理验收、QV9/QV1 回归和桌面后端验收未完成 |
 
@@ -28,8 +28,9 @@
 1. **clean chroot 未验收。** 需要在干净 Arch/devtools 环境中构建，运行
    `make WERROR=1 check`、`makepkg`、`make check-package` 和 `namcap`，再检查真实
    安装脚本、D-Bus 激活、会话启动、休眠/唤醒和卸载。
-2. **AUR 尚未提交。** 将 `PKGBUILD`、`.SRCINFO`、安装脚本和打包说明提交到 AUR；
-   `v1.0.0` 已是不可变发布 tag，不要移动或重写。
+2. **源码 tag 与 AUR 尚未提交。** 最终验收通过后创建 `v2.0.0` 发布 tag，再将
+   `PKGBUILD`、`.SRCINFO`、安装脚本和打包说明提交到 AUR；`v1.0.0` 是不可变
+   历史 tag，不要移动或重写。
 3. **真机验收未完成。** 详见
    [../../docs/hardware-validation.md](../../docs/hardware-validation.md)。
 
@@ -90,15 +91,15 @@ namcap packaging/aur/panasonic-posture-manager-*.pkg.tar.zst
 构建出 `.pkg.tar.zst` 后，运行：
 
 ```sh
-make check-package PACKAGE=/path/to/panasonic-posture-manager-1.0.0-1-x86_64.pkg.tar.zst
+make check-package PACKAGE=/path/to/panasonic-posture-manager-2.0.0-1-x86_64.pkg.tar.zst
 ```
 
 如果提供了上一版安装包，还应验证真实升级路径：
 
 ```sh
 make check-package \
-  PACKAGE=/path/to/panasonic-posture-manager-1.0.0-1-x86_64.pkg.tar.zst \
-  PREVIOUS_PACKAGE=/path/to/panasonic-posture-manager-0.3.0-8-x86_64.pkg.tar.zst
+  PACKAGE=/path/to/panasonic-posture-manager-2.0.0-1-x86_64.pkg.tar.zst \
+  PREVIOUS_PACKAGE=/path/to/panasonic-posture-manager-1.0.0-1-x86_64.pkg.tar.zst
 ```
 
 只做静态包检查、不执行 pacman 事务时：
@@ -171,12 +172,12 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 
 ## 发布检查清单
 
-- [x] 确认上游仓库可匿名克隆，`v1.0.0` tag 指向最终提交。
+- [ ] 确认上游仓库可匿名克隆，`v2.0.0` tag 指向最终提交。
 - [x] 确认 `pkgver`、源码 tag 和 `pyproject.toml` 版本一致。
 - [x] 确认许可证在 `LICENSE`、`PKGBUILD`、`.SRCINFO` 和 `pyproject.toml` 中一致。
 - [x] 复核 Maintainer、依赖、可选依赖、安装脚本和全部安装路径。
 - [x] 运行 `makepkg --printsrcinfo`，确认 `.SRCINFO` 与 `PKGBUILD` 同步。
-- [x] 在本地构建 wheel 和 AUR 包，运行 `make check-package` 验证包内容与隔离安装。
+- [ ] 在本地构建 wheel 和 AUR 包，运行 `make check-package` 验证包内容与隔离安装。
 - [ ] 在 clean chroot 中运行 `make WERROR=1 check`、wheel 构建、`makepkg`、
   `make check-package` 和 `namcap`。
 - [ ] 验证全新安装、升级、D-Bus 自动激活、用户会话适配器、休眠/唤醒和卸载。

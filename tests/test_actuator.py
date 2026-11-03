@@ -158,7 +158,10 @@ class FakeRelayTestCase(unittest.TestCase):
             if actuator.state is not None:
                 return
             time.sleep(0.01)
-        self.fail(f"relay state was never reported (error={actuator.error})")
+        self.fail(
+            "relay state was never reported "
+            f"(error_code={actuator.error_code}, detail={actuator.error_detail})"
+        )
 
 
 class CommandTests(unittest.TestCase):

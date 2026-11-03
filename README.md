@@ -4,7 +4,8 @@
 底座方向切换屏幕旋转和内置输入状态，也可手动选择模式。关闭窗口不会停止后台
 服务。
 
-> **当前版本：1.0.0。** 首个公开发行版；AUR 安装包仍在提交准备阶段。
+> **当前版本：2.0.0。** 本版移除 X11 会话支持，仅支持 GNOME Wayland 和
+> KDE Plasma 6 Wayland；AUR 安装包仍在发布验收阶段。
 
 ![当前姿态界面（浅色主题）](docs/screenshots/current-light.png)
 
@@ -77,11 +78,11 @@
 
 ### 从源码构建
 
-AUR 提交完成前，可以直接从 `v1.0.0` 源码 tag 构建并安装。需要 Arch Linux、
+AUR 提交完成前，可以直接从 `v2.0.0` 源码 tag 构建并安装。需要 Arch Linux、
 `base-devel` 和可用的网络连接：
 
 ```sh
-git clone --branch v1.0.0 --depth 1 \
+git clone --branch v2.0.0 --depth 1 \
   https://github.com/adogecheems/panasonic-posture-manager.git
 cd panasonic-posture-manager/packaging/aur
 makepkg -si
@@ -158,7 +159,7 @@ Plasma 6 Wayland 需要 `kscreenctl` 或 `kscreen-doctor`。X11 和其他 Waylan
 
 ## 已知限制
 
-- CFQV8-1L 的物理折叠、帐篷提示点击、180° 触摸坐标、外接屏布局和休眠/唤醒仍
+- CFQV8-1L 的物理折叠、帐篷提示点击、180° 触控坐标、外接屏布局和休眠/唤醒仍
   在最终验收中；QV9/QV1 尚未逐机物理验收。
 - 其他品牌或未适配的机型使用兼容模式；若探针显示开关、键盘、触控板或加速计不
   匹配，需要补充 profile 或做专项适配。

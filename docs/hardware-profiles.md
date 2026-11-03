@@ -130,7 +130,7 @@ cat /sys/class/dmi/id/{sys_vendor,product_name}
    属于正常现象。
 3. 验证内置键盘和触控板只抓取目标设备，外接 USB/Bluetooth 设备不受影响。
 4. 检查帐篷、支架和四种旋转方向；必要时添加 `mount_matrix` 或做用户校准。
-5. 验证通知、锁屏、180° 触摸坐标、外接屏布局和休眠/唤醒。
+5. 验证通知、锁屏、180° 触控坐标、外接屏布局和休眠/唤醒。
 6. 验证软件模式与硬件平板开关的优先级，以及租约丢失后的撤销。
 7. 将 profile 放入 `data/profiles/`（随包发布）或
    `/etc/panasonic-posture-manager/profiles/`（本机实验）。
@@ -140,6 +140,6 @@ cat /sys/class/dmi/id/{sys_vendor,product_name}
 
 ## 发布状态
 
-`v1.0.0` 源码 tag 已发布，包元数据已同步。AUR 提交、clean-chroot 构建和最终
-物理验收仍未完成。提交前请按
+`v1.0.0` 是历史发布 tag；`2.0.0` 包元数据已同步，但 `v2.0.0` tag、AUR 提交、
+clean-chroot 构建和最终物理验收仍未完成。提交前请按
 [../packaging/aur/README.md](../packaging/aur/README.md) 执行检查清单。

@@ -149,13 +149,6 @@ class Actuator:
         process = self.process
         return process is not None and process.poll() is None
 
-    @property
-    def error(self) -> str | None:
-        """Legacy single-string error view (kept for older callers)."""
-        if self.error_code is None:
-            return None
-        return error_message(self.error_code, self.error_detail)
-
     # -- lifecycle -------------------------------------------------------
 
     def keep(self, now: float) -> None:

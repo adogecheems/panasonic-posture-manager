@@ -68,6 +68,18 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn(f"当前版本：{self.project_version}", self.readme)
         self.assertIn(f"## [{self.project_version}] - ", self.changelog)
 
+    def test_install_and_packaging_examples_pin_the_release(self) -> None:
+        self.assertIn(f"git clone --branch v{self.project_version}", self.readme)
+        self.assertIn(
+            f'"Project-Id-Version: panasonic-posture-manager '
+            f'{self.project_version}\\n"',
+            read("po/zh_CN.po"),
+        )
+        self.assertIn(
+            f"panasonic-posture-manager-{self.project_version}-1-x86_64",
+            read("packaging/aur/README.md"),
+        )
+
     def test_release_documents_and_packaging_inputs_exist(self) -> None:
         for relative in (
             "README.md",

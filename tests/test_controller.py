@@ -67,7 +67,6 @@ class InitialStateTests(ControllerTestCase):
         self.assertIsNone(controller.applied)
         self.assertIsNone(controller.error_code)
         self.assertIsNone(controller.error_detail)
-        self.assertIsNone(controller.error)
         self.assertIsNone(controller.hardware)
         self.assertIsNone(controller.pending_notification)
         self.assertEqual(controller.policy.mode, MODE_DISABLED)
@@ -369,7 +368,6 @@ class GenerationTransactionTests(ControllerTestCase):
         self.assertIsNone(self.controller.applied)
         self.assertEqual(self.controller.error_code, ErrorCode.RELAY_EXITED)
         self.assertEqual(self.controller.error_detail, "exit=5")
-        self.assertEqual(self.controller.error, ErrorCode.RELAY_EXITED)
 
     def test_failure_defaults_to_internal_error(self):
         generation, _ = self.step(0.0)
@@ -383,13 +381,6 @@ class GenerationTransactionTests(ControllerTestCase):
         self.controller.acknowledge(generation, False, ErrorCode.RELAY_START)
         self.assertEqual(self.controller.error_code, ErrorCode.RELAY_START)
         self.controller.acknowledge(generation, True)
-        self.assertIsNone(self.controller.error_code)
-        self.assertIsNone(self.controller.error_detail)
-
-    def test_error_alias_is_writable(self):
-        self.controller.error = ErrorCode.SENSOR_TIMEOUT
-        self.assertEqual(self.controller.error_code, ErrorCode.SENSOR_TIMEOUT)
-        self.controller.error = None
         self.assertIsNone(self.controller.error_code)
         self.assertIsNone(self.controller.error_detail)
 

@@ -213,7 +213,6 @@ class ProtocolUiParityTests(unittest.TestCase):
     def test_session_adapter_uses_the_per_uid_bus_name(self):
         source = read("src/panasonic_posture/session/agent.py")
         self.assertIn("protocol.session_name(self.uid)", source)
-        self.assertNotIn("protocol.SESSION_NAME", source)
         self.assertIn("os.getuid()", source)
 
     def test_per_uid_session_name_is_a_valid_dbus_name(self):
@@ -230,7 +229,7 @@ class ProtocolUiParityTests(unittest.TestCase):
             self.assertNotIn(name, seen)
             seen.add(name)
             self.assertTrue(name.startswith(protocol.SESSION_NAME_PREFIX))
-            self.assertNotEqual(name, protocol.SESSION_NAME)
+            self.assertNotEqual(name, "work.mmoe.panasonic.Posture.Session")
             self.assertTrue(Gio.dbus_is_name(name), f"invalid D-Bus name {name}")
         self.assertEqual(protocol.session_name(1000), protocol.session_name(1000))
 
@@ -643,6 +642,17 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 900, () => {{
             failures.push('calibration reset action was not shown');
         if (!ui.settingsPage._calibrateButton.sensitive)
             failures.push('calibrate action was disabled in laptop posture');
+        ui.settingsPage._setCalibrationBusy(true, 'reset');
+        if (ui.settingsPage._calibrateButton.label !== 'Calibrate')
+            failures.push('reset operation changed the calibrate action label');
+        if (ui.settingsPage._resetButton.label !== 'Resetting…')
+            failures.push('reset action did not show its busy label');
+        ui.settingsPage._setCalibrationBusy(true, 'calibrate');
+        if (ui.settingsPage._calibrateButton.label !== 'Calibrating…')
+            failures.push('calibrate action did not show its busy label');
+        if (ui.settingsPage._resetButton.label !== 'Reset')
+            failures.push('calibrate operation changed the reset action label');
+        ui.settingsPage._setCalibrationBusy(false);
         const unknownState = Object.assign({{}}, calibratedState, {{pose: 'unknown'}});
         ui.posturePage.update(unknownState);
         if (ui.posturePage._heading.label !== 'Laptop')

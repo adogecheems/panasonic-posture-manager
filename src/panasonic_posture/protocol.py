@@ -31,10 +31,6 @@ def session_name(uid: int) -> str:
     return f"{SESSION_NAME_PREFIX}u{int(uid)}"
 
 
-# The old machine-wide name is intentionally not kept: it prevented a second
-# logged-in user from running an adapter after a fast user switch.
-SESSION_NAME = SESSION_NAME_PREFIX.rstrip(".")  # deprecated alias
-
 POLKIT_ACTION = NAME + ".configure"
 DBUS_ERROR = NAME + ".Error"
 
