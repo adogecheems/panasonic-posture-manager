@@ -2,8 +2,9 @@
 
 > **历史文档。** 本报告针对 2026-10-31 的 0.2.1 代码，早于 0.3.0 重构和 1.0.0
 > 设备/桌面扩展。文中的路径、模块名、测试数量和问题状态均已过时，不能作为当前
-> 实现说明或发布清单。当前事实来源是代码、测试、[agent.md](../agent.md) 和
-> [packaging/aur/README.md](../packaging/aur/README.md)。
+> 实现说明或发布清单。当前事实来源是代码、测试、[hardware-validation.md](hardware-validation.md)
+> 和 [packaging/aur/README.md](../packaging/aur/README.md)；AI agent 工作边界见
+> [agent.md](../agent.md)。
 
 ## 检阅范围
 
@@ -64,6 +65,6 @@
 问题是否仍然存在，应以当前代码和测试为准。发布阻断项和真机验收状态以下列文档
 为准：
 
-- [agent.md](../agent.md)
+- AI agent 边界：[agent.md](../agent.md)
 - [hardware-validation.md](hardware-validation.md)
 - [../packaging/aur/README.md](../packaging/aur/README.md)

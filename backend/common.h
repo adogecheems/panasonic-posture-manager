@@ -44,7 +44,7 @@
 /* Delay between the two recovery events (known state, then final state). */
 #define RELAY_RECOVER_TRANSITION_MILLISECONDS 100
 
-/* Exit codes; mirrored by the service's error mapping and agent.md. */
+/* Exit codes; mirrored by the service's error mapping. */
 enum relay_exit_code {
     RELAY_EXIT_OK = 0,
     RELAY_EXIT_USAGE = 2,     /* bad arguments or not running as root */

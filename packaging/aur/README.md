@@ -6,7 +6,7 @@
 相关文档：
 
 - 用户说明：[../../README.md](../../README.md)
-- 实现契约：[../../agent.md](../../agent.md)
+- AI agent 边界：[../../agent.md](../../agent.md)
 - 机型适配：[../../docs/hardware-profiles.md](../../docs/hardware-profiles.md)
 - 实机记录：[../../docs/hardware-validation.md](../../docs/hardware-validation.md)
 

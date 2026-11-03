@@ -11,7 +11,7 @@
  * stdin  (v2): byte '1' = heartbeat (refreshes the 3 s lease), '\n' is
  *              ignored, any other byte is a protocol error; EOF or lease
  *              expiry releases.
- * stdout (v2): one JSON object per line, see common.h / agent.md:
+ * stdout (v2): one JSON object per line, see common.h:
  *              {"protocol":2,"kind":"ready","physical":bool}
  *              {"protocol":2,"kind":"physical","present":bool}
  *              {"protocol":2,"kind":"applied",...}

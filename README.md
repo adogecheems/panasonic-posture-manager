@@ -187,7 +187,7 @@ sudo pacman -Rns panasonic-posture-manager
 
 ## 更多文档
 
-- [agent.md](agent.md)：架构、内部契约、测试与发布要求，面向维护者。
+- [agent.md](agent.md)：AI agent 的授权边界、系统不变量和验证门槛。
 - [CHANGELOG.md](CHANGELOG.md)：版本更新记录。
 - [docs/hardware-profiles.md](docs/hardware-profiles.md)：机型适配与 profile 格式。
 - [docs/hardware-validation.md](docs/hardware-validation.md)：实机验证记录。
