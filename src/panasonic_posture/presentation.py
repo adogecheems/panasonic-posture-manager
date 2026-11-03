@@ -1,10 +1,10 @@
 """Stable posture drawing for the user interface.
 
 Presentation never gates hardware decisions; it only decides which
-illustration to show.  The last confirmed pose stays visible while the device
-is moving or while the posture classifier briefly returns ``unknown``, but for
-at most ``unknown_sticky_seconds`` (1 s) so a dead or silent sensor cannot pin
-a wrong drawing forever (review P3: presentation must not stay frozen).
+illustration to show.  The UI has no separate "waiting for posture" state:
+The initial drawing is the laptop pose, and the last known pose stays visible
+while the device moves or the sensor is temporarily unavailable.  Fresh,
+non-unknown candidates still need ``settle_seconds`` before replacing it.
 """
 
 from __future__ import annotations
@@ -14,8 +14,6 @@ from .policy import PolicyConfig
 
 # How long a new recognised pose must persist before it replaces the drawing.
 SETTLE_SECONDS = 0.3
-# Hard cap on keeping the last drawing while the candidate is unknown.
-UNKNOWN_STICKY_SECONDS = 1.0
 
 
 class PosePresentation:
@@ -26,18 +24,15 @@ class PosePresentation:
         config: PolicyConfig | None = None,
         settle_seconds: float = SETTLE_SECONDS,
         stale_seconds: float | None = None,
-        unknown_sticky_seconds: float = UNKNOWN_STICKY_SECONDS,
     ) -> None:
         self.config = config if config is not None else PolicyConfig()
         self.settle_seconds = settle_seconds
         self.stale_seconds = (
             self.config.stale_seconds if stale_seconds is None else stale_seconds
         )
-        self.unknown_sticky_seconds = unknown_sticky_seconds
-        self.value = Pose.UNKNOWN
+        self.value = Pose.LAPTOP
         self.pending: Pose | None = None
         self.pending_since: float | None = None
-        self.unknown_since: float | None = None
 
     # -- public API ----------------------------------------------------------
 
@@ -59,16 +54,16 @@ class PosePresentation:
             return self.value
 
         if stamp is None or not 0.0 <= now - stamp <= self.stale_seconds:
-            # True staleness is never hidden: the drawing must not claim a
-            # posture the sensor can no longer support.
-            self.value = Pose.UNKNOWN
+            # Keep the last known drawing.  The internal policy still releases
+            # the software takeover on stale data; the UI simply has no
+            # separate "waiting for posture" state.
             self._reset()
             return self.value
 
         if pose == Pose.UNKNOWN:
-            return self._sticky_unknown(now)
+            # Do not let an unclassified frame discard an in-flight candidate.
+            return self.value
 
-        self.unknown_since = None
         if pose == self.value:
             self.pending = None
             self.pending_since = None
@@ -86,21 +81,6 @@ class PosePresentation:
             self._reset()
         return self.value
 
-    # -- internals -----------------------------------------------------------
-
-    def _sticky_unknown(self, now: float) -> Pose:
-        if self.value == Pose.UNKNOWN:
-            # Nothing confirmed yet; keep an in-flight candidate alive so a
-            # single missing sample does not restart its dwell timer.
-            return self.value
-        if self.unknown_since is None:
-            self.unknown_since = now
-        if now - self.unknown_since >= self.unknown_sticky_seconds:
-            self.value = Pose.UNKNOWN
-            self._reset()
-        return self.value
-
     def _reset(self) -> None:
         self.pending = None
         self.pending_since = None
-        self.unknown_since = None

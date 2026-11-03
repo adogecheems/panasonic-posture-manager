@@ -754,6 +754,24 @@ class SysfsSampleSourceTests(unittest.TestCase):
         with self.assertRaises(SourceUnavailable):
             self.source().open()
 
+    def test_falls_back_to_a_single_differently_named_device(self) -> None:
+        self.make_device(name="kxcjk1013")
+        profile = SimpleNamespace(accel_name="accel_3d", mount_matrix=None)
+        source = SysfsSampleSource(profile, root=self.root)
+        source.open()
+        self._assert_vector(source.read(), (0.1, 0.2, -0.3))
+
+    def test_ambiguous_generic_devices_are_unavailable(self) -> None:
+        self.make_device(name="kxcjk1013")
+        second = self.root / "iio:device1"
+        second.mkdir()
+        (second / "name").write_text("bmi160\n", encoding="utf-8")
+        for axis, value in zip("xyz", ("1", "2", "3")):
+            (second / f"in_accel_{axis}_raw").write_text(value + "\n", encoding="utf-8")
+        (second / "in_accel_scale").write_text("0.1\n", encoding="utf-8")
+        with self.assertRaises(SourceUnavailable):
+            self.source().open()
+
     def test_missing_device_is_unavailable(self) -> None:
         with self.assertRaises(SourceUnavailable):
             self.source().open()

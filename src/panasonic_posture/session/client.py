@@ -74,8 +74,8 @@ class SystemClient:
                 log.debug("D-Bus call %s failed: %s: %s", method, name, detail)
             raise ServiceError(code, detail or None, name=name) from error
 
-    def get_state(self) -> dict:
-        """Return the validated state document as a plain dictionary."""
+    def get_state(self) -> model.StateSnapshot:
+        """Return the validated, strictly typed state snapshot."""
 
         reply = self._call("GetState")
         try:
@@ -83,7 +83,7 @@ class SystemClient:
         except (TypeError, IndexError) as error:
             raise ServiceError(ErrorCode.INTERNAL, "malformed GetState reply") from error
         try:
-            return model.loads_state(payload)
+            return model.parse_state_snapshot(payload)
         except (TypeError, ValueError) as error:
             raise ServiceError(ErrorCode.INTERNAL, f"invalid state document: {error}") from error
 
@@ -111,6 +111,12 @@ class SystemClient:
 
     def confirm_tent(self, epoch: int) -> None:
         self._call("ConfirmTent", GLib.Variant("(u)", (int(epoch),)))
+
+    def set_stand_prompt(self, enabled: bool) -> None:
+        self._call("SetStandPrompt", GLib.Variant("(b)", (bool(enabled),)))
+
+    def confirm_stand(self, epoch: int) -> None:
+        self._call("ConfirmStand", GLib.Variant("(u)", (int(epoch),)))
 
 
 __all__ = ["DEFAULT_TIMEOUT_MS", "SystemClient"]

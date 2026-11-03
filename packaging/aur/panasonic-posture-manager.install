@@ -20,7 +20,7 @@ post_install() {
   /usr/bin/systemctl --global enable panasonic-posture-manager-session.service >/dev/null 2>&1 || true
   printf '%s\n' \
     'panasonic-posture-manager installed.' \
-    'The current GNOME session needs one re-login (or manual start) before the' \
+    'The current graphical session needs one re-login (or manual start) before the' \
     'session adapter runs: systemctl --user start panasonic-posture-manager-session.service'
 }
 

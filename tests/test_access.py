@@ -478,6 +478,8 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
             sleep_event=mock.Mock(),
         )
         daemon._tick = mock.Mock()
+        daemon._schedule_tick = mock.Mock()
+        daemon._tick_idle_id = None
         return daemon
 
     def call(self, daemon, method: str, parameters=None):
@@ -497,15 +499,39 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         daemon = self.make_daemon()
         invocation = self.call(daemon, "GetState")
         daemon._tick.assert_not_called()
+        daemon._schedule_tick.assert_not_called()
         self.assertIsNotNone(invocation.value)
         self.assertIsNone(invocation.error)
+
+    def test_follow_up_tick_is_coalesced_before_queued_bus_reads(self) -> None:
+        from panasonic_posture.service import daemon as daemon_module
+
+        daemon = daemon_module.Daemon.__new__(daemon_module.Daemon)
+        daemon._tick_idle_id = None
+        daemon._tick = mock.Mock()
+        with mock.patch.object(
+            daemon_module.GLib, "idle_add", return_value=77
+        ) as idle_add:
+            daemon._schedule_tick()
+            daemon._schedule_tick()
+        idle_add.assert_called_once()
+        self.assertEqual(
+            idle_add.call_args.kwargs["priority"], daemon_module.GLib.PRIORITY_HIGH
+        )
+        self.assertEqual(daemon._tick_idle_id, 77)
+        self.assertEqual(
+            daemon._run_scheduled_tick(), daemon_module.GLib.SOURCE_REMOVE
+        )
+        daemon._tick.assert_called_once_with()
+        self.assertIsNone(daemon._tick_idle_id)
 
     def test_retry_requires_authorization_and_dispatches(self) -> None:
         daemon = self.make_daemon()
         invocation = self.call(daemon, "Retry")
         daemon.application.access.authorize.assert_called_once_with(":1.42")
         daemon.application.engine.retry.assert_called_once_with()
-        daemon._tick.assert_called_once()
+        daemon._tick.assert_not_called()
+        daemon._schedule_tick.assert_called_once()
         self.assertIsNone(invocation.error)
 
     def test_session_update_uses_verified_adapter_uid(self) -> None:
@@ -545,6 +571,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         )
         daemon.application.engine.session_update.assert_not_called()
         daemon._tick.assert_not_called()
+        daemon._schedule_tick.assert_not_called()
 
     def test_name_lost_after_acquisition_is_failure_exit(self) -> None:
         daemon = self.make_daemon()

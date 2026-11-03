@@ -1,4 +1,4 @@
-"""Tests for the tent-prompt notification state machine (fake notification bus)."""
+"""Tests for posture-prompt notifications (fake notification bus)."""
 
 import unittest
 
@@ -103,6 +103,25 @@ class NotifierTests(unittest.TestCase):
         self.notifier.sync(3, now=self.clock())
         _method, parameters = self.bus.calls[-1]
         self.assertEqual(parameters.unpack()[5], [])
+
+    def test_notification_payload_carries_stand_action(self):
+        self.notifier.sync(7, prompt="stand", now=self.clock())
+        method, parameters = self.bus.calls[-1]
+        self.assertEqual(method, "Notify")
+        (_app_name, _replaces, _icon, summary, body, actions, _hints, _timeout) = (
+            parameters.unpack()
+        )
+        self.assertEqual(self.notifier.prompt, "stand")
+        self.assertEqual(summary, "Stand mode")
+        self.assertEqual(body, "Tap to enable stand mode")
+        self.assertEqual(actions, ["default", "Enable stand mode"])
+
+    def test_prompt_kind_change_replaces_notification_at_same_epoch(self):
+        self.notifier.sync(7, prompt="tent", now=self.clock())
+        self.notifier.sync(7, prompt="stand", now=self.clock())
+        self.assertIn("CloseNotification", self.bus.methods())
+        self.assertEqual(self.notifier.prompt, "stand")
+        self.assertEqual(self.bus.methods().count("Notify"), 2)
 
     def test_new_epoch_replaces_old_notification(self):
         self.notifier.sync(7, now=self.clock())

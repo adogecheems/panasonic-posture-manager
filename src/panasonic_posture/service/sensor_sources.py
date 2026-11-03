@@ -135,21 +135,12 @@ class SysfsSampleSource:
 
     def open(self) -> None:
         name = getattr(self._profile, "accel_name", None) or DEFAULT_ACCEL_NAME
-        matches: list[Path] = []
-        for device in sorted(self._root.glob(IIO_DEVICE_GLOB)):
-            try:
-                device_name = (device / "name").read_text(
-                    encoding="utf-8", errors="replace"
-                ).strip()
-            except (OSError, ValueError):
-                continue
-            if device_name == name:
-                matches.append(device)
-        if len(matches) != 1:
-            raise SourceUnavailable(
-                f"sysfs: expected exactly one {name} device, found {len(matches)}"
-            )
-        device = matches[0]
+        from ..hardware.iio import find_sysfs_accel
+
+        try:
+            device = find_sysfs_accel(self._root, name)
+        except (OSError, RuntimeError) as error:
+            raise SourceUnavailable(f"sysfs: {error}") from error
         try:
             scale = float(
                 (device / "in_accel_scale")

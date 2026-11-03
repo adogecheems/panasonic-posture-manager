@@ -169,6 +169,17 @@ class ProtocolUiParityTests(unittest.TestCase):
         ):
             self.assertNotIn(text, page)
 
+    def test_posture_page_distinguishes_compatible_and_unsupported_devices(self):
+        page = read("data/ui/posturePage.js")
+        self.assertIn("state.support_tier === 'compatible'", page)
+        self.assertIn("has not been individually validated", page)
+
+    def test_posture_page_has_no_waiting_for_posture_state(self):
+        page = read("data/ui/posturePage.js")
+        self.assertNotIn("Waiting for posture", page)
+        self.assertNotIn("unknown: _(", page)
+        self.assertNotIn('msgid "Waiting for posture"', read("po/zh_CN.po"))
+
     def test_mode_descriptions_are_user_facing(self):
         settings = read("data/ui/settingsPage.js")
         for technical in (
@@ -233,6 +244,17 @@ class ProtocolUiParityTests(unittest.TestCase):
         self.assertIn("this._service.retry(fallbackMode)", page)
         self.assertIn("this._retryButton.connect('clicked', () => this._retry())", page)
 
+    def test_sensor_calibration_controls_are_wired(self):
+        self.assertIn('<method name="CalibrateSensor"/>', protocol.DBUS_XML)
+        self.assertIn('<method name="ResetSensorCalibration"/>', protocol.DBUS_XML)
+        service = read("data/ui/service.js")
+        self.assertIn("this.call('CalibrateSensor')", service)
+        self.assertIn("this.call('ResetSensorCalibration')", service)
+        page = read("data/ui/settingsPage.js")
+        self.assertIn("_showCalibrationDialog", page)
+        self.assertIn("_resetSensorCalibration", page)
+        self.assertIn("_latestState.sensor_calibrated", page)
+
     def test_command_line_handling_is_implemented(self):
         app = read("data/ui/app.js")
         self.assertIn("Gio.ApplicationFlags.HANDLES_COMMAND_LINE", app)
@@ -246,7 +268,11 @@ class ProtocolUiParityTests(unittest.TestCase):
     def test_application_icon_is_configured_and_packaged(self):
         app = read("data/ui/app.js")
         self.assertIn("Gtk.Window.set_default_icon_name(APPLICATION_ID)", app)
-        self.assertIn("window.set_icon_name(APPLICATION_ID)", app)
+        self.assertIn("window.set_icon_name(windowIconName(", app)
+        self.assertNotIn("window.set_icon_name(APPLICATION_ID)", app)
+        self.assertIn("removeWindowIconFromDecoration(header)", app)
+        self.assertIn("header.pack_start(windowMark)", app)
+        self.assertIn("const WINDOW_MARK_WIDTH = 80;", app)
         self.assertIn("theme.add_search_path(ASSETS_DIR)", app)
 
         desktop = read("packaging/desktop/work.mmoe.panasonic.PostureManager.desktop")
@@ -258,6 +284,21 @@ class ProtocolUiParityTests(unittest.TestCase):
         self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(int.from_bytes(header[16:20], "big"), 512)
         self.assertEqual(int.from_bytes(header[20:24], "big"), 512)
+
+        custom_icons = []
+        for name in (
+            "lets-note-window-icon.png",
+            "lets-note-window-icon-dark.png",
+        ):
+            path = REPO / "data" / "assets" / name
+            self.assertTrue(path.is_file(), name)
+            data = path.read_bytes()
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+            width = int.from_bytes(data[16:20], "big")
+            height = int.from_bytes(data[20:24], "big")
+            self.assertGreater(width, height, name)
+            custom_icons.append(data)
+        self.assertNotEqual(custom_icons[0], custom_icons[1])
 
         pkgbuild = read("packaging/aur/PKGBUILD")
         self.assertIn(
@@ -488,6 +529,8 @@ import System from 'system';
 import {{createApplication, currentUi, requestedPageFromCommandLine,
         applyRequestedPage}} from {json.dumps(_js_uri('data/ui/app.js'))};
 
+Gtk.init();
+Gtk.Settings.get_default().gtk_decoration_layout = 'icon,menu:minimize,maximize,close';
 const app = createApplication('work.mmoe.panasonic.PostureManager.HeadlessTest');
 const failures = [];
 
@@ -497,6 +540,19 @@ function findWidget(widget, cssName) {{
     let child = widget.get_first_child ? widget.get_first_child() : null;
     while (child) {{
         const found = findWidget(child, cssName);
+        if (found)
+            return found;
+        child = child.get_next_sibling();
+    }}
+    return null;
+}}
+
+function findWidgetWithClass(widget, cssClass) {{
+    if (widget.has_css_class && widget.has_css_class(cssClass))
+        return widget;
+    let child = widget.get_first_child ? widget.get_first_child() : null;
+    while (child) {{
+        const found = findWidgetWithClass(child, cssClass);
         if (found)
             return found;
         child = child.get_next_sibling();
@@ -517,9 +573,26 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 900, () => {{
             const theme = Gtk.IconTheme.get_for_display(display);
             if (!theme.has_icon('work.mmoe.panasonic.PostureManager'))
                 failures.push('application icon was not found');
+            for (const name of ['lets-note-window-icon', 'lets-note-window-icon-dark']) {{
+                if (!theme.has_icon(name))
+                    failures.push(name + ' was not found');
+            }}
         }} catch (error) {{
             failures.push('application icon check failed: ' + error.message);
         }}
+        if (!ui.window.get_icon_name()?.startsWith('lets-note-window-icon'))
+            failures.push('window icon was not switched');
+        const windowMark = findWidgetWithClass(ui.window, 'window-mark');
+        if (!windowMark)
+            failures.push('window mark is missing');
+        else if (windowMark.get_width() !== 80)
+            failures.push('window mark width is ' + windowMark.get_width());
+        const header = findWidget(ui.window, 'headerbar');
+        const decoration = header?.get_decoration_layout() || '';
+        if (decoration.split(':').some(side => side.split(',').includes('icon')))
+            failures.push('duplicate window icon is still visible');
+        if (!findWidgetWithClass(ui.window, 'close'))
+            failures.push('window close button is missing');
         if (ui.stack.visible_child_name !== 'settings')
             failures.push('--settings opened ' + ui.stack.visible_child_name);
         const commandLine = {{get_arguments: () => ['program', '--settings']}};
@@ -537,13 +610,42 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 900, () => {{
         const state = {{
             version: 2, instance: 'qa', generation: 4, pose: 'tent', hardware: true,
             hardware_status: 'ambiguous', manual: 'auto', tent_prompt: true,
-            target, applied: target, pending_notification: 4, backend: 'ready',
+            stand_prompt: false, target, applied: target, pending_notification: 4,
+            pending_prompt: 'tent', backend: 'ready',
             error_code: 'access-denied', error_detail: 'inactive', session_connected: true,
             supported: true, sensor_source: 'iio', sensor_error: null,
+            sensor_calibrated: false,
             profile: 'generic', model: 'CFQV8', vendor: 'Panasonic',
         }};
         ui.posturePage.update(state);
         ui.settingsPage.update(state);
+        const standTarget = {{mode: 'stand', tablet: true, rotation: 0,
+                              disable_internal_input: true}};
+        const standState = Object.assign({{}}, state, {{
+            pose: 'stand', target: standTarget, applied: standTarget,
+            pending_notification: 5, pending_prompt: 'stand', stand_prompt: true,
+            error_code: null, error_detail: null,
+        }});
+        ui.posturePage.update(standState);
+        ui.settingsPage.update(standState);
+        if (ui.posturePage._confirmButton.label !== 'Enter stand mode')
+            failures.push('stand confirmation label is not used');
+        if (!ui.settingsPage._standSwitch.active)
+            failures.push('stand prompt setting was not rendered');
+        const calibratedState = Object.assign({{}}, state, {{
+            hardware: false, hardware_status: 'ok', pose: 'laptop',
+            sensor_calibrated: true, error_code: null, error_detail: null,
+        }});
+        ui.posturePage.update(calibratedState);
+        ui.settingsPage.update(calibratedState);
+        if (!ui.settingsPage._resetButton.visible)
+            failures.push('calibration reset action was not shown');
+        if (!ui.settingsPage._calibrateButton.sensitive)
+            failures.push('calibrate action was disabled in laptop posture');
+        const unknownState = Object.assign({{}}, calibratedState, {{pose: 'unknown'}});
+        ui.posturePage.update(unknownState);
+        if (ui.posturePage._heading.label !== 'Laptop')
+            failures.push('unknown pose became a visible waiting state');
         ui.posturePage.setUnavailable();
         ui.settingsPage.setUnavailable();
     }}
@@ -560,6 +662,83 @@ System.exit(app.run([System.programInvocationName, '--settings']));
         result = run_gjs(source, env=self._environment, timeout=60)
         self.assertEqual(result.returncode, 0, (result.stderr or "") + (result.stdout or ""))
         self.assertIn("ui contract self-check passed", result.stdout)
+
+    def test_settings_selection_is_immediate_and_coalesced(self):
+        source = """
+import Adw from 'gi://Adw?version=1';
+import GLib from 'gi://GLib';
+import System from 'system';
+import {SettingsPage} from __SETTINGS_URI__;
+
+const app = new Adw.Application({
+    application_id: 'work.mmoe.panasonic.PostureManager.ResponsiveTest',
+});
+const failures = [];
+const calls = [];
+let refreshes = 0;
+let resolveFirst;
+const service = {
+    call(method, parameters) {
+        calls.push([method, parameters.deepUnpack()]);
+        if (calls.length === 1)
+            return new Promise(resolve => { resolveFirst = resolve; });
+        return Promise.resolve();
+    },
+    refresh() {
+        refreshes += 1;
+    },
+};
+
+app.connect('activate', () => {
+    const window = new Adw.ApplicationWindow({application: app});
+    const page = new SettingsPage(service);
+    window.content = page.widget;
+    window.present();
+    page.update({manual: 'auto', tent_prompt: true, hardware: false, supported: true});
+    const tent = page._radios.get('tent');
+    if (!tent.sensitive)
+        failures.push('mode controls were disabled before write');
+    tent.active = true;
+    if (!tent.active || !tent.sensitive)
+        failures.push('mode selection did not react immediately');
+    page.update({manual: 'auto', tent_prompt: true, hardware: false, supported: true});
+    if (!tent.active)
+        failures.push('a stale state update overwrote the pending selection');
+    const stand = page._radios.get('stand');
+    stand.active = true;
+    resolveFirst();
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 20, () => {
+        if (calls.length !== 2 || calls[0][0] !== 'SetMode' || calls[1][0] !== 'SetMode')
+            failures.push('unexpected calls: ' + JSON.stringify(calls));
+        if (calls.length > 1 && calls[1][1][0] !== 'stand')
+            failures.push('the latest mode was not coalesced');
+        if (!stand.active)
+            failures.push('the latest mode was not retained');
+        if (refreshes < 1)
+            failures.push('state refresh was not requested');
+        if (failures.length) {
+            printerr(failures.join('; '));
+            System.exit(1);
+        }
+        print('responsive settings self-check passed');
+        app.quit();
+        return GLib.SOURCE_REMOVE;
+    });
+});
+GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
+    printerr('responsive settings self-check timed out');
+    System.exit(1);
+});
+System.exit(app.run([System.programInvocationName]));
+"""
+        source = source.replace(
+            "__SETTINGS_URI__", json.dumps(_js_uri("data/ui/settingsPage.js"))
+        )
+        result = run_gjs(source, env=self._environment, timeout=30)
+        self.assertEqual(
+            result.returncode, 0, (result.stderr or "") + (result.stdout or "")
+        )
+        self.assertIn("responsive settings self-check passed", result.stdout)
 
 
 if __name__ == "__main__":

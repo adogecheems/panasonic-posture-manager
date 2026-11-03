@@ -1,6 +1,6 @@
-"""Unprivileged GNOME session adapter process shell.
+"""Unprivileged desktop session adapter process shell.
 
-Responsibilities (see ``.refactor/DESIGN.md`` section 4.6):
+Responsibilities:
 
 * own the per-uid system-bus name **before** touching the display or the first
   transaction, which makes the adapter a single instance per user and lets the
@@ -20,15 +20,16 @@ import signal
 import sys
 import time
 from collections.abc import Callable
+from concurrent.futures import Executor
 
 from gi.repository import Gio, GLib
 
 from .. import protocol
 from . import errors
 from .client import SystemClient
-from .display import Display
+from .desktop import create_display
 from .errors import describe_error
-from .journal import Journal, default_path
+from .journal import default_path
 from .notify import NOTIFY_DEST, NOTIFY_IFACE, NOTIFY_PATH, Notifier
 from .runtime import SessionRuntime
 
@@ -78,6 +79,7 @@ class Agent:
         signal_add: Callable | None = None,
         screen_locked: Callable[[], bool] | None = None,
         journal_path=None,
+        executor: Executor | None = None,
         install_signals: bool = True,
     ):
         self._system_bus = system_bus
@@ -98,9 +100,10 @@ class Agent:
         )
         self._screen_locked = screen_locked
         self._journal_path = journal_path
+        self._executor = executor
 
         self.client: SystemClient | None = None
-        self.display: Display | None = None
+        self.display = None
         self.notifier: Notifier | None = None
         self.runtime: SessionRuntime | None = None
 
@@ -208,7 +211,7 @@ class Agent:
         try:
             self._build_components()
         except Exception:
-            log.exception("cannot initialise the GNOME session adapter")
+            log.exception("cannot initialise the desktop session adapter")
             self._acquired = False
             self._failed = True
             self._quit()
@@ -320,7 +323,9 @@ class Agent:
             display,
             notifier,
             session_bus=self._session_bus,
+            system_bus=self._system_bus,
             screen_locked=self._screen_locked,
+            executor=self._executor,
         )
 
     def _build_components(self) -> None:
@@ -328,10 +333,9 @@ class Agent:
             self._build(self)
         else:
             client = self._client or SystemClient(self.system_bus)
-            display = Display(
+            display = create_display(
                 self.session_bus,
-                None,
-                Journal(self._journal_path or default_path()),
+                self._journal_path or default_path(),
                 self._,
             )
             notifier = Notifier(self.session_bus, self._)

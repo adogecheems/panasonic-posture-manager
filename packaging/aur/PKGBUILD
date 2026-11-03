@@ -1,36 +1,39 @@
 # Maintainer: adogecheems <adogecheems@outlook.com>
 #
-# AUR source-build package for the 0.3.x series. Read README.md in this
+# AUR source-build package for the 0.4.x series. Read README.md in this
 # directory before submitting. The upstream repository and release tag are
 # not public yet; clean-chroot acceptance is pending.
 
 pkgname=panasonic-posture-manager
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
-pkgdesc='Posture management and screen orientation for Panasonic 2-in-1 tablets'
+pkgdesc='Posture management and screen orientation for convertible Linux 2-in-1 laptops'
 arch=('x86_64')
 url='https://github.com/adogecheems/panasonic-posture-manager'
 license=('AGPL-3.0-or-later')
-# Python package (wheel) + GJS/GTK UI + GNOME session integration.
+# Python package (wheel) + GJS/GTK UI + desktop session integration.
 depends=(
   'gjs'
-  'gtk4'
-  'libadwaita'
-  'python'
+  'gtk4>=4.12'
+  'libadwaita>=1.4'
+  'python>=3.11'
   'python-gobject'
   'systemd'
   'polkit'
   'dbus'
   'iio-sensor-proxy'
 )
-# The session adapter talks to GNOME Shell/Mutter and reads a
-# gnome-settings-daemon GSettings schema; declare them as optional so the
-# package stays installable on non-GNOME systems (the daemon itself works
-# without them).
+# Display and lock integration lives in optional desktop packages.  The
+# privileged daemon and relay are desktop-neutral, so keep all backends
+# optional and let users install the set for their session.
 optdepends=(
-  'gnome-shell: session notifications, screensaver lock detection and the GNOME shell session'
-  'mutter: display rotation through org.gnome.Mutter.DisplayConfig'
-  'gnome-settings-daemon: touchscreen orientation-lock GSettings schema'
+  'gnome-shell: GNOME session notification server and desktop integration'
+  'mutter: display rotation and orientation lock on GNOME Wayland and X11'
+  'gnome-settings-daemon: touchscreen orientation-lock GSettings schema on GNOME'
+  'kscreen: display rotation and auto-rotate policy on Plasma 6.8+ (kscreenctl)'
+  'libkscreen: display rotation and auto-rotate policy on Plasma 6.0-6.7 (kscreen-doctor)'
+  'xorg-xrandr: display rotation on other X11 sessions'
+  'xorg-xinput: touchscreen coordinate mapping on other X11 sessions'
 )
 # Build tooling: Git source, C relay, gettext catalog and the PEP 517 wheel.
 makedepends=('git' 'gcc' 'gettext' 'python-build' 'python-installer' 'python-setuptools' 'python-wheel')

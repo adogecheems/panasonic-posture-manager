@@ -1,14 +1,14 @@
-"""GNOME temporary display changes with an ownership/recovery journal.
+"""GNOME display backend for the shared ownership/recovery transaction.
 
 The session adapter is allowed to rotate the built-in panel and change the
 GSettings rotation lock; every change is journaled before it is applied so a
 crash can always be recovered on the next start.  The module is split into
 
-* pure functions (:func:`internal_monitor`, :func:`rotation_plan`,
-  :func:`desired_transform`) that translate Mutter's ``GetCurrentState`` into
-  an ``ApplyMonitorsConfig`` request;
-* :class:`Display`, the transaction that persists intent, writes the lock,
-  rotates, verifies the result and rolls back on failure.
+* pure functions (:func:`internal_monitor`, :func:`rotation_plan`) that
+  translate Mutter's ``GetCurrentState`` into an ``ApplyMonitorsConfig``
+  request;
+* :class:`Display`, which implements only the Mutter/GSettings primitives used
+  by :class:`transaction.SoftwareDisplay` for journaling, recovery and retry.
 
 ``DisplayError`` carries a stable :class:`protocol.ErrorCode`, never prose.
 """
@@ -21,10 +21,16 @@ from typing import Callable
 
 from gi.repository import Gio, GLib
 
-from ..model import Target
 from . import errors
 from .errors import DisplayError, ErrorCode, describe_error
 from .journal import Journal, default_path
+from .transaction import (
+    RESTORE_MODES,
+    SOFTWARE_MODES,
+    DisplayState,
+    SoftwareDisplay,
+    desired_transform,
+)
 
 log = logging.getLogger(__name__)
 
@@ -33,10 +39,6 @@ OBJ = "/org/gnome/Mutter/DisplayConfig"
 
 SETTINGS_SCHEMA = "org.gnome.settings-daemon.peripherals.touchscreen"
 LOCK_KEY = "orientation-lock"
-
-#: Software modes own the display transaction; hardware/unavailable give it back.
-SOFTWARE_MODES = frozenset({"laptop", "tent", "stand", "tablet"})
-RESTORE_MODES = frozenset({"hardware", "unavailable"})
 
 STATE_TIMEOUT_MS = 2000
 APPLY_TIMEOUT_MS = 2500
@@ -117,24 +119,13 @@ def rotation_plan(state, spec, transform):
     return serial, rows, properties_out
 
 
-def desired_transform(mode: str) -> int:
-    """The Mutter transform this program owns for a software mode.
-
-    Tablet mode starts in landscape before releasing the rotation lock; this
-    avoids inheriting the 180 degree tent transform when the user switches
-    modes (P2-17).
-    """
-
-    return 2 if mode == "tent" else 0
-
-
 # ---------------------------------------------------------------------------
 # Display transaction
 # ---------------------------------------------------------------------------
 
 
-class Display:
-    """Own the built-in panel rotation/lock transaction for software modes.
+class Display(SoftwareDisplay):
+    """Own the built-in panel rotation/lock through Mutter's DisplayConfig.
 
     All collaborators are injectable:
 
@@ -158,12 +149,14 @@ class Display:
     ):
         self._bus = session_bus
         self._settings = settings
-        self._ = gettext or errors.get_translator()
         self._clock = clock
-        self._sleep = sleep
-        self.journal = journal if journal is not None else Journal(default_path())
-        self.owned: dict | None = None
-        self._recover()
+        super().__init__(
+            journal if journal is not None else Journal(default_path()),
+            gettext or errors.get_translator(),
+            sleep=sleep,
+        )
+
+    backend_name = "gnome"
 
     # -- injected collaborators ------------------------------------------
 
@@ -179,101 +172,32 @@ class Display:
             self._settings = Gio.Settings.new(SETTINGS_SCHEMA)
         return self._settings
 
-    # -- public API -------------------------------------------------------
+    # -- backend contract -------------------------------------------------
 
-    def apply(self, target: Target | dict) -> None:
-        """Apply *target*; raises :class:`DisplayError` on failure."""
-
-        if isinstance(target, dict):
-            target = Target.from_dict(target)
-        mode = str(target.mode or "")
-        if mode in RESTORE_MODES:
-            self.restore()
-            return
-        if mode not in SOFTWARE_MODES:
-            raise DisplayError(ErrorCode.DISPLAY_UNKNOWN_MODE, mode or "empty")
-        if mode == "laptop":
-            if self.owned:
-                self.restore(normal=True)
-            else:
-                state = self.state()
-                spec, _current = internal_monitor(state)
-                self.rotate(0, spec)
-            return
-
+    def _read_state(self) -> DisplayState:
         state = self.state()
         spec, current = internal_monitor(state)
-        transform = desired_transform(mode)
-        rotation_plan(state, spec, transform)  # validate before persistent changes
-        if not self.owned:
-            self.owned = {
-                "version": 1,
-                "spec": [str(part) for part in spec],
-                "original_transform": int(current),
-                "original_lock": self._read_lock(),
-                "written_lock": None,
-                "written_transform": None,
-            }
-            self._persist()  # durable ownership before touching anything
-        try:
-            if mode == "tablet":
-                # P2-17: rotate to landscape while the rotation lock still
-                # holds, then release the lock so GNOME may auto-rotate.
-                self.owned["written_lock"] = True
-                self.owned["written_transform"] = 0
-                self._persist()
-                if not self._read_lock():
-                    self._write_lock(True)
-                self.rotate(0, spec)
-                self.owned["written_lock"] = False
-                self._persist()
-                self._write_lock(False)
-            else:
-                self.owned["written_lock"] = True
-                self.owned["written_transform"] = transform
-                self._persist()
-                self._write_lock(True)
-                self.rotate(transform, spec)
-        except (DisplayError, GLib.Error, OSError, ValueError):
-            self._rollback()
-            raise
+        return DisplayState(
+            identity=tuple(str(part) for part in spec),
+            transform=int(current),
+            lock=self._read_lock(),
+            lock_supported=True,
+        )
 
-    def restore(self, normal: bool = False) -> None:
-        """Undo the journaled changes; keep the journal on failure (P2-17)."""
+    def _validate(self, state: DisplayState, mode: str, transform: int) -> None:
+        del mode
+        rotation_plan(self.state(), state.identity, transform)
 
-        owned = self.owned
-        if not owned:
-            return
-        state = self.state()  # display server failures propagate, journal kept
-        spec, current = internal_monitor(state)
-        journal_spec = tuple(str(part) for part in owned.get("spec") or ())
-        written_transform = owned.get("written_transform")
-        failure: BaseException | None = None
+    def _write_rotation(self, state: DisplayState, transform: int) -> None:
+        self.rotate(transform, state.identity)
 
-        if written_transform is not None and spec == journal_spec:
-            if current == written_transform:
-                original_transform = int(owned.get("original_transform") or 0)
-                try:
-                    self.rotate(0 if normal else original_transform, spec)
-                except (DisplayError, GLib.Error, OSError, ValueError) as error:
-                    failure = error
-            else:
-                # Another actor already changed the rotation; do not fight it.
-                log.debug("display rotation already %s; not restoring", current)
-        elif written_transform is not None:
-            log.warning("internal monitor changed; leaving rotation untouched")
+    def _write_lock(self, state: DisplayState, locked: bool) -> None:
+        del state
+        self._set_lock(locked)
 
-        written_lock = owned.get("written_lock")
-        if written_lock is not None:
-            try:
-                self._restore_lock(bool(owned.get("original_lock")))
-            except DisplayError as error:
-                failure = failure or error
-
-        if failure is not None:
-            raise failure
-        self.journal.clear()
-        self.owned = None
+    def _write_original_lock(self, state: DisplayState, policy: str) -> None:
+        del state, policy
+        raise DisplayError(ErrorCode.DISPLAY_LOCK, "unsupported-original-lock-policy")
 
     # -- Mutter calls -----------------------------------------------------
 
@@ -349,7 +273,7 @@ class Display:
         except (GLib.Error, AttributeError, TypeError) as error:
             raise DisplayError(ErrorCode.DISPLAY_LOCK, describe_error(error)) from error
 
-    def _write_lock(self, value: bool) -> None:
+    def _set_lock(self, value: bool) -> None:
         """Write the lock and verify both the return value and a read-back."""
 
         value = bool(value)
@@ -369,41 +293,13 @@ class Display:
         if readback != value:
             raise DisplayError(ErrorCode.DISPLAY_LOCK, "orientation-lock-readback-mismatch")
 
-    def _restore_lock(self, original: bool) -> None:
-        if self._read_lock() == original:
-            return
-        self._write_lock(original)
-
-    # -- internals --------------------------------------------------------
-
-    def _persist(self) -> None:
-        self.journal.save(self.owned)  # type: ignore[arg-type]
-
-    def _rollback(self) -> None:
-        try:
-            self.restore()
-        except (DisplayError, GLib.Error, OSError, ValueError) as error:
-            log.warning("display rollback failed; journal kept: %s", describe_error(error))
-
-    def _recover(self) -> None:
-        document = self.journal.load()
-        if not document:
-            return
-        self.owned = document
-        try:
-            self.restore()
-        except (DisplayError, GLib.Error, OSError, ValueError) as error:
-            # Mutter may not be ready during early session startup; keep the
-            # journal so the next transaction (or the next start) retries.
-            log.warning("display recovery pending: %s", describe_error(error))
-
-
 __all__ = [
     "APPLY_TIMEOUT_MS",
     "DEST",
     "Display",
     "OBJ",
     "READBACK_DELAY_SECONDS",
+    "RESTORE_MODES",
     "SETTINGS_SCHEMA",
     "SOFTWARE_MODES",
     "desired_transform",

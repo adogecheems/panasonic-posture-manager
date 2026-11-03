@@ -11,6 +11,9 @@ Internal modes
     Normal laptop posture; no software takeover.
 ``P`` tent prompt
     The device looks like a tent; wait for the user to confirm.
+``Q`` stand prompt
+    The device looks like it is in stand posture; wait for the user to
+    confirm when the optional stand prompt is enabled.
 ``T`` tent
     Tent posture confirmed (software tablet, rotated 180 degrees).
 ``S`` stand
@@ -38,6 +41,7 @@ from .model import SensorReading
 
 MODE_LAPTOP = "L"
 MODE_TENT_PROMPT = "P"
+MODE_STAND_PROMPT = "Q"
 MODE_TENT = "T"
 MODE_STAND = "S"
 MODE_HARDWARE = "H"
@@ -46,6 +50,7 @@ MODE_DISABLED = "D"
 POLICY_MODES = (
     MODE_LAPTOP,
     MODE_TENT_PROMPT,
+    MODE_STAND_PROMPT,
     MODE_TENT,
     MODE_STAND,
     MODE_HARDWARE,
@@ -64,13 +69,17 @@ TENT_MIN_PITCH = 65.0
 TENT_MAX_PITCH = 115.0
 TENT_MAX_ROLL = 25.0
 
-# Hysteresis bands: once in P/T/S the posture is held until the device leaves
+# Hysteresis bands: once in P/Q/T/S the posture is held until the device leaves
 # a wider band for ``leave_seconds``.
 TENT_HOLD_MIN_PITCH = 45.0
 TENT_HOLD_MAX_PITCH = 155.0
 TENT_HOLD_MAX_ROLL = 40.0
 STAND_MIN_FLAT = 155.0
-STAND_HOLD_MIN_FLAT = 140.0
+# The stand pose is the widest hysteresis band because the sensor is sampled
+# at only ~2 Hz in shared mode.  A 15 degree hold band and the generic 0.7 s
+# leave timer let one or two noisy samples release the relay and the display
+# transaction, which immediately re-enters stand and repeats the cycle.
+STAND_HOLD_MIN_FLAT = 130.0
 
 # Consecutive unit vectors within this angle are considered a stable run.
 SETTLE_MAX_ANGLE_DEGREES = 8.0
@@ -88,6 +97,10 @@ class PolicyConfig:
 
     enter_seconds: float = 0.6
     leave_seconds: float = 0.7
+    # Stand mode has its own, longer exit debounce.  It must outlast the
+    # IIO/sysfs source hand-off so a source change cannot look like a posture
+    # change and restart the whole takeover.
+    stand_leave_seconds: float = 2.0
     # A confirmed tent mode may be restored without another prompt when the
     # device briefly leaves and re-enters the tent zone (for example while the
     # user adjusts the hinge).  A stale exit never skips confirmation.
@@ -101,6 +114,7 @@ class PolicyConfig:
         for name in (
             "enter_seconds",
             "leave_seconds",
+            "stand_leave_seconds",
             "tent_reentry_seconds",
             "stale_seconds",
             "history_seconds",
@@ -160,11 +174,18 @@ def in_tent_zone(pitch: float | None, roll: float) -> bool:
     )
 
 
+def in_stand_zone(flat: float | None) -> bool:
+    """True when ``flat`` lies in the documented stand zone."""
+
+    return flat is not None and flat >= STAND_MIN_FLAT
+
+
 class Policy:
     """Posture state machine fed by sensor samples and the hardware switch.
 
     The public contract is small: call :meth:`update` for every sample, read
-    :attr:`mode`/``stable``, call :meth:`confirm` for the tent prompt and
+    :attr:`mode`/``stable``, call :meth:`confirm`/:meth:`confirm_stand` for the
+    posture prompts and
     :meth:`reset_after_suspend` after the machine wakes up.
     """
 
@@ -198,18 +219,36 @@ class Policy:
         # Set only for L/S transitions so hardware takeover, suspend and lost
         # sensor data can never turn into an implicit confirmation.
         self._tent_exit_at: float | None = None
+        # A tent candidate first observed outside laptop mode may enter T
+        # directly.  The flag survives the stand hold timeout, which can move
+        # the current mode back to L before the new candidate becomes stable.
+        self._direct_tent_candidate = False
+        # The same hold-timeout gap can occur when moving from tent to stand.
+        # Remember that the stand candidate began outside laptop mode so it
+        # does not turn into a spurious stand prompt after a transient L.
+        self._direct_stand_candidate = False
 
     # -- public state --------------------------------------------------------
 
     @property
     def pending_notification(self) -> int | None:
-        """Epoch of the tent confirmation prompt, or ``None``.
+        """Epoch of the tent or stand confirmation prompt, or ``None``.
 
         The controller further gates this by ``manual == auto`` and the
-        ``tent_prompt`` setting; the policy only knows the posture itself.
+        matching prompt setting; the policy only knows the posture itself.
         """
 
-        return self.epoch if self.mode == MODE_TENT_PROMPT else None
+        return self.epoch if self.mode in (MODE_TENT_PROMPT, MODE_STAND_PROMPT) else None
+
+    @property
+    def pending_prompt(self) -> str | None:
+        """Kind of confirmation prompt currently pending, if any."""
+
+        if self.mode == MODE_TENT_PROMPT:
+            return "tent"
+        if self.mode == MODE_STAND_PROMPT:
+            return "stand"
+        return None
 
     # -- public actions ------------------------------------------------------
 
@@ -237,6 +276,29 @@ class Policy:
         self._set_mode(MODE_TENT)
         return True
 
+    def confirm_stand(self, epoch: int) -> bool:
+        """Turn a pending stand prompt into stand mode.
+
+        Succeeds only when the prompt is still current, the hardware switch is
+        known to be OFF, the sensor run is stable and the *current* geometry is
+        still inside the documented stand zone.
+        """
+
+        if (
+            self.mode != MODE_STAND_PROMPT
+            or epoch != self.epoch
+            or self.hardware is not False
+            or not self.stable
+            or self.last_geometry is None
+        ):
+            return False
+        _, _, _, _, flat = self.last_geometry
+        if not in_stand_zone(flat):
+            return False
+        self._clear_timers()
+        self._set_mode(MODE_STAND)
+        return True
+
     def reset_after_suspend(self) -> None:
         """Forget everything because the machine was suspended.
 
@@ -250,6 +312,8 @@ class Policy:
         self.mode = MODE_DISABLED
         self.hardware = None
         self._tent_exit_at = None
+        self._direct_tent_candidate = False
+        self._direct_stand_candidate = False
         self._reset_all()
 
     def update(
@@ -257,16 +321,24 @@ class Policy:
         now: float,
         reading: SensorReading,
         hardware: bool | None,
+        *,
+        tent_prompt: bool = True,
+        stand_prompt: bool = False,
     ) -> None:
         """Ingest one sample and advance the state machine.
 
         ``hardware`` is the (already debounced) physical tablet switch state:
         ``True`` (folded), ``False`` (not folded) or ``None`` (unknown).
+        ``tent_prompt``/``stand_prompt`` ask for an explicit confirmation
+        before entering the corresponding mode from laptop posture.  When a
+        prompt is disabled, a stable candidate is accepted automatically and a
+        pending prompt for that mode resolves on the next stable sample.
         """
 
         # Invariant (P1-3): every return path prunes the smoothing history.
         self._prune(now)
 
+        previous_mode = self.mode
         previous_hardware = self.hardware
         self.hardware = hardware
         if previous_hardware is True and hardware is not True:
@@ -296,6 +368,8 @@ class Policy:
             # needed while folded and it must not grow (P1-3).
             self._clear_run()
             self._tent_exit_at = None
+            self._direct_tent_candidate = False
+            self._direct_stand_candidate = False
             self._set_mode(MODE_HARDWARE)
             return
 
@@ -308,6 +382,8 @@ class Policy:
             else:
                 self._clear_run()
             self._tent_exit_at = None
+            self._direct_tent_candidate = False
+            self._direct_stand_candidate = False
             self._set_mode(MODE_DISABLED)
             return
 
@@ -324,18 +400,66 @@ class Policy:
         stand = flat is not None and flat >= STAND_MIN_FLAT
         stand_hold = flat is not None and flat >= STAND_HOLD_MIN_FLAT
 
+        if not tent_hold:
+            self._direct_tent_candidate = False
+        elif previous_mode == MODE_HARDWARE or self.mode not in (
+            MODE_LAPTOP,
+            MODE_TENT_PROMPT,
+            MODE_TENT,
+            MODE_HARDWARE,
+            MODE_DISABLED,
+        ):
+            self._direct_tent_candidate = True
+        if not stand_hold:
+            self._direct_stand_candidate = False
+        elif previous_mode == MODE_HARDWARE or self.mode in (
+            MODE_TENT_PROMPT,
+            MODE_TENT,
+        ):
+            self._direct_stand_candidate = True
+
         if self.mode == MODE_TENT_PROMPT and not tent_hold:
             # The prompt is only valid while the device still looks like a
             # tent; leaving the wide hold band invalidates it.
             self._set_mode(MODE_LAPTOP)
+        if self.mode == MODE_STAND_PROMPT and not stand_hold:
+            # Like the tent prompt, a stand prompt is only valid while the
+            # device is still in the wider stand hold band.
+            self._set_mode(MODE_LAPTOP)
+        if self.mode == MODE_STAND_PROMPT and not stand_prompt:
+            # Disabling the preference while a prompt is pending should apply
+            # the normal automatic decision immediately, without requiring the
+            # user to leave and re-enter stand posture.
+            if self.stable and stand:
+                self._set_mode(MODE_STAND, now)
+                self._clear_timers()
+        if self.mode == MODE_TENT_PROMPT and not tent_prompt:
+            # Mirror the stand-prompt behavior: disabling the prompt means the
+            # stable tent posture no longer needs confirmation.
+            if self.stable and tent:
+                self._set_mode(MODE_TENT, now)
+                self._clear_timers()
 
         desired: str | None = None
         if stand:
-            desired = MODE_STAND
+            if self.mode == MODE_STAND_PROMPT:
+                desired = MODE_STAND_PROMPT
+            elif (
+                stand_prompt
+                and self.mode == MODE_LAPTOP
+                and not self._direct_stand_candidate
+            ):
+                # An explicit posture change from tent/stand already carries
+                # intent; only the initial laptop-to-stand transition asks.
+                desired = MODE_STAND_PROMPT
+            else:
+                desired = MODE_STAND
         elif tent and self.mode not in (MODE_TENT, MODE_TENT_PROMPT):
-            # Re-entering shortly after a confirmed tent mode is a debounce,
-            # not a new decision: skip the confirmation prompt and restore T.
-            if (
+            # Leaving a non-laptop posture for a stable tent posture is an
+            # explicit posture change, so it does not need the laptop-mode
+            # confirmation prompt.  Re-entering shortly after a confirmed tent
+            # mode is likewise a debounce and restores T directly.
+            if not tent_prompt or self._direct_tent_candidate or (
                 self._tent_exit_at is not None
                 and 0.0 <= now - self._tent_exit_at
                 <= self.config.tent_reentry_seconds
@@ -366,7 +490,12 @@ class Policy:
         if not hold:
             if self.leave_since is None:
                 self.leave_since = now
-            elif now - self.leave_since >= self.config.leave_seconds:
+            leave_seconds = (
+                self.config.stand_leave_seconds
+                if self.mode == MODE_STAND
+                else self.config.leave_seconds
+            )
+            if now - self.leave_since >= leave_seconds:
                 self._set_mode(MODE_LAPTOP, now)
                 self._clear_timers()
         else:

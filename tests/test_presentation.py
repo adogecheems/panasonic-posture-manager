@@ -1,4 +1,4 @@
-"""Tests for the presentation debouncer (sticky cap and settle behaviour)."""
+"""Tests for the presentation debouncer and its no-unknown UI contract."""
 
 import unittest
 
@@ -13,11 +13,10 @@ class PresentationTestCase(unittest.TestCase):
 
 
 class BasicBehaviourTests(PresentationTestCase):
-    def test_initial_value_is_unknown(self):
-        self.assertEqual(self.presentation.value, Pose.UNKNOWN)
+    def test_initial_value_is_laptop(self):
+        self.assertEqual(self.presentation.value, Pose.LAPTOP)
         self.assertEqual(self.presentation.stale_seconds, PolicyConfig().stale_seconds)
         self.assertEqual(self.presentation.settle_seconds, 0.3)
-        self.assertEqual(self.presentation.unknown_sticky_seconds, 1.0)
 
     def test_moving_does_not_insert_unknown_drawing(self):
         p = self.presentation
@@ -74,27 +73,27 @@ class HardwareOverrideTests(PresentationTestCase):
         self.assertEqual(p.update(10.0, Pose.UNKNOWN, True, None), Pose.TABLET)
         self.assertEqual(p.update(10.1, Pose.LAPTOP, True, 0.0), Pose.TABLET)
 
-    def test_hardware_release_starts_unknown_sticky_window(self):
+    def test_hardware_release_keeps_tablet_until_a_fresh_pose(self):
         p = self.presentation
         p.update(0.0, Pose.UNKNOWN, True, None)
         self.assertEqual(p.update(0.1, Pose.UNKNOWN, False, 0.1), Pose.TABLET)
         self.assertEqual(p.update(0.9, Pose.UNKNOWN, False, 0.9), Pose.TABLET)
-        self.assertEqual(p.update(1.2, Pose.UNKNOWN, False, 1.2), Pose.UNKNOWN)
+        self.assertEqual(p.update(1.2, Pose.UNKNOWN, False, 1.2), Pose.TABLET)
 
 
 class StalenessTests(PresentationTestCase):
-    def test_true_staleness_is_not_hidden(self):
+    def test_true_staleness_keeps_the_last_drawing(self):
         p = self.presentation
         p.update(0.0, Pose.LAPTOP, False, 0.0)
         p.update(0.7, Pose.LAPTOP, False, 0.7)
-        self.assertEqual(p.update(3.0, Pose.LAPTOP, False, 0.7), Pose.UNKNOWN)
+        self.assertEqual(p.update(3.0, Pose.LAPTOP, False, 0.7), Pose.LAPTOP)
 
-    def test_missing_stamp_means_unknown(self):
+    def test_missing_stamp_keeps_the_last_drawing(self):
         p = self.presentation
         p.update(0.0, Pose.LAPTOP, False, 0.0)
         p.update(0.5, Pose.LAPTOP, False, 0.5)
-        self.assertEqual(p.update(0.6, Pose.LAPTOP, False, None), Pose.UNKNOWN)
-        self.assertEqual(p.value, Pose.UNKNOWN)
+        self.assertEqual(p.update(0.6, Pose.LAPTOP, False, None), Pose.LAPTOP)
+        self.assertEqual(p.value, Pose.LAPTOP)
 
     def test_stale_window_is_configurable(self):
         p = PosePresentation(config=PolicyConfig(stale_seconds=0.5))
@@ -102,7 +101,7 @@ class StalenessTests(PresentationTestCase):
         p.update(0.0, Pose.LAPTOP, False, 0.0)
         p.update(0.5, Pose.LAPTOP, False, 0.5)
         # now - stamp == 0.6 > 0.5
-        self.assertEqual(p.update(1.1, Pose.LAPTOP, False, 0.5), Pose.UNKNOWN)
+        self.assertEqual(p.update(1.1, Pose.LAPTOP, False, 0.5), Pose.LAPTOP)
 
     def test_constructor_overrides(self):
         p = PosePresentation(settle_seconds=0.5, stale_seconds=3.0)
@@ -111,36 +110,40 @@ class StalenessTests(PresentationTestCase):
         self.assertEqual(p.config, PolicyConfig())
 
 
-class UnknownStickyCapTests(PresentationTestCase):
-    def test_unknown_is_sticky_for_at_most_one_second(self):
+class UnavailableSensorTests(PresentationTestCase):
+    def test_unknown_candidate_never_replaces_the_last_pose(self):
         p = self.presentation
         p.update(0.0, Pose.LAPTOP, False, 0.0)
         p.update(0.3, Pose.LAPTOP, False, 0.3)
         self.assertEqual(p.value, Pose.LAPTOP)
         self.assertEqual(p.update(0.4, Pose.UNKNOWN, False, 0.4), Pose.LAPTOP)
-        # 0.9 s after the first unknown report the drawing is still kept.
         self.assertEqual(p.update(1.3, Pose.UNKNOWN, False, 1.3), Pose.LAPTOP)
-        # The sticky limit is one second; slightly beyond it the drawing resets.
-        self.assertEqual(p.update(1.5, Pose.UNKNOWN, False, 1.5), Pose.UNKNOWN)
+        self.assertEqual(p.update(30.0, Pose.UNKNOWN, False, 30.0), Pose.LAPTOP)
 
-    def test_sticky_counter_restarts_after_a_confirmed_pose(self):
+    def test_unknown_does_not_restart_an_in_flight_candidate(self):
         p = self.presentation
         p.update(0.0, Pose.LAPTOP, False, 0.0)
         p.update(0.3, Pose.LAPTOP, False, 0.3)
-        p.update(0.4, Pose.UNKNOWN, False, 0.4)
-        p.update(1.0, Pose.LAPTOP, False, 1.0)  # confirmed again, resets sticky
-        self.assertEqual(p.update(1.1, Pose.UNKNOWN, False, 1.1), Pose.LAPTOP)
-        self.assertEqual(p.update(1.9, Pose.UNKNOWN, False, 1.9), Pose.LAPTOP)
-        self.assertEqual(p.update(2.2, Pose.UNKNOWN, False, 2.2), Pose.UNKNOWN)
+        p.update(0.4, Pose.TENT, False, 0.4)
+        self.assertEqual(p.update(0.5, Pose.UNKNOWN, False, 0.5), Pose.LAPTOP)
+        self.assertEqual(p.update(0.71, Pose.TENT, False, 0.71), Pose.TENT)
 
-    def test_new_pose_after_sticky_expiry_is_shown(self):
+    def test_new_pose_after_an_outage_is_shown(self):
         p = self.presentation
         p.update(0.0, Pose.LAPTOP, False, 0.0)
         p.update(0.3, Pose.LAPTOP, False, 0.3)
         self.assertEqual(p.update(0.4, Pose.UNKNOWN, False, 0.4), Pose.LAPTOP)
-        self.assertEqual(p.update(1.5, Pose.UNKNOWN, False, 1.5), Pose.UNKNOWN)
+        self.assertEqual(p.update(1.5, Pose.UNKNOWN, False, 1.5), Pose.LAPTOP)
         p.update(2.0, Pose.TENT, False, 2.0)
         self.assertEqual(p.update(2.4, Pose.TENT, False, 2.4), Pose.TENT)
+
+    def test_stale_gap_restarts_the_settle_timer(self):
+        p = self.presentation
+        p.update(0.0, Pose.LAPTOP, False, 0.0)
+        p.update(0.7, Pose.TENT, False, 0.7)
+        self.assertEqual(p.update(3.0, Pose.TENT, False, 0.7), Pose.LAPTOP)
+        self.assertEqual(p.update(3.1, Pose.TENT, False, 3.1), Pose.LAPTOP)
+        self.assertEqual(p.update(3.41, Pose.TENT, False, 3.41), Pose.TENT)
 
 
 if __name__ == "__main__":

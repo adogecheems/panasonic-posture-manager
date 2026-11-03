@@ -9,6 +9,7 @@
 // code path.
 import Adw from 'gi://Adw?version=1';
 import Gdk from 'gi://Gdk?version=4.0';
+import GdkPixbuf from 'gi://GdkPixbuf?version=2.0';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk?version=4.0';
 import System from 'system';
@@ -20,6 +21,9 @@ import {SettingsPage} from './settingsPage.js';
 import {PostureService} from './service.js';
 
 export const APPLICATION_ID = 'work.mmoe.panasonic.PostureManager';
+const WINDOW_ICON_NAME = 'lets-note-window-icon';
+const WINDOW_ICON_DARK_NAME = 'lets-note-window-icon-dark';
+const WINDOW_MARK_WIDTH = 80;
 const ASSETS_DIR = `${DATA_ROOT}/assets`;
 
 let window = null;
@@ -39,6 +43,78 @@ function configureApplicationIcon() {
     Gtk.Window.set_default_icon_name(APPLICATION_ID);
 }
 
+function windowIconName(styleManager) {
+    return styleManager.dark ? WINDOW_ICON_DARK_NAME : WINDOW_ICON_NAME;
+}
+
+function loadWindowMark(name) {
+    try {
+        return GdkPixbuf.Pixbuf.new_from_file(`${ASSETS_DIR}/${name}.png`);
+    } catch (error) {
+        logError(error, `cannot load window mark ${name}`);
+        return null;
+    }
+}
+
+function createWindowMark() {
+    const styleManager = Adw.StyleManager.get_default();
+    let pixbuf = loadWindowMark(windowIconName(styleManager));
+    if (!pixbuf)
+        return null;
+
+    const height = Math.round(WINDOW_MARK_WIDTH * pixbuf.get_height() / pixbuf.get_width());
+    const mark = new Gtk.DrawingArea({
+        content_width: WINDOW_MARK_WIDTH,
+        content_height: height,
+        halign: Gtk.Align.CENTER,
+        valign: Gtk.Align.CENTER,
+        accessible_role: Gtk.AccessibleRole.IMG,
+    });
+    mark.add_css_class('window-mark');
+    mark.update_property([Gtk.AccessibleProperty.LABEL], ["Let's note"]);
+    mark.set_draw_func((_area, cr, width, height) => {
+        // Drawing the source at its intrinsic size keeps the wide mark crisp
+        // on HiDPI displays while the widget itself stays at a fixed logical
+        // width and never pushes the title bar taller than the logo.
+        const scale = Math.min(width / pixbuf.get_width(), height / pixbuf.get_height());
+        const drawWidth = pixbuf.get_width() * scale;
+        const drawHeight = pixbuf.get_height() * scale;
+        cr.save();
+        cr.translate((width - drawWidth) / 2, (height - drawHeight) / 2);
+        cr.scale(scale, scale);
+        Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0);
+        cr.paint();
+        cr.restore();
+    });
+
+    // Keep the titlebar mark and the window's icon in sync with the desktop
+    // colour scheme.  The taskbar icon stays tied to APPLICATION_ID through
+    // the desktop entry and is intentionally not changed here.
+    styleManager.connect('notify::dark', () => {
+        const name = windowIconName(styleManager);
+        const nextPixbuf = loadWindowMark(name);
+        if (nextPixbuf) {
+            pixbuf = nextPixbuf;
+            mark.queue_draw();
+        }
+        if (window)
+            window.set_icon_name(name);
+    });
+    return mark;
+}
+
+function removeWindowIconFromDecoration(header) {
+    const layout = Gtk.Settings.get_default()?.gtk_decoration_layout;
+    if (!layout)
+        return;
+    const withoutIcon = layout
+        .split(':')
+        .map(side => side.split(',').filter(button => button !== 'icon').join(','))
+        .join(':');
+    if (withoutIcon !== layout)
+        header.decoration_layout = withoutIcon;
+}
+
 export function buildUi(app, postureService = null) {
     if (window) {
         window.present();
@@ -52,11 +128,15 @@ export function buildUi(app, postureService = null) {
         default_width: 500,
         default_height: 660,
     });
-    window.set_icon_name(APPLICATION_ID);
+    window.set_icon_name(windowIconName(Adw.StyleManager.get_default()));
 
     const toolbar = new Adw.ToolbarView();
     window.content = toolbar;
     const header = new Adw.HeaderBar();
+    removeWindowIconFromDecoration(header);
+    const windowMark = createWindowMark();
+    if (windowMark)
+        header.pack_start(windowMark);
     header.title_widget = new Adw.WindowTitle({
         title: _('Panasonic 2-in-1 Tablet Posture Management Tool'),
     });

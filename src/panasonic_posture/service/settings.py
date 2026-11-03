@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from ..calibration import parse_calibration_matrix
 from ..protocol import STATE_DIR
 
 LOG = logging.getLogger(__name__)
@@ -33,6 +34,8 @@ class Settings:
     """User preferences owned by the system service."""
 
     tent_prompt: bool = True
+    stand_prompt: bool = False
+    sensor_calibration: tuple[float, ...] | None = None
 
 
 class SettingsStore:
@@ -91,7 +94,20 @@ class SettingsStore:
         tent_prompt = data.get("tent_prompt")
         if not isinstance(tent_prompt, bool):
             raise ValueError("tent_prompt must be a boolean")
-        return Settings(tent_prompt=tent_prompt)
+        stand_prompt = data.get("stand_prompt", False)
+        if not isinstance(stand_prompt, bool):
+            raise ValueError("stand_prompt must be a boolean")
+        try:
+            sensor_calibration = parse_calibration_matrix(
+                data.get("sensor_calibration")
+            )
+        except ValueError as error:
+            raise ValueError(f"invalid sensor_calibration: {error}") from error
+        return Settings(
+            tent_prompt=tent_prompt,
+            stand_prompt=stand_prompt,
+            sensor_calibration=sensor_calibration,
+        )
 
     # -- writing ---------------------------------------------------------
 
@@ -102,6 +118,12 @@ class SettingsStore:
         payload = {
             "version": SETTINGS_VERSION,
             "tent_prompt": bool(settings.tent_prompt),
+            "stand_prompt": bool(settings.stand_prompt),
+            "sensor_calibration": (
+                list(settings.sensor_calibration)
+                if settings.sensor_calibration is not None
+                else None
+            ),
         }
         directory = self.path.parent
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)

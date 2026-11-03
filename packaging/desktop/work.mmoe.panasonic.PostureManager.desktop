@@ -2,8 +2,8 @@
 Type=Application
 Name=Panasonic 2-in-1 Tablet Posture Management Tool
 Name[zh_CN]=松下二合一平板电脑姿态管理工具
-Comment=Posture management and screen orientation for Panasonic 2-in-1 tablets
-Comment[zh_CN]=为松下二合一平板电脑提供姿态识别、平板模式与屏幕方向管理
+Comment=Posture management and screen orientation for Panasonic QV and compatible 2-in-1 tablets
+Comment[zh_CN]=为松下 QV 系列及兼容二合一设备提供姿态识别、平板模式与屏幕方向管理
 Exec=/usr/bin/panasonic-posture-manager
 Icon=work.mmoe.panasonic.PostureManager
 Categories=Settings;HardwareSettings;

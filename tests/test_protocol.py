@@ -48,6 +48,14 @@ class ContractTests(unittest.TestCase):
     def test_dbus_xml_has_retry(self):
         self.assertIn('<method name="Retry"/>', protocol.DBUS_XML)
 
+    def test_dbus_xml_exposes_stand_prompt_methods(self):
+        self.assertIn('<method name="SetStandPrompt">', protocol.DBUS_XML)
+        self.assertIn('<method name="ConfirmStand">', protocol.DBUS_XML)
+
+    def test_dbus_xml_exposes_sensor_calibration_methods(self):
+        self.assertIn('<method name="CalibrateSensor"/>', protocol.DBUS_XML)
+        self.assertIn('<method name="ResetSensorCalibration"/>', protocol.DBUS_XML)
+
     def test_access_denied_error_code(self):
         self.assertIn(protocol.ErrorCode.ACCESS_DENIED, protocol.ALL_ERROR_CODES)
 
@@ -64,6 +72,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("hardware", protocol.TARGET_MODES)
         self.assertIn("unavailable", protocol.TARGET_MODES)
         self.assertIn("absent", protocol.HARDWARE_STATUSES)
+        self.assertEqual(set(protocol.PROMPTS), {"tent", "stand"})
 
 
 if __name__ == "__main__":

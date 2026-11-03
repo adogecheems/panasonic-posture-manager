@@ -1,5 +1,5 @@
-// "Current posture" page: illustration, state captions, tent confirmation and
-// retry actions.  The page never blocks the UI: D-Bus calls are asynchronous,
+// "Current posture" page: illustration, state captions, posture confirmation
+// and retry actions.  The page never blocks the UI: D-Bus calls are asynchronous,
 // actions are de-duplicated while in flight and the settings-sync guard is
 // released in a finally block (P3: an exception used to freeze `syncing`).
 import Adw from 'gi://Adw?version=1';
@@ -16,7 +16,6 @@ const POSE_NAMES = {
     tent: _('Tent'),
     stand: _('Stand'),
     tablet: _('Tablet'),
-    unknown: _('Waiting for posture'),
 };
 
 export class PosturePage {
@@ -25,9 +24,10 @@ export class PosturePage {
         this._toast = toast;
         this._syncing = false;
         this._inFlight = false;
-        this._pose = 'unknown';
+        this._pose = 'laptop';
         this._pixbuf = null;
         this._pendingEpoch = null;
+        this._pendingPrompt = null;
         this._latestState = null;
         this._build();
         this._updatePicture();
@@ -45,7 +45,11 @@ export class PosturePage {
         this._syncing = true;
         try {
             this._latestState = state;
+            // There is no user-facing "waiting for posture" state.  Keep the
+            // last known drawing when an older daemon reports unknown.
             let pose = POSE_SET.has(state.pose) ? state.pose : 'unknown';
+            if (pose === 'unknown')
+                pose = this._pose;
             // The base can be nearly upright before tent mode was actually
             // applied: do not claim the tent illustration prematurely.
             if (pose === 'tent' && (!state.applied || state.applied.mode !== 'tent'))
@@ -58,10 +62,17 @@ export class PosturePage {
             this._drawing.update_property(
                 [Gtk.AccessibleProperty.LABEL],
                 [POSE_NAMES[pose]]);
-            this._pendingEpoch = Number.isInteger(state.pending_notification)
+            const pendingEpoch = Number.isInteger(state.pending_notification)
                 ? state.pending_notification
                 : null;
+            this._pendingPrompt = pendingEpoch === null
+                ? null
+                : state.pending_prompt === 'stand' ? 'stand' : 'tent';
+            this._pendingEpoch = pendingEpoch;
             this._confirmButton.visible = this._pendingEpoch !== null;
+            this._confirmButton.label = this._pendingPrompt === 'stand'
+                ? _('Enter stand mode')
+                : _('Enter tent mode');
             this._renderDetail(state);
             this._retryButton.visible =
                 Boolean(state.error_code) && state.supported !== false;
@@ -114,7 +125,7 @@ export class PosturePage {
         this._root.append(this._drawing);
 
         this._heading = new Gtk.Label({
-            label: POSE_NAMES.unknown,
+            label: POSE_NAMES.laptop,
             wrap: true,
             justify: Gtk.Justification.CENTER,
         });
@@ -139,7 +150,10 @@ export class PosturePage {
             const epoch = this._pendingEpoch;
             if (epoch === null)
                 return;
-            this._request('ConfirmTent', new GLib.Variant('(u)', [epoch]), this._confirmButton);
+            const method = this._pendingPrompt === 'stand'
+                ? 'ConfirmStand'
+                : 'ConfirmTent';
+            this._request(method, new GLib.Variant('(u)', [epoch]), this._confirmButton);
         });
         this._root.append(this._confirmButton);
 
@@ -169,6 +183,8 @@ export class PosturePage {
             text = _('Waiting for the desktop to get ready…');
         } else if (state.supported === false) {
             text = _('This model does not support automatic mode changes.');
+        } else if (state.support_tier === 'compatible') {
+            text = _('Compatibility mode: this model is supported but has not been individually validated.');
         }
         this._detail.label = text;
         this._detail.visible = Boolean(text);

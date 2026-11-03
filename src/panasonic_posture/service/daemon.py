@@ -70,6 +70,7 @@ class Daemon:
         self.registration: Any = None
         self.owner: int | None = None
         self._timeout_id: int | None = None
+        self._tick_idle_id: int | None = None
         self._sleep_subscription: int | None = None
         self._signal_sources: list[int] = []
         self.loop = GLib.MainLoop()
@@ -87,6 +88,34 @@ class Daemon:
     def _tick(self) -> bool:
         self.application.engine.tick(time.monotonic())
         return True
+
+    def _schedule_tick(self) -> None:
+        """Apply a D-Bus mutation after the method reply has been queued.
+
+        A tick can perform bounded but slow relay cleanup or display work.
+        Running it directly from the D-Bus callback made a successful request
+        wait for that work (occasionally for more than a second).  Coalescing
+        the follow-up work on a high-priority idle source keeps the control UI
+        responsive without changing the target/result ordering; it also runs
+        before queued D-Bus reads, so GetState cannot observe a bumped
+        generation with the previous target.
+        """
+        if self._tick_idle_id is not None:
+            return
+        try:
+            self._tick_idle_id = GLib.idle_add(
+                self._run_scheduled_tick, priority=GLib.PRIORITY_HIGH
+            )
+        except Exception:  # pragma: no cover - GLib shutdown race
+            LOG.exception("cannot schedule service tick")
+
+    def _run_scheduled_tick(self) -> bool:
+        self._tick_idle_id = None
+        try:
+            self._tick()
+        except Exception:  # pragma: no cover - guarded callback boundary
+            LOG.exception("scheduled service tick failed")
+        return GLib.SOURCE_REMOVE
 
     def _emit_state(self, state: StateSnapshot) -> None:
         if self.connection is None:
@@ -168,7 +197,7 @@ class Daemon:
         # discovery on the first post-resume tick instead of trusting a cached
         # event number.
         self.application.sleep_event(suspended)
-        self._tick()
+        self._schedule_tick()
 
     def _quit(self, *_args: Any) -> bool:
         LOG.info("shutdown signal received")
@@ -242,9 +271,21 @@ class Daemon:
             elif method == "SetTentPrompt":
                 self._authorized_uid(sender)
                 self.application.engine.set_tent_prompt(bool(arguments[0]))
+            elif method == "SetStandPrompt":
+                self._authorized_uid(sender)
+                self.application.engine.set_stand_prompt(bool(arguments[0]))
+            elif method == "CalibrateSensor":
+                self._authorized_uid(sender)
+                self.application.engine.calibrate_sensor()
+            elif method == "ResetSensorCalibration":
+                self._authorized_uid(sender)
+                self.application.engine.reset_sensor_calibration()
             elif method == "ConfirmTent":
                 self._authorized_uid(sender)
                 self.application.engine.confirm_tent(int(arguments[0]))
+            elif method == "ConfirmStand":
+                self._authorized_uid(sender)
+                self.application.engine.confirm_stand(int(arguments[0]))
             elif method == "SessionUpdate":
                 generation, ready, error_code, error_detail = arguments
                 uid = self._session_sender_uid(sender)
@@ -253,7 +294,7 @@ class Daemon:
                 )
             else:
                 raise ServiceError(ErrorCode.INTERNAL, "unknown-method")
-            self._tick()
+            self._schedule_tick()
             invocation.return_value(GLib.Variant("()", ()))
         except ServiceError as error:
             LOG.debug("method %s rejected: %s", method, error)
@@ -313,6 +354,12 @@ class Daemon:
             except (TypeError, ValueError):  # pragma: no cover - already gone
                 pass
             self._timeout_id = None
+        if self._tick_idle_id is not None:
+            try:
+                GLib.source_remove(self._tick_idle_id)
+            except (TypeError, ValueError):  # pragma: no cover - already gone
+                pass
+            self._tick_idle_id = None
         for source in self._signal_sources:
             try:
                 GLib.source_remove(source)

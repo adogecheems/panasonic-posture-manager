@@ -1,0 +1,16 @@
+{
+  "id": "cfqv1",
+  "match": {
+    "product_glob": [
+      "CFQV1",
+      "CFQV1-*",
+      "CF-QV1",
+      "CF-QV1-*"
+    ]
+  },
+  "support_tier": "validated",
+  "switch_name": "Intel HID switches",
+  "keyboard_name": "AT Translated Set 2 keyboard",
+  "touchpad_name": "Synaptics TM3562-001",
+  "accel_name": "accel_3d"
+}

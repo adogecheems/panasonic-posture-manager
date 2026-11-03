@@ -253,6 +253,30 @@ class AccelSessionTests(unittest.TestCase):
             with self.assertRaises(iio.Unavailable):
                 accel.setup()
 
+    def test_falls_back_to_a_single_differently_named_accelerometer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            make_device(tmp, name="kxcjk1013")
+            descriptor = os.open(os.devnull, os.O_RDONLY)
+            accel = iio.Accel(
+                threading.Event(),
+                "accel_3d",
+                root=tmp,
+                open_device=lambda _path: descriptor,
+            )
+            try:
+                accel.setup()
+                self.assertEqual(accel.device.name, "iio:device0")
+            finally:
+                accel.close()
+
+    def test_ambiguous_generic_accelerometers_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            make_device(tmp, name="kxcjk1013")
+            make_device(tmp, index=1, name="bmi160")
+            accel = iio.Accel(threading.Event(), "accel_3d", root=tmp)
+            with self.assertRaisesRegex(iio.Unavailable, "multiple IIO accelerometer"):
+                accel.setup()
+
     def test_ambiguous_devices_raise_unavailable(self):
         # The sysfs fallback already requires exactly one matching device; the
         # IIO path must not silently pick the first of two identical sensors.

@@ -4,20 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "panasonic-posture-manager"
-version = "0.3.0"
-description = "Posture management and screen orientation for Panasonic 2-in-1 tablets on GNOME Wayland"
+version = "0.4.0"
+description = "Posture management and screen orientation for convertible 2-in-1 laptops on GNOME, KDE Plasma 6 and X11"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "adogecheems" }]
 classifiers = [
+  "Environment :: X11 Applications",
   "Environment :: X11 Applications :: Gnome",
+  "Environment :: X11 Applications :: KDE",
   "Environment :: Wayland",
   "Intended Audience :: End Users/Desktop",
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Topic :: Desktop Environment :: Gnome",
+  "Topic :: Desktop Environment :: KDE",
 ]
 # PyGObject is provided by the distribution (python-gobject); it is intentionally
 # not a pip dependency so package builds never try to compile it.

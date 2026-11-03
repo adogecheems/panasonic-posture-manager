@@ -8,8 +8,7 @@
 > - 当前 profile 格式、探针字段和验收清单见
 >   [hardware-profiles.md](hardware-profiles.md)，实现契约见 [agent.md](../agent.md)，
 >   用户行为见 [README.md](../README.md)。
-> - CFQV8-1L 的最终物理验收，以及至少一台非 CFQV8 机型的验收，仍需按发布清单
->   完成；最新状态见
+> - CFQV8-1L 的最终物理验收以及 QV9/QV1 同族回归仍需按发布清单完成；最新状态见
 >   [packaging/aur/README.md](../packaging/aur/README.md)。
 
 历史记录：2026-10-31（Asia/Shanghai），机型 CFQV8-1L。以下各节来自旧实验后端。

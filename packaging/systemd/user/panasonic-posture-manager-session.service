@@ -1,9 +1,9 @@
-# Unprivileged GNOME session adapter.
+# Unprivileged desktop session adapter.
 #
 # It owns the per-uid name work.mmoe.panasonic.Posture.Session.u<uid> on the
-# system bus, keeps the three second lease up to date, drives Mutter display
-# transactions and shows the tent-mode notification.  No root privileges are
-# involved.
+# system bus, keeps the three second lease up to date, selects Mutter, KScreen
+# or RandR for display transactions, and shows tent/stand posture prompts.  No
+# root privileges are involved.
 [Unit]
 Description=Panasonic 2-in-1 posture session adapter
 After=graphical-session.target

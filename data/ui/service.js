@@ -118,8 +118,24 @@ export class PostureService {
         return this.call('SetTentPrompt', new GLib.Variant('(b)', [enabled]));
     }
 
+    setStandPrompt(enabled) {
+        return this.call('SetStandPrompt', new GLib.Variant('(b)', [enabled]));
+    }
+
+    calibrateSensor() {
+        return this.call('CalibrateSensor');
+    }
+
+    resetSensorCalibration() {
+        return this.call('ResetSensorCalibration');
+    }
+
     confirmTent(epoch) {
         return this.call('ConfirmTent', new GLib.Variant('(u)', [epoch]));
+    }
+
+    confirmStand(epoch) {
+        return this.call('ConfirmStand', new GLib.Variant('(u)', [epoch]));
     }
 
     //: Replay the failed transaction.  ``Retry()`` is the 0.3.0 method; an

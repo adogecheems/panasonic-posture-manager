@@ -77,7 +77,7 @@ class ApplicationTests(unittest.TestCase):
             id="cfqv8",
             product="CFQV8-1L",
             vendor="Panasonic Corporation",
-            panasonic=True,
+            support_tier="validated",
             switch_name="Intel HID switches",
             accel_name="accel_3d",
             mount_matrix=None,

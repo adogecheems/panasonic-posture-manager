@@ -2,9 +2,10 @@
 
 The relay is started on demand when the service wants to take software control
 of the tablet switch, kept alive with a heartbeat byte stream and released as
-soon as the target no longer needs it.  All calls are driven from the single
-GLib main loop tick (no helper threads and no GLib dependency) and every
-blocking operation has an explicit timeout.
+soon as the target no longer needs it.  The engine runs release on a dedicated
+single-worker executor and serializes keep/retry around it, so a slow recovery
+does not stall the 100 ms tick.  Every blocking operation has an explicit
+timeout and the actuator has no GLib dependency.
 """
 
 from __future__ import annotations
@@ -33,8 +34,8 @@ LOG = logging.getLogger(__name__)
 
 ENV_RELAY = "PANASONIC_POSTURE_RELAY"
 
-# Bounded because both run synchronously on the service main loop (review
-# Q-03: a relay release must never stall the 100 ms tick for several seconds).
+# Bounded even when an operation is invoked synchronously (for example during
+# shutdown or a test with an inline executor).
 RELEASE_TIMEOUT_SECONDS = 0.5
 RECOVER_TIMEOUT_SECONDS = 1.5
 

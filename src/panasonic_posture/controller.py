@@ -52,6 +52,7 @@ class Controller:
         self.config = self.policy.config
         self.manual = Mode.AUTO
         self.tent_prompt = True
+        self.stand_prompt = False
         self.target = Target()
         self.generation = 0
         self.applied: Target | None = None
@@ -76,16 +77,27 @@ class Controller:
 
     @property
     def pending_notification(self) -> int | None:
-        """Epoch of the tent prompt the user should see right now, if any.
+        """Epoch of the posture prompt the user should see right now, if any.
 
         Same rule as 0.2.x: prompt only in automatic mode, when the tent
-        prompt setting is enabled and when the policy is waiting for the tent
-        confirmation.
+        or stand prompt setting is enabled and when the policy is waiting for
+        the corresponding confirmation.
         """
 
-        if self.manual != Mode.AUTO or not self.tent_prompt:
+        return self.policy.epoch if self.pending_prompt is not None else None
+
+    @property
+    def pending_prompt(self) -> str | None:
+        """Kind of posture prompt the user should see right now, if any."""
+
+        if self.manual != Mode.AUTO:
             return None
-        return self.policy.pending_notification
+        prompt = self.policy.pending_prompt
+        if prompt == "tent" and not self.tent_prompt:
+            return None
+        if prompt == "stand" and not self.stand_prompt:
+            return None
+        return prompt
 
     # -- public actions ------------------------------------------------------
 
@@ -107,9 +119,16 @@ class Controller:
     def confirm_tent(self, epoch: int) -> bool:
         """Accept the tent prompt when every precondition still holds."""
 
-        if self.manual != Mode.AUTO or not self.tent_prompt:
+        if self.pending_prompt != "tent":
             return False
         return self.policy.confirm(epoch)
+
+    def confirm_stand(self, epoch: int) -> bool:
+        """Accept the stand prompt when every precondition still holds."""
+
+        if self.pending_prompt != "stand":
+            return False
+        return self.policy.confirm_stand(epoch)
 
     def acknowledge(
         self,
@@ -170,7 +189,13 @@ class Controller:
             # The physical switch has priority over every manual selection.
             self.manual = Mode.AUTO
         self.hardware = hardware
-        self.policy.update(now, reading, hardware)
+        self.policy.update(
+            now,
+            reading,
+            hardware,
+            tent_prompt=bool(self.tent_prompt),
+            stand_prompt=bool(self.stand_prompt),
+        )
 
         if hardware is True:
             target = Target(

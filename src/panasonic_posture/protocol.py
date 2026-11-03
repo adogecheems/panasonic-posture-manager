@@ -49,9 +49,11 @@ PROFILE_VERSION = 1
 MODES = ("auto", "laptop", "tent", "stand", "tablet")
 TARGET_MODES = ("laptop", "tent", "stand", "tablet", "hardware", "unavailable")
 POSES = ("laptop", "tent", "stand", "tablet", "unknown")
+PROMPTS = ("tent", "stand")
 HARDWARE_STATUSES = ("ok", "absent", "ambiguous", "permission", "read_error")
 SENSOR_SOURCES = ("starting", "iio", "sysfs")
 BACKENDS = ("ready", "error", "development", "unsupported")
+SUPPORT_TIERS = ("validated", "compatible", "unsupported")
 
 # --- Timing constants (seconds) ---------------------------------------------
 
@@ -111,6 +113,7 @@ class ErrorCode:
     NATIVE_RECOVERY = "native-state-recovery-failed"
     # sensor errors
     SENSOR_TIMEOUT = "sensor-timeout"
+    CALIBRATION_NOT_READY = "calibration-not-ready"
     # display / session errors
     DISPLAY_MIRRORED = "display-mirrored-or-disabled"
     DISPLAY_LAYOUT = "display-layout-conflict"
@@ -157,7 +160,11 @@ DBUS_XML = """<node>
     <method name="SetMode"><arg type="s" direction="in"/></method>
     <method name="Retry"/>
     <method name="SetTentPrompt"><arg type="b" direction="in"/></method>
+    <method name="SetStandPrompt"><arg type="b" direction="in"/></method>
+    <method name="CalibrateSensor"/>
+    <method name="ResetSensorCalibration"/>
     <method name="ConfirmTent"><arg type="u" direction="in"/></method>
+    <method name="ConfirmStand"><arg type="u" direction="in"/></method>
     <method name="SessionUpdate">
       <arg type="u" direction="in"/>
       <arg type="b" direction="in"/>

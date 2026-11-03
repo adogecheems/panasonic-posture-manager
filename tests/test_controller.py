@@ -7,6 +7,8 @@ from panasonic_posture.controller import Controller
 from panasonic_posture.model import Mode, SensorReading, SensorSource, Target
 from panasonic_posture.policy import (
     MODE_DISABLED,
+    MODE_STAND_PROMPT,
+    MODE_TENT,
     MODE_TENT_PROMPT,
     Policy,
     PolicyConfig,
@@ -57,6 +59,7 @@ class InitialStateTests(ControllerTestCase):
         controller = self.controller
         self.assertEqual(controller.manual, Mode.AUTO)
         self.assertTrue(controller.tent_prompt)
+        self.assertFalse(controller.stand_prompt)
         self.assertEqual(controller.target, Target())
         self.assertEqual(controller.target.mode, "unavailable")
         self.assertEqual(controller.generation, 0)
@@ -171,6 +174,48 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertEqual(self.controller.target.rotation, 0)
         self.assertTrue(self.controller.target.disable_internal_input)
 
+    def test_stand_prompt_waits_for_confirmation(self):
+        self.controller.stand_prompt = True
+        self.hold(175.0)
+        self.assertEqual(self.controller.policy.mode, MODE_STAND_PROMPT)
+        self.assertEqual(self.controller.target.mode, "laptop")
+        self.assertEqual(self.controller.pending_prompt, "stand")
+        epoch = self.controller.policy.epoch
+        self.assertEqual(self.controller.pending_notification, epoch)
+        self.assertFalse(self.controller.confirm_tent(epoch))
+        self.assertTrue(self.controller.confirm_stand(epoch))
+        self.step(175.0)
+        self.assertEqual(self.controller.target.mode, "stand")
+        self.assertTrue(self.controller.target.tablet)
+        self.assertIsNone(self.controller.pending_prompt)
+
+    def test_disabling_stand_prompt_applies_stand_on_next_update(self):
+        self.controller.stand_prompt = True
+        self.hold(175.0)
+        self.assertEqual(self.controller.policy.mode, MODE_STAND_PROMPT)
+        self.controller.stand_prompt = False
+        self.step(175.0)
+        self.assertEqual(self.controller.policy.mode, "S")
+        self.assertEqual(self.controller.target.mode, "stand")
+        self.assertIsNone(self.controller.pending_notification)
+
+    def test_stand_prompt_is_suppressed_in_manual_mode(self):
+        self.controller.stand_prompt = True
+        self.controller.set_manual(Mode.STAND)
+        self.hold(175.0)
+        self.assertEqual(self.controller.policy.mode, MODE_STAND_PROMPT)
+        self.assertEqual(self.controller.target.mode, "stand")
+        self.assertIsNone(self.controller.pending_prompt)
+        self.assertFalse(self.controller.confirm_stand(self.controller.policy.epoch))
+
+    def test_stand_to_tent_switches_without_confirmation(self):
+        self.hold(175.0)
+        self.assertEqual(self.controller.target.mode, "stand")
+        self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, "T")
+        self.assertEqual(self.controller.target.mode, "tent")
+        self.assertIsNone(self.controller.pending_notification)
+
     def test_auto_returns_to_laptop(self):
         self.hold(175.0)
         self.assertEqual(self.controller.target.mode, "stand")
@@ -186,13 +231,22 @@ class AutomaticModeTests(ControllerTestCase):
         self.hold(0.0, hardware=False)
         self.assertEqual(self.controller.target.mode, "laptop")
 
-    def test_prompt_disabled_blocks_confirmation(self):
+    def test_prompt_disabled_enters_tent_without_confirmation(self):
         self.controller.tent_prompt = False
-        self.hold(80.0)
-        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
+        _, target = self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT)
         self.assertIsNone(self.controller.pending_notification)
         self.assertFalse(self.controller.confirm_tent(self.controller.policy.epoch))
-        self.assertNotEqual(self.controller.policy.mode, "T")
+        self.assertEqual(target.mode, "tent")
+
+    def test_disabling_tent_prompt_resolves_pending_prompt(self):
+        self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
+        self.controller.tent_prompt = False
+        _, target = self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT)
+        self.assertIsNone(self.controller.pending_prompt)
+        self.assertEqual(target.mode, "tent")
 
     def test_manual_mode_suppresses_prompt(self):
         self.controller.set_manual(Mode.TENT)

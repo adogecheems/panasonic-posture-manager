@@ -6,6 +6,7 @@ clock; no real GNOME session, hardware or system bus is involved.
 
 import copy
 import unittest
+from concurrent.futures import Executor, Future
 from unittest import mock
 
 from gi.repository import Gio, GLib
@@ -17,12 +18,14 @@ from panasonic_posture.session.agent import Agent
 from panasonic_posture.session.client import SystemClient
 from panasonic_posture.session.display import DisplayError
 from panasonic_posture.session.errors import ServiceError
+from panasonic_posture.tasks import InlineExecutor
 
 
 def make_state(
     generation=1,
     instance="instance-a",
     pending_notification=None,
+    pending_prompt=None,
     error_code=None,
     target=None,
     session_connected=True,
@@ -36,10 +39,11 @@ def make_state(
         target=target
         or Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True),
         pending_notification=pending_notification,
+        pending_prompt=pending_prompt,
         error_code=error_code,
         error_detail=None,
         session_connected=session_connected,
-    ).to_dict()
+    )
 
 
 class Ticker:
@@ -51,6 +55,28 @@ class Ticker:
 
     def advance(self, seconds):
         self.now += seconds
+
+
+class DeferredExecutor(Executor):
+    """Hold submitted work until the test explicitly releases it."""
+
+    def __init__(self):
+        self.calls = []
+
+    def submit(self, fn, /, *args, **kwargs):
+        future = Future()
+        self.calls.append((future, fn, args, kwargs))
+        return future
+
+    def run_next(self):
+        future, fn, args, kwargs = self.calls.pop(0)
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except BaseException as error:
+            future.set_exception(error)
+
+    def shutdown(self, wait=True, *, cancel_futures=False):
+        del wait, cancel_futures
 
 
 class FakeSystemBus:
@@ -95,6 +121,7 @@ class FakeClient:
         self.update_error = None
         self.get_error = None
         self.confirmations = []
+        self.stand_confirmations = []
         self.get_calls = 0
 
     def get_state(self):
@@ -113,6 +140,9 @@ class FakeClient:
     def confirm_tent(self, epoch):
         self.confirmations.append(epoch)
 
+    def confirm_stand(self, epoch):
+        self.stand_confirmations.append(epoch)
+
 
 class FakeDisplay:
     def __init__(self, errors=()):
@@ -120,6 +150,7 @@ class FakeDisplay:
         self.attempts = []
         self.applied = []
         self.restores = 0
+        self.apply_hook = None
 
     def apply(self, target):
         self.attempts.append(target)
@@ -128,6 +159,8 @@ class FakeDisplay:
             if error is not None:
                 raise error
         self.applied.append(target)
+        if self.apply_hook is not None:
+            self.apply_hook(target)
 
     def restore(self, normal=False):
         self.restores += 1
@@ -140,30 +173,36 @@ class FakeNotifier:
         self.notification = 0
         self.epoch = None
         self.shown_epoch = None
+        self.prompt = None
+        self.last_prompt = None
 
-    def sync(self, epoch, allow_retry=True, now=None):
+    def sync(self, epoch, prompt="tent", allow_retry=True, now=None):
         self.sync_calls.append((epoch, allow_retry))
+        self.last_prompt = prompt
 
     def close(self):
         self.close_calls += 1
         self.notification = 0
         self.epoch = None
         self.shown_epoch = None
+        self.prompt = None
 
 
 class Harness:
-    def __init__(self, state, *, locked=False, display=None):
+    def __init__(self, state, *, locked=False, display=None, executor=None):
         self.clock = Ticker()
         self.events = []
         self.lock_state = {"locked": locked}
         self.client = FakeClient(state, self.events)
         self.display = display or FakeDisplay()
         self.notifier = FakeNotifier()
+        self.executor = executor if executor is not None else InlineExecutor()
         self.agent = Agent(
             uid=1000,
             clock=self.clock,
             screen_locked=lambda: self.lock_state["locked"],
             install_signals=False,
+            executor=self.executor,
         )
         self.agent.attach(self.client, self.display, self.notifier)
 
@@ -185,7 +224,68 @@ class AdapterTickTests(unittest.TestCase):
         self.assertEqual(target.rotation, 180)
         self.assertEqual(harness.client.updates[-1], (1, True, "", ""))
         self.assertEqual(harness.notifier.sync_calls[-1][0], 7)
+        self.assertEqual(harness.notifier.last_prompt, "tent")
         self.assertTrue(harness.agent.ready)
+
+    def test_generation_change_during_apply_is_verified_before_ready(self):
+        harness = Harness(make_state())
+
+        def switch_generation(_target):
+            harness.set_state(
+                make_state(
+                    generation=2,
+                    target=Target(
+                        mode="laptop",
+                        tablet=False,
+                        rotation=0,
+                        disable_internal_input=False,
+                    ),
+                )
+            )
+
+        harness.display.apply_hook = switch_generation
+        harness.tick(0.0)
+
+        self.assertEqual(
+            [target.mode for target in harness.display.applied], ["tent", "laptop"]
+        )
+        self.assertEqual(harness.agent.runtime.generation, 2)
+        self.assertTrue(harness.agent.ready)
+        self.assertEqual(harness.client.updates, [(2, True, "", "")])
+
+    def test_tick_never_runs_blocking_work_inline(self):
+        executor = DeferredExecutor()
+        harness = Harness(make_state(), executor=executor)
+
+        harness.tick(0.0)
+        self.assertEqual(harness.client.get_calls, 0)
+        self.assertEqual(harness.display.attempts, [])
+        self.assertEqual(harness.client.updates, [])
+
+        executor.run_next()  # GetState
+        harness.tick(0.1)
+        self.assertEqual(harness.display.attempts, [])
+        self.assertEqual(harness.client.updates, [])
+
+        executor.run_next()  # display.apply
+        harness.tick(0.2)
+        self.assertEqual(harness.display.attempts, [make_state().target])
+        self.assertEqual(harness.client.updates, [])
+
+        executor.run_next()  # post-apply GetState verification
+        harness.tick(0.3)
+        executor.run_next()  # final SessionUpdate
+        harness.tick(0.4)
+        self.assertTrue(harness.agent.ready)
+        self.assertEqual(harness.client.updates, [(1, True, "", "")])
+
+    def test_stand_prompt_kind_is_forwarded_to_notifier(self):
+        harness = Harness(
+            make_state(pending_notification=8, pending_prompt="stand")
+        )
+        harness.tick(0.0)
+        self.assertEqual(harness.notifier.sync_calls[-1][0], 8)
+        self.assertEqual(harness.notifier.last_prompt, "stand")
 
     def test_heartbeat_is_throttled(self):
         harness = Harness(make_state())
@@ -338,11 +438,13 @@ class AdapterTickTests(unittest.TestCase):
 
     def test_tick_guard_keeps_the_glib_source_alive(self):
         harness = Harness(make_state())
-        harness.client.get_error = RuntimeError("boom")
+        runtime = harness.agent.runtime
+        original_tick = runtime.tick
+        runtime.tick = mock.Mock(side_effect=RuntimeError("boom"))
         with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
             self.assertIs(harness.agent._tick(), GLib.SOURCE_CONTINUE)
         # The next tick works again.
-        harness.client.get_error = None
+        runtime.tick = original_tick
         self.assertIs(harness.agent._tick(), GLib.SOURCE_CONTINUE)
         self.assertEqual(len(harness.display.applied), 1)
 
@@ -439,6 +541,7 @@ class AgentLifecycleTests(unittest.TestCase):
             timeout_add=lambda _ms, _callback: events.append("timer"),
             install_signals=False,
             screen_locked=lambda: False,
+            executor=InlineExecutor(),
             build=build,
         )
         return agent, harness
@@ -569,6 +672,13 @@ class NotificationActionTests(unittest.TestCase):
         self.action(42, "default")
         self.assertEqual(self.harness.client.confirmations, [7])
 
+    def test_stand_notification_confirms_with_stand_method(self):
+        self.harness.notifier.prompt = "stand"
+        self.action(42, "default")
+        self.assertEqual(self.harness.client.stand_confirmations, [7])
+        self.assertEqual(self.harness.client.confirmations, [])
+        self.assertEqual(self.harness.notifier.close_calls, 1)
+
     def test_old_notification_is_ignored(self):
         self.action(41, "tent")
         self.assertEqual(self.harness.client.confirmations, [])
@@ -593,9 +703,9 @@ class NotificationActionTests(unittest.TestCase):
 
 class SystemClientTests(unittest.TestCase):
     def test_state_is_validated(self):
-        good = make_state()
+        good = make_state().to_dict()
         client = SystemClient(FakeConnection(good))
-        self.assertEqual(client.get_state()["generation"], 1)
+        self.assertEqual(client.get_state().generation, 1)
 
     def test_old_state_version_is_rejected(self):
         client = SystemClient(FakeConnection([{"version": 1}]))
@@ -647,6 +757,18 @@ class SystemClientTests(unittest.TestCase):
         SystemClient(connection).confirm_tent(9)
         self.assertEqual(connection.calls[-1][0], "ConfirmTent")
         self.assertEqual(connection.calls[-1][1].unpack(), (9,))
+
+    def test_confirm_stand_sends_epoch(self):
+        connection = FakeConnection()
+        SystemClient(connection).confirm_stand(9)
+        self.assertEqual(connection.calls[-1][0], "ConfirmStand")
+        self.assertEqual(connection.calls[-1][1].unpack(), (9,))
+
+    def test_set_stand_prompt_sends_boolean(self):
+        connection = FakeConnection()
+        SystemClient(connection).set_stand_prompt(True)
+        self.assertEqual(connection.calls[-1][0], "SetStandPrompt")
+        self.assertEqual(connection.calls[-1][1].unpack(), (True,))
 
 
 class FakeReply:

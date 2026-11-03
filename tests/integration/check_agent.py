@@ -52,6 +52,9 @@ class RecordingClient:
     def confirm_tent(self, epoch):
         return self._client.confirm_tent(epoch)
 
+    def confirm_stand(self, epoch):
+        return self._client.confirm_stand(epoch)
+
 
 class FakeDisplay:
     def __init__(self) -> None:
@@ -71,14 +74,17 @@ class FakeNotifier:
         self.close_calls = 0
         self.notification = 0
         self.epoch = None
+        self.prompt = None
 
-    def sync(self, epoch, allow_retry=True, now=None) -> None:
+    def sync(self, epoch, prompt="tent", allow_retry=True, now=None) -> None:
         self.sync_calls.append((epoch, allow_retry))
+        self.prompt = prompt
 
     def close(self) -> None:
         self.close_calls += 1
         self.notification = 0
         self.epoch = None
+        self.prompt = None
 
 
 def wait_for_state(connection, predicate, timeout: float, description: str):

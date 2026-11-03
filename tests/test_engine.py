@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from concurrent.futures import Executor, Future
 from types import SimpleNamespace
 from unittest import mock
 
@@ -19,6 +20,7 @@ from panasonic_posture.protocol import ErrorCode
 from panasonic_posture.service.access import AccessDenied
 from panasonic_posture.service.actuator import ActuatorError, RelayState
 from panasonic_posture.service.engine import Engine, ServiceError, guard
+from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.service.settings import Settings
 
 LAPTOP = Target(mode="laptop", tablet=False, rotation=0, disable_internal_input=False)
@@ -38,6 +40,28 @@ class FakeClock:
         return value
 
 
+class DeferredExecutor(Executor):
+    """Hold submitted work so tests can observe the non-blocking tick."""
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def submit(self, fn, /, *args, **kwargs):
+        future = Future()
+        self.calls.append((future, fn, args, kwargs))
+        return future
+
+    def run_next(self) -> None:
+        future, fn, args, kwargs = self.calls.pop(0)
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except BaseException as error:
+            future.set_exception(error)
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        del wait, cancel_futures
+
+
 class FakeController:
     """Mirror of the real Controller interface owned by the core-domain task."""
 
@@ -45,6 +69,7 @@ class FakeController:
         self.policy = SimpleNamespace(mode="D", stable=False)
         self.manual = Mode.AUTO
         self.tent_prompt = True
+        self.stand_prompt = False
         self.target = Target()
         self.generation = 7
         self.applied: Target | None = None
@@ -52,18 +77,25 @@ class FakeController:
         self.error_detail: str | None = None
         self.hardware: bool | None = None
         self.pending_epoch: int | None = None
+        self.pending_kind: str | None = None
         self.update_error: Exception | None = None
         self.fail_ack = False
         self.update_calls: list = []
         self.acknowledge_calls: list = []
         self.set_manual_calls: list = []
         self.confirm_calls: list = []
+        self.stand_confirm_calls: list = []
         self.confirm_result = True
+        self.stand_confirm_result = True
         self.reset_calls = 0
 
     @property
     def pending_notification(self) -> int | None:
         return self.pending_epoch
+
+    @property
+    def pending_prompt(self) -> str | None:
+        return self.pending_kind
 
     def update(self, now, reading, hardware):
         self.update_calls.append((now, reading, hardware))
@@ -98,6 +130,10 @@ class FakeController:
     def confirm_tent(self, epoch) -> bool:
         self.confirm_calls.append(epoch)
         return self.confirm_result
+
+    def confirm_stand(self, epoch) -> bool:
+        self.stand_confirm_calls.append(epoch)
+        return self.stand_confirm_result
 
     def reset_after_suspend(self) -> None:
         self.reset_calls += 1
@@ -199,8 +235,8 @@ class FakePresentation:
 
 
 class FakeSettings:
-    def __init__(self, tent_prompt: bool = True) -> None:
-        self.value = Settings(tent_prompt=tent_prompt)
+    def __init__(self, tent_prompt: bool = True, stand_prompt: bool = False) -> None:
+        self.value = Settings(tent_prompt=tent_prompt, stand_prompt=stand_prompt)
         self.saved: list[Settings] = []
         self.fail = False
         self.load_error: Exception | None = None
@@ -217,9 +253,9 @@ class FakeSettings:
         self.value = settings
 
 
-def panasonic_profile() -> SimpleNamespace:
+def validated_profile() -> SimpleNamespace:
     return SimpleNamespace(
-        panasonic=True,
+        support_tier="validated",
         id="cfqv8",
         product="CFQV8-1L",
         vendor="Panasonic Corporation",
@@ -233,7 +269,7 @@ class EngineTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.mono = FakeClock(100.0)
         self.boot = FakeClock(1000.0)
-        self.profile = panasonic_profile()
+        self.profile = validated_profile()
         self.controller = FakeController()
         self.sensor = FakeSensor()
         self.actuator = FakeActuator()
@@ -269,6 +305,7 @@ class EngineTestCase(unittest.TestCase):
             clock=self.boot,
             on_state=self.listener,
             logger=mock.Mock(),
+            executor=InlineExecutor(),
         )
         kwargs.update(overrides)
         return Engine(**kwargs)
@@ -296,11 +333,13 @@ class StateSnapshotTests(EngineTestCase):
         self.assertEqual(state["version"], 2)
         self.assertEqual(state["instance"], "0123456789abcdef")
         self.assertEqual(state["supported"], True)
+        self.assertEqual(state["support_tier"], "validated")
         self.assertEqual(state["backend"], "ready")
         self.assertEqual(state["profile"], "cfqv8")
         self.assertEqual(state["model"], "CFQV8-1L")
         self.assertEqual(state["vendor"], "Panasonic Corporation")
         self.assertEqual(state["sensor_source"], "starting")
+        self.assertEqual(state["pose"], "laptop")
         parsed = json.loads(engine.state_json())
         self.assertEqual(parsed["version"], 2)
 
@@ -346,8 +385,8 @@ class StateSnapshotTests(EngineTestCase):
         self.assertEqual(self.actuator.calls, [])
 
     def test_unsupported_model_is_gated(self) -> None:
-        profile = panasonic_profile()
-        profile.panasonic = False
+        profile = validated_profile()
+        profile.support_tier = "unsupported"
         self.profile = profile
         engine = self.make()
         self.controller.target = TENT
@@ -366,11 +405,29 @@ class StateSnapshotTests(EngineTestCase):
             engine.confirm_tent(1)
         self.assertEqual(caught.exception.code, ErrorCode.UNSUPPORTED_MODEL)
 
+    def test_compatible_support_does_not_depend_on_the_vendor(self) -> None:
+        profile = validated_profile()
+        profile.support_tier = "compatible"
+        profile.id = "generic"
+        profile.vendor = "Another Vendor"
+        profile.product = "Convertible-1"
+        engine = self.make(profile=profile)
+        self.tick(engine)
+        self.assertTrue(engine.state.supported)
+        self.assertEqual(engine.state.support_tier, "compatible")
+        self.assertEqual(engine.state.backend.value, "ready")
+
     def test_settings_apply_tent_prompt_at_construction(self) -> None:
         self.settings = FakeSettings(tent_prompt=False)
         engine = self.make()
         self.assertFalse(engine.state.tent_prompt)
         self.assertFalse(self.controller.tent_prompt)
+
+    def test_settings_apply_stand_prompt_at_construction(self) -> None:
+        self.settings = FakeSettings(stand_prompt=True)
+        engine = self.make()
+        self.assertTrue(engine.state.stand_prompt)
+        self.assertTrue(self.controller.stand_prompt)
 
     def test_settings_load_failure_keeps_defaults(self) -> None:
         self.settings.load_error = OSError("cannot read")
@@ -451,6 +508,13 @@ class HardwareDebounceTests(EngineTestCase):
             self.sensor.prefer_shared_calls, [True, False, True]
         )
 
+    def test_prefer_shared_keeps_sysfs_during_stand_prompt(self) -> None:
+        engine = self.make()
+        self.controller.policy.mode = "Q"
+        self.controller.target = LAPTOP
+        self.tick(engine)
+        self.assertEqual(self.sensor.prefer_shared_calls, [True])
+
 
 class ActuatorTransactionTests(EngineTestCase):
     def test_successful_applied_report_acknowledges_target(self) -> None:
@@ -520,10 +584,66 @@ class ActuatorTransactionTests(EngineTestCase):
         self.actuator.release_hook = slow_release
         self.tick(engine, now=100.0)
         self.assertIn("release", self.actuator.calls)
-        # The lease expired while the blocking release ran; the published state
-        # must reflect the fresh clock, not the pre-blocking one.
+        # The lease expired while the inline release ran; the published state
+        # must reflect the fresh clock, not the pre-release one.
         self.assertFalse(engine.state.session_connected)
         self.assertIsNone(engine.state.applied)
+
+    def test_slow_release_does_not_block_the_tick(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = LAPTOP
+        self.lease(engine)
+
+        self.tick(engine)
+        self.assertEqual(len(executor.calls), 1)
+        self.assertNotIn("release", self.actuator.calls)
+        self.assertIsNone(engine.state.applied)
+
+        # A second tick observes the in-flight release without starting keep or
+        # another release, then consumes the result once the worker finishes.
+        self.tick(engine)
+        self.assertEqual(len(executor.calls), 1)
+        executor.run_next()
+        self.tick(engine)
+        self.assertIn("release", self.actuator.calls)
+        self.assertEqual(self.controller.acknowledge_calls[-1][1], True)
+        self.assertEqual(engine.state.applied, LAPTOP)
+
+    def test_keep_waits_for_an_inflight_release(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = LAPTOP
+        self.lease(engine)
+        self.tick(engine)
+
+        self.controller.target = TENT
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, [])
+
+        executor.run_next()
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["release", "keep"])
+        self.assertEqual(engine.state.applied, TENT)
+
+    def test_release_runs_again_after_a_keep_cycle(self) -> None:
+        engine = self.make()
+        self.controller.target = TENT
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        self.lease(engine)
+        self.tick(engine, now=100.0)
+        self.assertEqual(self.actuator.calls.count("release"), 0)
+
+        self.tick(engine, now=103.5)  # lease expiry releases the relay
+        self.assertEqual(self.actuator.calls.count("release"), 1)
+
+        self.lease(engine)
+        self.tick(engine, now=104.0)  # recovered lease keeps it again
+        self.assertEqual(self.actuator.calls.count("keep"), 2)
+
+        self.tick(engine, now=107.5)  # the next expiry must release again
+        self.assertEqual(self.actuator.calls.count("release"), 2)
 
     def test_state_json_is_a_cached_snapshot(self) -> None:
         engine = self.make()
@@ -648,7 +768,23 @@ class ModeMethodTests(EngineTestCase):
         self.assertEqual(self.controller.set_manual_calls, ["tent"])
         self.assertIsNone(self.controller.applied)
         self.assertIsNone(engine.agent_ready)
+        self.assertNotIn("retry", self.actuator.calls)
+
+    def test_set_mode_keeps_a_healthy_relay_running(self) -> None:
+        engine = self.make()
+        self.actuator.running = True
+        self.actuator.state = RelayState(True, True, False, True, None)
+        self.assertTrue(engine.set_mode("tablet"))
+        self.assertNotIn("retry", self.actuator.calls)
+        self.assertTrue(self.actuator.running)
+
+    def test_set_mode_resets_only_a_failed_relay(self) -> None:
+        engine = self.make()
+        self.actuator.error_code = ErrorCode.RELAY_EXITED
+        self.actuator.error_detail = "relay exited with status 3"
+        self.assertTrue(engine.set_mode("tablet"))
         self.assertIn("retry", self.actuator.calls)
+        self.assertIsNone(self.actuator.error_code)
 
     def test_set_mode_rejects_unknown_mode(self) -> None:
         engine = self.make()
@@ -686,6 +822,31 @@ class ModeMethodTests(EngineTestCase):
         self.assertTrue(self.controller.tent_prompt)
         self.assertTrue(engine.state.tent_prompt)
 
+    def test_set_stand_prompt_persists_and_preserves_tent_prompt(self) -> None:
+        engine = self.make()
+        self.assertTrue(engine.set_stand_prompt(True))
+        self.assertEqual(
+            self.settings.saved,
+            [Settings(tent_prompt=True, stand_prompt=True)],
+        )
+        self.assertTrue(self.controller.stand_prompt)
+        self.assertFalse(engine.set_stand_prompt(True))
+        self.assertEqual(len(self.settings.saved), 1)
+        self.assertTrue(engine.set_tent_prompt(False))
+        self.assertEqual(
+            self.settings.saved[-1],
+            Settings(tent_prompt=False, stand_prompt=True),
+        )
+
+    def test_set_stand_prompt_write_failure_keeps_old_value(self) -> None:
+        engine = self.make()
+        self.settings.fail = True
+        with self.assertRaises(ServiceError) as caught:
+            engine.set_stand_prompt(True)
+        self.assertEqual(caught.exception.code, ErrorCode.CONFIG_WRITE)
+        self.assertFalse(self.controller.stand_prompt)
+        self.assertFalse(engine.state.stand_prompt)
+
     def test_confirm_tent_success_and_expiry(self) -> None:
         engine = self.make()
         self.controller.confirm_result = True
@@ -694,6 +855,16 @@ class ModeMethodTests(EngineTestCase):
         self.controller.confirm_result = False
         with self.assertRaises(ServiceError) as caught:
             engine.confirm_tent(4)
+        self.assertEqual(caught.exception.code, ErrorCode.EXPIRED_CONFIRMATION)
+
+    def test_confirm_stand_success_and_expiry(self) -> None:
+        engine = self.make()
+        self.controller.stand_confirm_result = True
+        self.assertTrue(engine.confirm_stand(3))
+        self.assertEqual(self.controller.stand_confirm_calls[-1], 3)
+        self.controller.stand_confirm_result = False
+        with self.assertRaises(ServiceError) as caught:
+            engine.confirm_stand(4)
         self.assertEqual(caught.exception.code, ErrorCode.EXPIRED_CONFIRMATION)
 
 
@@ -739,8 +910,8 @@ class RetryTests(EngineTestCase):
         self.assertIsNone(engine.state.error_code)
 
     def test_retry_unsupported_model_raises(self) -> None:
-        profile = panasonic_profile()
-        profile.panasonic = False
+        profile = validated_profile()
+        profile.support_tier = "unsupported"
         engine = self.make(profile=profile)
         with self.assertRaises(ServiceError) as caught:
             engine.retry()
@@ -800,6 +971,83 @@ class TickRobustnessTests(EngineTestCase):
         self.tick(engine)
         self.assertIsNone(engine.state.error_code)
 
+
+class SensorCalibrationTests(EngineTestCase):
+    def feed(self, engine, vector, count=3, start=1000.0):
+        for index in range(count):
+            stamp = start + index * 0.1
+            self.boot.value = stamp
+            self.sensor._reading = SensorReading(vector, stamp, SensorSource.IIO)
+            self.tick(engine)
+
+    def test_calibration_persists_and_corrects_following_samples(self):
+        self.settings.value = Settings(tent_prompt=False, stand_prompt=True)
+        engine = self.make()
+        self.feed(engine, (2.0, 0.0, -9.8))
+
+        self.assertTrue(engine.calibrate_sensor())
+        saved = self.settings.saved[-1]
+        self.assertFalse(saved.tent_prompt)
+        self.assertTrue(saved.stand_prompt)
+        self.assertIsNotNone(saved.sensor_calibration)
+
+        self.tick(engine)
+        self.assertTrue(engine.state.sensor_calibrated)
+        corrected = self.controller.update_calls[-1][1]
+        self.assertAlmostEqual(corrected.vector[0], 0.0, places=5)
+        self.assertAlmostEqual(corrected.vector[1], 0.0, places=5)
+        self.assertAlmostEqual(corrected.vector[2], -(4.0 + 9.8 ** 2) ** 0.5, places=6)
+
+    def test_loaded_calibration_is_reported_in_state(self):
+        identity = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        self.settings.value = Settings(sensor_calibration=identity)
+        engine = self.make()
+        self.assertTrue(engine.state.sensor_calibrated)
+
+    def test_reset_removes_calibration_and_preserves_prompts(self):
+        self.settings.value = Settings(tent_prompt=False, stand_prompt=True)
+        engine = self.make()
+        self.feed(engine, (2.0, 0.0, -9.8))
+        self.assertTrue(engine.calibrate_sensor())
+        self.assertTrue(engine.reset_sensor_calibration())
+
+        saved = self.settings.saved[-1]
+        self.assertIsNone(saved.sensor_calibration)
+        self.assertFalse(saved.tent_prompt)
+        self.assertTrue(saved.stand_prompt)
+        self.tick(engine)
+        self.assertFalse(engine.state.sensor_calibrated)
+        self.assertFalse(engine.reset_sensor_calibration())
+
+    def test_requires_enough_stable_flat_samples(self):
+        engine = self.make()
+        self.feed(engine, (0.0, 0.0, -9.8), count=1)
+        with self.assertRaises(ServiceError) as caught:
+            engine.calibrate_sensor()
+        self.assertEqual(caught.exception.code, ErrorCode.CALIBRATION_NOT_READY)
+
+        self.feed(engine, (0.0, 0.0, 9.8), count=3, start=1000.3)
+        with self.assertRaises(ServiceError) as caught:
+            engine.calibrate_sensor()
+        self.assertEqual(caught.exception.code, ErrorCode.CALIBRATION_NOT_READY)
+
+    def test_rejects_calibration_while_hardware_tablet_mode_is_active(self):
+        self.hardware = True
+        engine = self.make()
+        self.feed(engine, (0.0, 0.0, -9.8))
+        with self.assertRaises(ServiceError) as caught:
+            engine.calibrate_sensor()
+        self.assertEqual(caught.exception.code, ErrorCode.CALIBRATION_NOT_READY)
+
+    def test_settings_failure_keeps_previous_calibration(self):
+        engine = self.make()
+        self.feed(engine, (2.0, 0.0, -9.8))
+        self.settings.fail = True
+        with self.assertRaises(ServiceError) as caught:
+            engine.calibrate_sensor()
+        self.assertEqual(caught.exception.code, ErrorCode.CONFIG_WRITE)
+        self.assertFalse(engine.state.sensor_calibrated)
+
     def test_slow_tick_logs_warning(self) -> None:
         clock = FakeClock(100.0, step=1.0)
         engine = self.make(monotonic=clock, logger=mock.Mock())
@@ -835,7 +1083,12 @@ class PresentationTests(EngineTestCase):
         self.sensor._reading = self._valid_reading()
         self.tick(engine)
         self.assertEqual(self.presentation.calls[-1][1], Pose.TENT)
-        for mode, pose in (("S", Pose.STAND), ("L", Pose.LAPTOP), ("P", Pose.TENT)):
+        for mode, pose in (
+            ("Q", Pose.STAND),
+            ("S", Pose.STAND),
+            ("L", Pose.LAPTOP),
+            ("P", Pose.TENT),
+        ):
             self.controller.policy.mode = mode
             self.tick(engine)
             self.assertEqual(self.presentation.calls[-1][1], pose)
@@ -859,7 +1112,33 @@ class PresentationTests(EngineTestCase):
         self.presentation.update = mock.Mock(side_effect=RuntimeError("drawing failed"))
         engine = self.make()
         self.tick(engine)  # must not raise
-        self.assertEqual(engine.state.pose.value, "unknown")
+        self.assertEqual(engine.state.pose.value, "laptop")
+
+    def test_sample_published_during_read_is_not_treated_as_future(self) -> None:
+        """A sample acquired while the tick starts must remain displayable.
+
+        The boot clock advances between the old pre-read timestamp and the
+        sensor snapshot.  Comparing that earlier timestamp with the newer
+        sample made the sample look like it came from the future, which reset
+        the stable run and briefly flashed the unknown presentation state.
+        """
+        engine = self.make()
+        self.controller.policy.mode = "L"
+        self.controller.policy.stable = True
+
+        def reading_during_clock_advance():
+            self.boot.value += 0.001
+            stamp = self.boot.value
+            self.sensor._reading = SensorReading(
+                (0.0, 0.0, -9.81), stamp, SensorSource.IIO
+            )
+            return self.sensor._reading
+
+        self.sensor.reading = reading_during_clock_advance
+        self.tick(engine)
+
+        self.assertEqual(engine.state.pose, Pose.LAPTOP)
+        self.assertEqual(self.presentation.calls[-1][3], 1000.001)
 
 
 class RealDomainIntegrationTests(unittest.TestCase):
@@ -885,12 +1164,13 @@ class RealDomainIntegrationTests(unittest.TestCase):
             access=FakeAccess(),
             presentation=PosePresentation(),
             settings=FakeSettings(),
-            profile=panasonic_profile(),
+            profile=validated_profile(),
             hardware_query=lambda: (hardware[0], HardwareStatus.OK),
             instance="integration",
             monotonic=mono,
             clock=boot,
             logger=mock.Mock(),
+            executor=InlineExecutor(),
         )
         engine.tick(mono.value)
         state = engine.state

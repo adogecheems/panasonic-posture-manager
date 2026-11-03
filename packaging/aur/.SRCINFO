@@ -1,6 +1,6 @@
 pkgbase = panasonic-posture-manager
-	pkgdesc = Posture management and screen orientation for Panasonic 2-in-1 tablets
-	pkgver = 0.3.0
+	pkgdesc = Posture management and screen orientation for convertible Linux 2-in-1 laptops
+	pkgver = 0.4.0
 	pkgrel = 1
 	url = https://github.com/adogecheems/panasonic-posture-manager
 	install = panasonic-posture-manager.install
@@ -14,18 +14,22 @@ pkgbase = panasonic-posture-manager
 	makedepends = python-setuptools
 	makedepends = python-wheel
 	depends = gjs
-	depends = gtk4
-	depends = libadwaita
-	depends = python
+	depends = gtk4>=4.12
+	depends = libadwaita>=1.4
+	depends = python>=3.11
 	depends = python-gobject
 	depends = systemd
 	depends = polkit
 	depends = dbus
 	depends = iio-sensor-proxy
-	optdepends = gnome-shell: session notifications, screensaver lock detection and the GNOME shell session
-	optdepends = mutter: display rotation through org.gnome.Mutter.DisplayConfig
-	optdepends = gnome-settings-daemon: touchscreen orientation-lock GSettings schema
-	source = panasonic-posture-manager::git+https://github.com/adogecheems/panasonic-posture-manager.git#tag=v0.3.0
+	optdepends = gnome-shell: GNOME session notification server and desktop integration
+	optdepends = mutter: display rotation and orientation lock on GNOME Wayland and X11
+	optdepends = gnome-settings-daemon: touchscreen orientation-lock GSettings schema on GNOME
+	optdepends = kscreen: display rotation and auto-rotate policy on Plasma 6.8+ (kscreenctl)
+	optdepends = libkscreen: display rotation and auto-rotate policy on Plasma 6.0-6.7 (kscreen-doctor)
+	optdepends = xorg-xrandr: display rotation on other X11 sessions
+	optdepends = xorg-xinput: touchscreen coordinate mapping on other X11 sessions
+	source = panasonic-posture-manager::git+https://github.com/adogecheems/panasonic-posture-manager.git#tag=v0.4.0
 	sha256sums = SKIP
 
 pkgname = panasonic-posture-manager

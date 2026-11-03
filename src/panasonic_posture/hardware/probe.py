@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import iio, profile, sysfs
 
-PROBE_VERSION = 1
+PROBE_VERSION = 2
 
 
 def probe(
@@ -41,14 +41,21 @@ def probe(
             "id": resolved.id,
             "vendor": resolved.vendor,
             "product": resolved.product,
-            "panasonic": resolved.panasonic,
+            "support_tier": resolved.support_tier,
+            "supported": resolved.supported,
             "switch_name": resolved.switch_name,
             "keyboard_name": resolved.keyboard_name,
             "touchpad_name": resolved.touchpad_name,
             "accel_name": resolved.accel_name,
             "mount_matrix": list(resolved.mount_matrix or []),
-            "search_order": [str(directory) for directory in
-                             (profile_dirs or profile.PROFILE_DIRS)],
+            "search_order": [
+                str(directory)
+                for directory in (
+                    profile.PROFILE_DIRS
+                    if profile_dirs is None
+                    else profile_dirs
+                )
+            ],
         },
         "input": input_devices,
         "iio": iio_devices,

@@ -525,6 +525,11 @@ class ProbeSummaryTests(unittest.TestCase):
                 iio_root=Path(tmp) / "iio",
             )
         self.assertTrue(report["read_only"])
+        self.assertEqual(report["version"], 2)
+        self.assertEqual(report["profile"]["support_tier"], "compatible")
+        self.assertTrue(report["profile"]["supported"])
+        self.assertNotIn("panasonic", report["profile"])
+        self.assertEqual(report["profile"]["search_order"], [])
         self.assertEqual(report["summary"]["input_count"], 2)
         # Without the virtual-device filter this would be 2.
         self.assertEqual(report["summary"]["tablet_switch_candidates"], 1)

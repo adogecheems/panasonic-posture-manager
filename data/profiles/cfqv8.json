@@ -1,9 +1,14 @@
 {
   "id": "cfqv8",
   "match": {
-    "vendor": "Panasonic Corporation",
-    "product": "CFQV8-1L"
+    "product_glob": [
+      "CFQV8",
+      "CFQV8-*",
+      "CF-QV8",
+      "CF-QV8-*"
+    ]
   },
+  "support_tier": "validated",
   "switch_name": "Intel HID switches",
   "keyboard_name": "AT Translated Set 2 keyboard",
   "touchpad_name": "Synaptics TM3562-001",

@@ -1,1 +1,1 @@
-"""Unprivileged GNOME session adapter: display transactions, lease, notifications."""
+"""Unprivileged desktop session adapter: display, lease and notifications."""

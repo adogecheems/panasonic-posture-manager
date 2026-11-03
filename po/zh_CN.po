@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: panasonic-posture-manager 0.3.0\n"
+"Project-Id-Version: panasonic-posture-manager 0.4.0\n"
 "PO-Revision-Date: 2026-11-01 00:00+0800\n"
 "Last-Translator: Project contributors\n"
 "Language-Team: Chinese\n"
@@ -19,9 +19,6 @@ msgstr "支架"
 msgid "Tablet"
 msgstr "平板"
 
-msgid "Waiting for posture"
-msgstr "等待姿态数据"
-
 msgid "Current posture"
 msgstr "当前姿态"
 
@@ -39,6 +36,9 @@ msgstr "后台服务未连接"
 
 msgid "Enter tent mode"
 msgstr "进入帐篷模式"
+
+msgid "Enter stand mode"
+msgstr "进入支架模式"
 
 msgid "Retry"
 msgstr "重试"
@@ -60,6 +60,63 @@ msgstr "帐篷模式提示"
 
 msgid "Offer tent mode when the base is upright"
 msgstr "底座接近竖直时提示进入帐篷模式"
+
+msgid "Stand mode notification"
+msgstr "支架模式提示"
+
+msgid "Ask before switching to stand mode when the base is folded back"
+msgstr "底座向后平放时，先询问是否进入支架模式"
+
+msgid "Sensor"
+msgstr "传感器"
+
+msgid "Sensor calibration"
+msgstr "传感器校准"
+
+msgid "Place the device in laptop form on a flat desk, then calibrate."
+msgstr "将设备以笔记本形态平放在桌面上，然后进行校准。"
+
+msgid "A custom flat-desk reference is in use."
+msgstr "当前使用自定义的桌面水平基准。"
+
+msgid "Calibrate"
+msgstr "校准"
+
+msgid "Calibrate sensor"
+msgstr "校准传感器"
+
+msgid "Calibrate sensor?"
+msgstr "校准传感器？"
+
+msgid "Place the device in laptop form on a flat, stable desk. Its current direction will become the level reference."
+msgstr "请将设备以笔记本形态平放在稳定桌面上。当前方向将作为水平基准。"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Calibrating…"
+msgstr "正在校准…"
+
+msgid "Resetting…"
+msgstr "正在恢复…"
+
+msgid "Reset"
+msgstr "恢复默认"
+
+msgid "Reset sensor calibration"
+msgstr "恢复默认传感器校准"
+
+msgid "Sensor direction calibrated."
+msgstr "传感器方向已校准。"
+
+msgid "Sensor direction reset."
+msgstr "传感器方向已恢复默认。"
+
+msgid "Unable to calibrate sensor"
+msgstr "无法校准传感器"
+
+msgid "Unable to reset sensor calibration"
+msgstr "无法恢复传感器默认校准"
 
 msgid "Mode selection"
 msgstr "模式选择"
@@ -100,11 +157,20 @@ msgstr "轻触以启用帐篷模式"
 msgid "Enable tent mode"
 msgstr "启用帐篷模式"
 
+msgid "Tap to enable stand mode"
+msgstr "轻触以启用支架模式"
+
+msgid "Enable stand mode"
+msgstr "启用支架模式"
+
 msgid "Waiting for the desktop to get ready…"
 msgstr "正在等待桌面功能就绪…"
 
 msgid "This model does not support automatic mode changes."
 msgstr "当前机型不支持自动切换模式。"
+
+msgid "Compatibility mode: this model is supported but has not been individually validated."
+msgstr "兼容模式：支持当前机型，但尚未单独验证。"
 
 msgid "This mode is not available right now."
 msgstr "当前无法选择该模式。"
@@ -115,8 +181,8 @@ msgstr "请切回本机桌面后重试。"
 msgid "The tablet switch currently controls the mode."
 msgstr "当前模式由平板开关控制。"
 
-msgid "The tent prompt has expired. Wait for it to appear again."
-msgstr "帐篷模式提示已失效，请等待再次出现。"
+msgid "The posture prompt has expired. Wait for it to appear again."
+msgstr "姿态提示已失效，请等待再次出现。"
 
 msgid "The setting could not be saved. Please try again."
 msgstr "设置保存失败，请重试。"
@@ -138,6 +204,9 @@ msgstr "平板开关状态恢复失败；如键盘或触摸板异常，请重启
 
 msgid "No posture data is available right now."
 msgstr "暂时没有姿态数据。"
+
+msgid "Hold the device in laptop form on a flat desk, then try calibrating again."
+msgstr "请将设备以笔记本形态稳定平放在桌面上，然后再校准。"
 
 msgid "This screen arrangement cannot be rotated. Please adjust the display settings."
 msgstr "当前屏幕布局无法旋转，请先调整显示设置。"
@@ -168,4 +237,7 @@ msgstr "笔记本"
 
 msgid "Tent mode"
 msgstr "帐篷模式"
+
+msgid "Stand mode"
+msgstr "支架模式"
 

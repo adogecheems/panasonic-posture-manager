@@ -7,12 +7,12 @@ Run by ``make check`` inside ``dbus-run-session``:
 
 The real daemon runs on the *session* bus (``--session-bus``), so logind/polkit
 authorization and the privileged relay are skipped.  This test covers the
-public wire contract: state schema v2, mode selection, persisted tent prompt,
-D-Bus error codes, the ``Retry`` method and the 0.3.0 ``SessionUpdate(u b s s)``
-lease handshake.  The test also owns the valid per-uid adapter name
-``work.mmoe.panasonic.Posture.Session.u<uid>`` so the negotiated identity is
-exercised (the session-bus development daemon intentionally bypasses the
-system-bus authorization checks).
+public wire contract: state schema v2, mode selection, sensor calibration,
+persisted prompt preferences, D-Bus error codes, the ``Retry`` method and the
+0.3.0 ``SessionUpdate(u b s s)`` lease handshake.  The test also owns the valid
+per-uid adapter name ``work.mmoe.panasonic.Posture.Session.u<uid>`` so the
+negotiated identity is exercised (the session-bus development daemon
+intentionally bypasses the system-bus authorization checks).
 """
 
 from __future__ import annotations
@@ -116,11 +116,31 @@ def main() -> int:
             assert current["version"] == STATE_VERSION, current
             assert "error_code" in current and "error_detail" in current, current
             assert "session_connected" in current, current
+            assert current["sensor_calibrated"] is False, current
             assert current["instance"], current
 
             # 2. Retry() (no arguments) is exposed for the UI retry button.
             call("Retry")
             assert state()["version"] == STATE_VERSION, state()
+            try:
+                call("CalibrateSensor")
+            except GLib.Error as error:
+                assert any(
+                    code in error.message
+                    for code in ("calibration-not-ready", "unsupported-model")
+                ), error.message
+            else:
+                wait_until(
+                    lambda: state()["sensor_calibrated"] is True,
+                    2.0,
+                    "calibration state",
+                )
+            call("ResetSensorCalibration")
+            wait_until(
+                lambda: state()["sensor_calibrated"] is False,
+                2.0,
+                "calibration reset",
+            )
 
             # 3. Manual mode selection (session-bus development backend).
             #    On a non-Panasonic or folded machine the service correctly
@@ -146,6 +166,11 @@ def main() -> int:
             saved = json.loads(config_path.read_text())
             assert saved.get("version") == 1, saved
             assert saved.get("tent_prompt") is False, saved
+
+            call("SetStandPrompt", GLib.Variant("(b)", (True,)))
+            wait_until(lambda: config_path.is_file(), 2.0, "settings file write")
+            saved = json.loads(config_path.read_text())
+            assert saved.get("stand_prompt") is True, saved
 
             # 5. Invalid mode is rejected with a stable error code.
             try:
@@ -186,8 +211,8 @@ def main() -> int:
                 raise AssertionError("legacy SessionUpdate(u b s) signature accepted")
 
             print(
-                "D-Bus checks passed: state v2, Retry, mode selection, persisted",
-                "preference, error code and SessionUpdate(u b s s) lease",
+                "D-Bus checks passed: state v2, Retry, calibration, mode selection,",
+                "persisted preferences, error code and SessionUpdate(u b s s) lease",
                 f"(per-uid adapter {adapter_name}).",
             )
             return 0

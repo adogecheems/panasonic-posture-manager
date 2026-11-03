@@ -1,7 +1,8 @@
-"""Tent-mode prompt notifications with an explicit shown/retry state machine.
+"""Tent/stand prompt notifications with an explicit shown/retry state machine.
 
 The daemon publishes ``pending_notification`` (the policy epoch of the current
-tent prompt).  A prompt may only be suppressed for an epoch after the
+posture prompt) and ``pending_prompt`` (its kind).  A prompt may only be
+suppressed for an epoch after the
 notification server *accepted* the notification; otherwise a transient
 notification failure or a local screen lock would permanently hide the
 prompt (P2-15).  Failures are retried with a 1/2/4 second backoff; after the
@@ -34,7 +35,7 @@ ICON_NAME = "work.mmoe.panasonic.PostureManager"
 
 
 class Notifier:
-    """Show/close the tent-mode prompt and remember which epoch was shown.
+    """Show/close a posture prompt and remember which epoch was shown.
 
     ``session_bus`` and the clock are injectable so the tests never talk to a
     real desktop notification server.
@@ -59,13 +60,17 @@ class Notifier:
         self.notification = 0
         #: Epoch the on-screen prompt refers to (``None`` = no prompt shown).
         self.epoch: int | None = None
+        #: Kind of prompt on screen (``"tent"`` or ``"stand"``).
+        self.prompt: str | None = None
         #: Epoch whose notification was successfully displayed.
         self.shown_epoch: int | None = None
 
         self._pending_epoch: int | None = None
+        self._pending_prompt: str | None = None
+        self._shown_prompt: str | None = None
         self._retries = 0
         self._retry_at: float | None = None
-        self._failed_epoch: int | None = None
+        self._failed_key: tuple[int, str] | None = None
         self._capabilities: list[str] | None = None
 
     # -- public API -------------------------------------------------------
@@ -79,13 +84,14 @@ class Notifier:
     def sync(
         self,
         epoch: int | None,
+        prompt: str = "tent",
         allow_retry: bool = True,
         now: float | None = None,
     ) -> None:
         """Converge the on-screen prompt towards *epoch*.
 
-        * ``epoch is None`` closes any prompt (no tent candidate).
-        * A successfully shown epoch is never shown twice.
+        * ``epoch is None`` closes any prompt (no posture candidate).
+        * A successfully shown ``(epoch, prompt)`` is never shown twice.
         * Failed attempts retry after 1/2/4 s; after the last retry the epoch
           is abandoned until it changes or :meth:`close` is called.
         """
@@ -95,48 +101,56 @@ class Notifier:
             self.close()
             return
         epoch = int(epoch)
-        if epoch == self.shown_epoch:
+        prompt = prompt if prompt in protocol.PROMPTS else "tent"
+        key = (epoch, prompt)
+        if key == (self.shown_epoch, self._shown_prompt):
             return
-        if epoch == self._failed_epoch:
+        if key == self._failed_key:
             return
-        if self._pending_epoch != epoch:
+        if (self._pending_epoch, self._pending_prompt) != key:
             # A new prompt replaces whatever is on screen and resets backoff.
             self._pending_epoch = epoch
+            self._pending_prompt = prompt
             self._retries = 0
             self._retry_at = None
-            if self.notification and self.epoch != epoch:
+            if self.notification and (self.epoch, self.prompt) != key:
                 self._close_notification()
         if self._retry_at is not None:
             if not allow_retry or now < self._retry_at:
                 return
-        self._attempt(epoch, now)
+        self._attempt(epoch, prompt, now)
 
     def close(self) -> None:
         """Close the prompt and forget every token/epoch so it can reappear."""
 
         self._close_notification()
         self.epoch = None
+        self.prompt = None
         self.shown_epoch = None
+        self._shown_prompt = None
         self._pending_epoch = None
+        self._pending_prompt = None
         self._retries = 0
         self._retry_at = None
-        self._failed_epoch = None
+        self._failed_key = None
         self._capabilities = None
 
     # -- internals --------------------------------------------------------
 
-    def _attempt(self, epoch: int, now: float) -> None:
+    def _attempt(self, epoch: int, prompt: str, now: float) -> None:
         try:
-            notification = self._notify()
+            notification = self._notify(prompt)
         except (GLib.Error, OSError, ValueError, errors.SessionError) as error:
-            log.warning("tent notification failed: %s", describe_error(error))
+            log.warning("posture notification failed: %s", describe_error(error))
             self.notification = 0
             self.epoch = None
+            self.prompt = None
             self._capabilities = None
             if self._retries >= len(RETRY_DELAYS):
                 # Give up for this epoch: a new epoch or close() retries again.
-                self._failed_epoch = epoch
+                self._failed_key = (epoch, prompt)
                 self._pending_epoch = None
+                self._pending_prompt = None
                 self._retries = 0
                 self._retry_at = None
             else:
@@ -145,16 +159,27 @@ class Notifier:
             return
         self.notification = int(notification or 0)
         self.epoch = epoch
+        self.prompt = prompt
         self.shown_epoch = epoch
+        self._shown_prompt = prompt
         self._pending_epoch = None
+        self._pending_prompt = None
         self._retries = 0
         self._retry_at = None
-        self._failed_epoch = None
+        self._failed_key = None
 
-    def _notify(self) -> int:
+    def _notify(self, prompt: str) -> int:
         capabilities = self._get_capabilities()
+        if prompt == "stand":
+            action_label = self._("Enable stand mode")
+            summary = self._("Stand mode")
+            body = self._("Tap to enable stand mode")
+        else:
+            action_label = self._("Enable tent mode")
+            summary = self._("Tent mode")
+            body = self._("Tap to enable tent mode")
         actions = (
-            ["default", self._("Enable tent mode")] if "actions" in capabilities else []
+            ["default", action_label] if "actions" in capabilities else []
         )
         hints = {"desktop-entry": GLib.Variant("s", self.desktop_entry)}
         parameters = GLib.Variant(
@@ -163,8 +188,8 @@ class Notifier:
                 self._("Panasonic 2-in-1 Tablet Posture Management Tool"),
                 0,
                 ICON_NAME,
-                self._("Tent mode"),
-                self._("Tap to enable tent mode"),
+                summary,
+                body,
                 actions,
                 hints,
                 -1,
@@ -184,6 +209,7 @@ class Notifier:
         identifier = self.notification
         self.notification = 0
         self.epoch = None
+        self.prompt = None
         if not identifier:
             return
         try:

@@ -15,6 +15,7 @@ from panasonic_posture.policy import (
     MODE_HARDWARE,
     MODE_LAPTOP,
     MODE_STAND,
+    MODE_STAND_PROMPT,
     MODE_TENT,
     MODE_TENT_PROMPT,
     Policy,
@@ -133,12 +134,16 @@ class PolicyTestCase(unittest.TestCase):
         magnitude=GRAVITY,
         roll=0.0,
         dt=0.1,
+        tent_prompt=True,
+        stand_prompt=False,
     ):
         self.now += dt
         self.policy.update(
             self.now,
             sample(pitch, magnitude, roll, stamp=self.now),
             hardware,
+            tent_prompt=tent_prompt,
+            stand_prompt=stand_prompt,
         )
         return self.policy.mode
 
@@ -150,9 +155,19 @@ class PolicyTestCase(unittest.TestCase):
         magnitude=GRAVITY,
         roll=0.0,
         dt=0.1,
+        tent_prompt=True,
+        stand_prompt=False,
     ):
         for _ in range(max(1, round(seconds / dt))):
-            self.step(pitch, hardware, magnitude, roll, dt)
+            self.step(
+                pitch,
+                hardware,
+                magnitude,
+                roll,
+                dt,
+                tent_prompt,
+                stand_prompt,
+            )
         return self.policy.mode
 
     def feed_invalid(self, kind, hardware=False, dt=0.1):
@@ -277,6 +292,53 @@ class PostureClassificationTests(PolicyTestCase):
         self.hold(120.0)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
 
+    def test_stand_noise_does_not_restart_the_takeover(self):
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+        # The shared sensor can return a short run below the old 140 degree
+        # hold edge.  It must not release S and immediately rebuild the relay.
+        for _ in range(12):
+            self.step(120.0)
+            self.assertEqual(self.policy.mode, MODE_STAND)
+
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+        # A real departure is still detected after the stand-specific debounce.
+        self.hold(120.0, seconds=2.2)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+
+    def test_stand_holds_at_the_wider_hold_edge(self):
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+        self.hold(135.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+    def test_stand_to_tent_enters_without_prompt(self):
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+        modes = [self.step(80.0) for _ in range(30)]
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.assertNotIn(MODE_TENT_PROMPT, modes)
+        self.assertIsNone(self.policy.pending_notification)
+
+    def test_direct_tent_does_not_disable_later_laptop_prompt(self):
+        self.hold(175.0)
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.hold(0.0)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.hold(0.0, seconds=5.2)
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+
+    def test_hardware_release_to_tent_enters_without_prompt(self):
+        self.hold(80.0, hardware=True)
+        self.assertEqual(self.policy.mode, MODE_HARDWARE)
+        modes = [self.step(80.0, hardware=False) for _ in range(30)]
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.assertNotIn(MODE_TENT_PROMPT, modes)
+
     def test_epoch_changes_only_on_mode_change(self):
         self.hold(0.0)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
@@ -327,6 +389,73 @@ class PostureClassificationTests(PolicyTestCase):
                 stamp = now
             policy.update(now, sample(80.0, stamp=stamp), False)
         self.assertEqual(policy.mode, MODE_TENT_PROMPT)
+
+
+class StandPromptTests(PolicyTestCase):
+    def test_prompt_is_opt_in_and_keeps_previous_behavior_by_default(self):
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+        self.assertIsNone(self.policy.pending_prompt)
+    def test_stand_prompt_waits_for_confirmation(self):
+        self.hold(175.0, stand_prompt=True)
+        self.assertEqual(self.policy.mode, MODE_STAND_PROMPT)
+        self.assertEqual(self.policy.pending_prompt, "stand")
+        self.assertEqual(self.policy.pending_notification, self.policy.epoch)
+        self.assertFalse(self.policy.confirm_stand(self.policy.epoch + 1))
+        self.assertTrue(self.policy.confirm_stand(self.policy.epoch))
+        self.assertEqual(self.policy.mode, MODE_STAND)
+        self.assertIsNone(self.policy.pending_prompt)
+
+    def test_confirm_requires_current_stand_zone(self):
+        self.hold(175.0, stand_prompt=True)
+        self.assertEqual(self.policy.mode, MODE_STAND_PROMPT)
+        epoch = self.policy.epoch
+        self.hold(150.0, stand_prompt=True)
+        self.assertEqual(self.policy.mode, MODE_STAND_PROMPT)
+        self.assertFalse(self.policy.confirm_stand(epoch))
+        self.hold(175.0, stand_prompt=True)
+        self.assertTrue(self.policy.confirm_stand(self.policy.epoch))
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+    def test_stand_prompt_is_invalidated_outside_hold_band(self):
+        self.hold(175.0, stand_prompt=True)
+        self.assertEqual(self.policy.mode, MODE_STAND_PROMPT)
+        epoch = self.policy.epoch
+        self.hold(120.0, stand_prompt=True)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.assertFalse(self.policy.confirm_stand(epoch))
+
+    def test_disabling_prompt_applies_stand_without_another_confirmation(self):
+        self.hold(175.0, stand_prompt=True)
+        self.assertEqual(self.policy.mode, MODE_STAND_PROMPT)
+        self.hold(175.0, stand_prompt=False)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+        self.assertIsNone(self.policy.pending_prompt)
+
+    def test_stand_prompt_only_applies_to_laptop_to_stand_transition(self):
+        self.hold(80.0)
+        self.assertTrue(self.policy.confirm(self.policy.epoch))
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.hold(175.0, stand_prompt=True)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+        self.assertIsNone(self.policy.pending_prompt)
+
+
+class TentPromptSettingTests(PolicyTestCase):
+    def test_disabled_prompt_enters_tent_from_laptop(self):
+        self.assertEqual(self.hold(80.0, tent_prompt=False), MODE_TENT)
+        self.assertIsNone(self.policy.pending_prompt)
+
+    def test_disabling_prompt_resolves_an_existing_tent_prompt(self):
+        self.assertEqual(self.hold(80.0), MODE_TENT_PROMPT)
+        self.assertEqual(self.hold(80.0, tent_prompt=False), MODE_TENT)
+        self.assertIsNone(self.policy.pending_prompt)
+
+    def test_disabled_prompt_does_not_skip_non_laptop_direct_entry_rules(self):
+        self.assertEqual(self.hold(80.0, tent_prompt=False), MODE_TENT)
+        self.assertEqual(self.hold(175.0, tent_prompt=False), MODE_STAND)
+        self.assertEqual(self.hold(80.0, tent_prompt=False), MODE_TENT)
+        self.assertIsNone(self.policy.pending_notification)
 
 
 class TentReentryTests(PolicyTestCase):
@@ -658,6 +787,7 @@ class ConfigTests(PolicyTestCase):
         for kwargs in (
             {"enter_seconds": -1.0},
             {"tent_reentry_seconds": -1.0},
+            {"stand_leave_seconds": -1.0},
             {"stale_seconds": float("nan")},
             {"history_seconds": -0.1},
             {"history_max_samples": 0},

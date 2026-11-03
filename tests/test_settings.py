@@ -36,10 +36,38 @@ class SettingsLoadTests(unittest.TestCase):
         self.store().save(Settings(tent_prompt=True))
         self.assertEqual(self.store().load(), Settings(tent_prompt=True))
 
+    def test_round_trip_stand_prompt(self) -> None:
+        self.store().save(Settings(tent_prompt=True, stand_prompt=True))
+        self.assertEqual(
+            self.store().load(), Settings(tent_prompt=True, stand_prompt=True)
+        )
+
+    def test_round_trip_sensor_calibration(self) -> None:
+        matrix = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        self.store().save(Settings(sensor_calibration=matrix))
+        self.assertEqual(
+            self.store().load(), Settings(sensor_calibration=matrix)
+        )
+
     def test_payload_has_version_and_boolean(self) -> None:
         self.store().save(Settings(tent_prompt=False))
         data = json.loads(self.path.read_text(encoding="utf-8"))
-        self.assertEqual(data, {"version": 1, "tent_prompt": False})
+        self.assertEqual(
+            data,
+            {
+                "version": 1,
+                "tent_prompt": False,
+                "stand_prompt": False,
+                "sensor_calibration": None,
+            },
+        )
+
+    def test_legacy_payload_without_stand_prompt_uses_safe_default(self) -> None:
+        self.path.write_text(
+            '{"version": 1, "tent_prompt": true}', encoding="utf-8"
+        )
+        self.assertEqual(self.store().load(), Settings(tent_prompt=True))
+        self.assertEqual(list(self.path.parent.glob(CORRUPT_GLOB)), [])
 
     def test_save_is_atomic_and_private(self) -> None:
         store = self.store()
@@ -136,6 +164,11 @@ class SettingsCorruptionTests(unittest.TestCase):
             '{"version": 2, "tent_prompt": true}',
             '{"version": 1, "tent_prompt": "yes"}',
             '{"version": 1, "tent_prompt": 1}',
+            '{"version": 1, "tent_prompt": true, "stand_prompt": "yes"}',
+            '{"version": 1, "tent_prompt": true, "stand_prompt": 1}',
+            '{"version": 1, "tent_prompt": true, "sensor_calibration": []}',
+            '{"version": 1, "tent_prompt": true, "sensor_calibration": [1, 0, 0]}',
+            '{"version": 1, "tent_prompt": true, "sensor_calibration": [2, 0, 0, 0, 2, 0, 0, 0, 2]}',
             '{"tent_prompt": true}',
         ]
         for index, text in enumerate(cases):

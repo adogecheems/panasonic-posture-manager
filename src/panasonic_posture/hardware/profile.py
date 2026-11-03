@@ -5,12 +5,15 @@ orientation for one machine.  Discovery stays capability based: a profile only
 narrows ambiguous candidates, it never widens the security boundary (the relay
 still verifies capabilities on the opened device).
 
-Profile lookup order is ``/etc`` then ``/usr/share`` then the source tree
-(development fallback); the first matching profile wins.
+Profile lookup order is ``/etc`` then the source tree (when running from a
+checkout) then ``/usr/share``; the first matching profile wins.  Keeping the
+checkout ahead of installed data prevents a stale profile from a previously
+installed release from shadowing the profiles being tested.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import math
@@ -19,7 +22,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from ..protocol import CONFIG_DIR, DATA_DIR, PROFILE_VERSION
+from ..protocol import CONFIG_DIR, DATA_DIR, PROFILE_VERSION, SUPPORT_TIERS
 
 _LOG = logging.getLogger(__name__)
 
@@ -28,8 +31,10 @@ CONFIG_PROFILE_DIR = Path(CONFIG_DIR) / "profiles"
 DATA_PROFILE_DIR = Path(DATA_DIR) / "profiles"
 SOURCE_PROFILE_DIR = Path(__file__).resolve().parents[3] / "data" / "profiles"
 
-#: Lookup order: user override, installed data, source tree (development).
-PROFILE_DIRS = (CONFIG_PROFILE_DIR, DATA_PROFILE_DIR, SOURCE_PROFILE_DIR)
+#: Lookup order: user override, development checkout, installed data.  The
+#: checkout entry is absent in an installed wheel, so packaged runs still use
+#: the data files shipped by the package.  A user override remains authoritative.
+PROFILE_DIRS = (CONFIG_PROFILE_DIR, SOURCE_PROFILE_DIR, DATA_PROFILE_DIR)
 
 DEFAULT_ACCEL_NAME = "accel_3d"
 
@@ -61,10 +66,11 @@ class Profile:
     touchpad_name: str | None = None
     accel_name: str = DEFAULT_ACCEL_NAME
     mount_matrix: tuple[float, ...] | None = None
+    support_tier: str = "compatible"
 
     @property
-    def panasonic(self) -> bool:
-        return "panasonic" in self.vendor.lower()
+    def supported(self) -> bool:
+        return self.support_tier in ("validated", "compatible")
 
     @property
     def label(self) -> str:
@@ -137,6 +143,35 @@ def parse_mount_matrix(value: object) -> tuple[float, ...] | None:
     return matrix
 
 
+def _parse_support_tier(value: object) -> str:
+    if value is None:
+        return "compatible"
+    if not isinstance(value, str) or value not in SUPPORT_TIERS:
+        raise _InvalidProfile(
+            "support_tier must be one of " + ", ".join(SUPPORT_TIERS)
+        )
+    return value
+
+
+def _parse_product_globs(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    items = [value] if isinstance(value, str) else value
+    if not isinstance(items, (list, tuple)):
+        raise _InvalidProfile("match.product_glob must be a string or list of strings")
+    patterns: list[str] = []
+    for item in items:
+        if not isinstance(item, str):
+            raise _InvalidProfile("match.product_glob entries must be strings")
+        pattern = item.strip()
+        if not pattern:
+            raise _InvalidProfile("match.product_glob entries must not be empty")
+        if any(ord(character) < 0x20 or ord(character) == 0x7F for character in pattern):
+            raise _InvalidProfile("match.product_glob contains control characters")
+        patterns.append(pattern.casefold())
+    return tuple(patterns)
+
+
 def _match_profile(match: object, vendor: str, product: str) -> _Match:
     """Classify the profile ``match`` block against the current DMI values."""
     if match is None:
@@ -150,21 +185,26 @@ def _match_profile(match: object, vendor: str, product: str) -> _Match:
 
     vendor_filter = match.get("vendor")
     product_filter = match.get("product")
+    product_globs = _parse_product_globs(match.get("product_glob"))
     if vendor_filter is not None and not isinstance(vendor_filter, str):
         raise _InvalidProfile("match.vendor must be a string")
     if product_filter is not None and not isinstance(product_filter, str):
         raise _InvalidProfile("match.product must be a string")
     for key in match:
-        if key not in ("vendor", "product"):
+        if key not in ("vendor", "product", "product_glob"):
             _LOG.debug("ignoring unknown profile match key %r", key)
 
     vendor_filter = (vendor_filter or "").strip() or None
     product_filter = (product_filter or "").strip() or None
-    if vendor_filter is None and product_filter is None:
+    if vendor_filter is None and product_filter is None and not product_globs:
         return _Match.EMPTY
     if vendor_filter is not None and vendor_filter != vendor:
         return _Match.NO
     if product_filter is not None and product_filter != product:
+        return _Match.NO
+    if product_globs and not any(
+        fnmatch.fnmatchcase(product.casefold(), pattern) for pattern in product_globs
+    ):
         return _Match.NO
     return _Match.YES
 
@@ -220,6 +260,7 @@ def _parse_profile(path: Path, vendor: str, product: str) -> Profile | None:
             touchpad_name=_optional_name(data, "touchpad_name"),
             accel_name=_optional_name(data, "accel_name") or DEFAULT_ACCEL_NAME,
             mount_matrix=parse_mount_matrix(data.get("mount_matrix")),
+            support_tier=_parse_support_tier(data.get("support_tier")),
         )
     except ValueError as exc:  # includes _InvalidProfile and mount errors
         _LOG.warning("skipping profile %s: %s", path, exc)

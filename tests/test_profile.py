@@ -50,26 +50,69 @@ class BuiltinProfileTests(unittest.TestCase):
         self.assertEqual(profile.switch_name, "Intel HID switches")
         self.assertEqual(profile.keyboard_name, "AT Translated Set 2 keyboard")
         self.assertEqual(profile.accel_name, "accel_3d")
-        self.assertTrue(profile.panasonic)
+        self.assertEqual(profile.support_tier, "validated")
+        self.assertTrue(profile.supported)
         self.assertEqual(profile.label, "CFQV8-1L")
 
-    def test_unknown_panasonic_uses_generic_profile(self):
+    def test_qv9_and_qv1_profiles_are_found(self):
+        for product, identifier in (
+            ("CFQV9-1L", "cfqv9"),
+            ("CF-QV9-2L", "cfqv9"),
+            ("CFQV1-1L", "cfqv1"),
+            ("CF-QV1-2L", "cfqv1"),
+        ):
+            with self.subTest(product=product):
+                profile = load_profile(("Panasonic Corporation", product), [PROFILES])
+                self.assertEqual(profile.id, identifier)
+                self.assertEqual(profile.support_tier, "validated")
+                self.assertEqual(profile.switch_name, "Intel HID switches")
+
+    def test_unknown_panasonic_uses_supported_compatible_profile(self):
         profile = load_profile(("Panasonic Corporation", "CF-UNKNOWN"), [PROFILES])
         self.assertEqual(profile.id, "generic")
-        self.assertTrue(profile.panasonic)
+        self.assertEqual(profile.support_tier, "compatible")
+        self.assertTrue(profile.supported)
         self.assertIsNone(profile.switch_name)
         self.assertIsNone(profile.mount_matrix)
 
-    def test_non_panasonic_is_not_supported(self):
+    def test_non_panasonic_uses_supported_compatible_profile(self):
         profile = load_profile(("Other Vendor", "X"), [PROFILES])
-        self.assertFalse(profile.panasonic)
+        self.assertEqual(profile.id, "generic")
+        self.assertEqual(profile.support_tier, "compatible")
+        self.assertTrue(profile.supported)
 
     def test_source_profile_dirs_include_development_tree(self):
         self.assertEqual(PROFILE_DIRS[0], Path("/etc/panasonic-posture-manager/profiles"))
         self.assertEqual(
-            PROFILE_DIRS[1], Path("/usr/share/panasonic-posture-manager/profiles")
+            PROFILE_DIRS[1], PROFILES
         )
-        self.assertEqual(PROFILE_DIRS[2], PROFILES)
+        self.assertEqual(
+            PROFILE_DIRS[2], Path("/usr/share/panasonic-posture-manager/profiles")
+        )
+
+    def test_development_tree_wins_over_stale_installed_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            installed = Path(tmp) / "installed"
+            source = Path(tmp) / "source"
+            write_json(
+                installed,
+                "cfqv8.json",
+                {"id": "stale", "match": {"product": "CFQV8-1L"}},
+            )
+            write_json(
+                source,
+                "cfqv8.json",
+                dict(
+                    matching_profile("cfqv8"),
+                    match={"product": "CFQV8-1L"},
+                    support_tier="validated",
+                ),
+            )
+            profile = load_profile(
+                ("Panasonic Corporation", "CFQV8-1L"), [source, installed]
+            )
+        self.assertEqual(profile.id, "cfqv8")
+        self.assertEqual(profile.support_tier, "validated")
 
     def test_dmi_reader_never_raises(self):
         vendor, product = dmi()
@@ -147,6 +190,33 @@ class MatchSemanticsTests(unittest.TestCase):
             profile = load_profile(("Panasonic Corporation", "CUSTOM-1"), [tmp])
         self.assertEqual(profile.id, "short")
 
+    def test_product_glob_matches_variants_case_insensitively(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_json(
+                Path(tmp),
+                "family.json",
+                {
+                    "id": "family",
+                    "match": {
+                        "product_glob": ["CFQV8", "CFQV8-*", "CF-QV8-*"],
+                    },
+                },
+            )
+            for product in ("CFQV8", "cfqv8-1l", "CF-QV8-2L"):
+                with self.subTest(product=product):
+                    profile = load_profile(("Any Vendor", product), [tmp])
+                    self.assertEqual(profile.id, "family")
+
+    def test_product_glob_does_not_match_other_products(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_json(
+                Path(tmp),
+                "family.json",
+                {"id": "family", "match": {"product_glob": "CFQV9-*"}},
+            )
+            profile = load_profile(("Any Vendor", "CFQV8-1L"), [tmp])
+        self.assertEqual(profile.id, "generic")
+
     def test_empty_match_matches_no_machine_and_warns(self):
         with tempfile.TemporaryDirectory() as tmp:
             write_json(Path(tmp), "empty.json", {"id": "empty", "match": {}})
@@ -198,6 +268,10 @@ class StrictValidationTests(unittest.TestCase):
         self.load_single({"id": "bad", "match": 5})
         self.load_single({"id": "bad", "match": {"vendor": 5}})
         self.load_single({"id": "bad", "match": {"product": []}})
+        self.load_single({"id": "bad", "match": {"product_glob": 5}})
+        self.load_single({"id": "bad", "match": {"product_glob": [5]}})
+        self.load_single({"id": "bad", "match": {"product_glob": ["  "]}})
+        self.load_single({"id": "bad", "match": {"product_glob": ["bad\nname"]}})
 
     def test_invalid_id_is_rejected(self):
         self.load_single({"id": 5, "match": "CUSTOM-1"})
@@ -245,6 +319,7 @@ class StrictValidationTests(unittest.TestCase):
                     touchpad_name="tp",
                     accel_name="accel_3d",
                     mount_matrix=[0, -1, 0, 1, 0, 0, 0, 0, 1],
+                    support_tier="validated",
                 ),
             )
             profile = load_profile(("Panasonic Corporation", "CUSTOM-1"), [tmp])
@@ -252,6 +327,23 @@ class StrictValidationTests(unittest.TestCase):
         self.assertEqual(profile.keyboard_name, "kb")
         self.assertEqual(profile.touchpad_name, "tp")
         self.assertEqual(profile.mount_matrix, (0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0))
+        self.assertEqual(profile.support_tier, "validated")
+
+    def test_invalid_support_tier_is_rejected(self):
+        for value in ("unknown", "", 1, True):
+            with self.subTest(value=value):
+                self.load_single(dict(matching_profile("tier"), support_tier=value))
+
+    def test_unsupported_tier_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_json(
+                Path(tmp),
+                "disabled.json",
+                dict(matching_profile("disabled"), support_tier="unsupported"),
+            )
+            profile = load_profile(("Panasonic Corporation", "CUSTOM-1"), [tmp])
+        self.assertEqual(profile.support_tier, "unsupported")
+        self.assertFalse(profile.supported)
 
 
 class MountMatrixTests(unittest.TestCase):
@@ -328,10 +420,9 @@ class LoadProfileArgumentTests(unittest.TestCase):
     def test_dmi_values_alias(self):
         self.assertEqual(hardware_profile.dmi_values(), dmi())
 
-    def test_profile_panasonic_is_case_insensitive(self):
-        profile = Profile(vendor="PANASONIC CORPORATION")
-        self.assertTrue(profile.panasonic)
-        self.assertFalse(Profile(vendor="").panasonic)
+    def test_profile_defaults_to_compatible_tier(self):
+        self.assertEqual(Profile().support_tier, "compatible")
+        self.assertTrue(Profile().supported)
 
 
 class DmiFailureTests(unittest.TestCase):
@@ -344,7 +435,8 @@ class DmiFailureTests(unittest.TestCase):
         self.assertEqual(profile.id, "generic")
         self.assertEqual(profile.vendor, "")
         self.assertEqual(profile.product, "")
-        self.assertFalse(profile.panasonic)
+        self.assertEqual(profile.support_tier, "compatible")
+        self.assertTrue(profile.supported)
 
 
 if __name__ == "__main__":

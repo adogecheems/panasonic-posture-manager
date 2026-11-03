@@ -29,6 +29,11 @@ JOURNAL_VERSION = 1
 JOURNAL_NAME = "display.json"
 _SPEC_FIELDS = 4
 
+#: The journal is shared by all display backends.  ``backend`` was added when
+#: X11 and Plasma support landed; documents written by 0.3.0 GNOME builds do
+#: not contain it and are treated as GNOME journals.
+BACKEND_SPEC_FIELDS = {"gnome": _SPEC_FIELDS, "x11": 1, "plasma": 1}
+
 
 def default_path() -> Path:
     """Return ``$XDG_STATE_HOME/panasonic-posture-manager/display.json``."""
@@ -50,11 +55,17 @@ def _validate(data: Any) -> dict:
         raise ValueError("journal must be a JSON object")
     if data.get("version") != JOURNAL_VERSION:
         raise ValueError(f"unsupported journal version {data.get('version')!r}")
+    backend = data.get("backend", "gnome")
+    if not isinstance(backend, str) or not backend:
+        raise ValueError("journal backend must be a non-empty string")
+    expected_fields = BACKEND_SPEC_FIELDS.get(backend, 1)
     spec = data.get("spec")
-    if not isinstance(spec, (list, tuple)) or len(spec) != _SPEC_FIELDS:
-        raise ValueError("journal spec must be a list of four strings")
+    if not isinstance(spec, (list, tuple)) or len(spec) != expected_fields:
+        raise ValueError(
+            f"journal spec for {backend} must be a list of {expected_fields} strings"
+        )
     if not all(isinstance(part, str) for part in spec):
-        raise ValueError("journal spec must be a list of four strings")
+        raise ValueError("journal spec must be a list of strings")
     if not _is_int(data.get("original_transform")):
         raise ValueError("journal original_transform must be an integer")
     if not isinstance(data.get("original_lock"), bool):
@@ -65,6 +76,15 @@ def _validate(data: Any) -> dict:
     written_transform = data.get("written_transform", None)
     if written_transform is not None and not _is_int(written_transform):
         raise ValueError("journal written_transform must be an integer or null")
+    original_policy = data.get("original_policy", None)
+    if original_policy is not None and not isinstance(original_policy, str):
+        raise ValueError("journal original_policy must be a string or null")
+    original_auxiliary = data.get("original_auxiliary", None)
+    if original_auxiliary is not None and not isinstance(original_auxiliary, dict):
+        raise ValueError("journal original_auxiliary must be an object or null")
+    written_auxiliary = data.get("written_auxiliary", None)
+    if written_auxiliary is not None and not isinstance(written_auxiliary, bool):
+        raise ValueError("journal written_auxiliary must be a boolean or null")
     return data
 
 

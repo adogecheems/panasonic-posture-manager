@@ -190,14 +190,17 @@ def scan_plan(
     return axes, tuple(types)
 
 
-def _find_device(root: Path, name: str) -> Path:
+def _device_entries(root: Path) -> list[Path]:
     try:
-        entries = sorted(root.glob(f"{DEVICE_PREFIX}*"))
+        return sorted(root.glob(f"{DEVICE_PREFIX}*"))
     except OSError as exc:
         raise Unavailable(f"cannot enumerate {root}: {exc}") from exc
+
+
+def _find_named_device(entries: Sequence[Path], name: str) -> Path | None:
     matches = [device for device in entries if _optional_text(device / "name") == name]
     if not matches:
-        raise Unavailable(f"{name} IIO device not found")
+        return None
     if len(matches) > 1:
         # Mirror the sysfs fallback (which requires exactly one device) and the
         # C relay's ambiguity handling: never guess between two identical
@@ -207,6 +210,60 @@ def _find_device(root: Path, name: str) -> Path:
             + ", ".join(device.name for device in matches)
         )
     return matches[0]
+
+
+def _has_buffer_accel(device: Path) -> bool:
+    scan = device / "scan_elements"
+    return all(
+        _optional_text(scan / f"in_accel_{axis}_type") for axis in _AXES
+    )
+
+
+def _has_sysfs_accel(device: Path) -> bool:
+    return all(
+        _optional_text(device / f"in_accel_{axis}_raw") for axis in _AXES
+    ) and bool(_optional_text(device / "in_accel_scale"))
+
+
+def _find_device(root: Path, name: str) -> Path:
+    """Find the preferred IIO buffer, or the sole complete accelerometer.
+
+    Kernel drivers do not all use the Intel sensor-hub name ``accel_3d``.  A
+    profile name is therefore a preference, not a hard gate: when no device
+    has that name, exactly one device exposing all three acceleration scan
+    elements is safe to use.  Ambiguity still fails closed because two sensors
+    may have different mount matrices or purposes.
+    """
+    entries = _device_entries(root)
+    named = _find_named_device(entries, name)
+    if named is not None:
+        return named
+    fallback = [device for device in entries if _has_buffer_accel(device)]
+    if len(fallback) > 1:
+        raise Unavailable(
+            "multiple IIO accelerometer devices found: "
+            + ", ".join(device.name for device in fallback)
+        )
+    if not fallback:
+        raise Unavailable(f"{name} IIO device not found")
+    return fallback[0]
+
+
+def find_sysfs_accel(root: Path, name: str) -> Path:
+    """Find the preferred sysfs accelerometer, or the sole complete fallback."""
+    entries = _device_entries(root)
+    named = _find_named_device(entries, name)
+    if named is not None:
+        return named
+    fallback = [device for device in entries if _has_sysfs_accel(device)]
+    if len(fallback) > 1:
+        raise Unavailable(
+            "multiple sysfs accelerometer devices found: "
+            + ", ".join(device.name for device in fallback)
+        )
+    if not fallback:
+        raise Unavailable(f"{name} sysfs accelerometer not found")
+    return fallback[0]
 
 
 def _find_trigger(root: Path, name: str) -> Path | None:
@@ -277,7 +334,8 @@ class Accel:
         index = device.name.removeprefix(DEVICE_PREFIX)
         if not index.isdigit():
             raise Unavailable(f"unexpected IIO device directory {device.name!r}")
-        trigger_name = f"{self.name}-dev{index}"
+        actual_name = _optional_text(device / "name") or self.name
+        trigger_name = f"{actual_name}-dev{index}"
         if _find_trigger(self.root, trigger_name) is None:
             raise Unavailable(f"IIO trigger {trigger_name} not found")
 

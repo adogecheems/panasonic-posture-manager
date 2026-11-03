@@ -12,7 +12,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from .protocol import SENSOR_SOURCES, STATE_VERSION
+from .protocol import (
+    PROMPTS,
+    SENSOR_SOURCES,
+    STATE_VERSION,
+    SUPPORT_TIERS,
+    TARGET_MODES,
+)
 
 
 class Mode(StrEnum):
@@ -79,13 +85,25 @@ class Target:
     def from_dict(cls, data: dict[str, Any]) -> "Target":
         if not isinstance(data, dict):
             raise ValueError("target must be an object")
+        mode = data.get("mode", "unavailable")
+        if not isinstance(mode, str) or mode not in TARGET_MODES:
+            raise ValueError(f"invalid target mode {mode!r}")
         tablet = data.get("tablet")
+        if tablet is not None and not isinstance(tablet, bool):
+            raise ValueError("target tablet must be a boolean or null")
         rotation = data.get("rotation")
+        if rotation is not None and (
+            not isinstance(rotation, int) or isinstance(rotation, bool)
+        ):
+            raise ValueError("target rotation must be an integer or null")
+        disable_input = data.get("disable_internal_input", False)
+        if not isinstance(disable_input, bool):
+            raise ValueError("target disable_internal_input must be a boolean")
         return cls(
-            mode=str(data.get("mode") or "unavailable"),
-            tablet=None if tablet is None else bool(tablet),
-            rotation=None if rotation is None else int(rotation),
-            disable_internal_input=bool(data.get("disable_internal_input")),
+            mode=mode,
+            tablet=tablet,
+            rotation=rotation,
+            disable_internal_input=disable_input,
         )
 
 
@@ -116,21 +134,25 @@ class StateSnapshot:
 
     instance: str = ""
     generation: int = 0
-    pose: Pose = Pose.UNKNOWN
+    pose: Pose = Pose.LAPTOP
     hardware: bool | None = None
     hardware_status: HardwareStatus = HardwareStatus.ABSENT
     manual: Mode = Mode.AUTO
     tent_prompt: bool = True
+    stand_prompt: bool = False
     target: Target = field(default_factory=Target)
     applied: Target | None = None
     pending_notification: int | None = None
+    pending_prompt: str | None = None
     backend: BackendState = BackendState.READY
     error_code: str | None = None
     error_detail: str | None = None
     session_connected: bool = False
     supported: bool = True
+    support_tier: str = "compatible"
     sensor_source: SensorSource = SensorSource.STARTING
     sensor_error: str | None = None
+    sensor_calibrated: bool = False
     profile: str = "generic"
     model: str = ""
     vendor: str = ""
@@ -145,16 +167,20 @@ class StateSnapshot:
             "hardware_status": str(self.hardware_status),
             "manual": str(self.manual),
             "tent_prompt": self.tent_prompt,
+            "stand_prompt": self.stand_prompt,
             "target": self.target.to_dict(),
             "applied": self.applied.to_dict() if self.applied else None,
             "pending_notification": self.pending_notification,
+            "pending_prompt": self.pending_prompt,
             "backend": str(self.backend),
             "error_code": self.error_code,
             "error_detail": self.error_detail,
             "session_connected": self.session_connected,
             "supported": self.supported,
+            "support_tier": self.support_tier,
             "sensor_source": str(self.sensor_source),
             "sensor_error": self.sensor_error,
+            "sensor_calibrated": self.sensor_calibrated,
             "profile": self.profile,
             "model": self.model,
             "vendor": self.vendor,
@@ -179,27 +205,85 @@ def loads_state(text: str) -> dict[str, Any]:
 def parse_state_snapshot(text: str) -> StateSnapshot:
     """Strict parser used by the session adapter and tests."""
     data = loads_state(text)
+
+    def boolean(key: str, default: bool) -> bool:
+        value = data.get(key, default)
+        if not isinstance(value, bool):
+            raise ValueError(f"{key} must be a boolean")
+        return value
+
+    def optional_boolean(key: str) -> bool | None:
+        value = data.get(key)
+        if value is not None and not isinstance(value, bool):
+            raise ValueError(f"{key} must be a boolean or null")
+        return value
+
+    def integer(key: str, default: int) -> int:
+        value = data.get(key, default)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"{key} must be a non-negative integer")
+        return value
+
+    def optional_string(key: str) -> str | None:
+        value = data.get(key)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{key} must be a string or null")
+        return value
+
+    def string(key: str, default: str) -> str:
+        value = data.get(key, default)
+        if not isinstance(value, str):
+            raise ValueError(f"{key} must be a string")
+        return value
+
+    raw_support_tier = data.get("support_tier")
+    if raw_support_tier is None:
+        support_tier = "unsupported" if data.get("supported") is False else "compatible"
+    else:
+        if not isinstance(raw_support_tier, str) or raw_support_tier not in SUPPORT_TIERS:
+            raise ValueError(f"invalid support tier {raw_support_tier!r}")
+        support_tier = raw_support_tier
+    raw_prompt = data.get("pending_prompt")
+    if raw_prompt is not None and raw_prompt not in PROMPTS:
+        raise ValueError(f"invalid pending prompt {raw_prompt!r}")
+    pending_notification = data.get("pending_notification")
+    if pending_notification is not None and (
+        not isinstance(pending_notification, int)
+        or isinstance(pending_notification, bool)
+        or pending_notification < 0
+    ):
+        raise ValueError("pending_notification must be a non-negative integer or null")
+    raw_target = data.get("target", {})
+    if not isinstance(raw_target, dict):
+        raise ValueError("target must be an object")
+    raw_applied = data.get("applied")
+    if raw_applied is not None and not isinstance(raw_applied, dict):
+        raise ValueError("applied must be an object or null")
     return StateSnapshot(
-        instance=str(data.get("instance") or ""),
-        generation=int(data.get("generation") or 0),
-        pose=Pose(data.get("pose", "unknown")),
-        hardware=data.get("hardware"),
+        instance=string("instance", ""),
+        generation=integer("generation", 0),
+        pose=Pose(data.get("pose", "laptop")),
+        hardware=optional_boolean("hardware"),
         hardware_status=HardwareStatus(data.get("hardware_status", "absent")),
         manual=Mode(data.get("manual", "auto")),
-        tent_prompt=bool(data.get("tent_prompt", True)),
-        target=Target.from_dict(data.get("target") or {}),
-        applied=Target.from_dict(data["applied"]) if data.get("applied") else None,
-        pending_notification=data.get("pending_notification"),
+        tent_prompt=boolean("tent_prompt", True),
+        stand_prompt=boolean("stand_prompt", False),
+        target=Target.from_dict(raw_target),
+        applied=Target.from_dict(raw_applied) if raw_applied is not None else None,
+        pending_notification=pending_notification,
+        pending_prompt=raw_prompt,
         backend=BackendState(data.get("backend", "ready")),
-        error_code=data.get("error_code"),
-        error_detail=data.get("error_detail"),
-        session_connected=bool(data.get("session_connected", False)),
-        supported=bool(data.get("supported", True)),
+        error_code=optional_string("error_code"),
+        error_detail=optional_string("error_detail"),
+        session_connected=boolean("session_connected", False),
+        supported=boolean("supported", support_tier != "unsupported"),
+        support_tier=support_tier,
         sensor_source=SensorSource(data.get("sensor_source", "starting")),
-        sensor_error=data.get("sensor_error"),
-        profile=str(data.get("profile") or "generic"),
-        model=str(data.get("model") or ""),
-        vendor=str(data.get("vendor") or ""),
+        sensor_error=optional_string("sensor_error"),
+        sensor_calibrated=boolean("sensor_calibrated", False),
+        profile=string("profile", "generic"),
+        model=string("model", ""),
+        vendor=string("vendor", ""),
     )
 
 
@@ -207,3 +291,7 @@ def ensure_sensor_source(value: str) -> SensorSource:
     if value not in SENSOR_SOURCES:
         return SensorSource.STARTING
     return SensorSource(value)
+
+
+def ensure_support_tier(value: str) -> str:
+    return value if value in SUPPORT_TIERS else "compatible"

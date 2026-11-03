@@ -1,8 +1,8 @@
-# AUR 打包与发布说明（0.3.x）
+# AUR 打包与发布说明（0.4.x）
 
 > **当前状态：草稿，禁止提交到 AUR。**
 >
-> 源码、构建脚本与 wheel 构建流程已经就绪；但上游 Git 仓库与 `v0.3.0` tag 尚未
+> 源码、构建脚本与 wheel 构建流程已经就绪；但上游 Git 仓库与 `v0.4.0` tag 尚未
 > 发布，clean chroot 验收、最终元数据复核和真机验收也未完成。在此之前，本地
 > 构建成功不等于可以发布。
 
@@ -15,16 +15,36 @@
 | 项目 | 状态 |
 | --- | --- |
 | 许可证 | 已确定为 `AGPL-3.0-or-later`，`PKGBUILD`、`.SRCINFO`、`pyproject.toml` 与 `LICENSE` 一致 |
-| 源码 | 从固定 Git tag `v0.3.0` 构建；公开仓库与 tag 尚未就绪 |
+| 源码 | 从固定 Git tag `v0.4.0` 构建；公开仓库与 tag 尚未就绪 |
 | 校验和 | VCS source 使用 `sha256sums=('SKIP')`；由 tag 固定源码版本，这不是发布阻断项 |
 | 构建脚本 | `build()`、`check()`、`package()` 均已编写；尚未在 clean chroot 中实际运行 `makepkg` |
 | 发布状态 | **不可提交 AUR，不能视为可复现发布** |
+
+## 桌面显示后端
+
+会话适配器按 `XDG_CURRENT_DESKTOP`、`XDG_SESSION_TYPE` 和
+`KDE_SESSION_VERSION` 选择后端。系统服务和 relay 本身不依赖桌面环境。
+
+| 会话 | 可选依赖 | 后端与能力 |
+| --- | --- | --- |
+| GNOME Wayland / GNOME X11 | `gnome-shell`、`mutter`、`gnome-settings-daemon` | Mutter DisplayConfig；显式旋转与方向锁 |
+| Plasma 6 Wayland | `kscreen`（6.8+）或 `libkscreen`（6.0–6.7） | `kscreenctl` 或 `kscreen-doctor`；显式旋转与自动旋转策略 |
+| 其他 X11，包括 Plasma 6 X11 | `xorg-xrandr`、`xorg-xinput` | `xrandr`；仅显式旋转，无自动旋转锁；`xinput` 同步触摸映射 |
+| 其他 Wayland | 无 | 不支持显示控制，适配器返回稳定错误而不是反复崩溃重启 |
+
+`kscreenctl` 与 `kscreen-doctor` 同时存在时优先使用 `kscreenctl`。Plasma 5
+Wayland 明确不支持；未设置 `KDE_SESSION_VERSION` 的 Plasma Wayland 会话按
+Plasma 6 处理。锁屏检测优先使用 logind 的 `LockedHint`，再回退到 freedesktop
+或 GNOME ScreenSaver 接口。普通 X11 后端不锁定自动旋转；安装 `xorg-xinput` 时，
+它按唯一的 `INPUT_PROP_DIRECT` 物理组映射内屏触摸并在退出/失败时恢复原始矩阵。
+多触摸屏歧义时可用 `PANASONIC_POSTURE_TOUCH_DEVICE` 指定设备组；缺少 `xinput`
+时回退为桌面行为。两种回退都仍需纳入真机验收。
 
 ## 发布阻断项
 
 1. **公开仓库与 tag 尚不可获取**：`PKGBUILD` 当前指向
    `https://github.com/adogecheems/panasonic-posture-manager.git`，并请求
-   `v0.3.0` tag。必须创建公开仓库、推送对应 tag，并确认匿名用户可以取得源码；
+   `v0.4.0` tag。必须创建公开仓库、推送对应 tag，并确认匿名用户可以取得源码；
    在此之前 `makepkg` 无法完成下载阶段。
 2. **clean chroot 验收未完成**：必须使用干净 Arch chroot/devtools 环境构建，运行
    `make WERROR=1 check`，再检查安装、升级、D-Bus 自动激活、用户会话适配器、
@@ -32,7 +52,9 @@
 3. **元数据未最终复核**：提交前确认 Maintainer、`pkgver`、`pkgrel`、依赖、
    optional dependencies、安装脚本和 `.SRCINFO` 全部一致。
 4. **真机验收未完成**：CFQV8-1L 仍需补齐物理折叠、平板开关、帐篷模式提示点击、
-   180° 触摸坐标、外接屏布局和休眠唤醒；此外还需至少一台非 CFQV8 机型按
+   180° 触摸坐标、外接屏布局和休眠唤醒；QV9/QV1 同族机型还需完成回归验收。
+   GNOME X11、Plasma 6 Wayland 和普通 X11 的显示后端也尚未逐桌面验收。其他兼容
+   模式机型按
    [docs/hardware-profiles.md](../../docs/hardware-profiles.md) 完成物理验收。
 
 ## 安装布局
@@ -82,7 +104,7 @@ python -m installer --destdir="$stage" dist/*.whl
 ```
 
 最后一条只验证 Python wheel 的入口点与元数据，不会安装 UI、relay、systemd、
-D-Bus 或 polkit 文件。完整布局需要在公开仓库和 `v0.3.0` tag 就绪后，在 clean
+D-Bus 或 polkit 文件。完整布局需要在公开仓库和 `v0.4.0` tag 就绪后，在 clean
 chroot 中运行 `makepkg --cleanbuild` 验证，不能用本地工作树替代发布源码。
 
 ## 首次安装后的当前会话
@@ -133,7 +155,7 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 
 ## 发布检查清单
 
-- [ ] 创建公开仓库，确认源码 URL 可匿名克隆，并让 `v0.3.0` tag 指向最终提交。
+- [ ] 创建公开仓库，确认源码 URL 可匿名克隆，并让 `v0.4.0` tag 指向最终提交。
 - [ ] 确认 `pkgver`、源码 tag、`pyproject.toml` 版本三者一致。
 - [ ] 确认 `AGPL-3.0-or-later` 在 `LICENSE`、`PKGBUILD`、`.SRCINFO` 与
   `pyproject.toml` 中一致。
@@ -142,8 +164,10 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 - [ ] 在 clean chroot 中运行 `make WERROR=1 check`、wheel 构建、
   `makepkg --cleanbuild` 和 `namcap`。
 - [ ] 验证全新安装、升级、D-Bus 自动激活、用户会话适配器、休眠唤醒和卸载。
+- [ ] 分别验证 GNOME Wayland/X11、Plasma 6 Wayland 和普通 X11 的旋转、恢复、
+  锁屏通知、外接屏拒绝路径，以及 X11 每个旋转角的四角触摸、多指和手写笔映射。
 - [ ] 确认包内没有 `/usr/local` 引用、预构建 relay、`.mo`、`build/` 或 `dist/`。
 - [ ] 在 CFQV8-1L 补齐物理折叠、平板开关、帐篷模式提示点击、180° 触摸坐标、外接屏
   布局和休眠唤醒验收。
-- [ ] 在至少一台其他目标机型完成
-  [docs/hardware-profiles.md](../../docs/hardware-profiles.md) 的物理验收。
+- [ ] 完成 QV9/QV1 同族回归；其他兼容模式机型按
+  [docs/hardware-profiles.md](../../docs/hardware-profiles.md) 的清单验收。

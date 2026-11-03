@@ -31,8 +31,15 @@ def dbus_error(name, message="unavailable"):
     )
 
 
-def monitor_state(transform=0, serial=2, mirror=False, external=False, builtin=True):
-    inner = ("eDP-1", "AUO", "panel", "1")
+def monitor_state(
+    transform=0,
+    serial=2,
+    mirror=False,
+    external=False,
+    builtin=True,
+    spec=("eDP-1", "AUO", "panel", "1"),
+):
+    inner = spec
     outer = ("HDMI-1", "Other", "screen", "2")
     modes = [("mode", 2880, 1920, 60.0, 2.0, [2.0], {"is-current": True})]
     monitors = [(inner, modes, {"is-builtin": True} if builtin else {})]
@@ -58,6 +65,7 @@ class FakeMutter:
     def __init__(self, timeline, transform=0, fail_apply=0, apply_updates=True):
         self.timeline = timeline
         self.transform = transform
+        self.monitor_spec = ("eDP-1", "AUO", "panel", "1")
         self.fail_apply = fail_apply
         self.apply_updates = apply_updates
         self.state_calls = 0
@@ -68,7 +76,13 @@ class FakeMutter:
         self.timeline.append(method)
         if method == "GetCurrentState":
             self.state_calls += 1
-            return Reply(monitor_state(transform=self.transform, serial=self.state_calls))
+            return Reply(
+                monitor_state(
+                    transform=self.transform,
+                    serial=self.state_calls,
+                    spec=self.monitor_spec,
+                )
+            )
         if method == "ApplyMonitorsConfig":
             self.apply_calls += 1
             if self.fail_apply:
@@ -239,6 +253,7 @@ class ApplyTransactionTests(unittest.TestCase):
         self.assertLess(harness.timeline.index(("lock", True)), harness.timeline.index("ApplyMonitorsConfig"))
         document = harness.journal.document
         self.assertIsNotNone(document)
+        self.assertEqual(document["backend"], "gnome")
         self.assertEqual(document["original_transform"], 0)
         self.assertEqual(document["original_lock"], False)
         self.assertTrue(document["written_lock"])
@@ -266,12 +281,55 @@ class ApplyTransactionTests(unittest.TestCase):
         self.assertLess(timeline.index("ApplyMonitorsConfig"), timeline.index(("lock", False)))
         self.assertFalse(harness.settings.value)
 
-    def test_laptop_rotates_to_landscape_without_journal(self):
+    def test_laptop_after_tablet_keeps_ownership_until_unavailable_restores(self):
+        harness = Harness(transform=0, locked=False)
+        harness.display.apply(Target(mode="tablet", tablet=None, rotation=None, disable_internal_input=True))
+        harness.mutter.transform = 1
+        harness.display.apply(Target(mode="laptop", tablet=False, rotation=0, disable_internal_input=False))
+        self.assertEqual(harness.mutter.transform, 0)
+        self.assertTrue(harness.settings.value)
+        self.assertIsNotNone(harness.display.owned)
+        self.assertEqual(harness.journal.document["written_transform"], 0)
+        timeline = harness.timeline
+        apply_index = len(timeline) - 1 - timeline[::-1].index("ApplyMonitorsConfig")
+        lock_index = len(timeline) - 1 - timeline[::-1].index(("lock", True))
+        self.assertLess(lock_index, apply_index)
+        harness.display.apply(Target(mode="hardware"))
+        self.assertEqual(harness.mutter.transform, 0)
+        self.assertFalse(harness.settings.value)
+        self.assertIsNotNone(harness.display.owned)
+        self.assertIsNotNone(harness.journal.document)
+        harness.display.apply(Target(mode="unavailable"))
+        self.assertFalse(harness.settings.value)
+        self.assertIsNone(harness.display.owned)
+        self.assertIsNone(harness.journal.document)
+
+    def test_initial_laptop_owns_landscape_until_hardware_then_restores(self):
         harness = Harness(transform=2, locked=True)
         harness.display.apply(Target(mode="laptop", tablet=False, rotation=0, disable_internal_input=False))
         self.assertEqual(harness.mutter.transform, 0)
-        self.assertIsNone(harness.journal.document)
         self.assertTrue(harness.settings.value)
+        self.assertIsNotNone(harness.journal.document)
+        harness.display.apply(Target(mode="hardware"))
+        self.assertEqual(harness.mutter.transform, 2)
+        self.assertFalse(harness.settings.value)
+        self.assertIsNotNone(harness.journal.document)
+        harness.display.apply(Target(mode="unavailable"))
+        self.assertTrue(harness.settings.value)
+        self.assertIsNone(harness.journal.document)
+
+    def test_tent_to_laptop_to_hardware_restores_original_state(self):
+        harness = Harness(transform=2, locked=False)
+        harness.display.apply(Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True))
+        harness.display.apply(Target(mode="laptop", tablet=False, rotation=0, disable_internal_input=False))
+        self.assertEqual(harness.mutter.transform, 0)
+        self.assertTrue(harness.settings.value)
+        harness.display.apply(Target(mode="hardware"))
+        self.assertEqual(harness.mutter.transform, 2)
+        self.assertFalse(harness.settings.value)
+        self.assertIsNotNone(harness.journal.document)
+        harness.display.apply(Target(mode="unavailable"))
+        self.assertIsNone(harness.journal.document)
 
     def test_hardware_mode_restores_display(self):
         harness = Harness(transform=0, locked=False)
@@ -280,8 +338,37 @@ class ApplyTransactionTests(unittest.TestCase):
         harness.display.apply(Target(mode="hardware"))
         self.assertEqual(harness.mutter.transform, 0)
         self.assertFalse(harness.settings.value)
+        self.assertIsNotNone(harness.display.owned)
+        self.assertIsNotNone(harness.journal.document)
+
+    def test_hardware_tablet_unlocks_original_orientation_lock(self):
+        harness = Harness(transform=0, locked=True)
+        harness.display.apply(Target(mode="hardware"))
+        self.assertFalse(harness.settings.value)
+        self.assertIsNotNone(harness.display.owned)
+        self.assertEqual(harness.journal.document["original_lock"], True)
+
+        harness.display.apply(Target(mode="unavailable"))
+        self.assertTrue(harness.settings.value)
         self.assertIsNone(harness.display.owned)
         self.assertIsNone(harness.journal.document)
+
+    def test_other_software_mode_restarts_transaction_when_output_changes(self):
+        harness = Harness(transform=0, locked=False)
+        harness.display.apply(
+            Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True)
+        )
+        harness.mutter.monitor_spec = ("eDP-2", "AUO", "panel", "2")
+        harness.mutter.transform = 0
+
+        harness.display.apply(
+            Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True)
+        )
+
+        self.assertEqual(harness.mutter.transform, 2)
+        self.assertEqual(
+            harness.journal.document["spec"], ["eDP-2", "AUO", "panel", "2"]
+        )
 
     def test_unknown_mode_raises_stable_code(self):
         harness = Harness()
