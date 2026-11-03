@@ -21,12 +21,12 @@
 ### 文档与打包
 
 - 统一版本、依赖和发布检查信息。
+- 发布 GitHub Release 和 AUR 包 `panasonic-posture-manager`。
 
 ### 已知限制
 
 - QV8 最终物理验收、QV9/QV1 回归和 Plasma 6 Wayland 真机验证尚未完成。
-- AUR 包尚未发布；当前可从 `v2.0.0` 标签源码构建。真机验收状态详见
-  [硬件验证记录](docs/hardware-validation.md)。
+  真机验收状态详见[硬件验证记录](docs/hardware-validation.md)。
 
 ## [1.0.0] - 2026-11-03
 

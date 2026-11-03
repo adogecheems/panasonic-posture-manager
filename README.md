@@ -28,7 +28,8 @@
 
 ## 安装
 
-AUR 包尚未发布。当前请从源码安装；完成后注销并重新登录。
+AUR 包已发布。可直接使用 AUR helper 安装 `panasonic-posture-manager`，也可从
+`v2.0.0` 源码构建。完成后注销并重新登录。
 
 <details>
 <summary>从源码安装</summary>
@@ -41,8 +42,6 @@ git clone --branch v2.0.0 --depth 1 \
 cd panasonic-posture-manager/packaging/aur
 makepkg -si
 ```
-
-AUR 包发布后，也可直接安装 `panasonic-posture-manager`。
 
 </details>
 

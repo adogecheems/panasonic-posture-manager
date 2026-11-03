@@ -2,8 +2,8 @@
 
 > 面向维护者。普通用户请先看 [README](../../README.md)。
 
-**2.0.0 发布说明。** 安装、构建和发布检查见下文；未完成的真机项目和 AUR 状态
-以文末清单为准。
+**2.0.0 已发布。** GitHub Release 和 AUR 包均已上线；真机验收状态以文末清单
+为准。
 
 ## 安装后
 
@@ -88,10 +88,11 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 ## 发布清单
 
 - [x] 版本、许可证和打包元数据一致。
-- [x] 当前提交通过本地与 clean-rootfs 构建、包验收和 `namcap`。
-- [ ] 创建 `v2.0.0` tag，并从固定 tag 源重跑 clean-rootfs 验收。
-- [ ] 验证全新安装、升级、D-Bus 激活、会话启动和卸载。
+- [x] `v2.0.0` tag 已通过本地与 clean-rootfs 构建、包验收和 `namcap`。
+- [x] 在隔离环境验证全新安装、1.0.0 → 2.0.0 升级和卸载。
+- [x] 发布 [GitHub Release](https://github.com/adogecheems/panasonic-posture-manager/releases/tag/v2.0.0)
+  和 [AUR 包](https://aur.archlinux.org/packages/panasonic-posture-manager)。
+- [ ] 在真实系统验证 D-Bus 激活、会话启动和服务状态。
 - [ ] 验证休眠/唤醒、异常恢复、锁屏通知和外接屏布局。
 - [ ] 验证 GNOME Wayland 和 Plasma 6 Wayland。
 - [ ] 完成 CFQV8 物理验收和 QV9/QV1 同族回归。
-- [ ] 提交 AUR。
