@@ -122,6 +122,12 @@ class GeometryTests(unittest.TestCase):
 
 class PolicyTestCase(unittest.TestCase):
     def setUp(self):
+        self.reset_policy()
+        # Most transitions under test start from an established laptop run.
+        # Cold-start behaviour is covered separately below.
+        self.hold(0.0)
+
+    def reset_policy(self):
         self.config = PolicyConfig()
         self.policy = Policy(self.config)
         self.now = 0.0
@@ -178,6 +184,9 @@ class PolicyTestCase(unittest.TestCase):
 
 
 class InitialStateTests(PolicyTestCase):
+    def setUp(self):
+        self.reset_policy()
+
     def test_initial_state_is_disabled(self):
         self.assertEqual(self.policy.mode, MODE_DISABLED)
         self.assertEqual(self.policy.epoch, 0)
@@ -206,6 +215,39 @@ class InitialStateTests(PolicyTestCase):
         config = PolicyConfig(stale_seconds=1.0)
         policy = Policy(config)
         self.assertIs(policy.config, config)
+
+
+class StartupBaselineTests(PolicyTestCase):
+    def setUp(self):
+        self.reset_policy()
+
+    def test_first_stable_tent_is_adopted_without_prompt(self):
+        modes = [self.step(80.0) for _ in range(30)]
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.assertNotIn(MODE_TENT_PROMPT, modes)
+        self.assertIsNone(self.policy.pending_notification)
+
+    def test_first_stable_stand_is_adopted_without_prompt(self):
+        modes = [
+            self.step(175.0, stand_prompt=True)
+            for _ in range(30)
+        ]
+        self.assertEqual(self.policy.mode, MODE_STAND)
+        self.assertNotIn(MODE_STAND_PROMPT, modes)
+        self.assertIsNone(self.policy.pending_notification)
+
+    def test_laptop_baseline_still_prompts_on_later_tent(self):
+        self.hold(0.0)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+
+    def test_invalid_startup_data_does_not_consume_baseline(self):
+        self.feed_invalid("missing")
+        self.assertEqual(self.policy.mode, MODE_DISABLED)
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.assertIsNone(self.policy.pending_notification)
 
 
 class PostureClassificationTests(PolicyTestCase):
@@ -446,8 +488,13 @@ class PostureClassificationTests(PolicyTestCase):
     def test_slow_sensor_cadence_can_offer_tent(self):
         policy = Policy()
         stamp = 0.0
-        for tick in range(60):
+        for tick in range(20):
             now = tick * 0.1
+            if tick % 7 == 0:
+                stamp = now
+            policy.update(now, sample(0.0, stamp=stamp), False)
+        for tick in range(60):
+            now = (tick + 20) * 0.1
             if tick % 7 == 0:
                 stamp = now
             policy.update(now, sample(80.0, stamp=stamp), False)
@@ -820,6 +867,9 @@ class ConfigTests(PolicyTestCase):
         config = PolicyConfig(enter_seconds=1.5)
         policy = Policy(config)
         now = 0.0
+        for _ in range(10):
+            now += 0.1
+            policy.update(now, sample(0.0, stamp=now), False)
         for _ in range(10):
             now += 0.1
             policy.update(now, sample(175.0, stamp=now), False)

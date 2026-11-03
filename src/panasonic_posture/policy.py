@@ -34,6 +34,7 @@ import math
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum, auto
 
 from .model import SensorReading
 
@@ -189,6 +190,23 @@ def in_stand_zone(flat: float | None) -> bool:
     return flat is not None and flat >= STAND_MIN_FLAT
 
 
+class _Origin(Enum):
+    """Where the current posture sequence came from."""
+
+    UNKNOWN = auto()
+    LAPTOP = auto()
+    NON_LAPTOP = auto()
+
+
+@dataclass
+class _SourceState:
+    """Single source-of-truth for prompt and direct-entry decisions."""
+
+    origin: _Origin = _Origin.UNKNOWN
+    startup_pending: bool = True
+    tent_exit_at: float | None = None
+
+
 class Policy:
     """Posture state machine fed by sensor samples and the hardware switch.
 
@@ -224,22 +242,10 @@ class Policy:
         self.pending: str | None = None
         self.pending_since: float | None = None
         self.leave_since: float | None = None
-        # Timestamp of the last automatic exit from a *confirmed* tent mode.
-        # Set only for L/S transitions so hardware takeover, suspend and lost
-        # sensor data can never turn into an implicit confirmation.
-        self._tent_exit_at: float | None = None
-        # A tent candidate first observed outside laptop mode may enter T
-        # directly.  The flag survives the stand hold timeout, which can move
-        # the current mode back to L before the new candidate becomes stable.
-        self._direct_tent_candidate = False
-        # The same hold-timeout gap can occur when moving from tent to stand.
-        # Remember that the stand candidate began outside laptop mode so it
-        # does not turn into a spurious stand prompt after a transient L.
-        self._direct_stand_candidate = False
-        # An explicit manual tablet/tent/stand selection or a released hardware
-        # tablet switch is a non-laptop origin.  Keep that origin through
-        # intermediate hinge angles so the eventual tent entry is still direct.
-        self._non_laptop_origin = False
+        # The remembered physical source plus the tent re-entry grace.  Manual
+        # mode selections are deliberately not part of this state: prompts and
+        # direct entry follow the posture recognised by the sensor.
+        self._source = _SourceState()
 
     # -- public state --------------------------------------------------------
 
@@ -324,10 +330,10 @@ class Policy:
         self.epoch += 1
         self.mode = MODE_DISABLED
         self.hardware = None
-        self._tent_exit_at = None
-        self._direct_tent_candidate = False
-        self._direct_stand_candidate = False
-        self._non_laptop_origin = False
+        # A wake-up is not a cold service start.  Do not arm the startup
+        # baseline again; without fresh transition evidence the laptop origin
+        # keeps the normal confirmation prompt.
+        self._source = _SourceState(origin=_Origin.LAPTOP, startup_pending=False)
         self._reset_all()
 
     def update(
@@ -338,7 +344,6 @@ class Policy:
         *,
         tent_prompt: bool = True,
         stand_prompt: bool = False,
-        non_laptop_origin: bool | None = None,
     ) -> None:
         """Ingest one sample and advance the state machine.
 
@@ -349,27 +354,25 @@ class Policy:
         prompt is disabled, a stable candidate is accepted automatically and a
         pending prompt for that mode resolves on the next stable sample.
 
-        ``non_laptop_origin`` records a source outside the posture state
-        machine: ``True`` for manual tablet/tent/stand mode and ``False`` for
-        manual laptop mode.  ``None`` leaves the remembered origin untouched,
-        so it survives a switch back to automatic mode.
+        A freshly constructed policy adopts its first stable posture as the
+        startup baseline without prompting.  This covers a service restart
+        while the device is already folded into tent or stand posture.
         """
 
         # Invariant (P1-3): every return path prunes the smoothing history.
         self._prune(now)
 
-        previous_mode = self.mode
         previous_hardware = self.hardware
         self.hardware = hardware
-        if non_laptop_origin is not None:
-            self._non_laptop_origin = non_laptop_origin
         if previous_hardware is True and hardware is not True:
             # Leaving hardware tablet mode: everything sampled before the fold
             # is meaningless, require a fresh stable run.  The switch may
-            # release before the hinge reaches the tent zone, so retain the
-            # tablet origin until a settled laptop pose proves otherwise.
+            # release before the hinge reaches the tent zone, so remember the
+            # physical tablet source until a settled laptop pose proves
+            # otherwise.
             self._clear_run()
-            self._non_laptop_origin = True
+            self._source.origin = _Origin.NON_LAPTOP
+            self._source.startup_pending = False
         elif previous_hardware is not True and hardware is True:
             # Entering hardware tablet mode: the switch takes over.
             self._clear_run()
@@ -392,9 +395,9 @@ class Policy:
             # freshness anchors stay current, but no smoothing history is
             # needed while folded and it must not grow (P1-3).
             self._clear_run()
-            self._tent_exit_at = None
-            self._direct_tent_candidate = False
-            self._direct_stand_candidate = False
+            self._source.origin = _Origin.NON_LAPTOP
+            self._source.startup_pending = False
+            self._source.tent_exit_at = None
             self._set_mode(MODE_HARDWARE)
             return
 
@@ -406,9 +409,7 @@ class Policy:
                 self._reset_all()
             else:
                 self._clear_run()
-            self._tent_exit_at = None
-            self._direct_tent_candidate = False
-            self._direct_stand_candidate = False
+            self._source.tent_exit_at = None
             self._set_mode(MODE_DISABLED)
             return
 
@@ -417,7 +418,7 @@ class Policy:
 
         pitch, roll, flat = self._classify()
         if self.stable and flat is not None and flat < LAPTOP_MAX_FLAT:
-            self._non_laptop_origin = False
+            self._source.origin = _Origin.LAPTOP
         tent = in_tent_zone(pitch, roll)
         tent_hold = (
             pitch is not None
@@ -427,23 +428,22 @@ class Policy:
         stand = flat is not None and flat >= STAND_MIN_FLAT
         stand_hold = flat is not None and flat >= STAND_HOLD_MIN_FLAT
 
-        if not tent_hold:
-            self._direct_tent_candidate = False
-        elif previous_mode == MODE_HARDWARE or self.mode not in (
-            MODE_LAPTOP,
-            MODE_TENT_PROMPT,
-            MODE_TENT,
-            MODE_HARDWARE,
-            MODE_DISABLED,
-        ):
-            self._direct_tent_candidate = True
-        if not stand_hold:
-            self._direct_stand_candidate = False
-        elif previous_mode == MODE_HARDWARE or self.mode in (
-            MODE_TENT_PROMPT,
-            MODE_TENT,
-        ):
-            self._direct_stand_candidate = True
+        if self.stable and self._source.startup_pending:
+            # The service has no prior decision to preserve.  Adopt the first
+            # stable recognised posture as the baseline so a restart while the
+            # device is already in tent or stand does not ask for confirmation.
+            self._clear_timers()
+            if flat is not None and flat < LAPTOP_MAX_FLAT:
+                self._source.origin = _Origin.LAPTOP
+                self._set_mode(MODE_LAPTOP)
+            else:
+                self._source.origin = _Origin.NON_LAPTOP
+                if tent:
+                    self._set_mode(MODE_TENT)
+                elif stand:
+                    self._set_mode(MODE_STAND)
+            self._source.startup_pending = False
+            return
 
         if self.mode == MODE_TENT_PROMPT and not tent_hold:
             # The prompt is only valid while the device still looks like a
@@ -474,8 +474,7 @@ class Policy:
             elif (
                 stand_prompt
                 and self.mode == MODE_LAPTOP
-                and not self._direct_stand_candidate
-                and not self._non_laptop_origin
+                and self._source.origin is not _Origin.NON_LAPTOP
             ):
                 # An explicit posture change from tent/stand already carries
                 # intent; only the initial laptop-to-stand transition asks.
@@ -489,13 +488,9 @@ class Policy:
             # mode is likewise a debounce and restores T directly.
             if (
                 not tent_prompt
-                or self._non_laptop_origin
-                or self._direct_tent_candidate
-                or (
-                    self._tent_exit_at is not None
-                    and 0.0 <= now - self._tent_exit_at
-                    <= self.config.tent_reentry_seconds
-                )
+                or self._source.origin is _Origin.NON_LAPTOP
+                or self.mode == MODE_STAND_PROMPT
+                or self._recent_tent_exit(now)
             ):
                 desired = MODE_TENT
             else:
@@ -552,12 +547,21 @@ class Policy:
         if self.mode == MODE_TENT and mode in (MODE_LAPTOP, MODE_STAND):
             # Only a posture-driven exit from confirmed tent mode opens the
             # re-entry window.  Hardware/D/reset transitions clear it instead.
-            self._tent_exit_at = now
+            self._source.tent_exit_at = now
         elif mode == MODE_TENT:
-            self._tent_exit_at = None
+            self._source.tent_exit_at = None
+        if mode in (MODE_TENT, MODE_STAND):
+            self._source.origin = _Origin.NON_LAPTOP
+            self._source.startup_pending = False
         if mode != self.mode:
             self.epoch += 1
             self.mode = mode
+
+    def _recent_tent_exit(self, now: float) -> bool:
+        exit_at = self._source.tent_exit_at
+        return exit_at is not None and (
+            0.0 <= now - exit_at <= self.config.tent_reentry_seconds
+        )
 
     def _clear_timers(self) -> None:
         self.pending = None

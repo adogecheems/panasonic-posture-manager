@@ -1093,6 +1093,25 @@ class PresentationTests(EngineTestCase):
             self.tick(engine)
             self.assertEqual(self.presentation.calls[-1][1], pose)
 
+    def test_manual_target_does_not_replace_recognised_pose(self) -> None:
+        engine = self.make()
+        self.controller.policy.mode = "T"
+        self.controller.policy.stable = True
+        self.controller.manual = Mode.TABLET
+        self.controller.target = Target(
+            mode="tablet",
+            tablet=True,
+            rotation=None,
+            disable_internal_input=True,
+        )
+        self.sensor._reading = SensorReading(
+            (0.0, -9.81, -1.73), self.boot.value, SensorSource.IIO
+        )
+        self.tick(engine)
+        self.assertEqual(engine.state.manual, Mode.TABLET)
+        self.assertEqual(engine.state.target.mode, "tablet")
+        self.assertEqual(engine.state.pose, Pose.TENT)
+
     def test_hardware_tablet_forces_tablet_pose(self) -> None:
         engine = self.make()
         self.hardware = True

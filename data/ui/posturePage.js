@@ -50,10 +50,6 @@ export class PosturePage {
             let pose = POSE_SET.has(state.pose) ? state.pose : 'unknown';
             if (pose === 'unknown')
                 pose = this._pose;
-            // The base can be nearly upright before tent mode was actually
-            // applied: do not claim the tent illustration prematurely.
-            if (pose === 'tent' && (!state.applied || state.applied.mode !== 'tent'))
-                pose = 'laptop';
             if (pose !== this._pose) {
                 this._pose = pose;
                 this._updatePicture();

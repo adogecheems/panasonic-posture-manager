@@ -39,6 +39,11 @@ def sample(pitch=0.0, magnitude=GRAVITY, roll=0.0, stamp=0.0):
 
 class ControllerTestCase(unittest.TestCase):
     def setUp(self):
+        self.reset_controller()
+        # Automatic-transition tests start from an established laptop run.
+        self.hold(0.0)
+
+    def reset_controller(self):
         self.controller = Controller()
         self.now = 0.0
 
@@ -56,6 +61,9 @@ class ControllerTestCase(unittest.TestCase):
 
 
 class InitialStateTests(ControllerTestCase):
+    def setUp(self):
+        self.reset_controller()
+
     def test_initial_state(self):
         controller = self.controller
         self.assertEqual(controller.manual, Mode.AUTO)
@@ -84,6 +92,18 @@ class InitialStateTests(ControllerTestCase):
         controller = Controller(config=config)
         self.assertIs(controller.config, config)
         self.assertIs(controller.policy.config, config)
+
+
+class StartupBaselineTests(ControllerTestCase):
+    def setUp(self):
+        self.reset_controller()
+
+    def test_restart_while_already_in_tent_needs_no_confirmation(self):
+        _, target = self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT)
+        self.assertEqual(target.mode, "tent")
+        self.assertIsNone(self.controller.pending_prompt)
+        self.assertIsNone(self.controller.pending_notification)
 
 
 class ManualModeTests(ControllerTestCase):
@@ -234,23 +254,21 @@ class AutomaticModeTests(ControllerTestCase):
                 self.assertIsNone(controller.pending_prompt)
                 self.assertIsNone(controller.pending_notification)
 
-    def test_manual_tablet_origin_survives_return_to_auto_before_tent(self):
+    def test_manual_tablet_does_not_override_laptop_source(self):
         self.controller.set_manual(Mode.TABLET)
-        # Selecting automatic before the sensor reaches a stable tent pose must
-        # not silently replace the manual tablet origin with laptop posture.
-        for _ in range(3):
-            self.step(30.0)
         self.controller.set_manual(Mode.AUTO)
-        self.step(30.0)
 
         self.hold(80.0)
-        self.assertEqual(self.controller.policy.mode, MODE_TENT)
-        self.assertEqual(self.controller.target.mode, "tent")
-        self.assertIsNone(self.controller.pending_prompt)
-        self.assertIsNone(self.controller.pending_notification)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
+        self.assertEqual(self.controller.target.mode, "laptop")
+        self.assertEqual(self.controller.pending_prompt, "tent")
+        self.assertIsNotNone(self.controller.pending_notification)
 
-    def test_manual_tablet_origin_survives_auto_before_first_sample(self):
+    def test_manual_tablet_with_recognized_stand_returns_to_tent_directly(self):
         self.controller.set_manual(Mode.TABLET)
+        self.hold(175.0)
+        self.assertEqual(self.controller.policy.mode, MODE_STAND)
+        self.assertEqual(self.controller.target.mode, "tablet")
         self.controller.set_manual(Mode.AUTO)
 
         self.hold(80.0)
@@ -272,7 +290,7 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertIsNone(self.controller.pending_prompt)
         self.assertIsNone(self.controller.pending_notification)
 
-    def test_manual_tablet_origin_clears_after_settled_laptop(self):
+    def test_manual_tablet_during_settled_laptop_keeps_prompt(self):
         self.controller.set_manual(Mode.TABLET)
         self.hold(0.0)
         self.controller.set_manual(Mode.AUTO)

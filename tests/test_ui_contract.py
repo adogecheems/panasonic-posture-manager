@@ -181,6 +181,11 @@ class ProtocolUiParityTests(unittest.TestCase):
         self.assertNotIn("unknown: _(", page)
         self.assertNotIn('msgid "Waiting for posture"', read("po/zh_CN.po"))
 
+    def test_posture_page_uses_recognised_pose_not_target(self):
+        page = read("data/ui/posturePage.js")
+        self.assertIn("let pose = POSE_SET.has(state.pose)", page)
+        self.assertNotIn("state.applied", page)
+
     def test_mode_descriptions_are_user_facing(self):
         settings = read("data/ui/settingsPage.js")
         for technical in (
@@ -681,6 +686,18 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
             failures.push('stand confirmation label is not used');
         if (!ui.settingsPage._standSwitch.active)
             failures.push('stand prompt setting was not rendered');
+        const tabletTarget = {{mode: 'tablet', tablet: true, rotation: null,
+                              disable_internal_input: true}};
+        const manualTabletState = Object.assign({{}}, state, {{
+            hardware: false, hardware_status: 'ok', manual: 'tablet',
+            pose: 'tent', target: tabletTarget, applied: tabletTarget,
+            pending_notification: null, pending_prompt: null,
+            error_code: null, error_detail: null,
+        }});
+        ui.posturePage.update(manualTabletState);
+        ui.settingsPage.update(manualTabletState);
+        if (ui.posturePage._heading.label !== 'Tent')
+            failures.push('manual tablet target hid the recognised tent pose');
         const calibratedState = Object.assign({{}}, state, {{
             hardware: false, hardware_status: 'ok', pose: 'laptop',
             sensor_calibrated: true, error_code: null, error_detail: null,
