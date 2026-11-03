@@ -3,7 +3,39 @@
 > 面向维护者。普通用户请先看 [README](../../README.md)。
 
 **2.0.0 已发布。** GitHub Release 和 AUR 包均已上线；真机验收状态以文末清单
-为准。
+为准。仓库现在包含 `.deb`、`.rpm` 和 Arch 包的自动发布工作流；它从下一个
+`v*` tag 起生效，不会改写已有 2.0.0 release。
+
+## 预构建包
+
+从包含发布工作流的版本起，每个 release 附带三种 x86_64 包和 `SHA256SUMS`；
+已有 `v2.0.0` release 不含新增的 `.deb`/`.rpm` 资产。
+
+- `panasonic-posture-manager-<version>-1-x86_64.pkg.tar.zst`（Arch Linux）
+- `panasonic-posture-manager_<version>-1_amd64.deb`（Ubuntu 24.04+/Debian 13+）
+- `panasonic-posture-manager-<version>-1.x86_64.rpm`（当前 Fedora 稳定版）
+
+完整安装命令见[用户文档](../../README.md#预构建包)。Debian 包声明 GTK 4.12+
+和 libadwaita 1.4+ 依赖；RPM 在 Fedora 构建，其他 RPM 发行版尚未验证。
+
+## 自动发布
+
+`.github/workflows/release.yml` 在推送匹配 `v[0-9]*` 的 tag 时运行，也可以在
+Actions 页面手动指定包含该工作流的 tag 重跑；不含工作流的历史 tag 无法重跑：
+
+1. 校验 tag 与 `pyproject.toml`、运行时、UI、AUR 元数据中的版本完全一致。
+2. 在 Arch 容器中运行完整检查、构建 `.pkg.tar.zst` 并执行包验收。
+3. 在 Ubuntu 24.04 容器中构建 `.deb`，在 Fedora 容器中构建 `.rpm`。
+4. 三种包全部成功后，上传 release 资产并生成 `SHA256SUMS`。
+5. 将 Arch 构建阶段生成的 `PKGBUILD`、安装脚本和 `SRCINFO` 推送到 AUR。
+
+首次启用前，在仓库 Actions secrets 中添加 `AUR_SSH_PRIVATE_KEY`。该私钥必须
+是已登记到 AUR 账户的 SSH key；工作流使用仓库内固定的
+`packaging/ci/aur_known_hosts` 校验 AUR 主机。没有该 secret 时 AUR 任务会
+明确失败，不会静默跳过。
+
+工作流不会修改版本号。发布新版本前，先同步更新所有版本文件、更新日志和文档，
+提交后再推送 tag；否则版本校验会阻止构建和发布。
 
 ## 安装后
 
@@ -44,12 +76,22 @@ gdbus call --system --dest work.mmoe.panasonic.Posture \
 ```sh
 make clean
 make WERROR=1 check
-python -m build --wheel --no-isolation
+python3 -m build --wheel --no-isolation
 (cd packaging/aur && makepkg --cleanbuild)
 make check-package \
   PACKAGE=packaging/aur/panasonic-posture-manager-2.0.0-1-x86_64.pkg.tar.zst
 namcap packaging/aur/panasonic-posture-manager-*.pkg.tar.zst
 ```
+
+在对应发行版工具链中也可以直接构建另外两种包：
+
+```sh
+make package-deb   # Ubuntu 24.04+，需要 dpkg-dev/python3-build
+make package-rpm   # Fedora，需要 rpm-build/python3-devel
+```
+
+输出位于 `dist/packages/`。RPM 构建以已提交的 `HEAD` 制作用于 `rpmbuild` 的
+源码归档，因此工作区必须干净。
 
 修改 `PKGBUILD` 后，用 `makepkg --printsrcinfo > .SRCINFO` 同步 AUR 元数据。
 

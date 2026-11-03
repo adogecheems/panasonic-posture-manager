@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = configure ]; then
+  /usr/bin/systemctl daemon-reload >/dev/null 2>&1 || true
+  if [ -n "${2:-}" ]; then
+    /usr/bin/systemctl enable panasonic-posture-manager.service >/dev/null 2>&1 || true
+    /usr/bin/systemctl try-restart panasonic-posture-manager.service >/dev/null 2>&1 || true
+  else
+    /usr/bin/systemctl enable --now panasonic-posture-manager.service >/dev/null 2>&1 || true
+  fi
+  /usr/bin/systemctl --global enable panasonic-posture-manager-session.service >/dev/null 2>&1 || true
+fi
+
+exit 0

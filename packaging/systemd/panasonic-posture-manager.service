@@ -13,7 +13,7 @@ Requires=dbus.service
 [Service]
 Type=dbus
 BusName=work.mmoe.panasonic.Posture
-ExecStart=/usr/bin/python -m panasonic_posture.service.daemon
+ExecStart=/usr/bin/python3 -m panasonic_posture.service.daemon
 # Best-effort native switch repair after the daemon (and its relay child) has
 # gone away; the relay handles a missing physical switch gracefully.
 ExecStopPost=-/usr/lib/panasonic-posture-manager/relay --recover

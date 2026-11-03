@@ -4,7 +4,7 @@
 # pyproject.toml.  The C relay and the gettext catalog are built here; the
 # AUR PKGBUILD calls `make` and then builds the wheel.
 
-PYTHON ?= /usr/bin/python
+PYTHON ?= /usr/bin/python3
 CC ?= cc
 MSG_FMT ?= msgfmt
 PACKAGE ?= $(firstword \
@@ -30,7 +30,8 @@ RELAY_SOURCES := $(wildcard backend/*.c)
 RELAY_HEADERS := $(wildcard backend/*.h)
 MO := locale/zh_CN/LC_MESSAGES/panasonic-posture-manager.mo
 
-.PHONY: all check check-c check-compile check-unit check-dbus check-i18n check-package clean
+.PHONY: all check check-c check-compile check-unit check-dbus check-i18n check-package \
+	package-deb package-rpm clean
 
 all: backend/relay $(MO)
 
@@ -76,6 +77,14 @@ check-package:
 	}
 	PYTHONPATH=src $(PYTHON) tests/package/check_package.py \
 		--package "$(PACKAGE)" $(PACKAGE_CHECK_ARGS)
+
+# These targets require the matching distribution toolchain (dpkg-deb or
+# rpmbuild).  The release workflow runs them in Ubuntu and Fedora containers.
+package-deb:
+	bash packaging/scripts/build-deb.sh
+
+package-rpm:
+	bash packaging/scripts/build-rpm.sh
 
 clean:
 	rm -f backend/relay

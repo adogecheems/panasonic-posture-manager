@@ -11,7 +11,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python -m panasonic_posture.session.agent
+ExecStart=/usr/bin/python3 -m panasonic_posture.session.agent
 Restart=on-failure
 RestartSec=3
 Environment=PYTHONDONTWRITEBYTECODE=1

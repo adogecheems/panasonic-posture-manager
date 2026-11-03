@@ -1,0 +1,17 @@
+Package: panasonic-posture-manager
+Version: @VERSION@-1
+Architecture: @ARCH@
+Maintainer: adogecheems <adogecheems@outlook.com>
+Installed-Size: @INSTALLED_SIZE@
+Depends: dbus, gjs, gir1.2-adw-1 (>= 1.4), gir1.2-gtk-4.0 (>= 4.12), iio-sensor-proxy, libadwaita-1-0 (>= 1.4), libgtk-4-1 (>= 4.12), polkitd, python3 (>= 3.11), python3-gi, systemd
+Suggests: gnome-settings-daemon, gnome-shell, kscreen, mutter, plasma-workspace
+Section: utils
+Priority: optional
+Homepage: https://github.com/adogecheems/panasonic-posture-manager
+Description: posture management and screen orientation for convertible laptops
+ Provides automatic posture detection, screen rotation, and built-in keyboard
+ and touchpad management for Panasonic QV-series and compatible convertible
+ 2-in-1 laptops.
+ .
+ The privileged daemon owns the system D-Bus name and relay.  A per-user
+ session adapter integrates with GNOME Wayland and KDE Plasma 6 Wayland.

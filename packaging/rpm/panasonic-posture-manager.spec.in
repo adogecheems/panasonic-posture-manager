@@ -1,0 +1,94 @@
+Name:           panasonic-posture-manager
+Version:        @VERSION@
+Release:        1
+Summary:        Posture management and screen orientation for convertible laptops
+License:        AGPL-3.0-or-later
+URL:            https://github.com/adogecheems/panasonic-posture-manager
+Source0:        %{name}-%{version}.tar.gz
+BuildArch:      x86_64
+
+BuildRequires:  gcc
+BuildRequires:  gettext
+BuildRequires:  make
+BuildRequires:  python3-devel
+BuildRequires:  python3-build
+BuildRequires:  python3-installer
+BuildRequires:  python3-setuptools >= 77
+BuildRequires:  python3-wheel
+
+Requires:       dbus
+Requires:       gjs
+Requires:       gtk4
+Requires:       iio-sensor-proxy
+Requires:       libadwaita
+Requires:       polkit
+Requires:       python3 >= 3.11
+Requires:       python3-gobject
+Requires:       systemd
+
+%global debug_package %{nil}
+
+%description
+Provides automatic posture detection, screen rotation, and built-in keyboard
+and touchpad management for Panasonic QV-series and compatible convertible
+2-in-1 laptops.
+
+The privileged daemon owns the system D-Bus name and relay.  A per-user
+session adapter integrates with GNOME Wayland and KDE Plasma 6 Wayland.
+
+%prep
+%autosetup -n %{name}-%{version}
+
+%build
+make WERROR=1
+/usr/bin/python3 -m build --wheel --no-isolation
+
+%install
+rm -rf %{buildroot}
+wheel=$(find dist -maxdepth 1 -name 'panasonic_posture_manager-%{version}-*.whl' -print -quit)
+if [ -z "$wheel" ]; then
+  echo 'error: no wheel produced for %{version}' >&2
+  exit 1
+fi
+bash packaging/scripts/stage-install-tree.sh %{buildroot} "$wheel"
+
+%post
+/usr/bin/systemctl daemon-reload >/dev/null 2>&1 || true
+if [ "${1:-1}" -eq 1 ]; then
+  /usr/bin/systemctl enable --now panasonic-posture-manager.service >/dev/null 2>&1 || true
+else
+  /usr/bin/systemctl enable panasonic-posture-manager.service >/dev/null 2>&1 || true
+  /usr/bin/systemctl try-restart panasonic-posture-manager.service >/dev/null 2>&1 || true
+fi
+/usr/bin/systemctl --global enable panasonic-posture-manager-session.service >/dev/null 2>&1 || true
+
+%preun
+if [ "$1" -eq 0 ]; then
+  /usr/bin/systemctl disable --now panasonic-posture-manager.service >/dev/null 2>&1 || true
+  /usr/bin/systemctl --global disable panasonic-posture-manager-session.service >/dev/null 2>&1 || true
+fi
+
+%postun
+/usr/bin/systemctl daemon-reload >/dev/null 2>&1 || true
+
+%files
+%license /usr/share/licenses/panasonic-posture-manager/LICENSE
+/usr/bin/panasonic-posture-manager
+/usr/bin/panasonic-posture-manager-probe
+/usr/lib/panasonic-posture-manager/relay
+/usr/lib/modules-load.d/panasonic-posture-manager.conf
+/usr/lib/systemd/system/panasonic-posture-manager.service
+/usr/lib/systemd/user/panasonic-posture-manager-session.service
+/usr/share/applications/work.mmoe.panasonic.PostureManager.desktop
+/usr/share/dbus-1/system-services/work.mmoe.panasonic.Posture.service
+/usr/share/dbus-1/system.d/work.mmoe.panasonic.Posture.conf
+/usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png
+/usr/share/locale/zh_CN/LC_MESSAGES/panasonic-posture-manager.mo
+/usr/share/panasonic-posture-manager
+/usr/share/polkit-1/actions/work.mmoe.panasonic.Posture.policy
+%{python3_sitelib}/panasonic_posture
+%{python3_sitelib}/panasonic_posture_manager-%{version}.dist-info
+
+%changelog
+* @DATE@ adogecheems <adogecheems@outlook.com> - @VERSION@-1
+- Automated package build for upstream release @VERSION@.

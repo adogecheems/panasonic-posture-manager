@@ -3,7 +3,7 @@
 在 Linux 翻转本上自动切换屏幕方向和内置输入，重点支持 Panasonic QV 系列。
 关闭窗口后继续在后台运行。
 
-> **当前版本：2.0.0。** 支持 Arch Linux 上的 GNOME Wayland 和 KDE Plasma 6
+> **当前版本：2.0.0。** 支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6
 > Wayland。
 
 ![当前姿态界面（浅色主题）](docs/screenshots/current-light.png)
@@ -21,15 +21,48 @@
 
 - **设备**：Panasonic CFQV8、CFQV9、CFQV1；其他 360° 翻转本按硬件
   能力兼容，但不保证全部功能可用。
-- **系统**：Arch Linux x86_64，GNOME Wayland 或 KDE Plasma 6 Wayland。
+- **系统**：x86_64 Linux，GNOME Wayland 或 KDE Plasma 6 Wayland。
+- **预构建包**：Arch Linux、Ubuntu 24.04+/Debian 13+（`.deb`）和当前 Fedora
+  稳定版（`.rpm`）。三种包由 CI 从同一版本 tag 构建；其他发行版尚未验证。
 - **验证进度**：QV8 已通过主要功能实测；QV9/QV1 和 Plasma 6 仍待逐机验收。
 
 暂不支持 X11、Plasma 5 和其他 Wayland 桌面。
 
 ## 安装
 
-AUR 包已发布。可直接使用 AUR helper 安装 `panasonic-posture-manager`，也可从
-`v2.0.0` 源码构建。完成后注销并重新登录。
+从包含发布工作流的下一个版本起，[GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases)
+会发布 Arch、Debian/Ubuntu 和 Fedora 包及 `SHA256SUMS`。已有 `v2.0.0`
+release 早于该工作流，未附带 `.deb`/`.rpm` 资产；仍可使用 AUR helper 安装
+`panasonic-posture-manager`，或从 `v2.0.0` 源码构建。完成后注销并重新登录。
+
+### 预构建包
+
+从 release 页面下载对应文件，将示例版本替换为实际版本后执行：
+
+```sh
+version=2.1.0  # 替换为下载文件中的版本号
+
+# Arch Linux
+sudo pacman -U "./panasonic-posture-manager-${version}-1-x86_64.pkg.tar.zst"
+
+# Ubuntu 24.04+ / Debian 13+
+sudo apt install "./panasonic-posture-manager_${version}-1_amd64.deb"
+
+# 当前 Fedora 稳定版
+sudo dnf install "./panasonic-posture-manager-${version}-1.x86_64.rpm"
+```
+
+Debian/Ubuntu 包需要 GTK 4.12+ 和 libadwaita 1.4+，因此不适用于旧版发行版。
+预构建包会安装并启用系统服务和用户会话适配器，但不会访问真实设备或执行真机
+验收。
+
+### AUR 与源码
+
+使用任意 AUR helper 安装：
+
+```sh
+yay -S panasonic-posture-manager
+```
 
 <details>
 <summary>从源码安装</summary>

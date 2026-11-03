@@ -507,7 +507,7 @@ class PackageAcceptance:
                 entry = self.files.get(path)
                 if entry is not None:
                     self.require(
-                        entry.read_bytes().startswith(b"#!/usr/bin/python\n"),
+                        entry.read_bytes().startswith(b"#!/usr/bin/python3\n"),
                         f"unexpected console-script interpreter: {path}",
                     )
 
@@ -553,7 +553,7 @@ class PackageAcceptance:
             if self.require(user_unit is not None, "user session unit is missing"):
                 assert user_unit is not None
                 self.require(
-                    "ExecStart=/usr/bin/python -m panasonic_posture.session.agent"
+                    "ExecStart=/usr/bin/python3 -m panasonic_posture.session.agent"
                     in user_unit.read_text(encoding="utf-8"),
                     "user unit has the wrong session entry point",
                 )
