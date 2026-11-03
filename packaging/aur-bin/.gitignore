@@ -1,0 +1,7 @@
+/PKGBUILD
+/.SRCINFO
+/panasonic-posture-manager-bin.install
+/srcdest/
+/src/
+/pkg/
+/*.pkg.tar.zst

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -15,8 +17,11 @@ PACKAGE_SCRIPTS = (
     "packaging/scripts/stage-install-tree.sh",
     "packaging/scripts/build-deb.sh",
     "packaging/scripts/build-rpm.sh",
+    "packaging/scripts/generate-aur-bin.sh",
     "packaging/scripts/publish-aur.sh",
 )
+AUR_BIN_GENERATOR = ROOT / "packaging/scripts/generate-aur-bin.sh"
+AUR_BIN_CHECK = ROOT / "tests/package/check_aur_bin.py"
 
 
 def read(relative: str) -> str:
@@ -58,6 +63,15 @@ class DistributionPackagingTests(unittest.TestCase):
                     text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_aur_bin_checker_parses(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "py_compile", str(AUR_BIN_CHECK)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_release_helper_parses(self) -> None:
         result = subprocess.run(
@@ -136,6 +150,68 @@ class DistributionPackagingTests(unittest.TestCase):
         ):
             self.assertIn("ExecStart=/usr/bin/python3", read(unit))
 
+    def test_aur_bin_template_matches_source_dependencies(self) -> None:
+        source = read("packaging/aur/.SRCINFO")
+        template = read("packaging/aur-bin/PKGBUILD.in")
+        for field in ("depends", "optdepends"):
+            for line in source.splitlines():
+                prefix = f"\t{field} = "
+                if line.startswith(prefix):
+                    with self.subTest(field=field, value=line):
+                        self.assertIn(f"  '{line.removeprefix(prefix)}'", template)
+
+
+class AurBinGeneratorTests(unittest.TestCase):
+    def test_generator_writes_versioned_pkgbuild_and_checksum(self) -> None:
+        version = read("pyproject.toml").split('version = "', 1)[1].split('"', 1)[0]
+        payload = b"verified arch package"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / f"panasonic-posture-manager-{version}-1-x86_64.pkg.tar.zst"
+            package.write_bytes(payload)
+            output = root / "metadata"
+            result = subprocess.run(
+                [str(AUR_BIN_GENERATOR), f"v{version}", str(package), str(output)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            pkgbuild = (output / "PKGBUILD").read_text(encoding="utf-8")
+            self.assertIn("pkgname=panasonic-posture-manager-bin", pkgbuild)
+            self.assertIn(f"pkgver={version}", pkgbuild)
+            self.assertIn(hashlib.sha256(payload).hexdigest(), pkgbuild)
+            self.assertIn("provides=('panasonic-posture-manager')", pkgbuild)
+            self.assertIn("conflicts=('panasonic-posture-manager')", pkgbuild)
+            self.assertTrue((output / "panasonic-posture-manager-bin.install").is_file())
+
+            if shutil.which("makepkg"):
+                result = subprocess.run(
+                    ["makepkg", "--printsrcinfo"],
+                    cwd=output,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("pkgbase = panasonic-posture-manager-bin", result.stdout)
+                self.assertIn(f"pkgver = {version}", result.stdout)
+
+    def test_generator_rejects_a_mismatched_tag(self) -> None:
+        version = read("pyproject.toml").split('version = "', 1)[1].split('"', 1)[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / f"panasonic-posture-manager-{version}-1-x86_64.pkg.tar.zst"
+            package.write_bytes(b"package")
+            result = subprocess.run(
+                [str(AUR_BIN_GENERATOR), "v0.0.0", str(package), str(root / "metadata")],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("does not match release", result.stderr)
+
 
 class ReleaseWorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -184,7 +260,18 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("name: aur-metadata", aur)
         self.assertIn("secrets.AUR_SSH_PRIVATE_KEY", aur)
         self.assertIn("packaging/scripts/publish-aur.sh aur-metadata", aur)
+        self.assertIn("name: aur-bin-metadata", aur)
+        self.assertIn("AUR_PACKAGE: panasonic-posture-manager-bin", aur)
+        self.assertIn("packaging/scripts/publish-aur.sh aur-bin-metadata", aur)
         self.assertNotIn("BEGIN OPENSSH PRIVATE KEY", self.workflow)
+
+    def test_arch_job_builds_and_checks_the_aur_bin_package(self) -> None:
+        arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
+        self.assertIn("name: aur-bin-metadata", self.workflow)
+        self.assertIn("generate-aur-bin.sh", arch)
+        self.assertIn("check_aur_bin.py", arch)
+        self.assertIn("SRCDEST=/tmp/ppm-arch/packaging/aur-bin/srcdest", arch)
+        self.assertIn("panasonic-posture-manager-bin-[0-9]*.pkg.tar.zst", arch)
 
     def test_aur_host_key_is_pinned(self) -> None:
         known_hosts = read("packaging/ci/aur_known_hosts")

@@ -57,11 +57,17 @@ Debian/Ubuntu 包需要 GTK 4.12+ 和 libadwaita 1.4+，因此不适用于旧版
 
 ### AUR 与源码
 
-使用任意 AUR helper 安装：
+AUR 提供源码构建包和预构建包，二选一：
 
 ```sh
+# 从源码构建
 yay -S panasonic-posture-manager
+
+# 或直接安装 GitHub Release 中的 Arch 预构建包，不进行本地编译
+yay -S panasonic-posture-manager-bin
 ```
+
+`panasonic-posture-manager-bin` 与源码包提供相同文件并互相冲突，不会同时安装。
 
 <details>
 <summary>从源码安装</summary>

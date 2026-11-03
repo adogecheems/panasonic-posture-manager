@@ -3,6 +3,15 @@
 正式版本遵循[语义化版本](https://semver.org/lang/zh-CN/)，日期格式为
 `YYYY-MM-DD`。
 
+## [Unreleased]
+
+### 打包
+
+- 新增 AUR 包 `panasonic-posture-manager-bin`，直接安装 GitHub Release 中的
+  Arch 预构建包。
+- 发布工作流从同一已验收 Arch 包生成 `-bin` 元数据并校验文件内容，随后同时
+  推送源码包和 `-bin` 包到 AUR。
+
 ## [2.1.1] - 2026-11-04
 
 修复 2.1.x 的容器化发布构建，重新发布三种预构建包并更新 AUR。

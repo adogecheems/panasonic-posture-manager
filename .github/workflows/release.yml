@@ -60,7 +60,7 @@ jobs:
               su - builder -c "cd /tmp/ppm-arch && make WERROR=1 check"
               su - builder -c "cd /tmp/ppm-arch/packaging/aur && makepkg --cleanbuild --noconfirm --nodeps"
 
-              install -d /work/dist/release /work/dist/aur
+              install -d /work/dist/release /work/dist/aur /work/dist/aur-bin
               package=$(find /tmp/ppm-arch/packaging/aur -maxdepth 1 \
                 -name 'panasonic-posture-manager-[0-9]*.pkg.tar.zst' \
                 ! -name '*-debug-*' -print -quit)
@@ -73,6 +73,25 @@ jobs:
                 /work/dist/aur/panasonic-posture-manager.install
 
               make check-package PACKAGE="/work/dist/release/$(basename "$package")"
+
+              su - builder -c \
+                "cd /tmp/ppm-arch && bash packaging/scripts/generate-aur-bin.sh '$RELEASE_TAG' '$package' /tmp/ppm-arch/packaging/aur-bin"
+              su - builder -c \
+                "mkdir -p /tmp/ppm-arch/packaging/aur-bin/srcdest && cp '$package' /tmp/ppm-arch/packaging/aur-bin/srcdest/"
+              su - builder -c \
+                "cd /tmp/ppm-arch/packaging/aur-bin && SRCDEST=/tmp/ppm-arch/packaging/aur-bin/srcdest makepkg --cleanbuild --noconfirm --nodeps"
+              bin_package=$(find /tmp/ppm-arch/packaging/aur-bin -maxdepth 1 \
+                -name 'panasonic-posture-manager-bin-[0-9]*.pkg.tar.zst' \
+                ! -name '*-debug-*' -print -quit)
+              test -n "$bin_package"
+              su - builder -c \
+                "cd /tmp/ppm-arch && python3 tests/package/check_aur_bin.py --source '$package' --binary '$bin_package' --metadata /tmp/ppm-arch/packaging/aur-bin"
+              su - builder -c \
+                "cd /tmp/ppm-arch/packaging/aur-bin && makepkg --printsrcinfo" \
+                >/work/dist/aur-bin/SRCINFO
+              install -m644 /tmp/ppm-arch/packaging/aur-bin/PKGBUILD \
+                /tmp/ppm-arch/packaging/aur-bin/panasonic-posture-manager-bin.install \
+                /work/dist/aur-bin/
             '
 
       - name: Upload Arch package
@@ -88,6 +107,14 @@ jobs:
         with:
           name: aur-metadata
           path: dist/aur
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload AUR -bin metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-bin-metadata
+          path: dist/aur-bin
           if-no-files-found: error
           retention-days: 7
 
@@ -245,7 +272,7 @@ jobs:
           fi
 
   aur:
-    name: Publish AUR package
+    name: Publish AUR packages
     needs: release
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -257,16 +284,31 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Download validated AUR metadata
+      - name: Download source AUR metadata
         uses: actions/download-artifact@v4
         with:
           name: aur-metadata
           path: aur-metadata
 
-      - name: Push AUR metadata
+      - name: Download prebuilt AUR metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: aur-bin-metadata
+          path: aur-bin-metadata
+
+      - name: Push source AUR package
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
           bash packaging/scripts/publish-aur.sh aur-metadata
+
+      - name: Push prebuilt AUR package
+        env:
+          AUR_PACKAGE: panasonic-posture-manager-bin
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          bash packaging/scripts/publish-aur.sh aur-bin-metadata

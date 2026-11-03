@@ -3,8 +3,8 @@
 > 面向维护者。普通用户请先看 [README](../../README.md)。
 
 **2.1.1 发布流程。** 推送 `v2.1.1` tag 后，GitHub Actions 会生成三种预构建包、
-GitHub Release 和 AUR 元数据；真机验收状态以文末清单为准。已有 2.0.0 release
-不会被改写。
+GitHub Release 和两个 AUR 包的元数据；真机验收状态以文末清单为准。已有 2.0.0
+release 不会被改写。
 
 ## 预构建包
 
@@ -18,6 +18,15 @@ GitHub Release 和 AUR 元数据；真机验收状态以文末清单为准。已
 完整安装命令见[用户文档](../../README.md#预构建包)。Debian 包声明 GTK 4.12+
 和 libadwaita 1.4+ 依赖；RPM 在 Fedora 构建，其他 RPM 发行版尚未验证。
 
+AUR 同时提供：
+
+- `panasonic-posture-manager`：从版本 tag 源码构建。
+- `panasonic-posture-manager-bin`：下载同一 Release 的 Arch 包，不进行本地编译。
+
+两个包提供相同文件并互相冲突，只能安装其中一个。`-bin` 包由
+`packaging/scripts/generate-aur-bin.sh` 从已验收的 Arch 包生成 PKGBUILD 和
+校验和，不使用手工维护的版本文件。
+
 ## 自动发布
 
 `.github/workflows/release.yml` 在推送匹配 `v[0-9]*` 的 tag 时运行，也可以在
@@ -27,7 +36,8 @@ Actions 页面手动指定包含该工作流的 tag 重跑；不含工作流的�
 2. 在 Arch 容器中运行完整检查、构建 `.pkg.tar.zst` 并执行包验收。
 3. 在 Ubuntu 24.04 容器中构建 `.deb`，在 Fedora 容器中构建 `.rpm`。
 4. 三种包全部成功后，上传 release 资产并生成 `SHA256SUMS`。
-5. 将 Arch 构建阶段生成的 `PKGBUILD`、安装脚本和 `SRCINFO` 推送到 AUR。
+5. 使用同一 Arch 包生成并验收 `-bin` 包，然后同时推送源码包和 `-bin` 包的
+   `PKGBUILD`、安装脚本和 `SRCINFO` 到 AUR。
 
 首次启用前，在仓库 Actions secrets 中添加 `AUR_SSH_PRIVATE_KEY`。该私钥必须
 是已登记到 AUR 账户的 SSH key；工作流使用仓库内固定的
@@ -134,7 +144,8 @@ rm -rf -- "$state_root/panasonic-posture-manager"
 - [x] 2.1.1 版本、许可证和打包元数据一致。
 - [x] 本地 `.deb`、`.rpm` 构建和文件布局检查通过。
 - [x] GitHub Actions 已发布 2.1.1 三种包和 `SHA256SUMS`。
-- [x] 2.1.1 AUR 元数据已推送。
+- [x] 2.1.1 AUR 源码包元数据已推送。
+- [x] 2.1.1 AUR `-bin` 包元数据已推送。
 
 ### 2.1.0（未发布）
 
