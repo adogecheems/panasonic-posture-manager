@@ -4,7 +4,7 @@ import Gtk from 'gi://Gtk?version=4.0';
 
 export const NAVIGATION_CSS = `
 viewswitcherbar.posture-navigation viewswitcher button.toggle:hover:not(:checked) {
-    background-color: transparent;
+    background-color: alpha(currentColor, 0.08);
     background-image: none;
     box-shadow: none;
 }

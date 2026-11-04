@@ -325,12 +325,13 @@ class ProtocolUiParityTests(unittest.TestCase):
             pkgbuild,
         )
 
-    def test_bottom_navigation_does_not_mimic_selection_on_hover(self):
+    def test_bottom_navigation_has_subtle_hover_feedback(self):
         app = read("data/ui/app.js")
         navigation = read("data/ui/navigation.js")
         self.assertIn("createNavigationBar(stack)", app)
         self.assertIn("button.toggle:hover:not(:checked)", navigation)
-        self.assertIn("background-color: transparent", navigation)
+        self.assertIn("background-color: alpha(currentColor, 0.08)", navigation)
+        self.assertNotIn("background-color: transparent", navigation)
         self.assertIn("box-shadow: none", navigation)
 
 
