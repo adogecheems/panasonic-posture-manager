@@ -18,6 +18,15 @@ const POSE_NAMES = {
     tablet: _('Tablet'),
 };
 
+function displayedPose(state) {
+    const appliedMode = state.applied?.mode;
+    if (appliedMode === 'hardware')
+        return 'tablet';
+    if (POSE_SET.has(appliedMode))
+        return appliedMode;
+    return POSE_SET.has(state.pose) ? state.pose : 'unknown';
+}
+
 export class PosturePage {
     constructor(service, toast = () => {}) {
         this._service = service;
@@ -45,9 +54,11 @@ export class PosturePage {
         this._syncing = true;
         try {
             this._latestState = state;
-            // There is no user-facing "waiting for posture" state.  Keep the
-            // last known drawing when an older daemon reports unknown.
-            let pose = POSE_SET.has(state.pose) ? state.pose : 'unknown';
+            // Prefer the mode the service actually applied.  Recognised pose
+            // is the fallback while a transition is pending or unavailable.
+            // There is no user-facing "waiting for posture" state, so keep
+            // the last known drawing when neither source has a valid pose.
+            let pose = displayedPose(state);
             if (pose === 'unknown')
                 pose = this._pose;
             if (pose !== this._pose) {

@@ -185,10 +185,11 @@ class ProtocolUiParityTests(unittest.TestCase):
         self.assertNotIn("unknown: _(", page)
         self.assertNotIn('msgid "Waiting for posture"', read("po/zh_CN.po"))
 
-    def test_posture_page_uses_recognised_pose_not_target(self):
+    def test_posture_page_prefers_applied_mode(self):
         page = read("data/ui/posturePage.js")
-        self.assertIn("let pose = POSE_SET.has(state.pose)", page)
-        self.assertNotIn("state.applied", page)
+        self.assertIn("state.applied?.mode", page)
+        self.assertIn("POSE_SET.has(appliedMode)", page)
+        self.assertIn("POSE_SET.has(state.pose)", page)
 
     def test_mode_descriptions_are_user_facing(self):
         settings = read("data/ui/settingsPage.js")
@@ -724,14 +725,26 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
         }});
         ui.posturePage.update(manualTabletState);
         ui.settingsPage.update(manualTabletState);
-        if (ui.posturePage._heading.label !== 'Tent')
-            failures.push('manual tablet target hid the recognised tent pose');
+        if (ui.posturePage._heading.label !== 'Tablet')
+            failures.push('applied tablet mode did not override the recognised tent pose');
+        const hardwareState = Object.assign({{}}, manualTabletState, {{
+            pose: 'tablet', target: {{mode: 'hardware', tablet: true,
+                                     rotation: null, disable_internal_input: false}},
+            applied: {{mode: 'hardware', tablet: true, rotation: null,
+                       disable_internal_input: false}},
+        }});
+        ui.posturePage.update(hardwareState);
+        if (ui.posturePage._heading.label !== 'Tablet')
+            failures.push('applied hardware mode did not display the tablet pose');
         const calibratedState = Object.assign({{}}, state, {{
             hardware: false, hardware_status: 'ok', pose: 'laptop',
-            sensor_calibrated: true, error_code: null, error_detail: null,
+            applied: null, sensor_calibrated: true,
+            error_code: null, error_detail: null,
         }});
         ui.posturePage.update(calibratedState);
         ui.settingsPage.update(calibratedState);
+        if (ui.posturePage._heading.label !== 'Laptop')
+            failures.push('recognised pose was not used without an applied mode');
         if (!ui.settingsPage._resetButton.visible)
             failures.push('calibration reset action was not shown');
         if (!ui.settingsPage._calibrateButton.sensitive)
