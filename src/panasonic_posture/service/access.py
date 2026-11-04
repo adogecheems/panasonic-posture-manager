@@ -253,7 +253,7 @@ class AccessControl:
             self._identity_cache.pop(next(iter(self._identity_cache)))
         return uid, pid
 
-    def process_in_session_unit(self, pid: int) -> bool:
+    def process_in_session_unit(self, pid: int, uid: int) -> bool:
         """Whether ``pid`` runs inside the adapter's systemd user unit.
 
         Reads ``/proc/<pid>/cgroup``; an unreadable or missing file fails
@@ -265,7 +265,29 @@ class AccessControl:
         except (OSError, ValueError):
             self._log.debug("cannot read cgroup of pid %s", pid)
             return False
-        return self._session_unit in text
+        manager = f"/user@{uid}.service/"
+        for line in text.splitlines():
+            fields = line.split(":", 2)
+            if len(fields) != 3:
+                continue
+            hierarchy, controllers, cgroup = fields
+            if not (
+                (hierarchy == "0" and not controllers)
+                or (hierarchy.isdecimal() and controllers == "name=systemd")
+            ) or not cgroup.startswith("/"):
+                continue
+            # A delegated subtree under another service may contain arbitrary
+            # names. Match the unit directly under the user manager or its slices.
+            parent, separator, unit_path = cgroup.partition(manager)
+            *user_slices, unit = unit_path.split("/")
+            system_slices = parent.split("/")[1:]
+            if (
+                separator
+                and unit == self._session_unit
+                and all(part.endswith(".slice") for part in system_slices + user_slices)
+            ):
+                return True
+        return False
 
     # -- session discovery ----------------------------------------------
 
@@ -304,7 +326,7 @@ class AccessControl:
                 f"sender is not the owner of the session adapter name {expected_name}"
             )
         self.active_session_cached(uid)
-        if not self.process_in_session_unit(pid):
+        if not self.process_in_session_unit(pid, uid):
             raise AccessDenied(
                 f"sender process {pid} is not in {self._session_unit}"
             )

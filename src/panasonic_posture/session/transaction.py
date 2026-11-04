@@ -114,10 +114,6 @@ class SoftwareDisplay:
             return
         if mode not in SOFTWARE_MODES:
             raise DisplayError(ErrorCode.DISPLAY_UNKNOWN_MODE, mode or "empty")
-        if mode == "laptop":
-            self._apply_laptop()
-            return
-
         state = self._read_transaction_state()
         transform = desired_transform(mode)
         self._validate(state, mode, transform)
@@ -130,43 +126,20 @@ class SoftwareDisplay:
                 self._persist()
                 if not self._is_locked(state):
                     self._write_lock(state, True)
+            if state.transform != transform:
+                # Until the write is verified, recovery must recognize both
+                # the last owned transform and the new write intent.
+                self.owned["pending_transform"] = transform
+                self._persist()
+                self._write_rotation(state, transform)
+                self.owned.pop("pending_transform")
             self.owned["written_transform"] = transform
             self._persist()
-            if state.transform != transform:
-                self._write_rotation(state, transform)
             if mode == "tablet" and state.lock_supported:
                 # Release automatic rotation only after landscape is stable.
                 self.owned["written_lock"] = False
                 self._persist()
                 self._write_lock(state, False)
-        except (DisplayError, OSError, ValueError):
-            self._rollback()
-            raise
-
-    def _apply_laptop(self) -> None:
-        """Return to landscape and retain ownership until restore is requested.
-
-        Laptop is a software mode just like tent/stand/tablet: it locks the
-        display in landscape but must keep the original transform/policy in
-        the journal.  Otherwise a later ``hardware``/``unavailable`` target
-        cannot undo the landscape lock (P1).
-        """
-
-        state = self._read_transaction_state()
-        self._validate(state, "laptop", 0)
-        if not self.owned:
-            self.owned = self._journal_document(state)
-            self._persist()
-        try:
-            if state.lock_supported:
-                self.owned["written_lock"] = True
-                self._persist()
-                if not self._is_locked(state):
-                    self._write_lock(state, True)
-            self.owned["written_transform"] = 0
-            self._persist()
-            if state.transform != 0:
-                self._write_rotation(state, 0)
         except (DisplayError, OSError, ValueError):
             self._rollback()
             raise
@@ -213,11 +186,12 @@ class SoftwareDisplay:
             return
         state = self._read_state()
         identity = tuple(str(part) for part in owned.get("spec") or ())
-        written_transform = owned.get("written_transform")
+        owned_transforms = {owned.get("written_transform"), owned.get("pending_transform")}
+        owned_transforms.discard(None)
         failure: DisplayError | None = None
 
-        if written_transform is not None:
-            if state.identity == identity and state.transform == written_transform:
+        if owned_transforms:
+            if state.identity == identity and state.transform in owned_transforms:
                 original = 0 if normal else int(owned.get("original_transform") or 0)
                 try:
                     self._write_rotation(state, original)
@@ -255,16 +229,18 @@ class SoftwareDisplay:
     # -- journal ----------------------------------------------------------
 
     def _read_transaction_state(self) -> DisplayState:
-        """Read state, closing a journal that belongs to another output first."""
+        """Resolve an interrupted rotation before starting a new transaction."""
 
         state = self._read_state()
-        if self.owned and tuple(
-            str(part) for part in self.owned.get("spec") or ()
-        ) != state.identity:
+        if not self.owned:
+            return state
+        output_changed = tuple(self.owned["spec"]) != state.identity
+        if output_changed:
             # Never project an old output's original transform or lock policy
             # onto a replacement panel.  Restore what can be restored, then let
             # the caller capture a fresh transaction for the current output.
             log.warning("internal monitor changed; restarting the display transaction")
+        if output_changed or self.owned.get("pending_transform") is not None:
             self.restore()
             state = self._read_state()
         return state

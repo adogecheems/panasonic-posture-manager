@@ -87,7 +87,6 @@ class ServiceError(Exception):
 class _ReleaseTask:
     future: Future[Any]
     generation: int
-    target: Target
 
 
 def guard(callback: Callable[..., Any], default: Any = True) -> Callable[..., Any]:
@@ -205,7 +204,7 @@ class Engine:
         self._recent_raw_readings: deque[SensorReading] = deque(maxlen=128)
 
         self._load_settings()
-        self._state = self._build_state()
+        self._state = self._build_state(lease=False)
         self._state_json = dumps_state(self._state)
 
     # -- construction / lifecycle ---------------------------------------
@@ -604,11 +603,6 @@ class Engine:
 
         self._poll_release()
         self._drive_actuator(now, lease, generation, target)
-        # Relay work can advance the clock (keep starts the relay; a synchronous
-        # test executor may run release inline), so re-evaluate the lease before
-        # publishing state instead of reusing the pre-worker snapshot.
-        if self._monotonic() != now:
-            lease = self._lease_active(self._monotonic())
         self._pose = self._update_presentation(boot_now, reading, hardware)
         self._target = target
         self._publish_state()
@@ -738,18 +732,31 @@ class Engine:
                 key = (generation, target)
                 if self._last_release_key != key:
                     self._last_release_key = key
-                    self._submit_release(generation, target)
+                    self._submit_release(generation)
+                # Release completion and the display acknowledgement can
+                # arrive in either order. Only targets that need no input
+                # grab can be applied on release.
+                if (
+                    self._release_task is None
+                    and self._last_release_key == key
+                    and self._actuator.error_code is None
+                    and target.tablet is not None
+                    and not target.disable_internal_input
+                    and self._controller.applied != target
+                    and self._prepared(self._lease_active(self._monotonic()), generation)
+                ):
+                    self._controller.acknowledge(generation, True)
         except ActuatorError as error:
             self._actuator.release()
             self._controller.acknowledge(generation, False, error.code, error.detail)
 
-    def _submit_release(self, generation: int, target: Target) -> None:
+    def _submit_release(self, generation: int) -> None:
         try:
             future = self._executor.submit(self._actuator.release)
         except Exception as error:  # noqa: BLE001 - executor shutdown race
             future = Future()
             future.set_exception(error)
-        self._release_task = _ReleaseTask(future, generation, target)
+        self._release_task = _ReleaseTask(future, generation)
         # InlineExecutor (tests) completes synchronously.  Poll once so the
         # production thread pool keeps the same one-tick acknowledgement flow;
         # a real release remains asynchronous and is consumed on a later tick.
@@ -782,10 +789,6 @@ class Engine:
             self._controller.acknowledge(task.generation, False, code, detail)
             return
 
-        # The release may have blocked the worker while the lease expired.
-        # Re-evaluate against the fresh clock before acknowledging anything.
-        lease = self._lease_active(self._monotonic())
-        prepared = self._prepared(lease, task.generation)
         if self._actuator.error_code:
             self._controller.acknowledge(
                 task.generation,
@@ -793,10 +796,6 @@ class Engine:
                 self._actuator.error_code,
                 self._actuator.error_detail,
             )
-        elif prepared and task.target.tablet is not None:
-            self._controller.acknowledge(task.generation, True)
-        elif not lease or self.agent_error_code is not None:
-            self._controller.applied = None
 
     def _update_presentation(
         self, boot_now: float, reading: SensorReading, hardware: bool | None
@@ -841,7 +840,7 @@ class Engine:
             code, detail = self._tick_error_code, self._tick_error_detail
         return code, detail
 
-    def _build_state(self) -> StateSnapshot:
+    def _build_state(self, lease: bool) -> StateSnapshot:
         """Build the public snapshot from the current transaction state."""
         error_code, error_detail = self._effective_error()
         target = self._target if self.supported else Target(mode="unavailable")
@@ -888,7 +887,7 @@ class Engine:
             backend=backend,
             error_code=error_code,
             error_detail=error_detail,
-            session_connected=self._lease_active(self._monotonic()),
+            session_connected=lease,
             supported=self.supported,
             support_tier=self.support_tier,
             sensor_source=_as_sensor_source(
@@ -902,7 +901,12 @@ class Engine:
         )
 
     def _publish_state(self) -> None:
-        snapshot = self._build_state()
+        # Relay work can outlast the lease. Use the same fresh lease check
+        # for clearing the applied target and reporting connectivity.
+        lease = self._lease_active(self._monotonic())
+        if not self._prepared(lease, self._controller.generation):
+            self._controller.applied = None
+        snapshot = self._build_state(lease)
         self._state = snapshot
         text = dumps_state(snapshot)
         if text == self._state_json:

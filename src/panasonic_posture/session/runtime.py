@@ -122,6 +122,10 @@ class SessionRuntime:
         self.retry_display = False
         self.retry_at = 0.0
         self.retry_delay = 0.0
+        # Startup recovery may have left a journal pending. Ownership outlives
+        # per-generation readiness and even a failed or superseded apply.
+        self._display_needs_restore = True
+        self._restore_retry_at = 0.0
 
         # lease/authorization failure mode
         self.failure_active = False
@@ -144,7 +148,9 @@ class SessionRuntime:
         self._drain_tasks(now)
         if self._tasks:
             return
-        if self.failure_active:
+        if self._restore_retry_at and now >= self._restore_retry_at:
+            self._restore_display_async(now)
+        elif self.failure_active:
             if now < self.failure_retry_at:
                 return
             self._submit(
@@ -226,6 +232,9 @@ class SessionRuntime:
         elif task.kind == "probe":
             self._probe_succeeded()
         elif task.kind == "apply":
+            state, _generation, _daemon_error = task.context
+            if state.target.mode == "unavailable":
+                self._display_needs_restore = False
             self._submit("verify", self.client.get_state, context=task.context)
         elif task.kind == "verify":
             state, generation, _daemon_error = task.context
@@ -254,7 +263,8 @@ class SessionRuntime:
             self._reset_transient()
             self._after_feedback(state, now, daemon_error)
         elif task.kind == "restore":
-            pass
+            self._display_needs_restore = False
+            self._restore_retry_at = 0.0
         else:  # pragma: no cover - internal invariant
             log.error("unknown session runtime task %r", task.kind)
 
@@ -271,6 +281,7 @@ class SessionRuntime:
                 self._fail_display(ErrorCode.INTERNAL, describe_error(error), now)
             self._queue_feedback(state, generation, now, daemon_error)
         elif task.kind == "restore":
+            self._restore_retry_at = now + protocol.DISPLAY_RETRY_BASE_SECONDS
             log.warning("display restore pending: %s", describe_error(error))
 
     # -- lease recovery --------------------------------------------------
@@ -310,7 +321,7 @@ class SessionRuntime:
             self._probe_generation = self.generation or 0
             self.generation = None
             self._close_notifier()
-            self._restore_display_async()
+            self._restore_display_async(now)
         self.failure_count += 1
         delay = min(
             protocol.DISPLAY_RETRY_MAX_SECONDS,
@@ -390,9 +401,8 @@ class SessionRuntime:
         if daemon_error:
             # A failed privileged backend must not keep a rotated display: undo
             # our transaction and wait until the backend recovers.
-            if self.ready:
-                self._restore_display_async()
-                self.ready = False
+            self._restore_display_async(now)
+            self.ready = False
             self.apply_now = False
             self.retry_display = False
         else:
@@ -426,8 +436,11 @@ class SessionRuntime:
     ) -> bool:
         if self.ready:
             return True
+        if self._restore_retry_at:
+            return True
         if not (self.apply_now or (self.retry_display and now >= self.retry_at)):
             return True
+        self._display_needs_restore = True
         self._submit(
             "apply",
             self.display.apply,
@@ -552,10 +565,13 @@ class SessionRuntime:
             # The journal is kept so a later attempt (or the next start) can retry.
             log.warning("display restore pending: %s", describe_error(error))
 
-    def _restore_display_async(self) -> None:
-        if self.display is None:
-            return
-        self._submit("restore", self.display.restore)
+    def _restore_display_async(self, now: float) -> None:
+        if (
+            self.display is not None
+            and self._display_needs_restore
+            and now >= self._restore_retry_at
+        ):
+            self._submit("restore", self.display.restore)
 
     def _reset_display_retry(self) -> None:
         self.retry_display = False

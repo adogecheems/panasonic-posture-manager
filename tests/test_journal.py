@@ -99,6 +99,7 @@ class JournalTests(unittest.TestCase):
             {"original_lock": 0},
             {"written_lock": "true"},
             {"written_transform": 2.5},
+            {"pending_transform": False},
             {"original_policy": 0},
             {"backend": "plasma", "spec": ["eDP-1", "extra"]},
         ):

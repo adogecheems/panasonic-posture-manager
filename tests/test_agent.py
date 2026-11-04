@@ -504,6 +504,38 @@ class AdapterTickTests(unittest.TestCase):
         self.assertEqual(len(harness.display.applied), 2)
         self.assertTrue(harness.agent.ready)
 
+    def test_daemon_error_in_new_generation_restores_previous_display(self):
+        harness = Harness(make_state())
+        harness.tick(0.0)
+        harness.set_state(make_state(
+            generation=2,
+            target=Target(mode="unavailable"),
+            error_code=ErrorCode.RELAY_EXITED,
+        ))
+        harness.tick(0.1)
+        self.assertEqual(harness.display.restores, 1)
+        self.assertFalse(harness.agent.ready)
+        self.assertEqual(len(harness.display.attempts), 1)
+
+    def test_failed_display_restore_is_retried(self):
+        class FlakyRestoreDisplay(FakeDisplay):
+            def restore(self, normal=False):
+                super().restore(normal)
+                if self.restores == 1:
+                    raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, "compositor busy")
+
+        harness = Harness(make_state(), display=FlakyRestoreDisplay())
+        harness.tick(0.0)
+        harness.set_state(make_state(error_code=ErrorCode.RELAY_EXITED))
+        harness.tick(0.1)
+        self.assertEqual(harness.display.restores, 1)
+        harness.tick(0.2)
+        self.assertEqual(harness.display.restores, 1)
+        harness.tick(0.1 + protocol.DISPLAY_RETRY_BASE_SECONDS)
+        self.assertEqual(harness.display.restores, 2)
+        harness.tick(0.2 + protocol.DISPLAY_RETRY_BASE_SECONDS)
+        self.assertEqual(harness.display.restores, 2)
+
     def test_instance_change_resets_generation_and_notification(self):
         harness = Harness(make_state(instance="a", pending_notification=7))
         harness.tick(0.0)

@@ -413,6 +413,27 @@ class SessionAdapterVerificationTests(unittest.TestCase):
         with self.assertRaises(AccessDenied):
             self.access.verify_session_adapter(self.SENDER)
 
+    def test_lookalike_and_delegated_cgroups_are_denied(self) -> None:
+        manager = "/user.slice/user-1000.slice/user@1000.service/app.slice"
+        for cgroup in (
+            f"0::{manager}/fake-{SESSION_UNIT}",
+            f"0::{manager}/other.service/{SESSION_UNIT}",
+            f"0::/delegated.service{manager}/{SESSION_UNIT}",
+            f"5:cpu:{manager}/{SESSION_UNIT}",
+            f"0::{manager.replace('user@1000', 'user@1001')}/{SESSION_UNIT}",
+        ):
+            with self.subTest(cgroup=cgroup):
+                self.write_cgroup(content=f"{cgroup}\n")
+                with self.assertRaises(AccessDenied):
+                    self.access.verify_session_adapter(self.SENDER)
+
+    def test_legacy_systemd_hierarchy_is_accepted(self) -> None:
+        self.write_cgroup(content=(
+            "5:name=systemd:/user.slice/user-1000.slice/user@1000.service/"
+            f"app.slice/{SESSION_UNIT}\n"
+        ))
+        self.assertEqual(self.access.verify_session_adapter(self.SENDER), self.UI_UID_2)
+
     def test_unreadable_cgroup_is_denied(self) -> None:
         # No cgroup file at all: fails closed.
         self.write_cgroup(content=None)

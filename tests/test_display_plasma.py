@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from panasonic_posture.model import Target
 from panasonic_posture.protocol import ErrorCode
@@ -266,6 +267,42 @@ class PlasmaTransactionTests(unittest.TestCase):
         self.assertIsNotNone(self.journal.load())
         display.apply(Target(mode="unavailable"))
         self.assertIsNone(self.journal.load())
+
+    def test_failed_rotation_between_software_modes_restores_original(self):
+        class FailingLaptopRotation(FakePlasmaCommand):
+            def set_rotation(self, output, transform):
+                if transform == 0:
+                    raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, "rotation rejected")
+                super().set_rotation(output, transform)
+
+        command = FailingLaptopRotation(transform=1, policy="always")
+        display = self.display(command)
+        display.apply(Target(mode="tent"))
+        with self.assertRaises(DisplayError):
+            display.apply(Target(mode="laptop"))
+        self.assertEqual(command.transform, 1)
+        self.assertEqual(command.policy, "always")
+        self.assertIsNone(self.journal.load())
+
+    def test_crash_recovery_recognizes_both_sides_of_pending_rotation(self):
+        for transform in (2, 0, 3):
+            with self.subTest(transform=transform):
+                command = FakePlasmaCommand(transform=1, policy="always")
+                display = self.display(command)
+                display.apply(Target(mode="tent"))
+                with patch.object(command, "set_rotation", side_effect=KeyboardInterrupt):
+                    with self.assertRaises(KeyboardInterrupt):
+                        display.apply(Target(mode="laptop"))
+                document = self.journal.load()
+                self.assertEqual(document["written_transform"], 2)
+                self.assertEqual(document["pending_transform"], 0)
+                command.transform = transform
+
+                self.display(command)
+
+                self.assertEqual(command.transform, 3 if transform == 3 else 1)
+                self.assertEqual(command.policy, "always")
+                self.assertIsNone(self.journal.load())
 
     def test_hardware_tablet_unlocks_original_policy(self):
         command = FakePlasmaCommand(transform=2, policy="never")

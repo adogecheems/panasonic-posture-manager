@@ -228,6 +228,21 @@ class ReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(self.workflow.count("ref: ${{ env.SOURCE_REF }}"), 4)
 
+    def test_arch_build_uses_checkout_and_exports_tag_pinned_aur_metadata(self) -> None:
+        arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
+        archive = "git archive --format=tar.gz --prefix=panasonic-posture-manager/"
+        override = "source[0]=ppm-release-source.tar.gz"
+        build = "makepkg --cleanbuild --noconfirm --nodeps -p PKGBUILD.ci"
+        self.assertIn(archive, arch)
+        self.assertIn("-o packaging/aur/ppm-release-source.tar.gz HEAD", arch)
+        self.assertIn(override, arch)
+        self.assertIn(build, arch)
+        self.assertLess(arch.index(archive), arch.index(override))
+        self.assertLess(arch.index(override), arch.index(build))
+        self.assertIn("makepkg --printsrcinfo", arch)
+        self.assertIn("/tmp/ppm-arch/packaging/aur/PKGBUILD /work/dist/aur/PKGBUILD", arch)
+        self.assertIn("#tag=v${pkgver}", read("packaging/aur/PKGBUILD"))
+
     def test_all_three_package_builders_are_present(self) -> None:
         for job in ("package-arch:", "package-deb:", "package-rpm:"):
             with self.subTest(job=job):
@@ -237,11 +252,6 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 self.assertIn(f"name: {artifact}", self.workflow)
         arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
         self.assertIn('su - builder -c "cd /tmp/ppm-arch && make WERROR=1 check"', arch)
-        self.assertIn(
-            'su - builder -c "cd /tmp/ppm-arch/packaging/aur && '
-            'makepkg --cleanbuild --noconfirm --nodeps"',
-            arch,
-        )
         self.assertIn('! -name "*-debug-*"', arch)
         self.assertIn(
             'make check-package PACKAGE="/work/dist/release/$(basename "$package")"',

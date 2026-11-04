@@ -679,6 +679,42 @@ class ActuatorTransactionTests(EngineTestCase):
         self.assertEqual(self.controller.acknowledge_calls[-1][1], True)
         self.assertEqual(engine.state.applied, LAPTOP)
 
+    def test_released_target_accepts_late_ready_and_clears_on_lease_expiry(self) -> None:
+        for target, hardware in ((LAPTOP, False), (HARDWARE, True)):
+            with self.subTest(mode=target.mode):
+                self.setUp()
+                engine = self.make()
+                self.controller.target = target
+                self.hardware = hardware
+                self.tick(engine, now=100.0)
+                self.assertIsNone(engine.state.applied)
+
+                self.lease(engine, generation=self.controller.generation - 1)
+                self.tick(engine, now=100.1)
+                self.assertIsNone(engine.state.applied)
+                self.lease(engine)
+                self.tick(engine, now=100.2)
+                self.assertEqual(engine.state.applied, target)
+
+                self.tick(engine, now=103.5)
+                self.assertFalse(engine.state.session_connected)
+                self.assertIsNone(engine.state.applied)
+                self.lease(engine)
+                self.tick(engine)
+                self.assertEqual(engine.state.applied, target)
+                self.assertEqual(self.actuator.calls, ["release"])
+
+    def test_software_target_waits_for_keep_after_release(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = TENT
+        self.tick(engine)
+        self.lease(engine)
+        executor.run_next()
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["release", "keep"])
+        self.assertIsNone(engine.state.applied)
+
     def test_switch_between_software_orientations_keeps_relay(self) -> None:
         engine = self.make()
         self.controller.target = TENT

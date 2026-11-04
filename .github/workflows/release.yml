@@ -59,7 +59,16 @@ jobs:
               su - builder -c \
                 "cd /tmp/ppm-arch && python3 packaging/scripts/release_version.py --tag $RELEASE_TAG"
               su - builder -c "cd /tmp/ppm-arch && make WERROR=1 check"
-              su - builder -c "cd /tmp/ppm-arch/packaging/aur && makepkg --cleanbuild --noconfirm --nodeps"
+              # Build from the checked-out commit and export the tag-pinned
+              # recipe separately for the source AUR package.
+              su - builder -c \
+                "cd /tmp/ppm-arch &&
+                git archive --format=tar.gz --prefix=panasonic-posture-manager/ \
+                  -o packaging/aur/ppm-release-source.tar.gz HEAD &&
+                cd packaging/aur &&
+                cp PKGBUILD PKGBUILD.ci &&
+                printf \"\\nsource[0]=ppm-release-source.tar.gz\\n\" >> PKGBUILD.ci &&
+                makepkg --cleanbuild --noconfirm --nodeps -p PKGBUILD.ci"
 
               install -d /work/dist/release /work/dist/aur /work/dist/aur-bin
               package=$(find /tmp/ppm-arch/packaging/aur -maxdepth 1 \
