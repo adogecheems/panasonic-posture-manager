@@ -279,6 +279,34 @@ class AdapterTickTests(unittest.TestCase):
         self.assertTrue(harness.agent.ready)
         self.assertEqual(harness.client.updates, [(1, True, "", "")])
 
+    def test_worker_completions_advance_without_waiting_for_timer(self):
+        executor = DeferredExecutor()
+        harness = Harness(make_state(), executor=executor)
+        callbacks = []
+
+        with mock.patch.object(GLib, "idle_add", side_effect=callbacks.append):
+            harness.tick()
+            for _ in range(2):  # GetState and the display transaction
+                executor.run_next()
+                self.assertEqual(len(callbacks), 1)
+                self.assertEqual(executor.calls, [])
+                self.assertFalse(callbacks.pop(0)())
+
+            # The display was applied, but the target changed before readback.
+            self.assertEqual(harness.client.updates, [])
+            laptop = Target(mode="laptop", tablet=False, rotation=0)
+            harness.set_state(make_state(generation=2, target=laptop))
+            for _ in range(4):  # verify, apply, verify, feedback
+                executor.run_next()
+                self.assertEqual(len(callbacks), 1)
+                self.assertFalse(callbacks.pop(0)())
+
+        self.assertEqual(harness.display.applied, [make_state().target, laptop])
+        self.assertEqual(harness.client.get_calls, 3)
+        self.assertEqual(harness.client.updates, [(2, True, "", "")])
+        self.assertEqual(executor.calls, [])
+        self.assertEqual(callbacks, [])
+
     def test_stand_prompt_kind_is_forwarded_to_notifier(self):
         harness = Harness(
             make_state(pending_notification=8, pending_prompt="stand")

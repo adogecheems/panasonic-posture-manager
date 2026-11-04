@@ -728,8 +728,8 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
         ui.settingsPage.update(pendingTabletState);
         if (ui.posturePage._pose !== 'tablet')
             failures.push('pending manual mode did not update the illustration');
-        if (ui.posturePage._detail.label !== 'Applying mode…')
-            failures.push('unconfirmed mode did not show progress');
+        if (ui.posturePage._detail.visible)
+            failures.push('an ordinary pending transition showed a status message');
         ui.posturePage.update(Object.assign({{}}, pendingTabletState, {{
             target: {{mode: 'unavailable'}},
         }}));
@@ -741,6 +741,8 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
         ui.posturePage.update(failedTabletState);
         if (ui.posturePage._pose !== 'tent')
             failures.push('failed manual mode left the pending illustration visible');
+        if (!ui.posturePage._detail.visible || !ui.posturePage._retryButton.visible)
+            failures.push('failed manual mode did not show the error and retry action');
         const manualTabletState = Object.assign({{}}, state, {{
             hardware: false, hardware_status: 'ok', manual: 'tablet',
             pose: 'tent', target: tabletTarget, applied: tabletTarget,
@@ -752,7 +754,7 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
         if (ui.posturePage._heading.label !== 'Tablet')
             failures.push('applied tablet mode did not override the recognised tent pose');
         if (ui.posturePage._detail.visible)
-            failures.push('progress remained visible after the mode was applied');
+            failures.push('an ordinary applied mode showed a status message');
         const hardwareState = Object.assign({{}}, manualTabletState, {{
             pose: 'tablet', target: {{mode: 'hardware', tablet: true,
                                      rotation: null, disable_internal_input: false}},
@@ -959,6 +961,8 @@ async function exercise() {
     const posture = new PosturePage(service);
     posture.update({...state, pending_notification: 10, pending_prompt: 'tent'});
     posture._confirmButton.emit('clicked');
+    check(posture._confirmButton.label === 'Enter tent mode' && !posture._confirmButton.sensitive,
+        'pending confirmation changed its label or allowed a second activation');
     posture.update({...state, pending_notification: 11, pending_prompt: 'stand'});
     requests.at(-1).resolve();
     await Promise.resolve();

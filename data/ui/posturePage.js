@@ -201,8 +201,6 @@ export class PosturePage {
             text = _('This model does not support automatic mode changes.');
         } else if (state.target?.mode === 'unavailable') {
             text = _('Mode switching is paused.');
-        } else if (!state.applied) {
-            text = _('Applying mode…');
         } else if (state.support_tier === 'compatible') {
             text = _('Compatibility mode: this model is supported but has not been individually validated.');
         }
@@ -278,9 +276,9 @@ export class PosturePage {
     }
 
     _syncButtons() {
-        this._confirmButton.label = this._busyButton === this._confirmButton
-            ? _('Applying mode…')
-            : this._pendingPrompt === 'stand' ? _('Enter stand mode') : _('Enter tent mode');
+        this._confirmButton.label = this._pendingPrompt === 'stand'
+            ? _('Enter stand mode')
+            : _('Enter tent mode');
         this._retryButton.label = this._busyButton === this._retryButton
             ? _('Retrying…')
             : _('Retry');

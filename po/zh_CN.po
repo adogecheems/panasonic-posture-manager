@@ -43,9 +43,6 @@ msgstr "进入支架模式"
 msgid "Retry"
 msgstr "重试"
 
-msgid "Applying mode…"
-msgstr "正在切换模式…"
-
 msgid "Mode switching is paused."
 msgstr "模式切换已暂停。"
 

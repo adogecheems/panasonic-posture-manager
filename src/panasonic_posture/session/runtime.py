@@ -1,4 +1,4 @@
-"""Per-tick session state machine for the unprivileged adapter.
+"""Session state machine for the unprivileged adapter.
 
 The process shell in :mod:`panasonic_posture.session.agent` owns bus names,
 signals and GLib lifecycle.  This module owns everything that happens while the
@@ -89,6 +89,7 @@ class SessionRuntime:
         screen_locked: Callable[[], bool] | None = None,
         adapter_errors: tuple[type[Exception], ...] = (),
         executor: Executor | None = None,
+        schedule_completion: Callable[[], None] | None = None,
     ) -> None:
         self.client = client
         self.display = display
@@ -99,6 +100,7 @@ class SessionRuntime:
             "posture-session-runtime"
         )
         self._owns_executor = executor is None
+        self._schedule_completion = schedule_completion
         self._tasks: deque[_Task] = deque()
         self._closing = False
 
@@ -139,7 +141,7 @@ class SessionRuntime:
         """Advance the serialized reconciliation pipeline without blocking."""
         if self._closing:
             return
-        self._drain_tasks(now)
+        self.drain_completed_tasks(now)
         if self._tasks:
             return
         if self._restore_retry_at and now >= self._restore_retry_at:
@@ -159,7 +161,7 @@ class SessionRuntime:
             return
         else:
             self._submit("state", self.client.get_state)
-        self._drain_tasks(now)
+        self.drain_completed_tasks(now)
 
     def close(self) -> None:
         """Close the notification and restore the display, best effort."""
@@ -192,8 +194,16 @@ class SessionRuntime:
             future = Future()
             future.set_exception(error)
         self._tasks.append(_Task(kind, future, context))
+        schedule = self._schedule_completion
+        if schedule is not None and not future.done():
+            # This callback may run on the worker. Only the main loop drains
+            # results and advances the transaction.
+            future.add_done_callback(lambda _future: schedule())
 
-    def _drain_tasks(self, now: float) -> None:
+    def drain_completed_tasks(self, now: float) -> None:
+        """Advance pending work without starting another periodic state read."""
+        if self._closing:
+            return
         for _ in range(16):
             if not self._tasks:
                 return

@@ -48,7 +48,7 @@ STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 class Agent:
     """Own the adapter's bus identity and GLib process lifecycle.
 
-    Per-tick state lives in :class:`SessionRuntime`; this shell only decides
+    Reconciliation state lives in :class:`SessionRuntime`; this shell only decides
     when it is safe to construct and start that runtime.  Every collaborator is
     injectable so tests can drive the process with fake connections, clocks and
     display/notifier objects:
@@ -332,6 +332,7 @@ class Agent:
             screen_locked=screen_locked,
             adapter_errors=(GLib.Error,),
             executor=self._executor,
+            schedule_completion=self._schedule_completion,
         )
 
     def _build_components(self) -> None:
@@ -368,7 +369,19 @@ class Agent:
                 "cannot subscribe to notification actions: %s", describe_error(error)
             )
 
-    # -- periodic work ----------------------------------------------------
+    # -- reconciliation ---------------------------------------------------
+
+    def _schedule_completion(self) -> None:
+        if not self._stopping:
+            GLib.idle_add(self._on_task_completed)
+
+    def _on_task_completed(self) -> bool:
+        if self.runtime is not None and not (self._stopping or self._name_lost):
+            try:
+                self.runtime.drain_completed_tasks(self._clock())
+            except Exception:
+                log.exception("cannot process session adapter task completion")
+        return GLib.SOURCE_REMOVE
 
     def _tick(self) -> bool:
         """GLib timeout callback: never let an exception kill the source."""
@@ -401,6 +414,7 @@ class Agent:
     # -- shutdown ---------------------------------------------------------
 
     def _cleanup(self) -> None:
+        self._stopping = True
         if self._timer is not None:
             try:
                 GLib.source_remove(self._timer)
