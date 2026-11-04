@@ -80,6 +80,9 @@ class SoftwareDisplay:
     def _write_lock(self, state: DisplayState, locked: bool) -> None:
         raise NotImplementedError
 
+    def _lock_value(self, locked: bool) -> bool | str:
+        return locked
+
     def _write_original_lock(self, state: DisplayState, policy: str) -> None:
         raise NotImplementedError
 
@@ -122,10 +125,7 @@ class SoftwareDisplay:
             self._persist()
         try:
             if state.lock_supported:
-                self.owned["written_lock"] = True
-                self._persist()
-                if not self._is_locked(state):
-                    self._write_lock(state, True)
+                self._write_owned_lock(state, True)
             if state.transform != transform:
                 # Until the write is verified, recovery must recognize both
                 # the last owned transform and the new write intent.
@@ -137,9 +137,12 @@ class SoftwareDisplay:
             self._persist()
             if mode == "tablet" and state.lock_supported:
                 # Release automatic rotation only after landscape is stable.
-                self.owned["written_lock"] = False
-                self._persist()
-                self._write_lock(state, False)
+                current = self._read_state()
+                if current.identity != state.identity:
+                    raise DisplayError(
+                        ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
+                    )
+                self._write_owned_lock(current, False)
         except (DisplayError, OSError, ValueError):
             self._rollback()
             raise
@@ -157,10 +160,6 @@ class SoftwareDisplay:
         state = self._read_transaction_state()
         if not self.owned:
             self.owned = self._journal_document(state)
-            if state.lock_supported:
-                # No software mode touched the lock yet, but restore() must
-                # still put the captured original policy back later.
-                self.owned["written_lock"] = True
             self._persist()
         # Only a controllable orientation policy needs a deferred journal:
         # leaving hardware mode must restore the user's original lock.
@@ -188,34 +187,38 @@ class SoftwareDisplay:
         identity = tuple(str(part) for part in owned.get("spec") or ())
         owned_transforms = {owned.get("written_transform"), owned.get("pending_transform")}
         owned_transforms.discard(None)
+        has_owned_lock = any(
+            owned.get(field) is not None for field in ("written_lock", "pending_lock")
+        )
         failure: DisplayError | None = None
 
         if owned_transforms:
             if state.identity == identity and state.transform in owned_transforms:
                 original = 0 if normal else int(owned.get("original_transform") or 0)
-                try:
-                    self._write_rotation(state, original)
-                except DisplayError as error:
-                    failure = error
+                if state.transform != original:
+                    try:
+                        self._write_rotation(state, original)
+                    except DisplayError as error:
+                        failure = error
+                    if release_lock or has_owned_lock:
+                        # A lock edit may have arrived during compositor read-back.
+                        state = self._read_state()
             elif state.identity == identity:
                 log.debug("display rotation already %s; not restoring", state.transform)
             else:
                 log.warning("display output changed; leaving rotation untouched")
 
-        if owned.get("written_lock") is not None:
+        if release_lock and state.identity != identity:
+            raise DisplayError(
+                ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
+            )
+        # GNOME's boolean lock is global. Plasma's policy belongs to the output.
+        if state.identity == identity or isinstance(state.lock, bool):
             try:
-                if not state.lock_supported:
-                    raise DisplayError(
-                        ErrorCode.DISPLAY_LOCK, "orientation-lock-unavailable"
-                    )
-                if release_lock:
-                    self._write_lock(state, False)
-                else:
-                    original_policy = owned.get("original_policy")
-                    if original_policy is not None:
-                        self._write_original_lock(state, str(original_policy))
-                    else:
-                        self._write_lock(state, bool(owned.get("original_lock")))
+                if release_lock and (keep_journal or has_owned_lock):
+                    self._write_owned_lock(state, False)
+                elif not release_lock and has_owned_lock:
+                    self._restore_lock(state)
             except DisplayError as error:
                 failure = failure or error
 
@@ -226,10 +229,47 @@ class SoftwareDisplay:
         self.journal.clear()
         self.owned = None
 
+    # -- lock ownership ---------------------------------------------------
+
+    def _owns_lock(self, state: DisplayState) -> bool:
+        return any(
+            isinstance(value, bool) and state.lock == self._lock_value(value)
+            for value in (self.owned.get("written_lock"), self.owned.get("pending_lock"))
+        )
+
+    def _write_owned_lock(self, state: DisplayState, locked: bool) -> None:
+        if not state.lock_supported:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, "orientation-lock-unavailable")
+        if state.lock == self._lock_value(locked):
+            return
+        if not self._owns_lock(state):
+            # A fresh write takes ownership of the current desktop preference.
+            self.owned["original_lock"] = self._is_locked(state)
+            if isinstance(state.lock, str):
+                self.owned["original_policy"] = state.lock
+            self.owned["written_lock"] = None
+        self.owned["pending_lock"] = locked
+        self._persist()
+        self._write_lock(state, locked)
+        self.owned["written_lock"] = locked
+        self.owned.pop("pending_lock")
+        self._persist()
+
+    def _restore_lock(self, state: DisplayState) -> None:
+        if not state.lock_supported:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, "orientation-lock-unavailable")
+        if not self._owns_lock(state):
+            return
+        original_policy = self.owned.get("original_policy")
+        if original_policy is not None:
+            self._write_original_lock(state, str(original_policy))
+        else:
+            self._write_lock(state, bool(self.owned["original_lock"]))
+
     # -- journal ----------------------------------------------------------
 
     def _read_transaction_state(self) -> DisplayState:
-        """Resolve an interrupted rotation before starting a new transaction."""
+        """Resolve an interrupted display write before starting a new transaction."""
 
         state = self._read_state()
         if not self.owned:
@@ -240,7 +280,9 @@ class SoftwareDisplay:
             # onto a replacement panel.  Restore what can be restored, then let
             # the caller capture a fresh transaction for the current output.
             log.warning("internal monitor changed; restarting the display transaction")
-        if output_changed or self.owned.get("pending_transform") is not None:
+        if output_changed or any(
+            self.owned.get(field) is not None for field in ("pending_transform", "pending_lock")
+        ):
             self.restore()
             state = self._read_state()
         return state

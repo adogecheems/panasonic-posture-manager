@@ -559,6 +559,7 @@ class Engine:
     def tick(self, now: float | None = None) -> None:
         """Run one transaction; never raises, so the GLib source survives."""
         started = self._monotonic()
+        recovering = self._tick_error_code is not None
         self._tick_error_code = None
         self._tick_error_detail = None
         try:
@@ -567,6 +568,12 @@ class Engine:
             self._log.exception("service tick failed")
             self._tick_error_code = ErrorCode.INTERNAL
             self._tick_error_detail = "tick-failed"
+            # Even a transient fault requires a new display acknowledgement.
+            if not recovering or self.agent_ready is not None:
+                self._bump_generation()
+            if self._manage_actuator:
+                self._poll_release()
+                self._ensure_release(self._controller.generation, Target())
             try:
                 self._publish_state()
             except Exception:  # noqa: BLE001 - last resort
@@ -730,9 +737,7 @@ class Engine:
                 self._last_release_key = None
             else:
                 key = (generation, target)
-                if self._last_release_key != key:
-                    self._last_release_key = key
-                    self._submit_release(generation)
+                self._ensure_release(generation, target)
                 # Release completion and the display acknowledgement can
                 # arrive in either order. Only targets that need no input
                 # grab can be applied on release.
@@ -749,6 +754,12 @@ class Engine:
         except ActuatorError as error:
             self._actuator.release()
             self._controller.acknowledge(generation, False, error.code, error.detail)
+
+    def _ensure_release(self, generation: int, target: Target) -> None:
+        key = (generation, target)
+        if self._release_task is None and self._last_release_key != key:
+            self._last_release_key = key
+            self._submit_release(generation)
 
     def _submit_release(self, generation: int) -> None:
         try:

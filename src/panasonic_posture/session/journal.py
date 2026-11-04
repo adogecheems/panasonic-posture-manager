@@ -70,9 +70,10 @@ def _validate(data: Any) -> dict:
         raise ValueError("journal original_transform must be an integer")
     if not isinstance(data.get("original_lock"), bool):
         raise ValueError("journal original_lock must be a boolean")
-    written_lock = data.get("written_lock", None)
-    if written_lock is not None and not isinstance(written_lock, bool):
-        raise ValueError("journal written_lock must be a boolean or null")
+    for field in ("written_lock", "pending_lock"):
+        lock = data.get(field)
+        if lock is not None and not isinstance(lock, bool):
+            raise ValueError(f"journal {field} must be a boolean or null")
     for field in ("written_transform", "pending_transform"):
         transform = data.get(field)
         if transform is not None and not _is_int(transform):

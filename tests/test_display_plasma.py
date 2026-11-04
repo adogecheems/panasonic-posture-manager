@@ -316,6 +316,58 @@ class PlasmaTransactionTests(unittest.TestCase):
         self.assertEqual(command.policy, "never")
         self.assertIsNone(self.journal.load())
 
+    def test_restore_preserves_an_external_policy_change(self):
+        command = FakePlasmaCommand(transform=1, policy="in-tablet-mode")
+        display = self.display(command)
+        display.apply(Target(mode="tent"))
+        command.policy = "always"
+
+        self.display(command)  # recover on restart
+
+        self.assertEqual(command.policy, "always")
+        self.assertEqual(command.transform, 1)
+        self.assertIsNone(self.journal.load())
+
+    def test_new_lock_write_preserves_the_latest_external_policy(self):
+        command = FakePlasmaCommand(policy="in-tablet-mode")
+        display = self.display(command)
+        display.apply(Target(mode="tent"))
+        command.policy = "always"
+
+        display.apply(Target(mode="hardware"))
+        self.assertEqual(command.policy, "in-tablet-mode")
+        display.restore()
+
+        self.assertEqual(command.policy, "always")
+
+    def test_restore_does_not_apply_old_policy_to_a_replacement_panel(self):
+        command = FakePlasmaCommand(policy="always")
+        display = self.display(command)
+        display.apply(Target(mode="tent"))
+        command.calls.clear()
+        query = command.query
+        with patch.object(command, "query", side_effect=lambda: query().replace("eDP-1", "eDP-2")):
+            display.restore()
+
+        self.assertEqual(command.calls, [])
+        self.assertIsNone(self.journal.load())
+
+    def test_interrupted_lock_write_recovers_before_or_after_the_write(self):
+        for policy in ("never", "in-tablet-mode"):
+            with self.subTest(policy=policy):
+                command = FakePlasmaCommand(policy="always")
+                display = self.display(command)
+                display.apply(Target(mode="tent"))
+                with patch.object(command, "set_policy", side_effect=KeyboardInterrupt):
+                    with self.assertRaises(KeyboardInterrupt):
+                        display.apply(Target(mode="tablet"))
+                command.policy = policy
+
+                self.display(command)
+
+                self.assertEqual(command.policy, "always")
+                self.assertIsNone(self.journal.load())
+
     def test_missing_binary_reports_display_unavailable(self):
         display = self.display(MissingPlasmaCommand("not-found"))
         with self.assertRaises(DisplayError) as caught:

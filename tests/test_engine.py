@@ -1022,6 +1022,36 @@ class SleepEventTests(EngineTestCase):
 
 
 class TickRobustnessTests(EngineTestCase):
+    def test_failed_tick_revokes_takeover_before_accepting_fresh_readiness(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = TENT
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        generation = self.controller.generation
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(engine.state.applied, TENT)
+
+        self.controller.update_error = RuntimeError("controller exploded")
+        self.tick(engine)
+        self.assertEqual(engine.state.error_code, ErrorCode.INTERNAL)
+        self.assertIsNone(engine.state.applied)
+        self.assertFalse(self.lease(engine, generation=generation))
+        fault_generation = engine.state.generation
+        self.tick(engine)
+        self.assertEqual(engine.state.generation, fault_generation)
+        self.assertEqual(len(executor.calls), 1)
+
+        self.controller.update_error = None
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["keep"])
+        self.assertIsNone(engine.state.applied)
+        executor.run_next()
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["keep", "release", "keep"])
+        self.assertEqual(engine.state.applied, TENT)
+
     def test_sensor_exception_does_not_break_tick(self) -> None:
         engine = self.make()
         self.sensor.reading_error = RuntimeError("sensor exploded")

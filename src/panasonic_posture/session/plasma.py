@@ -387,8 +387,10 @@ class PlasmaDisplay(SoftwareDisplay):
     def _write_lock(self, state: DisplayState, locked: bool) -> None:
         if not state.lock_supported:
             raise DisplayError(ErrorCode.DISPLAY_LOCK, "orientation-lock-unavailable")
-        policy = "never" if locked else "in-tablet-mode"
-        self._write_policy(state, policy)
+        self._write_policy(state, self._lock_value(locked))
+
+    def _lock_value(self, locked: bool) -> str:
+        return "never" if locked else "in-tablet-mode"
 
     def _write_original_lock(self, state: DisplayState, policy: str) -> None:
         self._write_policy(state, policy)

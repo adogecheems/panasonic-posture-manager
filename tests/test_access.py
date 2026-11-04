@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
+from concurrent.futures import Future
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +21,7 @@ from panasonic_posture.service.access import (
     AccessDenied,
     SessionInfo,
 )
+from panasonic_posture.tasks import InlineExecutor
 
 
 @dataclass
@@ -481,6 +484,12 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
 
         daemon = Daemon.__new__(Daemon)
         daemon.development = development
+        daemon.stop = threading.Event()
+        daemon._authorization_workers = {
+            "request": InlineExecutor(),
+            "session": InlineExecutor(),
+        }
+        daemon._authorization_pending = {"request": 0, "session": 0}
         daemon._exit_code = 0
         daemon._name_acquired_ok = False
         daemon.connection = None
@@ -504,17 +513,27 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         daemon._tick_idle_id = None
         return daemon
 
-    def call(self, daemon, method: str, parameters=None):
+    def call(self, daemon, method: str, parameters=None, *, dispatch_idle=True):
         invocation = self.Invocation()
-        daemon._method(
-            None,
-            ":1.42",
-            PATH,
-            IFACE,
-            method,
-            parameters if parameters is not None else GLib.Variant("()", ()),
-            invocation,
-        )
+
+        def dispatch():
+            daemon._method(
+                None,
+                ":1.42",
+                PATH,
+                IFACE,
+                method,
+                parameters if parameters is not None else GLib.Variant("()", ()),
+                invocation,
+            )
+
+        if dispatch_idle:
+            with mock.patch.object(
+                GLib, "idle_add", side_effect=lambda callback, *args, **_kwargs: callback(*args)
+            ):
+                dispatch()
+        else:
+            dispatch()
         return invocation
 
     def test_get_state_is_a_cached_snapshot_without_tick(self) -> None:
@@ -556,6 +575,65 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         daemon._schedule_tick.assert_called_once()
         self.assertIsNone(invocation.error)
 
+    def test_pending_user_authorization_leaves_state_and_heartbeats_responsive(self) -> None:
+        daemon = self.make_daemon()
+        future = Future()
+        worker = mock.Mock()
+        worker.submit.return_value = future
+        daemon._authorization_workers["request"] = worker
+
+        pending = self.call(daemon, "Retry", dispatch_idle=False)
+        self.assertIsNone(pending.value)
+        daemon.application.access.authorize.assert_not_called()
+        daemon.application.engine.retry.assert_not_called()
+        self.assertIsNotNone(self.call(daemon, "GetState").value)
+        heartbeat = self.call(
+            daemon, "SessionUpdate", GLib.Variant("(ubss)", (7, True, "", ""))
+        )
+        self.assertIsNotNone(heartbeat.value)
+        daemon.application.engine.session_update.assert_called_once_with(
+            7, True, "", "", 1000
+        )
+
+        with mock.patch.object(GLib, "idle_add") as idle:
+            future.set_result(1000)
+        daemon.application.engine.retry.assert_not_called()
+        callback, *args = idle.call_args.args
+        callback(*args)
+        self.assertIsNotNone(pending.value)
+        daemon.application.engine.retry.assert_called_once_with()
+
+    def test_shutdown_drops_a_completed_authorization(self) -> None:
+        daemon = self.make_daemon()
+        future = Future()
+        worker = mock.Mock()
+        worker.submit.return_value = future
+        daemon._authorization_workers["request"] = worker
+        self.call(daemon, "Retry", dispatch_idle=False)
+        with mock.patch.object(GLib, "idle_add") as idle:
+            future.set_result(1000)
+        daemon.stop.set()
+        callback, *args = idle.call_args.args
+        callback(*args)
+        daemon.application.engine.retry.assert_not_called()
+
+    def test_full_authorization_queue_rejects_new_requests(self) -> None:
+        from panasonic_posture.service.daemon import MAX_PENDING_AUTHORIZATIONS
+
+        daemon = self.make_daemon()
+        worker = mock.Mock()
+        daemon._authorization_workers["session"] = worker
+        daemon._authorization_pending["session"] = MAX_PENDING_AUTHORIZATIONS
+
+        response = self.call(
+            daemon, "SessionUpdate", GLib.Variant("(ubss)", (7, True, "", ""))
+        )
+
+        self.assertIn("authorization-busy", response.error[1])
+        worker.submit.assert_not_called()
+        daemon.application.engine.session_update.assert_not_called()
+        self.assertIsNotNone(self.call(daemon, "Retry").value)
+
     def test_session_update_uses_verified_adapter_uid(self) -> None:
         daemon = self.make_daemon()
         invocation = self.call(
@@ -582,14 +660,8 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
 
     def test_session_update_rejected_before_engine_lease_refresh(self) -> None:
         daemon = self.make_daemon(verify_error=AccessDenied("inactive session"))
-        daemon._method(
-            None,
-            ":1.42",
-            PATH,
-            IFACE,
-            "SessionUpdate",
-            GLib.Variant("(ubss)", (7, True, "", "")),
-            self.Invocation(),
+        self.call(
+            daemon, "SessionUpdate", GLib.Variant("(ubss)", (7, True, "", ""))
         )
         daemon.application.engine.session_update.assert_not_called()
         daemon._tick.assert_not_called()

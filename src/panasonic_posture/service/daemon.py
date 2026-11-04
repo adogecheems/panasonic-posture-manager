@@ -18,6 +18,7 @@ import signal
 import sys
 import threading
 import time
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -40,6 +41,7 @@ from ..protocol import (
     ErrorCode,
     error_message,
 )
+from ..tasks import thread_executor
 from .access import AccessDenied
 from .application import ServiceApplication
 from .engine import ServiceError, guard
@@ -50,6 +52,7 @@ LOG = logging.getLogger("panasonic_posture.service.daemon")
 LOGIND_NAME = "org.freedesktop.login1"
 LOGIND_PATH = "/org/freedesktop/login1"
 LOGIND_MANAGER = "org.freedesktop.login1.Manager"
+MAX_PENDING_AUTHORIZATIONS = 16
 
 
 class Daemon:
@@ -74,6 +77,13 @@ class Daemon:
         self._sleep_subscription: int | None = None
         self._signal_sources: list[int] = []
         self.loop = GLib.MainLoop()
+        # Separate workers keep a slow polkit request from delaying lease
+        # heartbeats. Each owns the corresponding AccessControl caches.
+        self._authorization_workers = {
+            "request": thread_executor("posture-request-auth"),
+            "session": thread_executor("posture-session-auth"),
+        }
+        self._authorization_pending = {"request": 0, "session": 0}
 
         self.application = ServiceApplication.create(
             stop=self.stop,
@@ -209,40 +219,6 @@ class Daemon:
 
     # -- authorization / dispatch ---------------------------------------
 
-    def _authorized_uid(self, sender: str) -> int:
-        if self.development:
-            # ``--session-bus`` exists for local development only; the session
-            # bus is not a privilege boundary here.
-            return 0
-        return self.application.access.authorize(sender)
-
-    def _session_sender_uid(self, sender: str) -> int:
-        """Authenticate a ``SessionUpdate`` sender (review Q-01).
-
-        ``AccessControl.verify_session_adapter`` performs the four required
-        checks before the engine is allowed to refresh its lease:
-
-        (a) caller uid (``GetConnectionUnixUser``);
-        (b) sender is the current owner of ``protocol.session_name(uid)``;
-        (c) that uid has the active local graphical session on seat0
-            (logind, cached <=1 s so 0.5 s heartbeats stay cheap);
-        (d) the sender pid belongs to the user unit
-            ``panasonic-posture-manager-session.service`` (cgroup check).
-
-        Any failure raises ``ServiceError(ACCESS_DENIED, ...)``; the engine is
-        never asked to renew a lease for an unauthenticated sender, so a
-        heartbeat from an inactive session cannot revive an expired lease.
-        """
-        if self.development:
-            # ``--session-bus`` is a local development mode without logind,
-            # polkit or a real systemd user unit.
-            return 0
-        try:
-            return self.application.access.verify_session_adapter(sender)
-        except AccessDenied as error:
-            LOG.warning("SessionUpdate rejected from %s: %s", sender, error)
-            raise ServiceError(ErrorCode.ACCESS_DENIED, str(error)) from None
-
     def _method(
         self,
         _connection: Any,
@@ -253,6 +229,50 @@ class Daemon:
         parameters: GLib.Variant,
         invocation: Any,
     ) -> None:
+        # The development bus has no production identity checks.
+        if method == "GetState" or self.development:
+            self._dispatch_method(sender, method, parameters, invocation)
+            return
+        access = self.application.access
+        if method == "SessionUpdate":
+            lane, authorize = "session", access.verify_session_adapter
+        else:
+            lane, authorize = "request", access.authorize
+        if self._authorization_pending[lane] >= MAX_PENDING_AUTHORIZATIONS:
+            invocation.return_dbus_error(
+                DBUS_ERROR, error_message(ErrorCode.INTERNAL, "authorization-busy")
+            )
+            return
+        try:
+            future = self._authorization_workers[lane].submit(authorize, sender)
+        except RuntimeError:
+            LOG.exception("cannot schedule authorization for %s", method)
+            invocation.return_dbus_error(
+                DBUS_ERROR, error_message(ErrorCode.INTERNAL, "method-failed")
+            )
+            return
+        self._authorization_pending[lane] += 1
+
+        def dispatch(result: Future[int]) -> bool:
+            self._authorization_pending[lane] -= 1
+            if not self.stop.is_set():
+                self._dispatch_method(sender, method, parameters, invocation, result)
+            return GLib.SOURCE_REMOVE
+
+        def authorized(result: Future[int]) -> None:
+            if not self.stop.is_set():
+                GLib.idle_add(dispatch, result, priority=GLib.PRIORITY_DEFAULT)
+
+        future.add_done_callback(authorized)
+
+    def _dispatch_method(
+        self,
+        sender: str,
+        method: str,
+        parameters: GLib.Variant,
+        invocation: Any,
+        authorization: Future[int] | None = None,
+    ) -> None:
         try:
             arguments = parameters.unpack()
             if method == "GetState":
@@ -262,36 +282,29 @@ class Daemon:
                     GLib.Variant("(s)", (self.application.engine.state_json(),))
                 )
                 return
+            if authorization is None and not self.development:
+                raise AccessDenied("missing method authorization")
+            uid = authorization.result() if authorization is not None else 0
             if method == "SetMode":
-                self._authorized_uid(sender)
                 self.application.engine.set_mode(str(arguments[0]))
             elif method == "Retry":
-                self._authorized_uid(sender)
                 self.application.engine.retry()
             elif method == "SetTentEnabled":
-                self._authorized_uid(sender)
                 self.application.engine.set_tent_enabled(bool(arguments[0]))
             elif method == "SetTentPrompt":
-                self._authorized_uid(sender)
                 self.application.engine.set_tent_prompt(bool(arguments[0]))
             elif method == "SetStandPrompt":
-                self._authorized_uid(sender)
                 self.application.engine.set_stand_prompt(bool(arguments[0]))
             elif method == "CalibrateSensor":
-                self._authorized_uid(sender)
                 self.application.engine.calibrate_sensor()
             elif method == "ResetSensorCalibration":
-                self._authorized_uid(sender)
                 self.application.engine.reset_sensor_calibration()
             elif method == "ConfirmTent":
-                self._authorized_uid(sender)
                 self.application.engine.confirm_tent(int(arguments[0]))
             elif method == "ConfirmStand":
-                self._authorized_uid(sender)
                 self.application.engine.confirm_stand(int(arguments[0]))
             elif method == "SessionUpdate":
                 generation, ready, error_code, error_detail = arguments
-                uid = self._session_sender_uid(sender)
                 self.application.engine.session_update(
                     int(generation), bool(ready), str(error_code), str(error_detail), uid
                 )
@@ -303,7 +316,7 @@ class Daemon:
             LOG.debug("method %s rejected: %s", method, error)
             invocation.return_dbus_error(DBUS_ERROR, str(error))
         except AccessDenied as error:
-            LOG.warning("access denied for %s: %s", method, error)
+            LOG.warning("access denied for %s from %s: %s", method, sender, error)
             invocation.return_dbus_error(
                 DBUS_ERROR, error_message(ErrorCode.ACCESS_DENIED, str(error))
             )
@@ -351,6 +364,8 @@ class Daemon:
     def shutdown(self) -> None:
         LOG.info("stopping service")
         self.stop.set()
+        for worker in self._authorization_workers.values():
+            worker.shutdown(wait=False, cancel_futures=True)
         if self._timeout_id is not None:
             try:
                 GLib.source_remove(self._timeout_id)

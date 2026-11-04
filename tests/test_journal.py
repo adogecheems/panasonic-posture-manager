@@ -98,6 +98,7 @@ class JournalTests(unittest.TestCase):
             {"original_transform": "0"},
             {"original_lock": 0},
             {"written_lock": "true"},
+            {"pending_lock": "false"},
             {"written_transform": 2.5},
             {"pending_transform": False},
             {"original_policy": 0},

@@ -353,6 +353,19 @@ class ApplyTransactionTests(unittest.TestCase):
         self.assertIsNone(harness.display.owned)
         self.assertIsNone(harness.journal.document)
 
+    def test_restore_preserves_an_external_rotation_lock_change(self):
+        harness = Harness(transform=2, locked=True)
+        harness.display.apply(Target(mode="tablet"))
+        harness.settings.value = True
+        harness.timeline.clear()
+
+        harness.display.restore()
+
+        self.assertEqual(harness.mutter.transform, 2)
+        self.assertTrue(harness.settings.value)
+        self.assertNotIn(("lock", True), harness.timeline)
+        self.assertIsNone(harness.journal.document)
+
     def test_other_software_mode_restarts_transaction_when_output_changes(self):
         harness = Harness(transform=0, locked=False)
         harness.display.apply(
