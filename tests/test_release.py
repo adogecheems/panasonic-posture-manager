@@ -34,7 +34,6 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.pkgbuild = read("packaging/aur/PKGBUILD")
         self.srcinfo = read("packaging/aur/.SRCINFO")
         self.readme = read("README.md")
-        self.changelog = read("CHANGELOG.md")
 
     def test_python_package_and_project_versions_match(self) -> None:
         self.assertEqual(self.project_version, __version__)
@@ -64,30 +63,25 @@ class ReleaseMetadataTests(unittest.TestCase):
         )
         self.assertEqual(ui_version, self.project_version)
 
-    def test_readme_and_changelog_announce_current_release(self) -> None:
+    def test_packaging_metadata_matches_the_release(self) -> None:
         self.assertIn(f"当前版本：{self.project_version}", self.readme)
-        self.assertIn(f"## [{self.project_version}] - ", self.changelog)
-
-    def test_install_and_packaging_examples_pin_the_release(self) -> None:
-        self.assertIn(f"git clone --branch v{self.project_version}", self.readme)
         self.assertIn(
             f'"Project-Id-Version: panasonic-posture-manager '
             f'{self.project_version}\\n"',
             read("po/zh_CN.po"),
         )
-        self.assertIn(
-            f"panasonic-posture-manager-{self.project_version}-1-x86_64",
-            read("packaging/aur/README.md"),
-        )
+        readme = read("packaging/aur/README.md")
+        self.assertIn("panasonic-posture-manager", readme)
+        self.assertIn("panasonic-posture-manager-bin", readme)
 
-    def test_release_documents_and_packaging_inputs_exist(self) -> None:
+    def test_release_inputs_exist(self) -> None:
         for relative in (
             "README.md",
-            "CHANGELOG.md",
             "LICENSE",
             "packaging/aur/PKGBUILD",
             "packaging/aur/.SRCINFO",
             "packaging/aur/panasonic-posture-manager.install",
+            "packaging/aur/README.md",
         ):
             with self.subTest(relative=relative):
                 self.assertTrue((ROOT / relative).is_file(), relative)

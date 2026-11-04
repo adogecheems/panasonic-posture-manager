@@ -230,7 +230,7 @@ def input_device_info(event_dir: str | Path) -> dict[str, Any] | None:
         "virtual": virtual,
         "capabilities": capabilities,
         # Raw capability bitmaps (also exposed under their historical names so
-        # probe reports and docs/hardware-profiles.md stay in sync).
+        # probe reports and profile discovery stay in sync).
         "switches": capabilities.get("sw", 0),
         "keys": capabilities.get("key", 0),
         "abs": capabilities.get("abs", 0),

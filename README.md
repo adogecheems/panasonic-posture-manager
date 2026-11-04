@@ -3,43 +3,38 @@
 在 Linux 翻转本上自动切换屏幕方向和内置输入，重点支持 Panasonic QV 系列。
 关闭窗口后继续在后台运行。
 
-> **当前版本：2.1.1。** 支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6
+> 当前版本：2.1.1。支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6
 > Wayland。
-
-![当前姿态界面（浅色主题）](docs/screenshots/current-light.png)
 
 ## 功能
 
 - 自动识别笔记本、帐篷、支架和平板姿态。
-- 自动模式以传感器识别姿态为准；手动选择只改变输出模式。
+- 允许手动切换姿态模式。
 - 帐篷和支架模式可选二次确认，减少误触发。
-- 硬件平板开关优先于软件设置。
-- 支持传感器方向校准，可随时恢复默认。
+- 支持传感器方向校准。
 - 提供中文、英文界面，跟随系统深浅色主题。
 
 ## 支持范围
 
-- **设备**：Panasonic CFQV8、CFQV9、CFQV1；其他 360° 翻转本按硬件
-  能力兼容，但不保证全部功能可用。
+- **设备**：Panasonic CFQV8、CFQV9、CFQV1；其他 360° 翻转本按硬件能力兼容，
+  但不保证全部功能可用。
 - **系统**：x86_64 Linux，GNOME Wayland 或 KDE Plasma 6 Wayland。
-- **预构建包**：Arch Linux、Ubuntu 24.04+/Debian 13+（`.deb`）和当前 Fedora
-  稳定版（`.rpm`）。三种包由 CI 从同一版本 tag 构建；其他发行版尚未验证。
-- **验证进度**：QV8 已通过主要功能实测；QV9/QV1 和 Plasma 6 仍待逐机验收。
+- **安装包**：Arch Linux、Ubuntu 24.04+/Debian 13+ 和当前 Fedora 稳定版。
 
 暂不支持 X11、Plasma 5 和其他 Wayland 桌面。
 
 ## 安装
 
-从 `2.1.1` 起，[GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases)
-会发布 Arch、Debian/Ubuntu 和 Fedora 包及 `SHA256SUMS`。也可以使用 AUR helper
-安装 `panasonic-posture-manager`，或从 `v2.1.1` 源码构建。完成后注销并重新登录。
+从 [GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases)
+下载与系统匹配的安装包。Arch Linux 用户也可以使用 AUR helper 安装
+`panasonic-posture-manager` 或 `panasonic-posture-manager-bin`。
 
 ### 预构建包
 
-从 release 页面下载对应文件，将示例版本替换为实际版本后执行：
+将示例版本替换为下载文件中的实际版本后执行：
 
 ```sh
-version=2.1.1  # 替换为下载文件中的版本号
+version=2.1.1
 
 # Arch Linux
 sudo pacman -U "./panasonic-posture-manager-${version}-1-x86_64.pkg.tar.zst"
@@ -51,39 +46,16 @@ sudo apt install "./panasonic-posture-manager_${version}-1_amd64.deb"
 sudo dnf install "./panasonic-posture-manager-${version}-1.x86_64.rpm"
 ```
 
-Debian/Ubuntu 包需要 GTK 4.12+ 和 libadwaita 1.4+，因此不适用于旧版发行版。
-预构建包会安装并启用系统服务和用户会话适配器，但不会访问真实设备或执行真机
-验收。
+### AUR
 
-### AUR 与源码
-
-AUR 提供源码构建包和预构建包，二选一：
+源码构建包和预构建包二选一，不能同时安装：
 
 ```sh
-# 从源码构建
-yay -S panasonic-posture-manager
-
-# 或直接安装 GitHub Release 中的 Arch 预构建包，不进行本地编译
-yay -S panasonic-posture-manager-bin
+yay -S panasonic-posture-manager      # 从源码构建
+yay -S panasonic-posture-manager-bin  # 安装预构建包
 ```
 
-`panasonic-posture-manager-bin` 与源码包提供相同文件并互相冲突，不会同时安装。
-
-<details>
-<summary>从源码安装</summary>
-
-需要 Arch Linux、`base-devel` 和网络连接。
-
-```sh
-git clone --branch v2.1.1 --depth 1 \
-  https://github.com/adogecheems/panasonic-posture-manager.git
-cd panasonic-posture-manager/packaging/aur
-makepkg -si
-```
-
-</details>
-
-首次使用时，建议将设备完整折叠、展开一次。
+安装后注销并重新登录。首次使用前，建议将设备完整折叠、展开一次。
 
 ## 使用
 
@@ -95,13 +67,8 @@ makepkg -si
 | 支架 | 桌面观看、触控 | 保持横屏，停用内置键盘和触控板 |
 | 平板 | 手持、平放 | 交给系统自动旋转，停用内置键盘和触控板 |
 
-模式切换后立即生效。硬件平板开关打开时，以硬件状态为准。
-
-帐篷提示默认开启，支架提示默认关闭，可在设置中修改。提示可通过桌面通知或
-程序窗口确认；锁屏时不显示，解锁后若姿态仍合适会再次提示。
-
-当前姿态始终显示传感器识别结果；服务启动时已处于帐篷或支架会直接采用该结果。
-手动选择不改变姿态来源，只有从已识别的笔记本姿态进入帐篷或支架时才可能提示。
+帐篷提示默认开启，支架提示默认关闭，可在设置中修改。锁屏时不显示提示，
+解锁后若姿态仍合适会再次询问。
 
 校准传感器时，将设备以笔记本形态平放在坚硬、水平的桌面上，保持约 2 秒，
 再到“设置 → 传感器”点击“校准”。需要撤销时点击“恢复默认”。
@@ -120,27 +87,7 @@ makepkg -si
 
 **平板模式没有被识别**：将设备完整折叠、展开一次。
 
-更多排查方法见 [安装、打包与运维](packaging/aur/README.md)。
-
-## 已知限制
-
-- QV8 的最终物理验收、QV9/QV1 同族回归和 Plasma 6 Wayland 真机验证尚未完成。
-- 其他品牌和未适配机型可能无法使用全部传感器或输入控制功能。
-- 程序判断的是设备底座方向，不是铰链角度；少数摆放方式可能归入相近模式。
-- 外接显示器布局冲突时，屏幕旋转可能被系统拒绝；硬件平板模式下的自动旋转
-  取决于设备固件和桌面环境。
-
-## 卸载
-
-从包管理器卸载 `panasonic-posture-manager`。设置和校准数据的清理方法见
-[安装、打包与运维](packaging/aur/README.md)。
-
-## 更多文档
-
-- [更新日志](CHANGELOG.md)
-- [机型适配说明](docs/hardware-profiles.md)
-- [实机验证记录](docs/hardware-validation.md)
-- [安装、打包与运维](packaging/aur/README.md)
+安装维护、服务状态和清理方式见[安装、打包与运维](packaging/aur/README.md)。
 
 ## 许可
 

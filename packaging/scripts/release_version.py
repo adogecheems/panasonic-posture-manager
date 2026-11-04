@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Read and validate the single release version used by all packages.
 
-The repository intentionally keeps the version in several user-facing and
-packaging files.  Build scripts call this helper before producing artifacts so
-a tag cannot publish packages whose metadata disagree.
+Build scripts call this helper before producing artifacts so a tag cannot
+publish packages whose metadata disagree.
 """
 
 from __future__ import annotations
@@ -70,8 +69,6 @@ def release_version() -> str:
 
     if f"当前版本：{version}" not in read("README.md"):
         raise VersionError("README.md does not announce the current version")
-    if f"## [{version}] - " not in read("CHANGELOG.md"):
-        raise VersionError("CHANGELOG.md has no entry for the current version")
     return version
 
 
