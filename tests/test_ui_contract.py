@@ -637,6 +637,12 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
     if (!ui) {{
         failures.push('window was not built');
     }} else {{
+        // Broadway can map the window without allocating it when no browser
+        // is connected. Give GTK a window size so it can lay out the header.
+        if (ui.window.get_width() === 0) {{
+            const [width, height] = ui.window.get_default_size();
+            ui.window.allocate(width, height, -1, null);
+        }}
         const switcherBar = findWidget(ui.window, 'viewswitcherbar');
         if (!switcherBar || !switcherBar.has_css_class('posture-navigation'))
             failures.push('bottom navigation style class missing');
