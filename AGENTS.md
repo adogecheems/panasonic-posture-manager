@@ -1,360 +1,175 @@
 # AGENTS.md — Agent 执行手册
 
-- 适用对象：在本仓库中工作的 AI coding agent
-- 更新时间：2026-11-04
-- 文档性质：约束性执行说明
+适用于在本仓库中工作的 AI coding agent。用户本轮明确指令优先，其次是本文件、
+`README.md` 和代码中的历史注释。上层运行环境的限制更严格时，从其限制。
+当前行为以代码和测试为准。发现文档与实现不符时，同步修正文档。
 
-> 本文件的目标不是让 agent“知道一些规则”，而是让每个任务按同一套方法定位、
-> 修改、验证和交付。优先级：用户本轮明确指令 > 本文件 > `README.md` >
-> 代码注释中的历史说明。若上层运行环境的限制更严格，以更严格者为准。
->
-> 涉及宿主系统、真实设备、用户数据、权限边界或发布时，授权不明确就停止询问；
-> 沉默、时间压力或“任务需要”都不构成授权。
+## 1. 工作流程
 
-## 1. 基本工作原则
+1. 用 `git status --short --untracked-files=all` 和目标文件的 `git diff` 确认已有改动归属。
+2. 用 `rg` 定位入口、符号和测试。编辑前追踪「入口 → 决策 → 副作用 → 状态回执 → 测试」，
+   明确决策模块、执行进程、兼容契约和可验证的结果。纯文档任务核对对应的代码、测试、命令和链接。
+3. 改变设计前读[设计变更记录](#13-设计变更记录)。先运行最近的测试建立基线，区分既有失败与本轮问题。
+4. 先复现问题或解释失败机制，再修复根因。复用现有事务和抽象，只改任务所需文件。
+   行为变更先写能复现问题的测试，覆盖正常、失败和有安全意义的边界。
+5. 先跑目标检查，再按[验证要求](#8-验证)扩大范围。检查差异和生成物，按[提交规则](#11-git-与提交)交付。
 
-1. **先证明，再修改。** 不根据文件名、旧文档或猜测下结论。至少追踪一次
-   “入口 → 决策 → 副作用 → 状态回执 → 测试”的完整路径。
-2. **代码和测试是事实源。** `README.md` 只负责用户可见事实；本文件与代码冲突
-   时以代码和测试为准，并修正本文件。不得复制可能过期的状态说明。
-3. **修根因，不做表面补丁。** 先复现或解释失败机制，再改最小相关路径；不要用
-   吞异常、放宽断言、缩短超时或删除分支来“让测试变绿”。
-4. **最小增量。** 只改完成任务所需的文件。不顺手重构、批量格式化、升级依赖或
-   改动无关文档；不清理用户的未提交改动。
-5. **只写可证实的结论。** 区分“测试通过”“仅静态检查”“目标机已验收”；未执行
-   就明确说未执行，不把 fake 后端、单元测试或 CI 结果说成真机证据。
-6. **设计决定必须留痕。** 改变行为、架构、权限、兼容性或持久化语义时，在同一
-   改动中更新第 13 节的设计变更记录。
+## 2. 项目和文档范围
 
-## 2. 每轮标准流程
+- 用户可见行为、机型和桌面支持范围写入 [README.md](README.md)。安装、构建、发布和运维写入 [USAGE.md](USAGE.md)。
+  用户文档保留这两页。不要恢复旧的 `docs/`、`CHANGELOG` 或独立硬件验收文档。
+- 机型支持等级核对 `data/profiles/` 和运行时 probe。其他 360° 翻转本按硬件能力判断兼容性。
+  支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland。
+- 使用 Python 3.11+、C11 relay、GJS／GTK 4／libadwaita。Python 包的运行时依赖列表保持为空，PyGObject 由发行版提供。
 
-### 2.1 开工
+## 3. 运行边界与状态回执
 
-1. 查看工作树，先确认哪些改动属于用户：
+- **root 系统服务**拥有系统 D-Bus 名。`service/daemon.py` 验证、分发方法调用并发布状态，
+  `service/engine.py` 编排领域状态、租约和执行事务。传感器和硬件观察结果经 `policy.py` 决策，
+  由 `controller.py` 生成 `Target` 和 generation。
+- **C relay** 由 `service/actuator.py` 管理，是唯一可打开 `/dev/input`、`/dev/uinput`
+  和抓取内置键盘、触控板的组件。stdout 专用于 JSON 行协议，日志写 stderr。
+- **用户会话适配器**先取得系统总线上的 per-uid 名，再操作显示。同一用户只运行一个实例。
+  `session/runtime.py` 读取 `GetState`，通过显示事务处理旋转、方向锁和恢复，再用
+  `SessionUpdate` 上报该 generation 的准备状态并维护租约。系统服务综合会话与 relay 的执行结果，
+  经 `GetState`／`StateChanged` 发布确认状态。
+- **UI** 只通过 D-Bus 发起操作并渲染已校验的状态快照。**只读探针**仅查看 sysfs 和 profile，
+  禁止打开输入设备或写入内核。
 
-   ```sh
-   git status --short --untracked-files=all
-   git diff -- <目标文件>
-   ```
+## 4. 定位代码与测试
 
-2. 用 `rg` 定位符号、字符串和测试，不要靠目录遍历猜实现：
+Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/test_*.py`。
+按改动选择相关行，再跟踪实际调用方。
 
-   ```sh
-   rg -n 'SetTentEnabled|tent_enabled' src data tests
-   rg -n '^class Engine|^    def tick' src tests
-   ```
-
-3. 在编辑前明确以下五项；缺一项就继续读代码：
-   - 用户操作的入口是什么？
-   - 哪个纯逻辑模块做决定？
-   - 哪个进程执行副作用？
-   - 哪个结构/版本是兼容契约？
-   - 哪个测试能证明行为？
-4. 需要改变设计时，先读第 13 节的既有记录，确认是在扩展还是取代旧约束。
-5. 先运行最接近的测试建立基线；测试已失败时，先区分既有失败与本轮问题。
-
-### 2.2 实施
-
-- 优先复用现有抽象和事务路径，不复制一套“差不多”的逻辑。
-- 纯逻辑模块保持无 I/O、无时钟、无 D-Bus；副作用放在原有边界内。
-- 新增或修改行为时同步增加可失败的测试；测试应覆盖正常路径、失败路径以及有
-  安全意义的边界。
-- UI 只消费经过校验的状态，并通过 D-Bus 调用服务；不要在 UI 里直接旋转屏幕、
-  抓取输入或写系统文件。
-- 文案改动同时处理英文源文案、`po/zh_CN.po`、错误码映射和 UI 契约。
-- 不手工编辑生成物：`backend/relay`、`locale/**/*.mo`、`build/`、`dist/`、
-  `__pycache__/`。
-
-### 2.3 收尾
-
-1. 先跑目标测试，再跑完整门槛。
-2. 检查差异和生成物：
-
-   ```sh
-   git diff --check
-   git diff --stat
-   git status --short --untracked-files=all
-   ```
-
-3. 逐项核对第 10 节的完成定义。
-4. 按第 11 节提交；若环境不允许提交，明确报告未提交原因和残留状态。
-
-## 3. 项目事实与运行时结构
-
-### 3.1 项目事实
-
-- 产品面向 Linux 可转换设备，重点支持 Panasonic CFQV8、CFQV9、CFQV1；其他
-  360° 翻转设备只能按硬件能力兼容，不等于已完成真机验证。
-- 只支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland。X11、
-  Plasma 5 Wayland 和其他合成器均为 `unsupported`。
-- 技术栈是 Python 3.11+、C11 relay、GJS/GTK 4/libadwaita；Python 运行时依赖为
-  零，PyGObject 由发行版提供。
-- 支持范围、安装方式和用户可见行为以 `README.md` 为准；机型支持等级以
-  `data/profiles/` 和运行时 probe 结果为准。
-- 发布版本必须保持 `pyproject.toml`、运行时 `__version__`、UI `APP_VERSION`、
-  `packaging/aur/PKGBUILD`、`.SRCINFO` 和 `README.md` 一致；由
-  `tests/test_release.py` 和 `release_version.py` 守护。
-- D-Bus、状态、relay、profile、设置和显示日志版本是内部兼容契约；不要从旧
-  README 或注释推断当前 schema。
-
-### 3.2 数据流
-
-```text
-传感器 / 硬件开关
-  → service/sensor* + hardware_monitor
-  → policy（纯姿态状态机）
-  → controller（目标 Target + generation/回执事务）
-  → service/engine（唯一修改领域状态的状态机）
-  → service/actuator → backend/relay（root，唯一触碰 /dev/input、/dev/uinput）
-  → SessionUpdate(generation, ready, ...)
-
-session/agent（用户会话，per-uid D-Bus 名）
-  → session/runtime（拉取 GetState，维护租约、显示重试和通知）
-  → session/transaction → display/plasma（显示事务与恢复日志）
-
-UI（GJS/libadwaita，用户会话）
-  → D-Bus 方法调用 + StateChanged/GetState 快照
-  → data/ui/* 渲染，不直接操作系统
-```
-
-关键边界：
-
-- **root 系统服务**拥有系统 D-Bus 名、读取传感器、做姿态决策、启动 relay。
-- **C relay** 是唯一打开 `/dev/input`、`/dev/uinput` 并抓取内置键盘/触控板的
-  组件；relay 的 stdout 是 JSON 行协议，日志只能写 stderr。
-- **用户会话适配器**负责显示旋转、方向锁、通知和租约；不得获取 root 权限。
-- **UI** 只通过 D-Bus 与系统交互；不得变成第二个设备控制面。
-- **只读探针**可以读 sysfs/profile，但不得打开输入设备或写入内核。
-
-## 4. 仓库地图
-
-| 路径 | 职责 | 修改时必须注意 |
+| 改动 | 先读 | 目标验证 |
 | --- | --- | --- |
-| `src/panasonic_posture/protocol.py` | D-Bus 名/路径/XML/方法、状态/relay/profile 版本、错误码、时序和安装路径 | 兼容契约的单一事实源；同步 Python、C、JS 和契约测试 |
-| `src/panasonic_posture/model.py` | 枚举、`Target`、`StateSnapshot`、严格状态解析 | UI 只读取快照字段；字段变更同步 UI 契约测试 |
-| `src/panasonic_posture/policy.py` | 纯姿态识别状态机、阈值、迟滞、提示 epoch | 不加入 I/O、时钟或 D-Bus；优先补 `test_policy.py` |
-| `src/panasonic_posture/controller.py` | 策略结果转 `Target`，维护 generation/ack | 只有匹配 generation 的回执才能成为 `applied` |
-| `src/panasonic_posture/service/application.py` | 服务组合根和生命周期依赖装配 | 依赖通过构造注入，便于无 root 测试 |
-| `src/panasonic_posture/service/engine.py` | 服务端事务状态机、租约、重试与恢复 | 唯一修改领域状态；不要绕开现有事务顺序 |
-| `src/panasonic_posture/service/daemon.py` | 系统 D-Bus 外壳、方法分发、GLib 生命周期 | 方法回调只做有界工作，耗时任务走既有调度 |
-| `src/panasonic_posture/service/access.py` | active-session/uid/per-uid 名/polkit 校验 | 安全边界；不得为测试或开发模式减弱生产路径 |
-| `src/panasonic_posture/service/actuator.py` | relay 生命周期、heartbeat、超时和恢复 | 不在用户进程打开设备；保持错误映射稳定 |
-| `src/panasonic_posture/service/sensor*.py`、`hardware_monitor.py` | 传感器源选择、失效检测、硬件状态缓存 | 失败要可诊断；不要伪造硬件状态 |
-| `backend/` | C11 relay、uinput、输入抓取、物理开关/设备发现 | 用 `make check-c`；stdout 不得混入日志；发现歧义时 fail closed |
-| `src/panasonic_posture/hardware/` | IIO/sysfs/profile/probe，只读硬件能力发现 | profile 只能收窄候选，不能扩大权限边界 |
-| `src/panasonic_posture/session/agent.py` | 用户适配器进程壳、per-uid 总线名、信号生命周期 | 先取得总线名，再操作显示；单用户单实例 |
-| `src/panasonic_posture/session/runtime.py` | 拉取状态、租约、重试、锁屏和通知协调 | 按 tick 串行推进；临时失败不能误撤销软件接管 |
-| `src/panasonic_posture/session/display.py`、`plasma.py`、`desktop.py` | GNOME/Plasma 6 显示后端与桌面检测 | 只支持 Wayland；不得恢复 X11/xrandr/xinput 回退 |
-| `src/panasonic_posture/session/transaction.py`、`journal.py` | 显示所有权、回读、回滚、崩溃恢复 | 所有显示写入必须复用该事务；恢复日志不得绕过 |
-| `data/ui/` | GJS + GTK 4/libadwaita 界面、D-Bus 客户端和演示图 | 只展示用户可理解状态；不泄露硬件/调试字段 |
-| `data/profiles/` | CFQV8/CFQV9/CFQV1 等机型 profile | schema 版本 1；格式和匹配规则变更需同步测试 |
-| `tests/` | `unittest` 测试、D-Bus/UI 契约和手工验收夹具 | 只有目标机脚本才是真机证据 |
-| `packaging/`、`Makefile`、`pyproject.toml` | systemd/D-Bus/polkit、各发行版包、构建入口和版本 | 不安装到开发宿主；版本元数据必须一致 |
+| 姿态、阈值、迟滞、提示 epoch | `policy.py`、`controller.py`、`presentation.py` | `test_policy`、`test_controller`、`test_presentation` |
+| 手动模式、目标、状态及服务事务 | `protocol.py`、`model.py`、`controller.py`、`service/engine.py`；装配与方法入口见 `service/application.py`、`service/daemon.py` | `test_protocol`、`test_model`、`test_engine`、`test_application`、`test_ui_contract` |
+| 鉴权、会话身份、租约 | `service/access.py`、`service/daemon.py`、`service/engine.py`、`session/agent.py`、`packaging/dbus/`、`packaging/polkit/` | `test_access`、`test_engine`、`test_agent`、`make check-dbus` |
+| 设置、校准 | `service/settings.py`、`service/engine.py`、`calibration.py`、`protocol.py`、`data/ui/settingsPage.js` | `test_settings`、`test_calibration`、`test_engine`、`test_ui_contract`、`make check-i18n` |
+| 传感器、IIO、sysfs、profile | `service/sensor*.py`、`service/hardware_monitor.py`、`hardware/`、`data/profiles/` | `test_sensor`、`test_hardware_monitor`、`test_iio`、`test_sysfs`、`test_profile`、`test_calibration` |
+| relay、物理开关、输入抓取 | `backend/`、`service/actuator.py`、`protocol.py` | `make check-c`、`test_actuator`、`test_sysfs`；涉及会话时加 `make check-dbus` |
+| 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
+| 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
+| UI 布局、文案、插画、设置页 | `data/ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
+| 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
-`README.md` 是唯一用户总览；`USAGE.md` 是安装、打包与运维说明。
-仓库没有面向用户的 `docs/`、`CHANGELOG` 或独立硬件验收文档，不要重新创建或引用。
+## 5. 兼容契约与联动检查
 
-## 5. 改动路由
+- D-Bus 端点和方法、per-uid 总线名、权限／polkit 语义、错误码及版本化载荷属于兼容契约。
+  修改前必须取得明确授权，按实际调用方同步 Python、C、GJS、打包配置和契约测试。
+- 从定义确认版本。`protocol.py` 定义状态快照 v2、relay 协议 v2、profile v1。
+  `service/settings.py` 和 `session/journal.py` 分别定义设置 v1、显示日志 v1。
+  不兼容变更须同步版本、迁移和调用方。
+- 用户可见行为变更同步 README。文案同步英文源文案、`po/zh_CN.po` 和 UI 契约。
+  错误码同步 `protocol.py`、`session/errors.py`、`data/ui/errors.js`。界面只展示稳定错误码对应的本地化文案，内部详情用于日志诊断。
+- 发布版本核对 `pyproject.toml`、`__version__`、UI `APP_VERSION`、`packaging/aur/PKGBUILD`、
+  `packaging/aur/.SRCINFO`、`po/zh_CN.po` 和 README。由 `packaging/scripts/release_version.py`
+  和 `tests/test_release.py` 校验。
 
-> 下表中的 Python 源码路径省略公共前缀 `src/panasonic_posture/`，`test_*.py`
-> 位于 `tests/`，其余路径从仓库根目录开始。
+## 6. 系统不变量
 
-| 改动类型 | 先读 | 通常需要同步 | 最低验证 |
-| --- | --- | --- | --- |
-| 姿态识别、阈值、迟滞、提示时机 | `policy.py`、`controller.py`、`test_policy.py` | `model.py`、`engine.py`、UI 文案和对应测试 | `test_policy`、`test_controller` |
-| 手动模式、`Target`、状态字段、generation/ack | `protocol.py`、`model.py`、`controller.py`、`engine.py` | daemon、session runtime、UI service/page、契约测试 | `test_protocol`、`test_model`、`test_engine`、`test_ui_contract` |
-| 设置项或校准 | `service/settings.py`、`engine.py`、`protocol.py`、UI settings | daemon 方法、状态快照、翻译、README | `test_settings`、`test_engine`、`test_ui_contract`、`make check-i18n` |
-| 传感器发现、校准数学、IIO/sysfs | `hardware/`、`service/sensor*.py`、`hardware_monitor.py` | profile、engine、探针摘要和测试 | `test_sensor`、`test_iio`、`test_sysfs`、`test_profile`、`test_calibration` |
-| relay、物理开关、输入抓取 | `backend/`、`service/actuator.py`、`protocol.py` | C 主机测试、Python 错误映射、打包文件 | `make check-c`、`test_actuator`、`test_sysfs` |
-| 显示事务、GNOME/Plasma 后端、锁屏 | `session/transaction.py`、`journal.py`、`display.py`、`plasma.py`、`runtime.py` | 正常/失败/重启恢复测试、UI 错误文案 | `test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
-| 通知、提示交互、锁屏状态 | `session/notify.py`、`lockstate.py`、`runtime.py`、`agent.py` | 翻译、策略 epoch、UI 契约 | `test_notify`、`test_lockstate`、`test_agent` |
-| UI 布局、文案、插画或设置页 | `data/ui/`、`StateSnapshot`、现有 UI 测试 | `po/zh_CN.po`、错误码映射、README（仅用户可见变化） | `test_ui_contract`、`make check-i18n` |
-| 打包、systemd、D-Bus/polkit、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`release_version.py` | README/AUR 说明、版本元数据和打包测试 | `test_packaging_workflow`、`test_release`；构建后 `make check-package` |
-| 纯文档 | 对应事实源和现有链接 | 只改必要文件，不复制过期状态 | 核对所有路径/命令；能执行的安全命令实际执行 |
+1. **硬件优先。** 物理平板开关开启时，软件模式不得覆盖；禁止伪造硬件状态。
+2. **权限隔离。** 特权操作留在系统服务与 relay，桌面操作留在非特权会话适配器，UI 只调用 D-Bus。
+3. **目标和结果分离。** `target` 表示期望状态。事务只有在收到匹配 generation 的会话就绪回执、
+   租约有效且 relay 的相应操作成功后才可确认 `applied`。过期回执必须忽略。
+4. **失效即撤销。** 传感器失效、租约丢失或执行失败时，释放软件接管并恢复桌面原生状态，
+   避免遗留输入抓取、方向锁或未完成的显示事务。沿用现有的重试和恢复路径。
+5. **显示事务化。** 所有显示写入经 `session/transaction.py`，保留所有权检查、恢复日志、回读、回滚及崩溃恢复。
+6. **设备发现拒绝歧义。** 排除 relay 创建的虚拟开关。物理开关、内置输入和加速度计有歧义时拒绝选择。
+   Profile 只能收窄候选，不能绕开能力和总线校验。
+7. **持久化安全。** 设置和显示日志复用 `SettingsStore` 与 `Journal` 的原子写入与损坏隔离。
+   损坏文件移至 `.corrupt-<timestamp>` 后缀路径。
 
-以下内容属于兼容契约，修改前必须有明确授权并同步调用方：D-Bus 端点与方法、
-状态快照版本 2、relay 协议版本 2、profile 版本 1、设置版本 1、显示日志版本 1、
-错误码、per-uid 会话总线名和权限/polkit 语义。
+## 7. 授权边界
 
-## 6. 不可破坏的系统不变量
+### 可直接执行
 
-1. **硬件优先。** 物理平板开关开启时，软件模式不得覆盖；不得伪造或缓存出虚假的
-   硬件状态。
-2. **权限隔离。** 设备写入和特权操作留在系统服务与 relay；桌面操作留在用户会话
-   适配器；UI 只通过 D-Bus 操作。
-3. **目标与结果分离。** `target` 只表示期望状态；只有匹配 generation 的
-   `SessionUpdate` 才能确认 `applied`，过期回执必须忽略。
-4. **失效即撤销。** 传感器失效、租约丢失或执行失败时，释放软件接管并恢复桌面
-   原生状态；不得遗留输入抓取、方向锁或未完成的显示事务。
-5. **错误可诊断。** 用户可见内容只使用稳定错误码对应的本地化文案；内部详情只写
-   日志，不进入 UI。Python 与 JS 错误码映射必须一致。
-6. **事务化显示。** 所有显示后端都必须复用 `session/transaction.py` 的所有权、
-   恢复日志、回读、回滚和崩溃恢复流程，不得绕过日志直接写入。
-7. **设备发现不猜测。** relay 自建的虚拟开关必须被排除；物理开关、键盘、触控板
-   和加速计存在歧义时拒绝选择；profile 不能绕过能力与总线校验。
-8. **契约兼容。** D-Bus 端点、状态/relay/profile/设置/日志版本、错误码和
-   per-uid 会话总线名都是兼容契约；破坏性变更必须同步版本、迁移和调用方。
-9. **持久化安全。** 设置和显示恢复日志使用原子写入；损坏文件隔离为
-   `.corrupt-<timestamp>`；schema 变更必须提供迁移。
+读取仓库、历史和测试。按用户请求修改仓库内文件，运行安全检查、单元测试、隔离集成测试和构建。
+用临时目录与 fixture 验证，避免读写真正的用户状态。
 
-## 7. 授权与禁区
+### 须由用户本轮明确授权
 
-### 7.1 可以直接执行
+- 安装或卸载软件、`sudo`／`pkexec`、启停 systemd 单元、修改 D-Bus／polkit／桌面设置、
+  旋转屏幕、发送通知或改变锁屏状态等宿主操作。
+- 接触真实设备，包括打开或写入 `/dev/input`、`/dev/uinput`，抓取输入，或在目标机运行验收脚本。
+- 修改鉴权、租约、per-uid 名称、特权进程职责或兼容契约。提升机型支持等级或声明真机验收通过还需要对应证据。
+- 修改发布元数据、tag 或 AUR 文件，或执行推送、建分支、PR、merge 和发布。
+- 删除仓库文件、重命名公共文件、批量重写、引入或升级依赖。
 
-- 读取仓库、git 历史、测试和文档。
-- 为实现用户请求修改源码、测试、仓库内配置和文档。
-- 在仓库内运行只读检查、单元测试、集成测试和构建。
-- 使用临时目录或测试夹具验证行为，避免写入真实用户或系统路径。
+### 禁止
 
-### 7.2 仅在用户当轮明确要求时执行
+- 覆盖、回滚、清理用户改动，或暂存／取消暂存其改动。提交须遵守第 11 节。
+- 将 `.backup/`、`.review/`、缓存或构建产物当作源码。禁止手工编辑 `backend/relay`、
+  `locale/**/*.mo`、`build/`、`dist/`、`__pycache__/` 等生成物。
+- 在开发宿主安装验收包或运行 `tests/manual/`；用自动化测试冒充真机验收。
+- 为测试放宽生产授权，将 `--session-bus` 用作生产边界，或将设备写入移入用户进程。
+- 恢复 X11／xrandr／xinput 路径、添加隐式桌面回退或把未支持环境宣称为可用。
 
-- 任何宿主系统副作用：安装/卸载软件、`sudo`/`pkexec`、启停 systemd 单元、
-  修改 D-Bus/polkit/桌面设置、旋转屏幕、发送通知或改变锁屏状态。
-- 任何真实设备操作：打开或写入 `/dev/input`、`/dev/uinput`，抓取输入，运行
-  `tests/manual/` 或需要目标机的验收脚本。
-- 修改认证、polkit、D-Bus 授权、租约、per-uid 总线名或特权进程职责。
-- 不兼容地修改协议、状态/设置/日志 schema，提升 support tier，或声称真机验证通过。
-- 修改发布元数据、tag、AUR 文件，或执行推送、建分支、PR、merge 和发布。
-- 删除仓库文件、重命名公共文件、批量重写、引入新依赖或升级依赖。
+## 8. 验证
 
-### 7.3 禁止
-
-- 未经明确请求执行 `git push`、建分支、打 tag、PR、merge 或 AUR 提交。
-- 使用 `git reset --hard`、`git checkout --`、`git restore`、`git clean` 等方式
-  覆盖、回滚或删除用户已有改动；不得擅自 stage 或 unstage。
-- 把 `.backup/`、`.review/`、缓存或构建产物当作源码修改。
-- 手工编辑生成物（`backend/relay`、`locale/**/*.mo`、`build/`、`dist/`、
-  `__pycache__/`）。
-- 在开发宿主上运行 `tests/manual/`，或把 fake 后端测试当成真机证据。
-- 为了方便测试放宽授权、把 `--session-bus` 暴露为生产边界，或把设备写入移入
-  用户进程。
-- 恢复已移除的 X11/xrandr/xinput 路径、添加隐式桌面回退，或宣称未支持环境可用。
-- 未运行验证却声称测试通过，或为通过测试而删除、跳过、弱化断言。
-- 跳过本轮应做的提交，或把与本轮任务无关的用户改动混入提交。
-
-## 8. 验证矩阵
-
-### 8.1 环境与命令
-
-- 使用仓库默认解释器 `/usr/bin/python3`；项目要求 Python 3.11+。
-- 测试框架是标准库 `unittest`，不是 pytest；不要为此新增依赖。
-- 运行范围从最小测试逐步扩大；代码改动交付前至少尝试完整的
-  `make WERROR=1 check`。
+使用默认解释器 `/usr/bin/python3` 和标准库 `unittest`。从第 4 节选择目标测试。
+代码改动交付前至少尝试完整门槛。
 
 ```sh
-# 单个 Python 测试模块
-PYTHONPATH=src /usr/bin/python3 -m unittest -v tests.test_policy
-
-# 所有 Python 单元测试
+PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -p 'test_policy.py' -v
 make check-unit
-
-# C relay 主机侧测试
 make check-c
-
-# session-bus D-Bus 集成
 make check-dbus
-
-# gettext 覆盖与错误码映射
 make check-i18n
-
-# 完整门槛（C + 编译 + 单元 + D-Bus + i18n）
 make WERROR=1 check
 ```
 
-### 8.2 按改动选择测试
+- C 改动必跑 `make check-c`，涉及 relay 和会话联动时加 `make check-dbus`。
+  UI 文案或错误码改动必跑 `make check-i18n`。
+- D-Bus 集成测试使用临时会话总线，也会启动传感器探测。使用普通用户，在未映射真实传感器的隔离环境中运行。
+- UI 测试可能因缺少 `gjs` 或 `gtk4-broadwayd` 等依赖而跳过。涉及 UI 时说明跳过项和残余风险。
+- Arch 包验收用 `make check-package PACKAGE=/path/to/package.pkg.tar.zst`。
+  静态检查加 `PACKAGE_NO_INSTALL=1`。完整检查只在隔离 pacman 根目录中安装，详见 [USAGE.md](USAGE.md#构建和验收)。
+- 修复失败根因，禁止吞异常、跳过测试、放宽断言、缩短超时或删除分支来让检查通过。
+  无法执行时记录命令、错误和未覆盖范围。未做真机验证时明确说明。
 
-| 改动 | 目标测试 |
-| --- | --- |
-| 姿态、阈值、提示 epoch | `tests.test_policy`、`tests.test_controller` |
-| 数据模型、协议、服务事务、鉴权 | `tests.test_model`、`tests.test_protocol`、`tests.test_engine`、`tests.test_application`、`tests.test_access` |
-| relay 生命周期与错误映射 | `tests.test_actuator`，并运行 `make check-c` |
-| 传感器、IIO、sysfs、profile、校准 | `tests.test_sensor`、`tests.test_hardware_monitor`、`tests.test_iio`、`tests.test_sysfs`、`tests.test_profile`、`tests.test_calibration` |
-| 会话适配器、显示、日志、锁屏、通知 | `tests.test_agent`、`tests.test_desktop`、`tests.test_display`、`tests.test_display_plasma`、`tests.test_journal`、`tests.test_lockstate`、`tests.test_notify` |
-| UI 契约、翻译、入口 | `tests.test_ui_contract`、`make check-i18n` |
-| 打包、发布元数据 | `tests.test_packaging_workflow`、`tests.test_release` |
+## 9. 实现约定
 
-### 8.3 验证纪律
-
-- 目标测试通过后再跑完整门槛；不要用完整测试代替对失败点的针对性验证。
-- `unittest` 的跳过不是通过。涉及 UI 的测试在缺少 `gjs`/`gtk4-broadwayd` 时
-  可能跳过；若本轮改了 UI，必须报告跳过项和残余风险。
-- C 改动不能只靠 Python fake 测试；至少运行 `make check-c`。涉及 relay 与
-  session 的集成路径时，还要运行 `make check-dbus`。
-- UI 文案或错误码改动必须运行 `make check-i18n`；`.mo` 由 `make`/打包流程生成。
-- 打包验证使用 `make check-package PACKAGE=/path/to/package.pkg.tar.zst`；仅静态
-  检查时加 `PACKAGE_NO_INSTALL=1`，不得把验收包安装到开发宿主。
-- 真机兼容性只能由目标机上的手动验收支持。agent 不得自行运行这些脚本；未执行时
-  必须写出“未做真机验证”。
-- 测试失败时修复根因，不跳过、不删除、不弱化断言。无法运行时报告准确命令、错误
-  和残余风险，不得暗示已通过。
-
-## 9. 编码与文档约定
-
-- **Python：** 保持 3.11+ 兼容；纯逻辑模块不读时钟、不做 I/O；边界模块使用类型
-  标注、dataclass/`StrEnum` 和现有错误码。运行时依赖保持为零，PyGObject 由系统
-  发行版提供。
-- **C：** C11；保持 `-Wall -Wextra -Werror` 干净。relay 的 stdout 只允许 JSON
-  协议，日志写 stderr；打开字符设备时保留现有 hardening，发现失败要 fail closed。
-- **GJS：** 使用现有 ES module、4 空格缩进和 `_()` 本地化入口；页面只读取
-  `StateSnapshot` 中经过校验的字段。新增状态字段必须同步 `StateSnapshot` 与 UI
-  契约测试。
-- **测试：** 用 `unittest`；在进程、总线、文件系统边界注入 fake；临时文件放
-  `TemporaryDirectory`；不要读写真实用户状态目录。先写会失败的回归测试，再修实现。
-- **持久化：** 复用 `SettingsStore` 和 `Journal` 的原子写入、隔离与回滚，不另写
-  一套 JSON 读写逻辑。
-- **翻译：** 英文源文案作为 msgid；同步 `po/zh_CN.po` 和
-  `src/panasonic_posture/session/errors.py` / `data/ui/errors.js` 的映射；
-  `po/POTFILES.in` 必须覆盖准确的源文件。不要手工编辑 `.mo`。
-- **文档：** 用户行为和支持范围写入 `README.md`；安装维护写入
-  `USAGE.md`。不要恢复已删除的 `docs/`、`CHANGELOG` 或旧验收记录。
-- **注释：** 解释不变量、失败路径和“为什么”，不要复述代码逐行做了什么。
+- **Python** 保持 3.11+ 兼容。纯逻辑无 I/O、时钟和 D-Bus。边界模块使用类型标注、现有
+  dataclass／`StrEnum` 和错误码。D-Bus 回调执行有界工作，耗时任务交给现有调度。
+- **C** 使用 C11 并通过 `-Wall -Wextra -Werror`。保留字符设备打开时的安全检查。
+- **GJS** 沿用 ES module、四空格缩进及 `_()`。页面只读取校验过的快照字段，字段变更同步状态模型与契约测试。
+- **测试** 在进程、总线、文件系统边界注入 fake，临时文件放入 `TemporaryDirectory`。
+- **翻译** 以英文源文案为 msgid，确保 `po/POTFILES.in` 覆盖实际源文件。用构建流程生成 `.mo`。
+- **注释** 说明原因、不变量或失败路径。
 
 ## 10. 完成定义
 
-在报告完成前逐项确认：
+- [ ] 根因已核实，改动限于本轮任务，用户已有改动原样保留。
+- [ ] 行为改动有回归测试，覆盖失败路径及安全边界。
+- [ ] 目标检查和适用的完整检查已执行，已区分通过、失败、跳过及未验证项。
+- [ ] 已核对兼容契约、版本、迁移、翻译、打包和文档联动；设计变更已记入第 13 节。
+- [ ] 已执行 `git diff --check`、`git diff --stat` 和 `git status --short --untracked-files=all`。
+- [ ] 已按第 11 节提交，或有明确原因无法提交。
 
-- [ ] 已定位并修复根因，而不是只改症状。
-- [ ] 改动只覆盖任务所需文件，没有覆盖或格式化用户改动。
-- [ ] 行为变化有对应测试；失败路径和安全边界已覆盖。
-- [ ] 目标测试和必要的完整验证已实际运行，结果已如实记录。
-- [ ] 兼容契约、版本号、迁移、翻译、打包和文档联动已检查。
-- [ ] 设计变化已写入第 13 节，并与代码/测试在同一轮完成。
-- [ ] `git diff --check`、差异和生成物检查通过。
-- [ ] 本轮改动已按第 11 节提交；若环境禁止提交，已明确说明。
-
-交付说明至少包含：改了什么、为什么改、受影响文件、实际运行的验证、未验证项及
-原因。默认使用用户当前语言，简洁、直接地报告结果和残余风险。
+用用户当前语言交付。说明改了什么、原因、涉及文件、实际验证和未验证项。未提交时说明原因和残留状态。
 
 ## 11. Git 与提交
 
-- 工作区初始可能已有用户改动，默认属于用户，必须原样保留。
-- 修改前查看 `git status` 和相关 diff；不清理、不重排、不格式化无关文件。
-- 同一文件混合本轮改动和用户改动时，只暂存本轮 hunk；无法安全分离时停止询问，
-  不得整文件暂存。
-- 本仓库约定：每轮工作完成并验证后，在交付前提交本轮改动。只有在用户明确要求
-  不提交或上层执行环境禁止提交时，才保留未提交状态，并在交付中说明。
-- 提交只包含本轮相关文件和 hunk。存在其他未提交改动时，禁止使用 `git add .`、
-  `git commit -a` 或等价的批量暂存方式。
+- 开始时检查工作树和相关差异，默认现存改动属于用户。保留其内容和暂存状态。
+- 完成并验证后，本轮改动须在交付前单独提交。用户明确要求不提交或上层环境禁止提交时除外。
+  没有改动时不创建空提交。
+- 只暂存本轮文件或 hunk。与用户改动混在同一文件时，仅暂存能安全分离的 hunk；无法分离时停止询问。
+  有其他改动时禁止 `git add .`、`git commit -a` 或等价操作。
 - 提交前检查 `git status`、`git diff --cached` 和 `git diff --cached --check`，
-  确认没有生成物、缓存、密钥或无关文件。
-- 提交信息沿用仓库现有的 Conventional Commits 风格，使用简洁英文主题；正文说明
-  行为变化和验证结果。常用前缀：`feat:`、`fix:`、`test:`、`docs:`、
-  `refactor:`、`build:`、`release:`。
-- 已发布 tag 不可移动、删除或重写；不修改 `.git/`。
-- 不 amend 已提交历史；不推送、不建分支、不打 tag，除非用户明确要求。
-- 本轮没有改动时不创建空提交；提交失败或无法安全提交时，明确报告原因和残留状态。
+  排除生成物、缓存、密钥和无关文件。
+- 使用简洁的英文 Conventional Commit 主题，如 `fix:`、`docs:`。正文写明改动和验证结果。
+- 禁止 amend、改写已发布 tag 或直接修改 `.git/`。推送、建分支和打 tag 须符合第 7 节授权。
 
 ## 12. 必须停止并询问
 
-- 请求需要跨越 7.2 中的宿主系统、真实设备、权限或发布边界，但授权不明确。
-- 需要不兼容地修改协议、状态/设置/日志 schema、认证或租约语义。
-- 目标文件包含无法安全分离的用户改动，继续修改可能覆盖用户工作。
+- 第 7 节要求的明确授权缺失。沉默、时间压力或任务需要均不构成授权。
+- 用户改动与本轮 hunk 无法安全分离。
 - 必需验证依赖真实硬件、特权操作、缺失工具链或外部环境，且没有安全替代方案。
-- 代码、测试和文档对当前行为给出互相冲突的结论，无法确定唯一事实来源。
-- 任务存在多种会显著改变范围、兼容性或产生不可逆结果的解释。
+- 代码、测试与文档给出无法消解的冲突，或多种任务解释会显著改变范围、兼容性或导致不可逆结果。
 
-不要为命名偏好、样式选择或能由现有模式明确回答的小问题停下来询问；做合理假设，
-在交付中说明即可。
+可依现有模式解决的命名和样式选择自行处理，交付时说明有实质影响的假设。
 
 ## 13. 设计变更记录
 
