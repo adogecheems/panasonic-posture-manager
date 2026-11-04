@@ -221,6 +221,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("  push:\n    tags:\n      - 'v[0-9]*'", self.workflow)
         self.assertIn("  workflow_dispatch:", self.workflow)
         self.assertIn("RELEASE_TAG: ${{ inputs.tag || github.ref_name }}", self.workflow)
+        self.assertIn(
+            "SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && "
+            "github.sha || github.ref_name }}",
+            self.workflow,
+        )
+        self.assertEqual(self.workflow.count("ref: ${{ env.SOURCE_REF }}"), 4)
 
     def test_all_three_package_builders_are_present(self) -> None:
         for job in ("package-arch:", "package-deb:", "package-rpm:"):
@@ -236,7 +242,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             'makepkg --cleanbuild --noconfirm --nodeps"',
             arch,
         )
-        self.assertIn("! -name '*-debug-*'", arch)
+        self.assertIn('! -name "*-debug-*"', arch)
         self.assertIn(
             'make check-package PACKAGE="/work/dist/release/$(basename "$package")"',
             arch,
@@ -272,6 +278,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("check_aur_bin.py", arch)
         self.assertIn("SRCDEST=/tmp/ppm-arch/packaging/aur-bin/srcdest", arch)
         self.assertIn("panasonic-posture-manager-bin-[0-9]*.pkg.tar.zst", arch)
+        self.assertEqual(arch.count("'"), 2)
 
     def test_aur_host_key_is_pinned(self) -> None:
         known_hosts = read("packaging/ci/aur_known_hosts")

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag containing this workflow to rebuild (for example v2.1.0)
+        description: Release tag to publish (for example v2.1.0)
         required: true
         type: string
 
@@ -20,6 +20,7 @@ concurrency:
 
 env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref_name }}
 
 jobs:
   package-arch:
@@ -27,10 +28,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.SOURCE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -56,14 +57,14 @@ jobs:
               cp -a /work /tmp/ppm-arch
               chown -R builder:builder /tmp/ppm-arch
               su - builder -c \
-                "cd /tmp/ppm-arch && python3 packaging/scripts/release_version.py --tag '$RELEASE_TAG'"
+                "cd /tmp/ppm-arch && python3 packaging/scripts/release_version.py --tag $RELEASE_TAG"
               su - builder -c "cd /tmp/ppm-arch && make WERROR=1 check"
               su - builder -c "cd /tmp/ppm-arch/packaging/aur && makepkg --cleanbuild --noconfirm --nodeps"
 
               install -d /work/dist/release /work/dist/aur /work/dist/aur-bin
               package=$(find /tmp/ppm-arch/packaging/aur -maxdepth 1 \
-                -name 'panasonic-posture-manager-[0-9]*.pkg.tar.zst' \
-                ! -name '*-debug-*' -print -quit)
+                -name "panasonic-posture-manager-[0-9]*.pkg.tar.zst" \
+                ! -name "*-debug-*" -print -quit)
               test -n "$package"
               install -m644 "$package" /work/dist/release/
               su - builder -c "cd /tmp/ppm-arch/packaging/aur && makepkg --printsrcinfo" \
@@ -75,17 +76,17 @@ jobs:
               make check-package PACKAGE="/work/dist/release/$(basename "$package")"
 
               su - builder -c \
-                "cd /tmp/ppm-arch && bash packaging/scripts/generate-aur-bin.sh '$RELEASE_TAG' '$package' /tmp/ppm-arch/packaging/aur-bin"
+                "cd /tmp/ppm-arch && bash packaging/scripts/generate-aur-bin.sh $RELEASE_TAG $package /tmp/ppm-arch/packaging/aur-bin"
               su - builder -c \
-                "mkdir -p /tmp/ppm-arch/packaging/aur-bin/srcdest && cp '$package' /tmp/ppm-arch/packaging/aur-bin/srcdest/"
+                "mkdir -p /tmp/ppm-arch/packaging/aur-bin/srcdest && cp $package /tmp/ppm-arch/packaging/aur-bin/srcdest/"
               su - builder -c \
                 "cd /tmp/ppm-arch/packaging/aur-bin && SRCDEST=/tmp/ppm-arch/packaging/aur-bin/srcdest makepkg --cleanbuild --noconfirm --nodeps"
               bin_package=$(find /tmp/ppm-arch/packaging/aur-bin -maxdepth 1 \
-                -name 'panasonic-posture-manager-bin-[0-9]*.pkg.tar.zst' \
-                ! -name '*-debug-*' -print -quit)
+                -name "panasonic-posture-manager-bin-[0-9]*.pkg.tar.zst" \
+                ! -name "*-debug-*" -print -quit)
               test -n "$bin_package"
               su - builder -c \
-                "cd /tmp/ppm-arch && python3 tests/package/check_aur_bin.py --source '$package' --binary '$bin_package' --metadata /tmp/ppm-arch/packaging/aur-bin"
+                "cd /tmp/ppm-arch && python3 tests/package/check_aur_bin.py --source $package --binary $bin_package --metadata /tmp/ppm-arch/packaging/aur-bin"
               su - builder -c \
                 "cd /tmp/ppm-arch/packaging/aur-bin && makepkg --printsrcinfo" \
                 >/work/dist/aur-bin/SRCINFO
@@ -123,10 +124,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.SOURCE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -179,10 +180,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.SOURCE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -277,10 +278,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.SOURCE_REF }}
           fetch-depth: 1
           persist-credentials: false
 

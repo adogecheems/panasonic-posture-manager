@@ -388,6 +388,17 @@ make WERROR=1 check
 - 同步：`README.md`、`USAGE.md`、`AGENTS.md`、`tests/test_release.py` 和 AUR
   打包注释。
 
+### 2026-11-04 - 手动发布重建使用派发提交
+
+- 变更：`workflow_dispatch` 手动发布改为构建派发时选定的提交，`tag` 输入只决定
+  发布标签；`v*` 标签推送仍构建对应标签。Arch 容器脚本不再提前展开构建变量。
+- 动机：允许在发布标签不可移动的前提下修复发布基础设施，并以同一版本号重建
+  制品。
+- 影响：正常标签发布不变；手动重建的制品来源是所选分支或提交，发布标签和版本
+  校验仍保持一致。
+- 同步：`.github/workflows/release.yml`、`tests/test_packaging_workflow.py` 和
+  本记录。
+
 ### 2026-11-04 - 帐篷模式总开关
 
 - 变更：新增默认开启的 `tent_enabled` 设置。关闭后自动策略不再进入帐篷模式，
