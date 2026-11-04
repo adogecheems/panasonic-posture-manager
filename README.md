@@ -3,7 +3,7 @@
 在 Linux 翻转本上自动切换屏幕方向和内置输入，重点支持 Panasonic QV 系列。
 关闭窗口后继续在后台运行。
 
-> 当前版本：2.1.1。支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6
+> 当前版本：2.1.2。支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6
 > Wayland。
 
 ## 功能
@@ -11,7 +11,7 @@
 - 自动识别笔记本、帐篷、支架和平板姿态。
 - 允许手动切换姿态模式。
 - 可在设置中关闭帐篷模式。
-- 帐篷和支架模式可选二次确认，减少误触发。
+- 帐篷和支架模式可选二次确认。
 - 支持传感器方向校准。
 - 提供中文、英文界面，跟随系统深浅色主题。
 
@@ -35,7 +35,7 @@
 将示例版本替换为下载文件中的实际版本后执行：
 
 ```sh
-version=2.1.1
+version=2.1.2
 
 # Arch Linux
 sudo pacman -U "./panasonic-posture-manager-${version}-1-x86_64.pkg.tar.zst"
@@ -49,14 +49,12 @@ sudo dnf install "./panasonic-posture-manager-${version}-1.x86_64.rpm"
 
 ### AUR
 
-源码构建包和预构建包二选一，不能同时安装：
+源码构建包和预构建包二选一：
 
 ```sh
 yay -S panasonic-posture-manager      # 从源码构建
 yay -S panasonic-posture-manager-bin  # 安装预构建包
 ```
-
-安装后注销并重新登录。首次使用前，建议将设备完整折叠、展开一次。
 
 ## 使用
 
@@ -92,7 +90,7 @@ yay -S panasonic-posture-manager-bin  # 安装预构建包
 
 **平板模式没有被识别**：将设备完整折叠、展开一次。
 
-安装维护、服务状态和清理方式见[安装、打包与运维](packaging/aur/README.md)。
+安装维护、服务状态和清理方式见[安装、打包与运维](USAGE.md)。
 
 ## 许可
 

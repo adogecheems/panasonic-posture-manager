@@ -1,6 +1,6 @@
 # 安装、打包与运维
 
-> 面向安装维护。普通用户请先看 [README](../../README.md)。
+> 面向安装维护。普通用户请先看 [README](README.md)。
 
 本页说明程序安装、发布和日常维护。程序面向 Panasonic CFQV8、CFQV9、CFQV1，
 运行于 GNOME Wayland 或 KDE Plasma 6 Wayland。

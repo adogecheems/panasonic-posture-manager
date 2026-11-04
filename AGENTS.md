@@ -151,7 +151,7 @@ UI（GJS/libadwaita，用户会话）
 | `tests/` | `unittest` 测试、D-Bus/UI 契约和手工验收夹具 | 只有目标机脚本才是真机证据 |
 | `packaging/`、`Makefile`、`pyproject.toml` | systemd/D-Bus/polkit、各发行版包、构建入口和版本 | 不安装到开发宿主；版本元数据必须一致 |
 
-`README.md` 是唯一用户总览；`packaging/aur/README.md` 是安装、打包与运维说明。
+`README.md` 是唯一用户总览；`USAGE.md` 是安装、打包与运维说明。
 仓库没有面向用户的 `docs/`、`CHANGELOG` 或独立硬件验收文档，不要重新创建或引用。
 
 ## 5. 改动路由
@@ -306,7 +306,7 @@ make WERROR=1 check
   `src/panasonic_posture/session/errors.py` / `data/ui/errors.js` 的映射；
   `po/POTFILES.in` 必须覆盖准确的源文件。不要手工编辑 `.mo`。
 - **文档：** 用户行为和支持范围写入 `README.md`；安装维护写入
-  `packaging/aur/README.md`。不要恢复已删除的 `docs/`、`CHANGELOG` 或旧验收记录。
+  `USAGE.md`。不要恢复已删除的 `docs/`、`CHANGELOG` 或旧验收记录。
 - **注释：** 解释不变量、失败路径和“为什么”，不要复述代码逐行做了什么。
 
 ## 10. 完成定义
@@ -376,6 +376,17 @@ make WERROR=1 check
 - 影响：`pyproject.toml`、运行时版本和 AUR 元数据仍是发布版本的事实源；
   `README.md` 继续承担版本公告与支持范围，安装维护文档继续保留。
 - 同步：`README.md`、`packaging/aur/README.md`、`release_version.py` 和发布测试。
+
+### 2026-11-04 - 安装维护文档移至仓库根目录
+
+- 变更：安装、打包与运维说明从 `packaging/aur/README.md` 移至 `USAGE.md`，
+  `README.md` 的维护入口和发布输入检查同步改为新路径。
+- 动机：让安装维护说明与用户总览并列，避免 AUR 子目录继续承担全项目维护文档
+  的入口。
+- 影响：取代“精简发布与维护文档”中的安装维护文档路径约束；仍只保留用户总览和
+  安装维护两页文档，版本校验和发布语义不变。
+- 同步：`README.md`、`USAGE.md`、`AGENTS.md`、`tests/test_release.py` 和 AUR
+  打包注释。
 
 ### 2026-11-04 - 帐篷模式总开关
 

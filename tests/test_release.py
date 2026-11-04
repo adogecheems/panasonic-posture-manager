@@ -70,9 +70,9 @@ class ReleaseMetadataTests(unittest.TestCase):
             f'{self.project_version}\\n"',
             read("po/zh_CN.po"),
         )
-        readme = read("packaging/aur/README.md")
-        self.assertIn("panasonic-posture-manager", readme)
-        self.assertIn("panasonic-posture-manager-bin", readme)
+        usage = read("USAGE.md")
+        self.assertIn("panasonic-posture-manager", usage)
+        self.assertIn("panasonic-posture-manager-bin", usage)
 
     def test_release_inputs_exist(self) -> None:
         for relative in (
@@ -81,7 +81,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             "packaging/aur/PKGBUILD",
             "packaging/aur/.SRCINFO",
             "packaging/aur/panasonic-posture-manager.install",
-            "packaging/aur/README.md",
+            "USAGE.md",
         ):
             with self.subTest(relative=relative):
                 self.assertTrue((ROOT / relative).is_file(), relative)
