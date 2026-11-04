@@ -1,13 +1,11 @@
 """Tent/stand prompt notifications with an explicit shown/retry state machine.
 
 The daemon publishes ``pending_notification`` (the policy epoch of the current
-posture prompt) and ``pending_prompt`` (its kind).  A prompt may only be
-suppressed for an epoch after the
-notification server *accepted* the notification; otherwise a transient
-notification failure or a local screen lock would permanently hide the
-prompt (P2-15).  Failures are retried with a 1/2/4 second backoff; after the
-last retry the epoch is marked as failed and is not retried again until the
-epoch changes or :meth:`close` is called (for example after unlocking).
+posture prompt) and ``pending_prompt`` (its kind).  A temporary gap in
+confirmability hides the notification while preserving delivery and retry
+state.  Failures are retried with a 1/2/4 second backoff.  After the last retry
+the epoch is marked as failed until a new prompt arrives or the caller
+explicitly resets the notifier with :meth:`Notifier.close`.
 """
 
 from __future__ import annotations
@@ -90,15 +88,16 @@ class Notifier:
     ) -> None:
         """Converge the on-screen prompt towards *epoch*.
 
-        * ``epoch is None`` closes any prompt (no posture candidate).
-        * A successfully shown ``(epoch, prompt)`` is never shown twice.
+        * ``epoch is None`` hides the notification without resetting delivery.
+        * A successfully shown ``(epoch, prompt)`` stays suppressed until the
+          prompt changes or :meth:`close` resets the notifier.
         * Failed attempts retry after 1/2/4 s; after the last retry the epoch
           is abandoned until it changes or :meth:`close` is called.
         """
 
         now = self._clock() if now is None else now
         if epoch is None:
-            self.close()
+            self._close_notification()
             return
         epoch = int(epoch)
         prompt = prompt if prompt in protocol.PROMPTS else "tent"

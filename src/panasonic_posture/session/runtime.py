@@ -519,8 +519,8 @@ class SessionRuntime:
     ) -> None:
         if self.notifier is None:
             return
-        if self.locked:
-            # A prompt shown before locking is stale; allow it again on unlock.
+        if self.locked or not self.ready or daemon_error or self.error_code:
+            # Allow the prompt again after unlock or session recovery.
             self._close_notifier()
             return
         pending = state.pending_notification
@@ -529,8 +529,6 @@ class SessionRuntime:
             # Older daemons only exposed the epoch; their prompt was always
             # the tent prompt.
             prompt = "tent" if pending is not None else None
-        if not self.ready or daemon_error or self.error_code:
-            pending = None
         try:
             self.notifier.sync(
                 pending,

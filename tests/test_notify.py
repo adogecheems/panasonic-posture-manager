@@ -1,9 +1,12 @@
 """Tests for posture-prompt notifications (fake notification bus)."""
 
+import math
 import unittest
 
 from gi.repository import Gio, GLib
 
+from panasonic_posture.controller import Controller
+from panasonic_posture.model import SensorReading, SensorSource
 from panasonic_posture.session.notify import RETRY_DELAYS, Notifier
 
 
@@ -84,6 +87,47 @@ class NotifierTests(unittest.TestCase):
         self.notifier.sync(7, now=self.clock())
         self.assertEqual(self.bus.methods().count("Notify"), 1)
 
+    def test_crossing_vertical_does_not_repeat_the_same_tent_notification(self):
+        controller = Controller()
+
+        def sample(pitch):
+            self.clock.advance(0.1)
+            angle = math.radians(pitch)
+            now = self.clock()
+            reading = SensorReading(
+                vector=(0.0, -9.8 * math.sin(angle), -9.8 * math.cos(angle)),
+                stamp=now,
+                source=SensorSource.IIO,
+            )
+            controller.update(now, reading, hardware=False)
+            self.notifier.sync(controller.pending_notification, now=now)
+
+        def settle(pitch):
+            for _ in range(25):
+                sample(pitch)
+
+        settle(0)
+        settle(80)
+        epoch = controller.pending_notification
+        self.assertIsNotNone(epoch)
+        self.assertEqual(self.notifier.epoch, epoch)
+
+        for pitch in (100, 80):
+            sample(90)
+            self.assertIsNone(controller.pending_notification)
+            self.assertFalse(controller.confirm_tent(epoch))
+            self.assertEqual(self.notifier.notification, 0)
+            self.assertIsNone(self.notifier.epoch)
+            settle(pitch)
+            self.assertEqual(controller.pending_notification, epoch)
+            self.assertEqual(self.bus.methods().count("Notify"), 1)
+
+        settle(0)
+        settle(100)
+        self.assertNotEqual(controller.pending_notification, epoch)
+        self.assertEqual(self.notifier.epoch, controller.pending_notification)
+        self.assertEqual(self.bus.methods().count("Notify"), 2)
+
     def test_notification_payload_carries_tent_action(self):
         self.notifier.sync(7, now=self.clock())
         method, parameters = self.bus.calls[-1]
@@ -158,6 +202,9 @@ class NotifierTests(unittest.TestCase):
         self.bus.fail["Notify"] = 1
         self.notifier.sync(7, now=self.clock())
         self.assertIsNone(self.notifier.shown_epoch)
+        self.notifier.sync(None, now=self.clock())
+        self.notifier.sync(7, now=self.clock())
+        self.assertEqual(self.bus.methods().count("Notify"), 1)
         self.clock.advance(RETRY_DELAYS[0])
         self.notifier.sync(7, now=self.clock())
         self.assertEqual(self.notifier.shown_epoch, 7)
@@ -171,6 +218,7 @@ class NotifierTests(unittest.TestCase):
             self.notifier.sync(7, now=times[-1])
         # Initial attempt + three retries.
         self.assertEqual(self.bus.methods().count("Notify"), 1 + len(RETRY_DELAYS))
+        self.notifier.sync(None, now=times[-1])
         self.clock.advance(100)
         self.notifier.sync(7, now=self.clock())
         self.assertEqual(self.bus.methods().count("Notify"), 1 + len(RETRY_DELAYS))
@@ -204,10 +252,10 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual(self.notifier.shown_epoch, 7)
         self.assertEqual(self.bus.methods().count("Notify"), 2)
 
-    def test_sync_none_closes(self):
+    def test_sync_none_closes_without_forgetting_the_shown_prompt(self):
         self.notifier.sync(7, now=self.clock())
         self.notifier.sync(None, now=self.clock())
-        self.assertIsNone(self.notifier.shown_epoch)
+        self.assertEqual(self.notifier.shown_epoch, 7)
         self.assertEqual(self.notifier.notification, 0)
         self.assertIn("CloseNotification", self.bus.methods())
 
