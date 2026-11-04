@@ -278,6 +278,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("check_aur_bin.py", arch)
         self.assertIn("SRCDEST=/tmp/ppm-arch/packaging/aur-bin/srcdest", arch)
         self.assertIn("panasonic-posture-manager-bin-[0-9]*.pkg.tar.zst", arch)
+        self.assertIn("makepkg --printsrcinfo > SRCINFO", arch)
+        self.assertLess(
+            arch.index("makepkg --printsrcinfo > SRCINFO"),
+            arch.index("check_aur_bin.py"),
+        )
         self.assertEqual(arch.count("'"), 2)
 
     def test_aur_host_key_is_pinned(self) -> None:

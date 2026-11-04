@@ -86,10 +86,11 @@ jobs:
                 ! -name "*-debug-*" -print -quit)
               test -n "$bin_package"
               su - builder -c \
-                "cd /tmp/ppm-arch && python3 tests/package/check_aur_bin.py --source $package --binary $bin_package --metadata /tmp/ppm-arch/packaging/aur-bin"
+                "cd /tmp/ppm-arch/packaging/aur-bin && makepkg --printsrcinfo > SRCINFO"
               su - builder -c \
-                "cd /tmp/ppm-arch/packaging/aur-bin && makepkg --printsrcinfo" \
-                >/work/dist/aur-bin/SRCINFO
+                "cd /tmp/ppm-arch && python3 tests/package/check_aur_bin.py --source $package --binary $bin_package --metadata /tmp/ppm-arch/packaging/aur-bin"
+              install -m644 /tmp/ppm-arch/packaging/aur-bin/SRCINFO \
+                /work/dist/aur-bin/SRCINFO
               install -m644 /tmp/ppm-arch/packaging/aur-bin/PKGBUILD \
                 /tmp/ppm-arch/packaging/aur-bin/panasonic-posture-manager-bin.install \
                 /work/dist/aur-bin/
