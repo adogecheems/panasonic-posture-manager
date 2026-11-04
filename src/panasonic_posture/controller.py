@@ -69,18 +69,22 @@ class Controller:
 
         Same rule as 0.2.x: prompt only in automatic mode, when the tent
         or stand prompt setting is enabled and when the policy is waiting for
-        the corresponding confirmation.
+        the corresponding confirmation.  The prompt must also be confirmable
+        with the current sensor evidence; exposing an action that the service
+        would reject causes the notification to be retried indefinitely.
         """
 
         return self.policy.epoch if self.pending_prompt is not None else None
 
     @property
     def pending_prompt(self) -> str | None:
-        """Kind of posture prompt the user should see right now, if any."""
+        """Kind of actionable posture prompt the user should see now, if any."""
 
         if self.manual != Mode.AUTO:
             return None
         prompt = self.policy.pending_prompt
+        if prompt is None or not self.policy.confirmation_ready:
+            return None
         if prompt == "tent" and (not self.tent_enabled or not self.tent_prompt):
             return None
         if prompt == "stand" and not self.stand_prompt:

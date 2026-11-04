@@ -312,6 +312,38 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertEqual(self.controller.pending_prompt, "tent")
         self.assertIsNotNone(self.controller.pending_notification)
 
+    def test_unconfirmable_tent_prompt_is_not_exposed(self):
+        self.hold(80.0)
+        epoch = self.controller.policy.epoch
+        self.assertEqual(self.controller.pending_prompt, "tent")
+
+        self.hold(150.0)
+        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
+        self.assertIsNone(self.controller.pending_prompt)
+        self.assertIsNone(self.controller.pending_notification)
+        self.assertFalse(self.controller.confirm_tent(epoch))
+
+        self.hold(80.0)
+        self.assertEqual(self.controller.pending_prompt, "tent")
+        self.assertEqual(self.controller.pending_notification, epoch)
+        self.assertTrue(self.controller.confirm_tent(epoch))
+
+    def test_unconfirmable_stand_prompt_is_not_exposed(self):
+        self.controller.stand_prompt = True
+        self.hold(175.0)
+        epoch = self.controller.policy.epoch
+        self.assertEqual(self.controller.pending_prompt, "stand")
+
+        self.hold(150.0)
+        self.assertEqual(self.controller.policy.mode, MODE_STAND_PROMPT)
+        self.assertIsNone(self.controller.pending_prompt)
+        self.assertIsNone(self.controller.pending_notification)
+        self.assertFalse(self.controller.confirm_stand(epoch))
+
+        self.hold(175.0)
+        self.assertEqual(self.controller.pending_prompt, "stand")
+        self.assertTrue(self.controller.confirm_stand(epoch))
+
     def test_auto_returns_to_laptop(self):
         self.hold(175.0)
         self.assertEqual(self.controller.target.mode, "stand")

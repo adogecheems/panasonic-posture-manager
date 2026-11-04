@@ -269,6 +269,23 @@ class Policy:
             return "stand"
         return None
 
+    @property
+    def confirmation_ready(self) -> bool:
+        """Whether the current prompt would be accepted right now.
+
+        A prompt remains pending through the wider hold bands so small hinge
+        movements do not restart the whole decision.  Notifications and UI
+        controls must only advertise it while ``confirm``/``confirm_stand``
+        would actually succeed; otherwise clicking can never change the mode
+        and the same action is retried indefinitely.
+        """
+
+        if self.mode == MODE_TENT_PROMPT:
+            return self._tent_confirmation_ready()
+        if self.mode == MODE_STAND_PROMPT:
+            return self._stand_confirmation_ready()
+        return False
+
     # -- public actions ------------------------------------------------------
 
     def confirm(self, epoch: int) -> bool:
@@ -280,16 +297,7 @@ class Policy:
         fixes review P2-6: the wider hold band must not confirm 45/150 deg.
         """
 
-        if (
-            self.mode != MODE_TENT_PROMPT
-            or epoch != self.epoch
-            or self.hardware is not False
-            or not self.stable
-            or self.last_geometry is None
-        ):
-            return False
-        _, _, pitch, roll, _ = self.last_geometry
-        if not in_tent_zone(pitch, roll):
+        if epoch != self.epoch or not self._tent_confirmation_ready():
             return False
         self._clear_timers()
         self._set_mode(MODE_TENT)
@@ -303,9 +311,32 @@ class Policy:
         still inside the documented stand zone.
         """
 
+        if epoch != self.epoch or not self._stand_confirmation_ready():
+            return False
+        self._clear_timers()
+        self._set_mode(MODE_STAND)
+        return True
+
+    def _tent_confirmation_ready(self) -> bool:
+        if (
+            self.mode != MODE_TENT_PROMPT
+            or self.hardware is not False
+            or not self.stable
+            or self.last_geometry is None
+        ):
+            return False
+        _, _, pitch, roll, _ = self.last_geometry
+        if not in_tent_zone(pitch, roll):
+            return False
+        # The prompt is entered from the smoothed orientation.  Require that
+        # classification to agree as well so the action never outlives what the
+        # policy currently recognises as a confirmable tent posture.
+        pitch, roll, _ = self._classify()
+        return in_tent_zone(pitch, roll)
+
+    def _stand_confirmation_ready(self) -> bool:
         if (
             self.mode != MODE_STAND_PROMPT
-            or epoch != self.epoch
             or self.hardware is not False
             or not self.stable
             or self.last_geometry is None
@@ -314,9 +345,8 @@ class Policy:
         _, _, _, _, flat = self.last_geometry
         if not in_stand_zone(flat):
             return False
-        self._clear_timers()
-        self._set_mode(MODE_STAND)
-        return True
+        _, _, flat = self._classify()
+        return in_stand_zone(flat)
 
     def reset_after_suspend(self) -> None:
         """Forget everything because the machine was suspended.

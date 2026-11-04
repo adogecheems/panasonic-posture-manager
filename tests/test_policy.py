@@ -524,10 +524,13 @@ class StandPromptTests(PolicyTestCase):
         self.hold(175.0, stand_prompt=True)
         self.assertEqual(self.policy.mode, MODE_STAND_PROMPT)
         epoch = self.policy.epoch
+        self.assertTrue(self.policy.confirmation_ready)
         self.hold(150.0, stand_prompt=True)
         self.assertEqual(self.policy.mode, MODE_STAND_PROMPT)
+        self.assertFalse(self.policy.confirmation_ready)
         self.assertFalse(self.policy.confirm_stand(epoch))
         self.hold(175.0, stand_prompt=True)
+        self.assertTrue(self.policy.confirmation_ready)
         self.assertTrue(self.policy.confirm_stand(self.policy.epoch))
         self.assertEqual(self.policy.mode, MODE_STAND)
 
@@ -663,6 +666,31 @@ class TentConfirmationZoneTests(PolicyTestCase):
         self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
         self.assertTrue(self.policy.confirm(self.policy.epoch))
         self.assertEqual(self.policy.mode, MODE_TENT)
+
+    def test_confirmation_ready_tracks_the_current_tent_zone(self):
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+        epoch = self.policy.epoch
+        self.assertTrue(self.policy.confirmation_ready)
+
+        self.hold(150.0, seconds=1.5)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+        self.assertFalse(self.policy.confirmation_ready)
+        self.assertFalse(self.policy.confirm(epoch))
+
+        self.hold(80.0)
+        self.assertTrue(self.policy.confirmation_ready)
+        self.assertTrue(self.policy.confirm(epoch))
+
+    def test_confirmation_ready_requires_latest_sample_in_zone(self):
+        self.hold(67.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+        self.assertTrue(self.policy.confirmation_ready)
+        # One small raw excursion stays inside the smoothing/stability run but
+        # must not leave an actionable prompt that confirmation can only reject.
+        self.step(63.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+        self.assertFalse(self.policy.confirmation_ready)
 
     def test_confirm_rejects_wrong_epoch(self):
         self.hold(80.0)
