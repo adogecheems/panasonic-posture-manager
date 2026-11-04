@@ -180,6 +180,35 @@ static void test_report_rate_limiting(void) {
     CHECK(count_occurrences(output, "\"kind\":\"applied\"") == 2);
 }
 
+static void test_cleanup_state(void) {
+    struct switch_hardware hardware;
+
+    memset(&hardware, 0, sizeof hardware);
+    hardware.present = 1;
+    hardware.value = 1;
+    hardware.error = 0;
+    CHECK(relay_cleanup_state(0, 0, &hardware) == 1);
+
+    hardware.value = 0;
+    CHECK(relay_cleanup_state(1, 0, &hardware) == 0);
+
+    hardware.present = 0;
+    hardware.value = -1;
+    CHECK(relay_cleanup_state(1, 0, &hardware) == 0);
+
+    hardware.present = 2;
+    hardware.value = 1;
+    CHECK(relay_cleanup_state(1, 0, &hardware) == 0);
+
+    hardware.present = 1;
+    hardware.error = 1;
+    CHECK(relay_cleanup_state(1, 0, &hardware) == 0);
+
+    CHECK(relay_cleanup_state(1, -1, &hardware) == 1);
+    CHECK(relay_cleanup_state(-1, -1, &hardware) == 0);
+    CHECK(relay_cleanup_state(1, 0, NULL) == 0);
+}
+
 int main(void) {
     setbuf(stdout, NULL);
     srand((unsigned)getpid());
@@ -188,6 +217,7 @@ int main(void) {
     test_option_parsing();
     test_protocol_messages();
     test_report_rate_limiting();
+    test_cleanup_state();
     if (failures != 0) {
         fprintf(stderr, "%d relay test(s) failed\n", failures);
         return 1;

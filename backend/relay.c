@@ -240,6 +240,48 @@ static int attach_monitor(struct relay_state *relay, int announce) {
     return 0;
 }
 
+/*
+ * Choose the final virtual-switch state while the relay is shutting down.
+ * A completed enumeration is authoritative: absence, ambiguity or a read
+ * error must fail safe to OFF because leaving consumers in touch mode locks
+ * the internal input devices.  If enumeration itself failed, the live monitor
+ * state is the best evidence available; without either, emit OFF.
+ */
+static int relay_cleanup_state(int monitor_state, int scan_result,
+                               const struct switch_hardware *scan) {
+    if (scan_result == 0) {
+        if (scan == NULL)
+            return 0;
+        if (scan->error == 0 && scan->present == 1 && scan->value >= 0)
+            return scan->value == 1;
+        return 0;
+    }
+    if (monitor_state >= 0)
+        return monitor_state == 1;
+    return 0;
+}
+
+static int read_cleanup_state(struct relay_state *relay) {
+    struct switch_hardware hardware;
+    int monitor_state = -1;
+    int scan_result;
+
+    if (relay->monitor_fd >= 0)
+        monitor_state = switch_read_state(relay->monitor_fd);
+    scan_result =
+            switch_read_hardware(relay->options.switch_name, &hardware);
+    if (scan_result != 0) {
+        relay_log("cleanup: cannot enumerate the physical switch; %s",
+                  monitor_state >= 0 ? "using the live monitor state"
+                                     : "emitting OFF");
+    } else if (hardware.error != 0) {
+        relay_log("cleanup: physical switch is unreadable; emitting OFF");
+    } else if (hardware.present > 1) {
+        relay_log("cleanup: physical switch is ambiguous; emitting OFF");
+    }
+    return relay_cleanup_state(monitor_state, scan_result, &hardware);
+}
+
 /* Startup: the first enumeration already told us a switch is present.
  * One initial attempt plus RELAY_SWITCH_RETRY_LIMIT retries (6 attempts total,
  * matching the runtime "6 consecutive failures" limit). */
@@ -650,7 +692,14 @@ static int run_relay(const struct options *options) {
     }
 
 cleanup:
-    final_state = relay.hardware_state;
+    /*
+     * Do not trust the event-loop cache here.  stdin EOF and a physical OFF
+     * transition can be ready in the same poll cycle; poll processes stdin
+     * first and exits before the monitor event/state is refreshed.  Re-read
+     * the physical switch so a software release cannot leave the virtual
+     * switch ON after the device has returned to laptop mode.
+     */
+    final_state = read_cleanup_state(&relay);
     input_release(&relay.inputs);
     release_monitor(&relay, 0);
     if (relay.virtual_fd >= 0) {

@@ -36,7 +36,7 @@ ENV_RELAY = "PANASONIC_POSTURE_RELAY"
 
 # Bounded even when an operation is invoked synchronously (for example during
 # shutdown or a test with an inline executor).
-RELEASE_TIMEOUT_SECONDS = 0.5
+RELEASE_TIMEOUT_SECONDS = 1.5
 RECOVER_TIMEOUT_SECONDS = 1.5
 
 
@@ -173,9 +173,10 @@ class Actuator:
         current physical switch state and destroying the virtual device, so an
         extra ``--recover`` would re-create the virtual device and emit another
         ON/final sequence (visible as a touch-mode flicker on every mode
-        change).  Recovery is therefore limited to unsafe terminations:
-        a timeout (we kill the relay, so its cleanup could not run) or a
-        previous signal death flagged by :meth:`_handle_exit`.
+        change).  Recovery is therefore limited to unsafe terminations: a
+        timeout (we kill the relay, so its cleanup could not run), a previous
+        signal death flagged by :meth:`_handle_exit`, or a non-zero cleanup
+        exit (the final switch state may not have been written).
         """
         process, self.process = self.process, None
         self.state = None
@@ -187,20 +188,30 @@ class Actuator:
             if self._needs_recovery:
                 self.recover()
             return
+        returncode: int | None = None
         killed = False
         self._close_stdin(process)
         try:
-            self._wait(process, RELEASE_TIMEOUT_SECONDS)
+            returncode = self._wait(process, RELEASE_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             self._log.warning("relay did not exit within %.1fs; killing", RELEASE_TIMEOUT_SECONDS)
             self._kill(process)
             killed = True
             try:
-                self._wait(process, RELEASE_TIMEOUT_SECONDS)
+                returncode = self._wait(process, RELEASE_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:  # pragma: no cover - pathological
                 self._log.error("relay survived SIGKILL")
+        except (OSError, ValueError) as error:
+            self._log.error("cannot wait for relay release: %s", error)
+            self._kill(process)
+            killed = True
         finally:
             self._close_streams(process)
+        if returncode not in (None, 0):
+            self._log.warning(
+                "relay cleanup exited with status %s; recovering", returncode
+            )
+            self._needs_recovery = True
         if killed or self._needs_recovery:
             self.recover()
 

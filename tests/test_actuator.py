@@ -77,8 +77,9 @@ while True:
         continue
     data = os.read(stdin, 64)
     if not data:
-        emit({"protocol": 2, "kind": "released", "exit": 0})
-        break
+        code = int(os.environ.get("FAKE_RELAY_RELEASE_EXIT", "0"))
+        emit({"protocol": 2, "kind": "released", "exit": code})
+        sys.exit(code)
     if mode == "silent":
         continue
     emit(applied)
@@ -380,6 +381,20 @@ class ActuatorReleaseTests(FakeRelayTestCase):
         self.assertNotIn("--recover", entries[0]["argv"])
         self.assertEqual(entries[0]["argv"][0], "--switch-name")
 
+    def test_failed_relay_cleanup_runs_recovery(self) -> None:
+        os.environ["FAKE_RELAY_RELEASE_EXIT"] = "8"
+        self.addCleanup(os.environ.pop, "FAKE_RELAY_RELEASE_EXIT", None)
+        actuator = self.make()
+        self.start_and_wait(actuator)
+
+        actuator.release()
+
+        self.assertFalse(actuator._needs_recovery)
+        self.assertIsNone(actuator.error_code)
+        entries = self.record_entries()
+        self.assertEqual(len(entries), 2)
+        self.assertIn("--recover", entries[1]["argv"])
+
     def test_signal_death_recovery_runs_on_next_release(self) -> None:
         os.environ["FAKE_RELAY_MODE"] = "sigkill"
         actuator = self.make()
@@ -450,7 +465,7 @@ class ActuatorReleaseTests(FakeRelayTestCase):
         self.assertEqual(
             process.wait_timeouts, [RELEASE_TIMEOUT_SECONDS, RELEASE_TIMEOUT_SECONDS]
         )
-        self.assertEqual(RELEASE_TIMEOUT_SECONDS, 0.5)
+        self.assertEqual(RELEASE_TIMEOUT_SECONDS, 1.5)
         self.assertEqual(RECOVER_TIMEOUT_SECONDS, 1.5)
         recover_argv = runner.call_args.args[0]
         self.assertIn("--recover", recover_argv)
