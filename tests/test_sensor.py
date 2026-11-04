@@ -520,7 +520,8 @@ class ShadowTrialTests(SensorTestCase):
         # Regression: losing the failed trial also discarded its retry
         # deadline, so sysfs retried (and toggled) IIO almost continuously.
         self.iio.fail_open = True
-        manager = self.make(monotonic=time.monotonic)
+        now = 10.0
+        manager = self.make(monotonic=lambda: now)
         manager._iio_retry_at = 0.0
         manager._start_iio_trial()
         trial = manager._trial
@@ -530,10 +531,18 @@ class ShadowTrialTests(SensorTestCase):
 
         self.assertIsNone(manager._poll_shadow_trial())
         self.assertIsNone(manager._trial)
-        self.assertGreater(manager._iio_retry_at, time.monotonic())
+        retry_at = now + sensor_module.SENSOR_RETRY_SECONDS
+        self.assertEqual(manager._iio_retry_at, retry_at)
         self.assertEqual(self.iio.opens, 1)
-        self.assertIsNone(manager._poll_shadow_trial())
-        self.assertEqual(self.iio.opens, 1)
+
+        with mock.patch.object(manager, "_start_iio_trial") as start_trial:
+            now = retry_at - 0.001
+            self.assertIsNone(manager._poll_shadow_trial())
+            start_trial.assert_not_called()
+
+            now = retry_at
+            self.assertIsNone(manager._poll_shadow_trial())
+            start_trial.assert_called_once_with()
 
     def test_cancel_closes_an_unconsumed_handover(self) -> None:
         self.iio.vector()

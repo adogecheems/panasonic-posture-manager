@@ -816,33 +816,35 @@ class InvalidSampleTests(PolicyTestCase):
 class BoundedHistoryTests(unittest.TestCase):
     """P1-3: the smoothing history must stay bounded on every return path."""
 
-    def test_hardware_mode_history_is_bounded(self):
+    def test_hardware_mode_clears_history(self):
         policy = Policy()
-        now = 0.0
-        for _ in range(30000):
-            now += 0.01
+        policy.update(0.0, sample(0.0, stamp=0.0), False)
+        self.assertTrue(policy.history)
+
+        for now in (0.01, 0.02):
             policy.update(now, sample(0.0, stamp=now), True)
-        self.assertEqual(policy.mode, MODE_HARDWARE)
-        self.assertLessEqual(len(policy.history), policy.config.history_max_samples)
-        self.assertEqual(len(policy.history), 0)
+            self.assertEqual(policy.mode, MODE_HARDWARE)
+            self.assertFalse(policy.history)
 
     def test_software_mode_history_is_bounded(self):
         policy = Policy()
-        now = 0.0
-        for _ in range(30000):
-            now += 0.01
-            policy.update(now, sample(0.0, stamp=now), False)
-        self.assertEqual(policy.mode, MODE_LAPTOP)
-        self.assertLessEqual(len(policy.history), policy.config.history_max_samples)
+        limit = policy.config.history_max_samples
+        # Keep every sample inside the time window to exercise the count cap.
+        interval = policy.config.history_seconds / (2 * limit)
+        stamps = [index * interval for index in range(limit + 2)]
+        for stamp in stamps:
+            policy.update(stamp, sample(0.0, stamp=stamp), False)
+        self.assertEqual([stamp for stamp, _ in policy.history], stamps[-limit:])
 
     def test_history_time_window_prunes_old_samples(self):
         policy = Policy()
-        for index in range(30):
-            policy.update(
-                index * 0.1, sample(0.0, stamp=index * 0.1), False
-            )
-        # 0.75 s window at 10 Hz keeps at most 9 samples.
-        self.assertLessEqual(len(policy.history), 9)
+        window = policy.config.history_seconds
+        for stamp in (0.0, 0.125, 0.25, window + 0.125):
+            policy.update(stamp, sample(0.0, stamp=stamp), False)
+        self.assertEqual(
+            [stamp for stamp, _ in policy.history],
+            [0.125, 0.25, window + 0.125],
+        )
 
     def test_history_is_bounded_on_all_state_paths(self):
         policy = Policy()
