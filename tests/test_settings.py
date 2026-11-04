@@ -42,6 +42,10 @@ class SettingsLoadTests(unittest.TestCase):
             self.store().load(), Settings(tent_prompt=True, stand_prompt=True)
         )
 
+    def test_round_trip_tent_enabled(self) -> None:
+        self.store().save(Settings(tent_enabled=False))
+        self.assertEqual(self.store().load(), Settings(tent_enabled=False))
+
     def test_round_trip_sensor_calibration(self) -> None:
         matrix = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
         self.store().save(Settings(sensor_calibration=matrix))
@@ -56,6 +60,7 @@ class SettingsLoadTests(unittest.TestCase):
             data,
             {
                 "version": 1,
+                "tent_enabled": True,
                 "tent_prompt": False,
                 "stand_prompt": False,
                 "sensor_calibration": None,
@@ -67,6 +72,14 @@ class SettingsLoadTests(unittest.TestCase):
             '{"version": 1, "tent_prompt": true}', encoding="utf-8"
         )
         self.assertEqual(self.store().load(), Settings(tent_prompt=True))
+        self.assertEqual(list(self.path.parent.glob(CORRUPT_GLOB)), [])
+
+    def test_legacy_payload_without_tent_enabled_defaults_to_enabled(self) -> None:
+        self.path.write_text(
+            '{"version": 1, "tent_prompt": true, "stand_prompt": false}',
+            encoding="utf-8",
+        )
+        self.assertTrue(self.store().load().tent_enabled)
         self.assertEqual(list(self.path.parent.glob(CORRUPT_GLOB)), [])
 
     def test_save_is_atomic_and_private(self) -> None:
@@ -164,6 +177,7 @@ class SettingsCorruptionTests(unittest.TestCase):
             '{"version": 2, "tent_prompt": true}',
             '{"version": 1, "tent_prompt": "yes"}',
             '{"version": 1, "tent_prompt": 1}',
+            '{"version": 1, "tent_enabled": "yes", "tent_prompt": true}',
             '{"version": 1, "tent_prompt": true, "stand_prompt": "yes"}',
             '{"version": 1, "tent_prompt": true, "stand_prompt": 1}',
             '{"version": 1, "tent_prompt": true, "sensor_calibration": []}',

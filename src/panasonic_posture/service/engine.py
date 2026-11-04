@@ -219,6 +219,9 @@ class Engine:
         except Exception:  # noqa: BLE001 - a broken store must not stop the service
             self._log.exception("cannot load settings")
             return
+        tent_enabled = getattr(settings, "tent_enabled", None)
+        if isinstance(tent_enabled, bool):
+            self._controller.tent_enabled = tent_enabled
         tent_prompt = getattr(settings, "tent_prompt", None)
         if isinstance(tent_prompt, bool):
             self._controller.tent_prompt = tent_prompt
@@ -327,6 +330,16 @@ class Engine:
         self._controller.tent_prompt = value
         return True
 
+    def set_tent_enabled(self, enabled: bool) -> bool:
+        """Persist whether tent mode may be used; idempotent and transactional."""
+        value = bool(enabled)
+        if bool(getattr(self._controller, "tent_enabled", True)) == value:
+            return False
+        self._save_prompt_settings(tent_enabled=value)
+        self._controller.tent_enabled = value
+        self._log.info("tent mode %s", "enabled" if value else "disabled")
+        return True
+
     def set_stand_prompt(self, enabled: bool) -> bool:
         """Persist the stand prompt preference; idempotent and transactional."""
         value = bool(enabled)
@@ -383,6 +396,7 @@ class Engine:
 
     def _make_settings(self, **changes: Any) -> Settings:
         values: dict[str, Any] = {
+            "tent_enabled": bool(getattr(self._controller, "tent_enabled", True)),
             "tent_prompt": bool(getattr(self._controller, "tent_prompt", True)),
             "stand_prompt": bool(getattr(self._controller, "stand_prompt", False)),
             "sensor_calibration": self._sensor_calibration,
@@ -403,12 +417,15 @@ class Engine:
     def _save_prompt_settings(
         self,
         *,
+        tent_enabled: bool | None = None,
         tent_prompt: bool | None = None,
         stand_prompt: bool | None = None,
     ) -> None:
-        """Save both prompt preferences, preserving the value not being changed."""
+        """Save preference values, preserving the ones not being changed."""
 
         changes: dict[str, bool] = {}
+        if tent_enabled is not None:
+            changes["tent_enabled"] = tent_enabled
         if tent_prompt is not None:
             changes["tent_prompt"] = tent_prompt
         if stand_prompt is not None:
@@ -853,6 +870,7 @@ class Engine:
             hardware=self._hardware_observation.effective,
             hardware_status=self._hardware_observation.status,
             manual=manual,
+            tent_enabled=bool(getattr(self._controller, "tent_enabled", True)),
             tent_prompt=bool(getattr(self._controller, "tent_prompt", True)),
             stand_prompt=bool(getattr(self._controller, "stand_prompt", False)),
             target=target,

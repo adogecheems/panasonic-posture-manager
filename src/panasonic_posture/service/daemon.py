@@ -268,6 +268,9 @@ class Daemon:
             elif method == "Retry":
                 self._authorized_uid(sender)
                 self.application.engine.retry()
+            elif method == "SetTentEnabled":
+                self._authorized_uid(sender)
+                self.application.engine.set_tent_enabled(bool(arguments[0]))
             elif method == "SetTentPrompt":
                 self._authorized_uid(sender)
                 self.application.engine.set_tent_prompt(bool(arguments[0]))

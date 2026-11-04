@@ -68,6 +68,7 @@ class FakeController:
     def __init__(self) -> None:
         self.policy = SimpleNamespace(mode="D", stable=False)
         self.manual = Mode.AUTO
+        self.tent_enabled = True
         self.tent_prompt = True
         self.stand_prompt = False
         self.target = Target()
@@ -235,8 +236,17 @@ class FakePresentation:
 
 
 class FakeSettings:
-    def __init__(self, tent_prompt: bool = True, stand_prompt: bool = False) -> None:
-        self.value = Settings(tent_prompt=tent_prompt, stand_prompt=stand_prompt)
+    def __init__(
+        self,
+        tent_prompt: bool = True,
+        stand_prompt: bool = False,
+        tent_enabled: bool = True,
+    ) -> None:
+        self.value = Settings(
+            tent_enabled=tent_enabled,
+            tent_prompt=tent_prompt,
+            stand_prompt=stand_prompt,
+        )
         self.saved: list[Settings] = []
         self.fail = False
         self.load_error: Exception | None = None
@@ -422,6 +432,12 @@ class StateSnapshotTests(EngineTestCase):
         engine = self.make()
         self.assertFalse(engine.state.tent_prompt)
         self.assertFalse(self.controller.tent_prompt)
+
+    def test_settings_apply_tent_enabled_at_construction(self) -> None:
+        self.settings = FakeSettings(tent_enabled=False)
+        engine = self.make()
+        self.assertFalse(engine.state.tent_enabled)
+        self.assertFalse(self.controller.tent_enabled)
 
     def test_settings_apply_stand_prompt_at_construction(self) -> None:
         self.settings = FakeSettings(stand_prompt=True)
@@ -812,6 +828,23 @@ class ModeMethodTests(EngineTestCase):
         self.assertFalse(self.controller.tent_prompt)
         self.assertFalse(engine.set_tent_prompt(False))
         self.assertEqual(len(self.settings.saved), 1)
+
+    def test_set_tent_enabled_persists_and_is_idempotent(self) -> None:
+        engine = self.make()
+        self.assertTrue(engine.set_tent_enabled(False))
+        self.assertEqual(self.settings.saved, [Settings(tent_enabled=False)])
+        self.assertFalse(self.controller.tent_enabled)
+        self.assertFalse(engine.set_tent_enabled(False))
+        self.assertEqual(len(self.settings.saved), 1)
+
+    def test_set_tent_enabled_write_failure_keeps_old_value(self) -> None:
+        engine = self.make()
+        self.settings.fail = True
+        with self.assertRaises(ServiceError) as caught:
+            engine.set_tent_enabled(False)
+        self.assertEqual(caught.exception.code, ErrorCode.CONFIG_WRITE)
+        self.assertTrue(self.controller.tent_enabled)
+        self.assertTrue(engine.state.tent_enabled)
 
     def test_set_tent_prompt_write_failure_keeps_old_value(self) -> None:
         engine = self.make()

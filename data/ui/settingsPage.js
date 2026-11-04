@@ -1,4 +1,4 @@
-// Settings page: posture-prompt toggles and manual mode selection.
+// Settings page: automatic-mode toggles, posture prompts and manual mode.
 //
 // All writes are asynchronous.  The selected value is reflected immediately,
 // while only one request per control is in flight; rapid changes collapse to
@@ -31,6 +31,8 @@ export class SettingsPage {
         this._inFlight = false;
         this._pendingMode = null;
         this._modeWriteActive = false;
+        this._pendingTentMode = null;
+        this._tentModeWriteActive = false;
         this._pendingTentPrompt = null;
         this._promptWriteActive = false;
         this._pendingStandPrompt = null;
@@ -53,10 +55,14 @@ export class SettingsPage {
         this._syncing = true;
         try {
             this._latestState = state;
+            const tentEnabled = this._pendingTentMode === null
+                ? state.tent_enabled !== false
+                : this._pendingTentMode;
+            this._tentModeSwitch.active = tentEnabled;
             const prompt = this._pendingTentPrompt === null
                 ? Boolean(state.tent_prompt)
                 : this._pendingTentPrompt;
-            this._switch.active = prompt;
+            this._tentPromptSwitch.active = prompt;
             const standPrompt = this._pendingStandPrompt === null
                 ? Boolean(state.stand_prompt)
                 : this._pendingStandPrompt;
@@ -66,9 +72,10 @@ export class SettingsPage {
             if (active)
                 active.active = true;
             const selectable = state.hardware !== true && state.supported !== false;
-            for (const button of this._radios.values())
-                button.sensitive = selectable;
-            this._switch.sensitive = state.supported !== false;
+            for (const [mode, button] of this._radios)
+                button.sensitive = selectable && (mode !== 'tent' || tentEnabled);
+            this._tentModeSwitch.sensitive = state.supported !== false;
+            this._tentPromptSwitch.sensitive = state.supported !== false && tentEnabled;
             this._standSwitch.sensitive = state.supported !== false;
             this._applyCalibrationState();
         } finally {
@@ -78,13 +85,15 @@ export class SettingsPage {
 
     setUnavailable() {
         this._pendingMode = null;
+        this._pendingTentMode = null;
         this._pendingTentPrompt = null;
         this._pendingStandPrompt = null;
         this._syncing = true;
         try {
             for (const button of this._radios.values())
                 button.sensitive = false;
-            this._switch.sensitive = false;
+            this._tentModeSwitch.sensitive = false;
+            this._tentPromptSwitch.sensitive = false;
             this._standSwitch.sensitive = false;
             this._calibrateButton.sensitive = false;
             this._resetButton.sensitive = false;
@@ -98,20 +107,34 @@ export class SettingsPage {
     _build() {
         this._page = new Adw.PreferencesPage();
 
-        const notificationGroup = new Adw.PreferencesGroup();
+        const notificationGroup = new Adw.PreferencesGroup({title: _('Automatic mode')});
         this._page.add(notificationGroup);
-        this._switch = new Adw.SwitchRow({
-            title: _('Tent mode notification'),
-            subtitle: _('Offer tent mode when the base is upright'),
+        this._tentModeSwitch = new Adw.SwitchRow({
+            title: _('Enable tent mode'),
+            subtitle: _('Allow automatic detection of tent mode'),
         });
-        this._switch.update_property(
+        this._tentModeSwitch.update_property(
+            [Gtk.AccessibleProperty.LABEL],
+            [_('Enable tent mode')]);
+        notificationGroup.add(this._tentModeSwitch);
+        this._tentModeSwitch.connect('notify::active', () => {
+            if (this._syncing || !this._tentModeSwitch.sensitive)
+                return;
+            this._queueTentMode(this._tentModeSwitch.active);
+        });
+
+        this._tentPromptSwitch = new Adw.SwitchRow({
+            title: _('Tent mode notification'),
+            subtitle: _('Ask before switching to tent mode when the base is upright'),
+        });
+        this._tentPromptSwitch.update_property(
             [Gtk.AccessibleProperty.LABEL],
             [_('Tent mode notification')]);
-        notificationGroup.add(this._switch);
-        this._switch.connect('notify::active', () => {
-            if (this._syncing || !this._switch.sensitive)
+        notificationGroup.add(this._tentPromptSwitch);
+        this._tentPromptSwitch.connect('notify::active', () => {
+            if (this._syncing || !this._tentPromptSwitch.sensitive)
                 return;
-            this._queueTentPrompt(this._switch.active);
+            this._queueTentPrompt(this._tentPromptSwitch.active);
         });
 
         this._standSwitch = new Adw.SwitchRow({
@@ -348,6 +371,36 @@ export class SettingsPage {
             return;
         this._promptWriteActive = true;
         this._drainTentPromptWrites().catch(logError);
+    }
+
+    _queueTentMode(enabled) {
+        this._pendingTentMode = Boolean(enabled);
+        if (this._tentModeWriteActive)
+            return;
+        this._tentModeWriteActive = true;
+        this._drainTentModeWrites().catch(logError);
+    }
+
+    async _drainTentModeWrites() {
+        try {
+            while (this._pendingTentMode !== null) {
+                const requested = this._pendingTentMode;
+                try {
+                    await this._service.call(
+                        'SetTentEnabled', new GLib.Variant('(b)', [requested]));
+                } catch (error) {
+                    this._pendingTentMode = null;
+                    this._toast(`${_('Unable to change settings')}: ${describeError(error)}`);
+                    this._resync();
+                    return;
+                }
+                if (this._pendingTentMode === requested)
+                    this._pendingTentMode = null;
+            }
+        } finally {
+            this._tentModeWriteActive = false;
+            this._service.refresh();
+        }
     }
 
     async _drainTentPromptWrites() {

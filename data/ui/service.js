@@ -118,6 +118,10 @@ export class PostureService {
         return this.call('SetTentPrompt', new GLib.Variant('(b)', [enabled]));
     }
 
+    setTentEnabled(enabled) {
+        return this.call('SetTentEnabled', new GLib.Variant('(b)', [enabled]));
+    }
+
     setStandPrompt(enabled) {
         return this.call('SetStandPrompt', new GLib.Variant('(b)', [enabled]));
     }

@@ -52,6 +52,9 @@ class ContractTests(unittest.TestCase):
         self.assertIn('<method name="SetStandPrompt">', protocol.DBUS_XML)
         self.assertIn('<method name="ConfirmStand">', protocol.DBUS_XML)
 
+    def test_dbus_xml_exposes_tent_mode_switch(self):
+        self.assertIn('<method name="SetTentEnabled">', protocol.DBUS_XML)
+
     def test_dbus_xml_exposes_sensor_calibration_methods(self):
         self.assertIn('<method name="CalibrateSensor"/>', protocol.DBUS_XML)
         self.assertIn('<method name="ResetSensorCalibration"/>', protocol.DBUS_XML)

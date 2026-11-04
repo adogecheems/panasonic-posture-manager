@@ -90,6 +90,7 @@ class StateSnapshotTests(unittest.TestCase):
         self.assertEqual(data["version"], STATE_VERSION)
         self.assertEqual(data["pose"], "laptop")
         self.assertEqual(data["manual"], "auto")
+        self.assertTrue(data["tent_enabled"])
         self.assertTrue(data["tent_prompt"])
         self.assertFalse(data["stand_prompt"])
         self.assertEqual(data["target"]["mode"], "laptop")
@@ -106,6 +107,7 @@ class StateSnapshotTests(unittest.TestCase):
             generation=5,
             target=Target("tent", True, 180, True),
             support_tier="validated",
+            tent_enabled=False,
             stand_prompt=True,
             sensor_calibrated=True,
             pending_notification=8,
@@ -118,6 +120,7 @@ class StateSnapshotTests(unittest.TestCase):
         self.assertEqual(parsed.generation, 5)
         self.assertEqual(parsed.target, state.target)
         self.assertEqual(parsed.support_tier, "validated")
+        self.assertFalse(parsed.tent_enabled)
         self.assertTrue(parsed.stand_prompt)
         self.assertTrue(parsed.sensor_calibrated)
         self.assertEqual(parsed.pending_notification, 8)
@@ -143,6 +146,7 @@ class StateSnapshotTests(unittest.TestCase):
             ("generation", True),
             ("generation", -1),
             ("hardware", 1),
+            ("tent_enabled", 1),
             ("tent_prompt", 1),
             ("session_connected", "false"),
             ("pending_notification", True),

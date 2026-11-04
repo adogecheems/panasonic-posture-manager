@@ -138,6 +138,7 @@ class StateSnapshot:
     hardware: bool | None = None
     hardware_status: HardwareStatus = HardwareStatus.ABSENT
     manual: Mode = Mode.AUTO
+    tent_enabled: bool = True
     tent_prompt: bool = True
     stand_prompt: bool = False
     target: Target = field(default_factory=Target)
@@ -166,6 +167,7 @@ class StateSnapshot:
             "hardware": self.hardware,
             "hardware_status": str(self.hardware_status),
             "manual": str(self.manual),
+            "tent_enabled": self.tent_enabled,
             "tent_prompt": self.tent_prompt,
             "stand_prompt": self.stand_prompt,
             "target": self.target.to_dict(),
@@ -266,6 +268,7 @@ def parse_state_snapshot(text: str) -> StateSnapshot:
         hardware=optional_boolean("hardware"),
         hardware_status=HardwareStatus(data.get("hardware_status", "absent")),
         manual=Mode(data.get("manual", "auto")),
+        tent_enabled=boolean("tent_enabled", True),
         tent_prompt=boolean("tent_prompt", True),
         stand_prompt=boolean("stand_prompt", False),
         target=Target.from_dict(raw_target),

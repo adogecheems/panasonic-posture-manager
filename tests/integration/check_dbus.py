@@ -172,6 +172,13 @@ def main() -> int:
             saved = json.loads(config_path.read_text())
             assert saved.get("stand_prompt") is True, saved
 
+            call("SetTentEnabled", GLib.Variant("(b)", (False,)))
+            wait_until(
+                lambda: json.loads(config_path.read_text()).get("tent_enabled") is False,
+                2.0,
+                "tent mode setting write",
+            )
+
             # 5. Invalid mode is rejected with a stable error code.
             try:
                 call("SetMode", GLib.Variant("(s)", ("arbitrary-command",)))

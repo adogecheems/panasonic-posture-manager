@@ -770,6 +770,12 @@ class SystemClientTests(unittest.TestCase):
         self.assertEqual(connection.calls[-1][0], "SetStandPrompt")
         self.assertEqual(connection.calls[-1][1].unpack(), (True,))
 
+    def test_set_tent_enabled_sends_boolean(self):
+        connection = FakeConnection()
+        SystemClient(connection).set_tent_enabled(False)
+        self.assertEqual(connection.calls[-1][0], "SetTentEnabled")
+        self.assertEqual(connection.calls[-1][1].unpack(), (False,))
+
 
 class FakeReply:
     def __init__(self, value):

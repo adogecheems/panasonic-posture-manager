@@ -143,12 +143,14 @@ class PolicyTestCase(unittest.TestCase):
         dt=0.1,
         tent_prompt=True,
         stand_prompt=False,
+        tent_enabled=True,
     ):
         self.now += dt
         self.policy.update(
             self.now,
             sample(pitch, magnitude, roll, stamp=self.now),
             hardware,
+            tent_enabled=tent_enabled,
             tent_prompt=tent_prompt,
             stand_prompt=stand_prompt,
         )
@@ -164,6 +166,7 @@ class PolicyTestCase(unittest.TestCase):
         dt=0.1,
         tent_prompt=True,
         stand_prompt=False,
+        tent_enabled=True,
     ):
         for _ in range(max(1, round(seconds / dt))):
             self.step(
@@ -174,6 +177,7 @@ class PolicyTestCase(unittest.TestCase):
                 dt,
                 tent_prompt,
                 stand_prompt,
+                tent_enabled,
             )
         return self.policy.mode
 
@@ -566,6 +570,25 @@ class TentPromptSettingTests(PolicyTestCase):
         self.assertEqual(self.hold(175.0, tent_prompt=False), MODE_STAND)
         self.assertEqual(self.hold(80.0, tent_prompt=False), MODE_TENT)
         self.assertIsNone(self.policy.pending_notification)
+
+
+class TentEnabledSettingTests(PolicyTestCase):
+    def test_disabled_tent_mode_treats_tent_pose_as_laptop(self):
+        self.assertEqual(self.hold(80.0, tent_enabled=False), MODE_LAPTOP)
+        self.assertIsNone(self.policy.pending_notification)
+
+    def test_disabling_tent_mode_cancels_a_pending_prompt_immediately(self):
+        self.assertEqual(self.hold(80.0), MODE_TENT_PROMPT)
+        self.assertIsNotNone(self.policy.pending_notification)
+        self.assertEqual(self.hold(80.0, tent_enabled=False), MODE_LAPTOP)
+        self.assertIsNone(self.policy.pending_notification)
+
+    def test_disabling_tent_mode_leaves_confirmed_tent_immediately(self):
+        self.assertEqual(self.hold(80.0, tent_prompt=False), MODE_TENT)
+        self.assertEqual(self.hold(80.0, tent_enabled=False), MODE_LAPTOP)
+
+    def test_disabled_tent_mode_still_allows_stand(self):
+        self.assertEqual(self.hold(175.0, tent_enabled=False), MODE_STAND)
 
 
 class TentReentryTests(PolicyTestCase):

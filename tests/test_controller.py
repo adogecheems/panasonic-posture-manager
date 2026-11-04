@@ -7,6 +7,7 @@ from panasonic_posture.controller import Controller
 from panasonic_posture.model import Mode, SensorReading, SensorSource, Target
 from panasonic_posture.policy import (
     MODE_DISABLED,
+    MODE_LAPTOP,
     MODE_STAND,
     MODE_STAND_PROMPT,
     MODE_TENT,
@@ -67,6 +68,7 @@ class InitialStateTests(ControllerTestCase):
     def test_initial_state(self):
         controller = self.controller
         self.assertEqual(controller.manual, Mode.AUTO)
+        self.assertTrue(controller.tent_enabled)
         self.assertTrue(controller.tent_prompt)
         self.assertFalse(controller.stand_prompt)
         self.assertEqual(controller.target, Target())
@@ -341,6 +343,28 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertEqual(self.controller.policy.mode, MODE_TENT)
         self.assertIsNone(self.controller.pending_prompt)
         self.assertEqual(target.mode, "tent")
+
+    def test_disabled_tent_mode_never_enters_tent(self):
+        self.controller.tent_enabled = False
+        _, target = self.hold(80.0)
+        self.assertEqual(self.controller.policy.mode, MODE_LAPTOP)
+        self.assertIsNone(self.controller.pending_notification)
+        self.assertEqual(target.mode, "laptop")
+
+    def test_disabling_tent_mode_rescinds_manual_tent(self):
+        self.controller.set_manual(Mode.TENT)
+        self.hold(80.0)
+        self.assertEqual(self.controller.target.mode, "tent")
+        self.controller.tent_enabled = False
+        _, target = self.hold(80.0)
+        self.assertEqual(self.controller.manual, Mode.AUTO)
+        self.assertEqual(target.mode, "laptop")
+
+    def test_manual_tent_is_rejected_while_tent_mode_is_disabled(self):
+        self.controller.tent_enabled = False
+        with self.assertRaises(ValueError) as caught:
+            self.controller.set_manual(Mode.TENT)
+        self.assertEqual(str(caught.exception), ErrorCode.INVALID_MODE)
 
     def test_manual_tent_enters_tent_without_prompt(self):
         self.controller.set_manual(Mode.TENT)

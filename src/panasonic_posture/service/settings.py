@@ -33,6 +33,7 @@ DEFAULT_SETTINGS_PATH = Path(STATE_DIR) / "settings.json"
 class Settings:
     """User preferences owned by the system service."""
 
+    tent_enabled: bool = True
     tent_prompt: bool = True
     stand_prompt: bool = False
     sensor_calibration: tuple[float, ...] | None = None
@@ -91,6 +92,9 @@ class SettingsStore:
         version = data.get("version")
         if version != SETTINGS_VERSION:
             raise ValueError(f"unsupported settings version {version!r}")
+        tent_enabled = data.get("tent_enabled", True)
+        if not isinstance(tent_enabled, bool):
+            raise ValueError("tent_enabled must be a boolean")
         tent_prompt = data.get("tent_prompt")
         if not isinstance(tent_prompt, bool):
             raise ValueError("tent_prompt must be a boolean")
@@ -104,6 +108,7 @@ class SettingsStore:
         except ValueError as error:
             raise ValueError(f"invalid sensor_calibration: {error}") from error
         return Settings(
+            tent_enabled=tent_enabled,
             tent_prompt=tent_prompt,
             stand_prompt=stand_prompt,
             sensor_calibration=sensor_calibration,
@@ -117,6 +122,7 @@ class SettingsStore:
             raise TypeError("settings must be a Settings instance")
         payload = {
             "version": SETTINGS_VERSION,
+            "tent_enabled": bool(settings.tent_enabled),
             "tent_prompt": bool(settings.tent_prompt),
             "stand_prompt": bool(settings.stand_prompt),
             "sensor_calibration": (

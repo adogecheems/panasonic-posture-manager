@@ -112,6 +112,9 @@ class SystemClient:
     def confirm_tent(self, epoch: int) -> None:
         self._call("ConfirmTent", GLib.Variant("(u)", (int(epoch),)))
 
+    def set_tent_enabled(self, enabled: bool) -> None:
+        self._call("SetTentEnabled", GLib.Variant("(b)", (bool(enabled),)))
+
     def set_stand_prompt(self, enabled: bool) -> None:
         self._call("SetStandPrompt", GLib.Variant("(b)", (bool(enabled),)))
 

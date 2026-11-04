@@ -55,17 +55,23 @@ msgstr "模式切换失败"
 msgid "Unable to change settings"
 msgstr "无法修改设置"
 
+msgid "Automatic mode"
+msgstr "自动模式"
+
+msgid "Allow automatic detection of tent mode"
+msgstr "允许自动识别帐篷模式"
+
 msgid "Tent mode notification"
 msgstr "帐篷模式提示"
 
-msgid "Offer tent mode when the base is upright"
-msgstr "底座立起时，提示进入帐篷模式"
+msgid "Ask before switching to tent mode when the base is upright"
+msgstr "底座立起时，询问是否进入帐篷模式"
 
 msgid "Stand mode notification"
 msgstr "支架模式提示"
 
 msgid "Ask before switching to stand mode when the base is folded back"
-msgstr "底座倒置平放时，先询问是否进入支架模式"
+msgstr "底座倒置平放时，询问是否进入支架模式"
 
 msgid "Sensor"
 msgstr "传感器"

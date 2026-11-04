@@ -342,6 +342,7 @@ class Policy:
         reading: SensorReading,
         hardware: bool | None,
         *,
+        tent_enabled: bool = True,
         tent_prompt: bool = True,
         stand_prompt: bool = False,
     ) -> None:
@@ -349,7 +350,10 @@ class Policy:
 
         ``hardware`` is the (already debounced) physical tablet switch state:
         ``True`` (folded), ``False`` (not folded) or ``None`` (unknown).
-        ``tent_prompt``/``stand_prompt`` ask for an explicit confirmation
+        ``tent_enabled`` permits automatic tent recognition at all; when false,
+        an established tent mode is left immediately and the tent pose is
+        treated as laptop posture.  ``tent_prompt``/``stand_prompt`` ask for an
+        explicit confirmation
         before entering the corresponding mode from laptop posture.  When a
         prompt is disabled, a stable candidate is accepted automatically and a
         pending prompt for that mode resolves on the next stable sample.
@@ -419,9 +423,17 @@ class Policy:
         pitch, roll, flat = self._classify()
         if self.stable and flat is not None and flat < LAPTOP_MAX_FLAT:
             self._source.origin = _Origin.LAPTOP
-        tent = in_tent_zone(pitch, roll)
+        if not tent_enabled and self.mode in (MODE_TENT, MODE_TENT_PROMPT):
+            # The preference is an explicit off switch, not another debounce:
+            # leave the software takeover on this update even while the sensor
+            # still reports the tent pose.
+            self._set_mode(MODE_LAPTOP, now)
+            self._clear_timers()
+            self._source.tent_exit_at = None
+        tent = tent_enabled and in_tent_zone(pitch, roll)
         tent_hold = (
-            pitch is not None
+            tent_enabled
+            and pitch is not None
             and TENT_HOLD_MIN_PITCH <= pitch <= TENT_HOLD_MAX_PITCH
             and abs(roll) <= TENT_HOLD_MAX_ROLL
         )

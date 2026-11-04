@@ -264,6 +264,14 @@ class ProtocolUiParityTests(unittest.TestCase):
         self.assertIn("_resetSensorCalibration", page)
         self.assertIn("_latestState.sensor_calibrated", page)
 
+    def test_tent_mode_switch_is_wired(self):
+        self.assertIn('<method name="SetTentEnabled">', protocol.DBUS_XML)
+        service = read("data/ui/service.js")
+        self.assertIn("this.call('SetTentEnabled'", service)
+        page = read("data/ui/settingsPage.js")
+        self.assertIn("_queueTentMode", page)
+        self.assertIn("state.tent_enabled", page)
+
     def test_command_line_handling_is_implemented(self):
         app = read("data/ui/app.js")
         self.assertIn("Gio.ApplicationFlags.HANDLES_COMMAND_LINE", app)
@@ -694,6 +702,18 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
             failures.push('stand confirmation label is not used');
         if (!ui.settingsPage._standSwitch.active)
             failures.push('stand prompt setting was not rendered');
+        if (!ui.settingsPage._tentModeSwitch.active)
+            failures.push('tent mode setting was not rendered');
+        const tentDisabledState = Object.assign({{}}, state, {{
+            tent_enabled: false,
+        }});
+        ui.settingsPage.update(tentDisabledState);
+        if (ui.settingsPage._tentModeSwitch.active)
+            failures.push('disabled tent mode was not rendered');
+        if (ui.settingsPage._tentPromptSwitch.sensitive)
+            failures.push('tent notification stayed enabled without tent mode');
+        if (ui.settingsPage._radios.get('tent').sensitive)
+            failures.push('manual tent mode stayed enabled without tent mode');
         const tabletTarget = {{mode: 'tablet', tablet: true, rotation: null,
                               disable_internal_input: true}};
         const manualTabletState = Object.assign({{}}, state, {{
