@@ -1,12 +1,12 @@
-"""Transaction layer between the D-Bus shell and all service subsystems.
+"""Transaction layer between a service host and its platform adapters.
 
 The engine is the only component that mutates the domain state.  Every tick it
 
 1. reads the latest sensor sample and hardware switch state,
 2. debounces transient ``hardware is None`` readings,
 3. asks the (pure) controller for the target of the current generation,
-4. validates the session lease and drives the relay actuator (releases are
-   serialized on a worker so a slow relay cannot stall the 100 ms tick),
+4. checks the session lease and drives the input actuator (releases are
+   serialized on a worker so a slow backend cannot stall the tick),
 5. updates the display presentation and builds the public state snapshot.
 
 Everything is injected (controller, sensor, actuator, access, presentation,
@@ -56,9 +56,8 @@ from ..protocol import (
 )
 from ..policy import geometry
 from ..tasks import thread_executor
-from .actuator import ActuatorError
 from .hardware_monitor import HardwareMonitor, HardwareObservation
-from .settings import Settings
+from .ports import ActuatorError, InputActuator, SensorBackend, Settings, SettingsBackend
 
 LOG = logging.getLogger(__name__)
 
@@ -123,11 +122,11 @@ class Engine:
         self,
         *,
         controller: Any,
-        sensor: Any,
-        actuator: Any,
-        access: Any,
+        sensor: SensorBackend,
+        actuator: InputActuator,
+        access: Any = None,
         presentation: Any,
-        settings: Any,
+        settings: SettingsBackend | None,
         profile: Any,
         hardware_query: Callable[[], tuple[bool | None, Any]] | None = None,
         hardware_monitor: HardwareMonitor | None = None,
@@ -143,7 +142,6 @@ class Engine:
         self._controller = controller
         self._sensor = sensor
         self._actuator = actuator
-        self._access = access
         self._presentation = presentation
         self._settings = settings
         self._profile = profile
@@ -159,7 +157,9 @@ class Engine:
         self.development = bool(development)
         self._stale_seconds = float(stale_seconds)
         self._monotonic = monotonic
-        self._clock = clock or (lambda: time.clock_gettime(time.CLOCK_BOOTTIME))
+        # Samples and calibration must share a clock. Lease deadlines use the
+        # service's monotonic clock even when the sample clock counts suspend.
+        self._clock = clock if clock is not None else monotonic
         self._on_state = on_state
         self._log = logger
         self._slow_tick_seconds = SLOW_TICK_WARN_SECONDS
@@ -659,13 +659,7 @@ class Engine:
         return observation.effective
 
     def _sync_prefer_shared(self, hardware: bool | None, target: Target) -> None:
-        """Keep software takeovers on the continuously readable sysfs source.
-
-        This sensor hub can accept an IIO trial and then stop delivering
-        samples.  A software posture takeover must not lose its relay merely
-        because a periodic IIO probe goes silent.  Hardware tablet mode has the
-        same preference because iio-sensor-proxy owns the buffer in that state.
-        """
+        """Hint that the desktop may also need the sensor during tablet use."""
         policy_mode = str(getattr(self._controller.policy, "mode", ""))
         desired = bool(
             hardware is True

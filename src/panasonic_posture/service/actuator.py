@@ -27,8 +27,8 @@ from ..protocol import (
     RELAY_PROTOCOL,
     RELAY_REPORT_TIMEOUT_SECONDS,
     ErrorCode,
-    error_message,
 )
+from .ports import ActuatorError as ActuatorError
 
 LOG = logging.getLogger(__name__)
 
@@ -38,15 +38,6 @@ ENV_RELAY = "PANASONIC_POSTURE_RELAY"
 # shutdown or a test with an inline executor).
 RELEASE_TIMEOUT_SECONDS = 1.5
 RECOVER_TIMEOUT_SECONDS = 1.5
-
-
-class ActuatorError(RuntimeError):
-    """A relay failure with a stable :class:`~panasonic_posture.protocol.ErrorCode`."""
-
-    def __init__(self, code: str, detail: str | None = None) -> None:
-        self.code = code
-        self.detail = detail
-        super().__init__(error_message(code, detail))
 
 
 @dataclass(frozen=True)

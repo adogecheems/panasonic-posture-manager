@@ -19,14 +19,12 @@ from concurrent.futures import Executor, Future
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from gi.repository import GLib
-
 from .. import protocol
 from ..model import StateSnapshot
 from ..tasks import thread_executor
 from . import errors
 from .errors import DisplayError, ErrorCode, ServiceError, describe_error
-from .lockstate import query_locked
+from .ports import DisplayBackend, PostureNotifier, SessionClient
 
 log = logging.getLogger(__name__)
 
@@ -84,21 +82,19 @@ class SessionRuntime:
 
     def __init__(
         self,
-        client: Any,
-        display: Any,
-        notifier: Any,
+        client: SessionClient,
+        display: DisplayBackend,
+        notifier: PostureNotifier | None,
         *,
-        session_bus: Any = None,
-        system_bus: Any = None,
         screen_locked: Callable[[], bool] | None = None,
+        adapter_errors: tuple[type[Exception], ...] = (),
         executor: Executor | None = None,
     ) -> None:
         self.client = client
         self.display = display
         self.notifier = notifier
-        self._session_bus = session_bus
-        self._system_bus = system_bus
         self._screen_locked = screen_locked
+        self._adapter_errors = (OSError, ValueError, *adapter_errors)
         self._executor = executor if executor is not None else thread_executor(
             "posture-session-runtime"
         )
@@ -508,16 +504,12 @@ class SessionRuntime:
         if now - self._last_lock_check < protocol.SESSION_CHECK_SECONDS:
             return
         self._last_lock_check = now
-        if self._screen_locked is not None:
-            try:
-                self.locked = bool(self._screen_locked())
-            except (GLib.Error, OSError, ValueError):
-                self.locked = False
+        if self._screen_locked is None:
             return
-        self.locked = query_locked(
-            system_bus=self._system_bus,
-            session_bus=self._session_bus,
-        )
+        try:
+            self.locked = bool(self._screen_locked())
+        except self._adapter_errors:
+            self.locked = False
 
     def _maybe_notify(
         self, state: StateSnapshot, now: float, daemon_error: str
@@ -543,7 +535,7 @@ class SessionRuntime:
                 allow_retry=True,
                 now=now,
             )
-        except (GLib.Error, OSError, ValueError, errors.SessionError) as error:
+        except (*self._adapter_errors, errors.SessionError) as error:
             log.warning(
                 "cannot update the posture notification: %s", describe_error(error)
             )
@@ -553,7 +545,7 @@ class SessionRuntime:
             return
         try:
             self.notifier.close()
-        except (GLib.Error, OSError, ValueError) as error:  # pragma: no cover
+        except self._adapter_errors as error:  # pragma: no cover
             log.debug("closing the notification failed: %s", describe_error(error))
 
     def _restore_display(self) -> None:
@@ -561,7 +553,7 @@ class SessionRuntime:
             return
         try:
             self.display.restore()
-        except (DisplayError, GLib.Error, OSError, ValueError) as error:
+        except self._adapter_errors as error:
             # The journal is kept so a later attempt (or the next start) can retry.
             log.warning("display restore pending: %s", describe_error(error))
 
@@ -580,14 +572,10 @@ class SessionRuntime:
 
     # -- notification actions -------------------------------------------
 
-    def handle_action(self, parameters: Any) -> None:
+    def handle_action(self, notification: int, action: str) -> None:
         """Confirm the current posture notification when its action is invoked."""
         notifier = self.notifier
         if notifier is None or self.client is None:
-            return
-        try:
-            notification, action = parameters.unpack()
-        except (TypeError, ValueError):
             return
         if notification != notifier.notification or action not in NOTIFY_ACTIONS:
             return
@@ -600,7 +588,7 @@ class SessionRuntime:
                 self.client.confirm_stand(epoch)
             else:
                 self.client.confirm_tent(epoch)
-        except (ServiceError, GLib.Error, OSError, ValueError) as error:
+        except (*self._adapter_errors, ServiceError) as error:
             log.warning("posture confirmation rejected: %s", describe_error(error))
         finally:
             self._close_notifier()

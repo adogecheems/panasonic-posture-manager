@@ -24,14 +24,18 @@
 
 ## 3. 运行边界与状态回执
 
+- **共用逻辑**包括姿态策略、服务引擎、会话运行时和显示事务。平台实现通过
+  `service/ports.py` 和 `session/ports.py` 接入。Linux 的采样时钟、设备、设置、
+  D-Bus 和桌面组件由 `service/application.py` 与 `session/agent.py` 装配。
 - **root 系统服务**拥有系统 D-Bus 名。`service/daemon.py` 验证、分发方法调用并发布状态，
   `service/engine.py` 编排领域状态、租约和执行事务。传感器和硬件观察结果经 `policy.py` 决策，
   由 `controller.py` 生成 `Target` 和 generation。
 - **C relay** 由 `service/actuator.py` 管理，是唯一可打开 `/dev/input`、`/dev/uinput`
   和抓取内置键盘、触控板的组件。stdout 专用于 JSON 行协议，日志写 stderr。
 - **用户会话适配器**先取得系统总线上的 per-uid 名，再操作显示。同一用户只运行一个实例。
-  `session/runtime.py` 读取 `GetState`，通过显示事务处理旋转、方向锁和恢复，再用
-  `SessionUpdate` 上报该 generation 的准备状态并维护租约。系统服务综合会话与 relay 的执行结果，
+  `session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。
+  Linux 客户端用 `GetState` 读取快照，用 `SessionUpdate` 上报该 generation 的准备状态并维护租约。
+  系统服务综合会话与 relay 的执行结果，
   经 `GetState`／`StateChanged` 发布确认状态。
 - **UI** 只通过 D-Bus 发起操作并渲染已校验的状态快照。**只读探针**仅查看 sysfs 和 profile，
   禁止打开输入设备或写入内核。
@@ -45,6 +49,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | --- | --- | --- |
 | 姿态、阈值、迟滞、提示 epoch | `policy.py`、`controller.py`、`presentation.py` | `test_policy`、`test_controller`、`test_presentation` |
 | 手动模式、目标、状态及服务事务 | `protocol.py`、`model.py`、`controller.py`、`service/engine.py`；装配与方法入口见 `service/application.py`、`service/daemon.py` | `test_protocol`、`test_model`、`test_engine`、`test_application`、`test_ui_contract` |
+| 共用逻辑与平台装配 | `service/ports.py`、`session/ports.py`、`service/application.py`、`session/agent.py` | `test_platform_boundaries`、`test_application`、`test_agent`、`make check-dbus` |
 | 鉴权、会话身份、租约 | `service/access.py`、`service/daemon.py`、`service/engine.py`、`session/agent.py`、`packaging/dbus/`、`packaging/polkit/` | `test_access`、`test_engine`、`test_agent`、`make check-dbus` |
 | 设置、校准 | `service/settings.py`、`service/engine.py`、`calibration.py`、`protocol.py`、`data/ui/settingsPage.js` | `test_settings`、`test_calibration`、`test_engine`、`test_ui_contract`、`make check-i18n` |
 | 传感器、IIO、sysfs、profile | `service/sensor*.py`、`service/hardware_monitor.py`、`hardware/`、`data/profiles/` | `test_sensor`、`test_hardware_monitor`、`test_iio`、`test_sysfs`、`test_profile`、`test_calibration` |
@@ -332,3 +337,13 @@ make WERROR=1 check
 - 动机：防止慢的 logind 或 polkit 查询阻塞控制循环，也避免界面鉴权延迟占用会话心跳的队列。
 - 影响：沿用现有鉴权检查、缓存、错误码与租约规则，状态更新继续由主循环串行处理。
 - 同步：`service/daemon.py` 和鉴权分发测试。
+
+### 2026-11-04 - 分离共用事务与 Linux 平台装配
+
+- 变更：服务引擎通过输入、采样和设置接口接入平台实现。会话运行时通过客户端、显示、
+  锁屏和通知接口工作，Linux 装配负责 BOOTTIME、GLib 与 D-Bus 的适配。显示后端显式
+  声明方向锁是否全局，回滚时据此判断能否恢复不同输出上的设置。
+- 动机：复用姿态、执行回执、显示恢复和重试逻辑，为未来增加平台实现留出入口。
+- 影响：Linux 继续使用原有进程、鉴权、租约、协议和文件格式。新增平台仍须提供可信的
+  硬件状态、与引擎同一时钟的传感器采样，以及能撤销的输入和显示接管。
+- 同步：服务和会话接口、Linux 装配、显示事务、`test_platform_boundaries` 和 `USAGE.md`。

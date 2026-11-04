@@ -68,6 +68,19 @@ UI 测试还需要 GJS、GTK 4、libadwaita 和 `gtk4-broadwayd`。
 make WERROR=1 check
 ```
 
+### 平台适配
+
+`policy.py`、`controller.py` 和 `calibration.py` 处理姿态决策。`service/engine.py` 负责
+目标与执行回执，`session/runtime.py` 负责会话内的应用和恢复。复用这些模块时，按
+`service/ports.py` 和 `session/ports.py` 提供平台实现。传感器适配器需将数据换算到策略
+使用的设备坐标系，以 m/s² 提供三轴采样，时间戳与传给引擎的采样时钟一致。
+
+Linux 入口分别由 `service/application.py` 和 `session/agent.py` 装配。新增平台需要提供
+本地会话与权限校验、输入控制、显示读写和恢复日志。`test_platform_boundaries.py` 使用
+标准库和替身验证共用流程，无需真实设备或桌面。当前安装包面向 Linux。
+
+### 发行版打包
+
 按目标发行版使用对应工具链。Arch 的 `PKGBUILD` 取用 `pkgver` 对应的发布标签。
 Deb 和 RPM 目标默认将安装包输出到 `dist/packages/`，RPM 从干净工作树的 `HEAD` 打包。 [发布工作流与构建依赖](.github/workflows/release.yml)
 

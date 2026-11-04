@@ -77,6 +77,11 @@ class _IioTrial:
         self.error: Any = None
 
 
+def linux_sample_clock() -> float:
+    """Timestamp Linux samples even across a suspend interval."""
+    return time.clock_gettime(time.CLOCK_BOOTTIME)
+
+
 class SensorManager:
     """Own accelerometer acquisition on a background thread."""
 
@@ -97,7 +102,7 @@ class SensorManager:
         self._profile = profile
         self._managed = bool(managed)
         self._monotonic = monotonic
-        self._bootclock = clock or (lambda: time.clock_gettime(time.CLOCK_BOOTTIME))
+        self._bootclock = clock if clock is not None else linux_sample_clock
         self._iio_factory = iio_factory
         self._sysfs_factory = sysfs_factory
         self._log = logger
@@ -156,7 +161,12 @@ class SensorManager:
             return self._prefer_shared
 
     def set_prefer_shared(self, value: bool) -> None:
-        """Switch source priority (``True`` while GNOME should auto-rotate)."""
+        """Prefer continuous sysfs readings when the desktop may need IIO.
+
+        A trial can briefly look healthy before the sensor hub stops reporting.
+        Keeping sysfs active avoids dropping a software takeover and lets the
+        desktop's sensor proxy use the IIO buffer.
+        """
         shared = bool(value)
         with self._lock:
             changed = self._prefer_shared != shared

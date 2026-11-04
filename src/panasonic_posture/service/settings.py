@@ -14,12 +14,12 @@ import logging
 import os
 import tempfile
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from ..calibration import parse_calibration_matrix
 from ..protocol import STATE_DIR
+from .ports import Settings as Settings
 
 LOG = logging.getLogger(__name__)
 
@@ -27,16 +27,6 @@ LOG = logging.getLogger(__name__)
 SETTINGS_VERSION = 1
 
 DEFAULT_SETTINGS_PATH = Path(STATE_DIR) / "settings.json"
-
-
-@dataclass(frozen=True)
-class Settings:
-    """User preferences owned by the system service."""
-
-    tent_enabled: bool = True
-    tent_prompt: bool = True
-    stand_prompt: bool = False
-    sensor_calibration: tuple[float, ...] | None = None
 
 
 class SettingsStore:

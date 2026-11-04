@@ -11,22 +11,15 @@ from __future__ import annotations
 import os
 import shutil
 from dataclasses import dataclass
-from typing import Callable, Mapping, Protocol
+from typing import Callable, Mapping
 
 from .display import Display
 from .errors import DisplayError, ErrorCode
 from .journal import Journal
 from .plasma import PlasmaDisplay, build_plasma_command
+from .ports import DisplayBackend
 
 BACKEND_OVERRIDE_ENV = "PANASONIC_POSTURE_DISPLAY_BACKEND"
-
-
-class DisplayBackend(Protocol):
-    """Minimum interface the session runtime needs from a display backend."""
-
-    def apply(self, target) -> None: ...
-
-    def restore(self, normal: bool = False) -> None: ...
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,7 @@ from ..model import Target
 from . import errors
 from .errors import DisplayError, ErrorCode
 from .journal import JOURNAL_VERSION, Journal, default_path
+from .ports import DisplayJournal
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class DisplayState:
 
     ``transform`` uses the Mutter numbering (0=normal, 1=90, 2=180, 3=270)
     because it is already the journal format used by GNOME.  ``lock`` is a
-    bool for on/off backends or the native policy string for Plasma; it is
+    bool for on/off backends or the backend's native policy string; it is
     ``None`` when the backend cannot control automatic rotation.
     """
 
@@ -55,10 +56,11 @@ class SoftwareDisplay:
     """Backend-neutral display transaction with crash recovery."""
 
     backend_name = ""
+    lock_is_global = False
 
     def __init__(
         self,
-        journal: Journal | None = None,
+        journal: DisplayJournal | None = None,
         gettext: Callable[[str], str] | None = None,
         *,
         sleep: Callable[[float], None] = time.sleep,
@@ -212,8 +214,8 @@ class SoftwareDisplay:
             raise DisplayError(
                 ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
             )
-        # GNOME's boolean lock is global. Plasma's policy belongs to the output.
-        if state.identity == identity or isinstance(state.lock, bool):
+        # A global lock can still be restored when the original panel is gone.
+        if state.identity == identity or (self.lock_is_global and state.lock is not None):
             try:
                 if release_lock and (keep_journal or has_owned_lock):
                     self._write_owned_lock(state, False)
@@ -288,18 +290,12 @@ class SoftwareDisplay:
         return state
 
     def _journal_document(self, state: DisplayState) -> dict:
-        if isinstance(state.lock, bool):
-            original_lock = state.lock
-        elif isinstance(state.lock, str):
-            original_lock = state.lock == "never"
-        else:
-            original_lock = True
         document = {
             "version": JOURNAL_VERSION,
             "backend": self.backend_name,
             "spec": [str(part) for part in state.identity],
             "original_transform": int(state.transform),
-            "original_lock": bool(original_lock),
+            "original_lock": state.lock is None or self._is_locked(state),
             "written_lock": None,
             "written_transform": None,
         }
@@ -336,9 +332,8 @@ class SoftwareDisplay:
             # keep the journal so the next transaction or start retries.
             log.warning("display recovery pending: %s", error)
 
-    @staticmethod
-    def _is_locked(state: DisplayState) -> bool:
-        return state.lock is True or state.lock == "never"
+    def _is_locked(self, state: DisplayState) -> bool:
+        return state.lock == self._lock_value(True)
 
 
 __all__ = [

@@ -1,4 +1,4 @@
-"""Composition root for the privileged system service.
+"""Linux composition root for the privileged system service.
 
 The D-Bus daemon should only own a connection, dispatch methods and manage
 GLib sources.  This module is the one place that knows how the domain,
@@ -24,7 +24,7 @@ from ..presentation import PosePresentation
 from .access import AccessControl
 from .actuator import Actuator
 from .engine import Engine
-from .sensor import SensorManager
+from .sensor import SensorManager, linux_sample_clock
 from .settings import DEFAULT_SETTINGS_PATH, SettingsStore
 
 LOG = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class ServiceApplication:
         resolved_settings = settings if settings is not None else SettingsStore(config_path)
         resolved_access = access if access is not None else AccessControl(None)
         resolved_sensor = sensor if sensor is not None else SensorManager(
-            stop, resolved_profile, managed=True
+            stop, resolved_profile, managed=True, clock=linux_sample_clock
         )
         resolved_switch = (
             switch
@@ -100,6 +100,7 @@ class ServiceApplication:
             hardware_query=resolved_switch.read,
             instance=instance,
             development=development,
+            clock=linux_sample_clock,
             on_state=on_state,
         )
         return cls(

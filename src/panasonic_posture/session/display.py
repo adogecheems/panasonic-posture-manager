@@ -157,6 +157,7 @@ class Display(SoftwareDisplay):
         )
 
     backend_name = "gnome"
+    lock_is_global = True
 
     # -- injected collaborators ------------------------------------------
 

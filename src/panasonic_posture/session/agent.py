@@ -21,6 +21,7 @@ import sys
 import time
 from collections.abc import Callable
 from concurrent.futures import Executor
+from functools import partial
 
 from gi.repository import Gio, GLib
 
@@ -30,6 +31,7 @@ from .client import SystemClient
 from .desktop import create_display
 from .errors import describe_error
 from .journal import default_path
+from .lockstate import query_locked
 from .notify import NOTIFY_DEST, NOTIFY_IFACE, NOTIFY_PATH, Notifier
 from .runtime import SessionRuntime
 
@@ -318,13 +320,17 @@ class Agent:
         self.client = client
         self.display = display
         self.notifier = notifier
+        screen_locked = self._screen_locked
+        if screen_locked is None:
+            screen_locked = partial(
+                query_locked, system_bus=self._system_bus, session_bus=self._session_bus
+            )
         self.runtime = SessionRuntime(
             client,
             display,
             notifier,
-            session_bus=self._session_bus,
-            system_bus=self._system_bus,
-            screen_locked=self._screen_locked,
+            screen_locked=screen_locked,
+            adapter_errors=(GLib.Error,),
             executor=self._executor,
         )
 
@@ -384,7 +390,11 @@ class Agent:
         if self.runtime is None:
             return
         try:
-            self.runtime.handle_action(parameters)
+            try:
+                notification, action = parameters.unpack()
+            except (TypeError, ValueError):
+                return
+            self.runtime.handle_action(notification, action)
         except Exception:
             log.exception("notification action failed")
 
