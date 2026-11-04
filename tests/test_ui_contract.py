@@ -728,6 +728,13 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
         ui.settingsPage.update(pendingTabletState);
         if (ui.posturePage._pose !== 'tablet')
             failures.push('pending manual mode did not update the illustration');
+        if (ui.posturePage._detail.label !== 'Applying mode…')
+            failures.push('unconfirmed mode did not show progress');
+        ui.posturePage.update(Object.assign({{}}, pendingTabletState, {{
+            target: {{mode: 'unavailable'}},
+        }}));
+        if (ui.posturePage._detail.label !== 'Mode switching is paused.')
+            failures.push('unavailable target did not explain the pause');
         const failedTabletState = Object.assign({{}}, pendingTabletState, {{
             error_code: 'display-transform-not-applied', error_detail: 'test',
         }});
@@ -744,6 +751,8 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
         ui.settingsPage.update(manualTabletState);
         if (ui.posturePage._heading.label !== 'Tablet')
             failures.push('applied tablet mode did not override the recognised tent pose');
+        if (ui.posturePage._detail.visible)
+            failures.push('progress remained visible after the mode was applied');
         const hardwareState = Object.assign({{}}, manualTabletState, {{
             pose: 'tablet', target: {{mode: 'hardware', tablet: true,
                                      rotation: null, disable_internal_input: false}},
@@ -874,6 +883,130 @@ System.exit(app.run([System.programInvocationName]));
             result.returncode, 0, (result.stderr or "") + (result.stdout or "")
         )
         self.assertIn("responsive settings self-check passed", result.stdout)
+
+    def test_keyboard_browsing_and_delayed_responses(self):
+        source = """
+import Adw from 'gi://Adw?version=1';
+import Gdk from 'gi://Gdk?version=4.0';
+import GLib from 'gi://GLib';
+import Gtk from 'gi://Gtk?version=4.0';
+import System from 'system';
+import {PosturePage} from __POSTURE_URI__;
+import {SettingsPage} from __SETTINGS_URI__;
+
+const app = new Adw.Application({
+    application_id: 'work.mmoe.panasonic.PostureManager.InteractionTest',
+});
+const requests = [];
+const toasts = [];
+const service = {
+    call(method, params) {
+        return new Promise((resolve, reject) => {
+            requests.push({method, args: params?.deepUnpack(), resolve, reject});
+        });
+    },
+    refresh() {},
+};
+const state = {
+    manual: 'laptop', pose: 'laptop', hardware: false, supported: true,
+    session_connected: true, sensor_calibrated: true, target: {mode: 'laptop'},
+};
+function check(condition, message) {
+    if (!condition)
+        throw new Error(message);
+}
+
+async function exercise() {
+    const settings = new SettingsPage(service, message => toasts.push(message));
+    const window = new Adw.ApplicationWindow({application: app, content: settings.widget});
+    window.present();
+    settings.update(state);
+    const laptop = settings._radios.get('laptop');
+    const tent = settings._radios.get('tent');
+    const stand = settings._radios.get('stand');
+    laptop.grab_focus();
+    const controllers = laptop.observe_controllers();
+    const keys = Array.from({length: controllers.get_n_items()}, (_, index) =>
+        controllers.get_item(index)).find(controller =>
+        controller instanceof Gtk.EventControllerKey &&
+        controller.get_propagation_phase() === Gtk.PropagationPhase.CAPTURE);
+    check(keys?.emit('key-pressed', Gdk.KEY_Down, 0, 0), 'mode arrow was not handled');
+    check(window.get_focus() === tent && laptop.active && requests.length === 0,
+        'browsing modes activated a choice');
+
+    tent.activate();
+    check(requests[0].args[0] === 'tent', 'explicit activation did not select tent');
+    stand.active = true;
+    requests[0].reject(new Error('first selection failed'));
+    await Promise.resolve();
+    check(requests[1]?.args[0] === 'stand' && stand.active && toasts.length === 0,
+        'failed request discarded the more recent choice');
+    requests[1].resolve();
+    await Promise.resolve();
+
+    tent.active = true;
+    const earlierTent = requests.at(-1);
+    stand.active = true;
+    tent.active = true;
+    earlierTent.reject(new Error('earlier tent selection failed'));
+    await Promise.resolve();
+    const latestTent = requests.at(-1);
+    check(latestTent !== earlierTent && latestTent.args[0] === 'tent',
+        'a new selection of the same mode was discarded');
+    latestTent.resolve();
+    await Promise.resolve();
+
+    const posture = new PosturePage(service);
+    posture.update({...state, pending_notification: 10, pending_prompt: 'tent'});
+    posture._confirmButton.emit('clicked');
+    posture.update({...state, pending_notification: 11, pending_prompt: 'stand'});
+    requests.at(-1).resolve();
+    await Promise.resolve();
+    check(posture._confirmButton.label === 'Enter stand mode',
+        'a stale request rewrote the current prompt');
+    posture._confirmButton.emit('clicked');
+    const confirmation = requests.at(-1);
+    check(confirmation.method === 'ConfirmStand' && confirmation.args[0] === 11,
+        'the button did not act on the current prompt');
+    confirmation.resolve();
+
+    const calibration = settings._calibrateSensor();
+    const calibrationRequest = requests.at(-1);
+    check(calibrationRequest.method === 'CalibrateSensor', 'calibration did not start');
+    settings.setUnavailable();
+    calibrationRequest.reject(new Error('disconnected'));
+    await calibration;
+    check(!settings._calibrateButton.sensitive && !settings._resetButton.sensitive,
+        'a completed request re-enabled calibration while disconnected');
+    settings.update(state);
+    check(settings._calibrateButton.sensitive && settings._resetButton.sensitive,
+        'calibration stayed disabled after reconnecting');
+}
+
+app.connect('activate', () => {
+    GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+        exercise().then(() => app.quit()).catch(error => {
+            logError(error);
+            System.exit(1);
+        });
+        return GLib.SOURCE_REMOVE;
+    });
+});
+GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
+    printerr('interaction self-check timed out');
+    System.exit(1);
+});
+System.exit(app.run([System.programInvocationName]));
+"""
+        for placeholder, path in (
+            ("__POSTURE_URI__", "data/ui/posturePage.js"),
+            ("__SETTINGS_URI__", "data/ui/settingsPage.js"),
+        ):
+            source = source.replace(placeholder, json.dumps(_js_uri(path)))
+        result = run_gjs(source, env=self._environment, timeout=30)
+        self.assertEqual(
+            result.returncode, 0, (result.stderr or "") + (result.stdout or "")
+        )
 
 
 if __name__ == "__main__":

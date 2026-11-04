@@ -98,23 +98,6 @@ def _capabilities(item: dict) -> set[str]:
     return set()
 
 
-def _pick_output(outputs: list[PlasmaOutput], forced_output: str | None) -> PlasmaOutput:
-    if forced_output:
-        matches = [output for output in outputs if output.name == forced_output]
-        if len(matches) == 1:
-            return matches[0]
-        raise DisplayError(ErrorCode.DISPLAY_IDENTITY, "requested-output-not-active")
-
-    internal = [output for output in outputs if _INTERNAL_NAME.match(output.name)]
-    if len(internal) == 1:
-        return internal[0]
-    if len(internal) > 1:
-        raise DisplayError(ErrorCode.DISPLAY_IDENTITY, "internal-monitor-not-unique")
-    if len(outputs) == 1:
-        return outputs[0]
-    raise DisplayError(ErrorCode.DISPLAY_IDENTITY, "internal-monitor-not-found")
-
-
 def _parse_outputs(text: str) -> list[dict]:
     try:
         document = json.loads(str(text or ""))
@@ -187,8 +170,6 @@ def _select_output(
         return internal[0]
     if len(internal) > 1:
         raise DisplayError(ErrorCode.DISPLAY_IDENTITY, "internal-monitor-not-unique")
-    if len(active) == 1:
-        return active[0][0]
     raise DisplayError(ErrorCode.DISPLAY_IDENTITY, "internal-monitor-not-found")
 
 
@@ -368,7 +349,21 @@ class PlasmaDisplay(SoftwareDisplay):
         super().__init__(journal, gettext, sleep=sleep)
 
     def _read_state(self) -> DisplayState:
-        output = self.command.parse(self.command.query(), self._forced_output)
+        return self._output_state(self.command.query(), self._forced_output)
+
+    def _read_restore_state(self, identity: tuple[str, ...]) -> DisplayState:
+        text = self.command.query()
+        try:
+            # Older versions may have written to a lone external display.
+            # Restore that recorded output without selecting it for new modes.
+            return self._output_state(text, identity[0])
+        except DisplayError as error:
+            if error.code != ErrorCode.DISPLAY_IDENTITY:
+                raise
+            return self._output_state(text, self._forced_output)
+
+    def _output_state(self, text: str, name: str | None) -> DisplayState:
+        output = self.command.parse(text, name)
         return DisplayState(
             identity=(output.name,),
             transform=output.transform,
@@ -414,7 +409,7 @@ class PlasmaDisplay(SoftwareDisplay):
             if delay:
                 self._sleep(delay)
             try:
-                current = self._read_state()
+                current = self._output_state(self.command.query(), state.identity[0])
             except DisplayError:
                 return False
             if current.identity != state.identity:

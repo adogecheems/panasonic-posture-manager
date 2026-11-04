@@ -5,6 +5,7 @@
 // the latest choice.  A failed write resynchronises the controls with the last
 // known state instead of leaving them out of sync with the service.
 import Adw from 'gi://Adw?version=1';
+import Gdk from 'gi://Gdk?version=4.0';
 import Gtk from 'gi://Gtk?version=4.0';
 import GLib from 'gi://GLib';
 
@@ -18,10 +19,13 @@ export const GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-mana
 const MODES = [
     ['auto', _('Automatic'), _('Switch automatically to suit the current posture')],
     ['laptop', _('Laptop'), _('Best for typing and precise work')],
-    ['tent', _('Tent'), _('Best for watching video and touch use')],
-    ['stand', _('Stand'), _('Best for viewing and touch use')],
-    ['tablet', _('Tablet'), _('Best for handheld or flat use')],
+    ['tent', _('Tent'), _('Turns the screen upside down and disables the built-in keyboard and touchpad')],
+    ['stand', _('Stand'), _('Keeps the screen upright and disables the built-in keyboard and touchpad')],
+    ['tablet', _('Tablet'), _('Lets the screen rotate and disables the built-in keyboard and touchpad')],
 ];
+
+const PREVIOUS_MODE_KEYS = new Set([Gdk.KEY_Up, Gdk.KEY_Left, Gdk.KEY_KP_Up, Gdk.KEY_KP_Left]);
+const NEXT_MODE_KEYS = new Set([Gdk.KEY_Down, Gdk.KEY_Right, Gdk.KEY_KP_Down, Gdk.KEY_KP_Right]);
 
 export class SettingsPage {
     constructor(service, toast = () => {}) {
@@ -41,6 +45,7 @@ export class SettingsPage {
         this._latestState = null;
         this._calibrating = false;
         this._build();
+        this.setUnavailable();
     }
 
     get widget() {
@@ -67,7 +72,7 @@ export class SettingsPage {
                 ? Boolean(state.stand_prompt)
                 : this._pendingStandPrompt;
             this._standSwitch.active = standPrompt;
-            const mode = this._pendingMode === null ? state.manual : this._pendingMode;
+            const mode = this._pendingMode?.mode ?? state.manual;
             const active = this._radios.get(mode);
             if (active)
                 active.active = true;
@@ -84,6 +89,7 @@ export class SettingsPage {
     }
 
     setUnavailable() {
+        this._latestState = null;
         this._pendingMode = null;
         this._pendingTentMode = null;
         this._pendingTentPrompt = null;
@@ -208,6 +214,13 @@ export class SettingsPage {
             row.add_prefix(button);
             modeGroup.add(row);
             this._radios.set(key, button);
+            // GTK radio navigation selects on arrow keys by default. Keep
+            // browsing separate from an action that can disable the keyboard.
+            const keys = new Gtk.EventControllerKey({
+                propagation_phase: Gtk.PropagationPhase.CAPTURE,
+            });
+            keys.connect('key-pressed', (_controller, keyval) => this._browseModes(button, keyval));
+            button.add_controller(keys);
             button.connect('toggled', () => {
                 if (this._syncing || !button.active || !button.sensitive)
                     return;
@@ -255,6 +268,17 @@ export class SettingsPage {
 
     // -- actions ----------------------------------------------------------
 
+    _browseModes(button, keyval) {
+        const step = PREVIOUS_MODE_KEYS.has(keyval) ? -1 : NEXT_MODE_KEYS.has(keyval) ? 1 : 0;
+        if (!step)
+            return false;
+        const buttons = [...this._radios.values()].filter(choice => choice.sensitive);
+        const index = buttons.indexOf(button);
+        if (index !== -1)
+            buttons[(index + step + buttons.length) % buttons.length].grab_focus();
+        return true;
+    }
+
     _applyCalibrationState() {
         if (!this._latestState)
             return;
@@ -291,7 +315,7 @@ export class SettingsPage {
             transient_for: this._page.get_root(),
             modal: true,
             heading: _('Calibrate sensor?'),
-            body: _('Place the device in laptop form on a flat, stable desk. Its current direction will become the level reference.'),
+            body: _('Place the device in laptop form on a flat, stable desk and wait about two seconds before confirming. Its current direction will become the level reference.'),
         });
         dialog.add_response('cancel', _('Cancel'));
         dialog.add_response('calibrate', _('Calibrate'));
@@ -336,7 +360,7 @@ export class SettingsPage {
     }
 
     _queueMode(mode) {
-        this._pendingMode = mode;
+        this._pendingMode = {mode};
         if (this._modeWriteActive)
             return;
         this._modeWriteActive = true;
@@ -349,14 +373,16 @@ export class SettingsPage {
                 const requested = this._pendingMode;
                 try {
                     await this._service.call(
-                        'SetMode', new GLib.Variant('(s)', [requested]));
+                        'SetMode', new GLib.Variant('(s)', [requested.mode]));
                 } catch (error) {
+                    if (this._pendingMode !== null && this._pendingMode !== requested)
+                        continue;
                     this._pendingMode = null;
                     this._toast(`${_('Unable to change settings')}: ${describeError(error)}`);
                     this._resync();
                     return;
                 }
-                if (this._pendingMode === requested)
+                if (this._pendingMode?.mode === requested.mode)
                     this._pendingMode = null;
             }
         } finally {

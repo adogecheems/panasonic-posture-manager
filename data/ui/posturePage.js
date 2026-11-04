@@ -44,7 +44,7 @@ export class PosturePage {
         this._service = service;
         this._toast = toast;
         this._syncing = false;
-        this._inFlight = false;
+        this._busyButton = null;
         this._pose = 'laptop';
         this._pixbuf = null;
         this._pendingEpoch = null;
@@ -89,9 +89,6 @@ export class PosturePage {
                 : state.pending_prompt === 'stand' ? 'stand' : 'tent';
             this._pendingEpoch = pendingEpoch;
             this._confirmButton.visible = this._pendingEpoch !== null;
-            this._confirmButton.label = this._pendingPrompt === 'stand'
-                ? _('Enter stand mode')
-                : _('Enter tent mode');
             this._renderDetail(state);
             this._retryButton.visible =
                 Boolean(state.error_code) && state.supported !== false;
@@ -172,7 +169,7 @@ export class PosturePage {
             const method = this._pendingPrompt === 'stand'
                 ? 'ConfirmStand'
                 : 'ConfirmTent';
-            this._request(method, new GLib.Variant('(u)', [epoch]), this._confirmButton);
+            this._request(method, new GLib.Variant('(u)', [epoch]));
         });
         this._root.append(this._confirmButton);
 
@@ -202,6 +199,10 @@ export class PosturePage {
             text = _('Waiting for the desktop to get ready…');
         } else if (state.supported === false) {
             text = _('This model does not support automatic mode changes.');
+        } else if (state.target?.mode === 'unavailable') {
+            text = _('Mode switching is paused.');
+        } else if (!state.applied) {
+            text = _('Applying mode…');
         } else if (state.support_tier === 'compatible') {
             text = _('Compatibility mode: this model is supported but has not been individually validated.');
         }
@@ -240,33 +241,27 @@ export class PosturePage {
 
     // -- actions ----------------------------------------------------------
 
-    async _request(method, parameters, button, busyLabel = null) {
-        if (this._inFlight)
-            return;
+    async _request(method, parameters) {
         await this._runAction(
             () => this._service.call(method, parameters),
-            button,
-            busyLabel || _('Applying mode…'));
+            this._confirmButton);
     }
 
     //: The retry button replays the failed transaction through the dedicated
     //: ``Retry()`` method (F3/Q-02); old services fall back to SetMode.
     async _retry() {
-        if (this._inFlight || !this._latestState)
+        if (this._busyButton || !this._latestState)
             return;
         const fallbackMode = this._latestState.manual ?? null;
         await this._runAction(
             () => this._service.retry(fallbackMode),
-            this._retryButton,
-            _('Retrying…'));
+            this._retryButton);
     }
 
-    async _runAction(action, button, busyLabel) {
-        if (this._inFlight)
+    async _runAction(action, button) {
+        if (this._busyButton)
             return;
-        this._inFlight = true;
-        const previousLabel = button.label;
-        button.label = busyLabel;
+        this._busyButton = button;
         this._syncButtons();
         try {
             await action();
@@ -277,15 +272,19 @@ export class PosturePage {
             this._detail.visible = true;
             this._detail.label = describeError(error);
         } finally {
-            this._inFlight = false;
-            button.label = previousLabel;
+            this._busyButton = null;
             this._syncButtons();
         }
     }
 
     _syncButtons() {
-        const busy = this._inFlight;
-        this._confirmButton.sensitive = !busy;
-        this._retryButton.sensitive = !busy;
+        this._confirmButton.label = this._busyButton === this._confirmButton
+            ? _('Applying mode…')
+            : this._pendingPrompt === 'stand' ? _('Enter stand mode') : _('Enter tent mode');
+        this._retryButton.label = this._busyButton === this._retryButton
+            ? _('Retrying…')
+            : _('Retry');
+        this._confirmButton.sensitive = !this._busyButton;
+        this._retryButton.sensitive = !this._busyButton;
     }
 }

@@ -125,10 +125,8 @@ class SessionRuntime:
 
         # lease/authorization failure mode
         self.failure_active = False
-        self.failure_count = 0
+        self._failure_retry_delay = 0.0
         self.failure_retry_at = 0.0
-        self._failure_since: float | None = None
-        self._probe_generation = 0
         self._reported_error: str | None = None
 
         # transient transport failure grace (a single NoReply must not restore)
@@ -149,14 +147,7 @@ class SessionRuntime:
         elif self.failure_active:
             if now < self.failure_retry_at:
                 return
-            self._submit(
-                "probe",
-                self.client.session_update,
-                self._probe_generation,
-                False,
-                "",
-                "",
-            )
+            self._submit("probe", self._probe_lease)
         elif (
             self._transient_since is not None
             and now < self._transient_retry_at
@@ -226,7 +217,7 @@ class SessionRuntime:
                 return
             self._handle_state(result, now)
         elif task.kind == "probe":
-            self._probe_succeeded()
+            self._probe_succeeded(result, now)
         elif task.kind == "apply":
             state, _generation, _daemon_error = task.context
             if state.target.mode == "unavailable":
@@ -282,28 +273,33 @@ class SessionRuntime:
 
     # -- lease recovery --------------------------------------------------
 
-    def _probe_succeeded(self) -> None:
-        """Finish lease recovery and fetch a fresh state document."""
+    def _probe_lease(self) -> StateSnapshot:
+        state = self.client.get_state()
+        self.client.session_update(state.generation, False, "", "")
+        current = self.client.get_state()
+        # The service silently ignores stale reports. A successful reply only
+        # proves lease recovery if the report matched the same service and target.
+        if (
+            current.instance != state.instance
+            or current.generation != state.generation
+            or not current.session_connected
+        ):
+            raise ValueError("session lease probe no longer matches service state")
+        return current
+
+    def _probe_succeeded(self, state: StateSnapshot, now: float) -> None:
         log.info("session adapter lease restored")
         self._reset_transient()
         self.failure_active = False
-        self.failure_count = 0
+        self._failure_retry_delay = 0.0
         self.failure_retry_at = 0.0
-        self._failure_since = None
-        self.generation = None  # force a fresh transaction from GetState
-        self.ready = False
-        self.error_code = ""
-        self.error_detail = ""
-        self.apply_now = True
-        self.last_feedback = None
-        self._submit("state", self.client.get_state)
+        self._handle_state(state, now)
 
     def _enter_failure(self, now: float, error: BaseException) -> None:
         """Stop display transactions after an authorization/lease failure."""
         self._reset_transient()
         if not self.failure_active:
             self.failure_active = True
-            self._failure_since = now
             message = describe_error(error)
             if message != self._reported_error:
                 log.warning("session adapter lease failure: %s", message)
@@ -314,17 +310,14 @@ class SessionRuntime:
             self.apply_now = False
             self.retry_display = False
             self.last_feedback = None
-            self._probe_generation = self.generation or 0
             self.generation = None
             self._close_notifier()
             self._restore_display_async(now)
-        self.failure_count += 1
-        delay = min(
+        self._failure_retry_delay = min(
             protocol.DISPLAY_RETRY_MAX_SECONDS,
-            protocol.DISPLAY_RETRY_BASE_SECONDS
-            * (2 ** (self.failure_count - 1)),
+            self._failure_retry_delay * 2 or protocol.DISPLAY_RETRY_BASE_SECONDS,
         )
-        self.failure_retry_at = now + delay
+        self.failure_retry_at = now + self._failure_retry_delay
 
     # -- transient vs. rejected failures (P3) ----------------------------
 

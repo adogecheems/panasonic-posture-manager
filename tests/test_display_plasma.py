@@ -114,6 +114,19 @@ class ParseTests(unittest.TestCase):
     def test_forced_output_name(self):
         self.assertEqual(parse_doctor_json(doctor_json(), "HDMI-1").name, "HDMI-1")
 
+    def test_external_only_is_rejected_unless_explicitly_selected(self):
+        for parser, items in (
+            (parse_doctor_json, json.loads(doctor_json())["outputs"]),
+            (parse_kscreenctl_json, json.loads(ctl_json())),
+        ):
+            with self.subTest(parser=parser):
+                items[0]["enabled"] = False
+                payload = json.dumps({"outputs": items})
+                with self.assertRaises(DisplayError) as caught:
+                    parser(payload)
+                self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_IDENTITY)
+                self.assertEqual(parser(payload, "HDMI-1").name, "HDMI-1")
+
     def test_invalid_json_is_a_stable_error(self):
         with self.assertRaises(DisplayError) as caught:
             parse_doctor_json("not json")
@@ -203,6 +216,26 @@ class PlasmaTransactionTests(unittest.TestCase):
 
     def display(self, command, **environ):
         return PlasmaDisplay(command, self.journal, lambda text: text, sleep=lambda _s: None, environ=environ)
+
+    def test_recovery_restores_preexisting_external_output_journal(self):
+        class ExternalOnly(FakePlasmaCommand):
+            def query(self):
+                internal, external = json.loads(super().query())
+                internal["enabled"] = False
+                external["rotation"] = internal["rotation"]
+                return json.dumps([internal, external])
+
+        command = ExternalOnly()
+        display = self.display(command, PANASONIC_POSTURE_OUTPUT="HDMI-1")
+        display.apply(Target(mode="tent"))
+
+        recovered = self.display(command)
+        with self.assertRaises(DisplayError) as caught:
+            recovered.apply(Target(mode="tent"))
+
+        self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_IDENTITY)
+        self.assertEqual(command.calls, [("rotation", "HDMI-1", 2), ("rotation", "HDMI-1", 0)])
+        self.assertIsNone(self.journal.load())
 
     def test_tent_locks_policy_before_rotating(self):
         command = FakePlasmaCommand(policy="in-tablet-mode")

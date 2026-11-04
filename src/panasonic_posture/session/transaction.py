@@ -76,6 +76,12 @@ class SoftwareDisplay:
     def _read_state(self) -> DisplayState:
         raise NotImplementedError
 
+    def _read_restore_state(self, identity: tuple[str, ...]) -> DisplayState:
+        return self._read_state()
+
+    def _read_global_lock(self) -> bool | str:
+        raise NotImplementedError
+
     def _write_rotation(self, state: DisplayState, transform: int) -> None:
         raise NotImplementedError
 
@@ -185,13 +191,14 @@ class SoftwareDisplay:
         owned = self.owned
         if not owned:
             return
-        state = self._read_state()
         identity = tuple(str(part) for part in owned.get("spec") or ())
         owned_transforms = {owned.get("written_transform"), owned.get("pending_transform")}
         owned_transforms.discard(None)
         has_owned_lock = any(
             owned.get(field) is not None for field in ("written_lock", "pending_lock")
         )
+        restore_global_lock = self.lock_is_global and has_owned_lock and not release_lock
+        state = self._read_for_restore(identity, release_lock, restore_global_lock)
         failure: DisplayError | None = None
 
         if owned_transforms:
@@ -204,7 +211,7 @@ class SoftwareDisplay:
                         failure = error
                     if release_lock or has_owned_lock:
                         # A lock edit may have arrived during compositor read-back.
-                        state = self._read_state()
+                        state = self._read_for_restore(identity, release_lock, restore_global_lock)
             elif state.identity == identity:
                 log.debug("display rotation already %s; not restoring", state.transform)
             else:
@@ -221,6 +228,8 @@ class SoftwareDisplay:
                     self._write_owned_lock(state, False)
                 elif not release_lock and has_owned_lock:
                     self._restore_lock(state)
+                    if failure is not None and restore_global_lock:
+                        self._forget_restored_lock()
             except DisplayError as error:
                 failure = failure or error
 
@@ -230,6 +239,28 @@ class SoftwareDisplay:
             return
         self.journal.clear()
         self.owned = None
+
+    def _read_for_restore(
+        self, identity: tuple[str, ...], release_lock: bool, restore_global_lock: bool
+    ) -> DisplayState:
+        try:
+            return self._read_state() if release_lock else self._read_restore_state(identity)
+        except DisplayError:
+            if restore_global_lock:
+                # An inactive or mirrored panel can block rotation recovery
+                # without preventing the independent desktop setting write.
+                self._restore_lock(DisplayState((), 0, self._read_global_lock(), True))
+                self._forget_restored_lock()
+            raise
+
+    def _forget_restored_lock(self) -> None:
+        # Retain the outstanding rotation, but do not undo a later user lock
+        # change when the panel becomes usable and rotation recovery retries.
+        document = self.owned.copy()
+        document["written_lock"] = None
+        document.pop("pending_lock", None)
+        self.journal.save(document)
+        self.owned = document
 
     # -- lock ownership ---------------------------------------------------
 

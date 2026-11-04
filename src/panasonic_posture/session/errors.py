@@ -88,7 +88,7 @@ ERROR_MESSAGES: dict[str, str] = {
     ErrorCode.NATIVE_RECOVERY: _("The tablet switch state could not be restored. Restart the service if input behaves unexpectedly."),
     ErrorCode.SENSOR_TIMEOUT: _("No posture data is available right now."),
     ErrorCode.CALIBRATION_NOT_READY: _(
-        "Hold the device in laptop form on a flat desk, then try calibrating again."
+        "Place the device in laptop form on a flat desk and hold it still for about two seconds, then try again."
     ),
     ErrorCode.DISPLAY_MIRRORED: _(
         "This screen arrangement cannot be rotated. Please adjust the display settings."

@@ -46,6 +46,9 @@ msgstr "重试"
 msgid "Applying mode…"
 msgstr "正在切换模式…"
 
+msgid "Mode switching is paused."
+msgstr "模式切换已暂停。"
+
 msgid "Retrying…"
 msgstr "正在重试…"
 
@@ -94,8 +97,8 @@ msgstr "校准传感器"
 msgid "Calibrate sensor?"
 msgstr "校准传感器？"
 
-msgid "Place the device in laptop form on a flat, stable desk. Its current direction will become the level reference."
-msgstr "请将设备以笔记本形态平放在稳定桌面上。当前方向将作为水平基准。"
+msgid "Place the device in laptop form on a flat, stable desk and wait about two seconds before confirming. Its current direction will become the level reference."
+msgstr "请将设备以笔记本形态平放在稳定的桌面上，静置约两秒后再确认。当前方向将作为水平基准。"
 
 msgid "Cancel"
 msgstr "取消"
@@ -136,14 +139,14 @@ msgstr "根据设备姿态自动切换"
 msgid "Best for typing and precise work"
 msgstr "适合打字和精细操作"
 
-msgid "Best for watching video and touch use"
-msgstr "适合观影和触控操作"
+msgid "Turns the screen upside down and disables the built-in keyboard and touchpad"
+msgstr "倒转屏幕，停用内置键盘和触控板"
 
-msgid "Best for viewing and touch use"
-msgstr "适合观看和触控操作"
+msgid "Keeps the screen upright and disables the built-in keyboard and touchpad"
+msgstr "保持屏幕正向，停用内置键盘和触控板"
 
-msgid "Best for handheld or flat use"
-msgstr "适合手持或平放使用"
+msgid "Lets the screen rotate and disables the built-in keyboard and touchpad"
+msgstr "允许屏幕自动旋转，停用内置键盘和触控板"
 
 msgid "About"
 msgstr "关于"
@@ -217,8 +220,8 @@ msgstr "平板开关状态恢复失败；如键盘或触控板异常，请重启
 msgid "No posture data is available right now."
 msgstr "当前无法获取姿态数据。"
 
-msgid "Hold the device in laptop form on a flat desk, then try calibrating again."
-msgstr "请将设备以笔记本形态稳定平放在桌面上，然后再校准。"
+msgid "Place the device in laptop form on a flat desk and hold it still for about two seconds, then try again."
+msgstr "请将设备以笔记本形态平放在桌面上，静置约两秒后再试。"
 
 msgid "This screen arrangement cannot be rotated. Please adjust the display settings."
 msgstr "当前屏幕布局无法旋转，请调整显示设置。"

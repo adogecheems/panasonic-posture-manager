@@ -181,7 +181,7 @@ class Display(SoftwareDisplay):
         return DisplayState(
             identity=tuple(str(part) for part in spec),
             transform=int(current),
-            lock=self._read_lock(),
+            lock=self._read_global_lock(),
             lock_supported=True,
         )
 
@@ -268,7 +268,7 @@ class Display(SoftwareDisplay):
 
     # -- GSettings rotation lock -----------------------------------------
 
-    def _read_lock(self) -> bool:
+    def _read_global_lock(self) -> bool:
         try:
             return bool(self.settings.get_boolean(LOCK_KEY))
         except (GLib.Error, AttributeError, TypeError) as error:

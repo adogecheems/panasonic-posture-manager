@@ -398,6 +398,29 @@ class ApplyTransactionTests(unittest.TestCase):
 
 
 class FailureAndRecoveryTests(unittest.TestCase):
+    def test_restore_unlocks_when_internal_panel_cannot_be_rotated(self):
+        serial, monitors, logical, props = monitor_state(transform=2, external=True)
+        disabled = (serial, monitors, logical[1:], props)
+        for state in (disabled, monitor_state(transform=2, mirror=True)):
+            with self.subTest(state=state):
+                harness = Harness()
+                harness.display.apply(Target(mode="tent"))
+                call_sync = harness.mutter.call_sync
+                harness.mutter.call_sync = lambda *args: Reply(state)
+                with self.assertRaises(DisplayError) as caught:
+                    harness.display.restore()
+                self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_MIRRORED)
+                self.assertFalse(harness.settings.value)
+                self.assertEqual(harness.journal.document["written_transform"], 2)
+                self.assertIsNone(harness.journal.document["written_lock"])
+
+                harness.settings.value = True  # a user edit after lock recovery
+                harness.mutter.call_sync = call_sync
+                harness.display.restore()
+                self.assertTrue(harness.settings.value)
+                self.assertEqual(harness.mutter.transform, 0)
+                self.assertIsNone(harness.journal.document)
+
     def test_lock_write_failure_rolls_back(self):
         harness = Harness(transform=0, locked=False)
         harness.settings.set_result = False

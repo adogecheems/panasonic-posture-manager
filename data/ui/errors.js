@@ -20,7 +20,7 @@ const MESSAGES = {
     'relay-input-grab-failed': _('The internal keyboard and touchpad could not be disabled. Please try again.'),
     'native-state-recovery-failed': _('The tablet switch state could not be restored. Restart the service if input behaves unexpectedly.'),
     'sensor-timeout': _('No posture data is available right now.'),
-    'calibration-not-ready': _('Hold the device in laptop form on a flat desk, then try calibrating again.'),
+    'calibration-not-ready': _('Place the device in laptop form on a flat desk and hold it still for about two seconds, then try again.'),
     'display-mirrored-or-disabled': _('This screen arrangement cannot be rotated. Please adjust the display settings.'),
     'display-layout-conflict': _('The external display arrangement does not allow this mode.'),
     'display-transform-not-applied': _('The screen rotation could not be applied. Please try again.'),

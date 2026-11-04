@@ -337,6 +337,40 @@ class AdapterTickTests(unittest.TestCase):
         self.assertTrue(harness.agent.ready)
         self.assertEqual(harness.client.updates[-1], (1, True, "", ""))
 
+    def test_lease_recovery_probes_current_generation_before_applying(self):
+        harness = Harness(make_state())
+        harness.client.update_error = ServiceError(ErrorCode.ACCESS_DENIED, "session-lease-busy")
+        harness.tick(0.0)
+        harness.set_state(make_state(generation=2))
+
+        def update(generation, ready, code, detail):
+            # The service returns success for stale reports without checking lease ownership.
+            if generation == harness.client.state.generation:
+                raise harness.client.update_error
+
+        harness.client.session_update = update
+        harness.tick(2.0)
+
+        self.assertTrue(harness.agent._failure_active)
+        self.assertEqual(len(harness.display.applied), 1)
+
+    def test_lease_recovery_does_not_apply_after_probe_becomes_stale(self):
+        harness = Harness(make_state())
+        harness.client.update_error = ServiceError(ErrorCode.ACCESS_DENIED, "session-lease-busy")
+        harness.tick(0.0)
+
+        for state in (make_state(generation=2), make_state(instance="instance-b")):
+            with self.subTest(state=state):
+                def update(generation, ready, code, detail):
+                    if ready:
+                        raise harness.client.update_error
+                    harness.set_state(state)
+
+                harness.client.session_update = update
+                harness.tick(harness.agent._failure_retry_at)
+                self.assertTrue(harness.agent._failure_active)
+                self.assertEqual(len(harness.display.applied), 1)
+
     def test_access_denied_is_an_immediate_lease_failure(self):
         harness = Harness(make_state())
         harness.tick(0.0)
@@ -435,6 +469,16 @@ class AdapterTickTests(unittest.TestCase):
             harness.agent._failure_retry_at,
             14.0 + protocol.DISPLAY_RETRY_MAX_SECONDS,
         )
+        for _ in range(1025):
+            retry_at = harness.agent._failure_retry_at
+            harness.tick(retry_at)
+            self.assertEqual(
+                harness.agent._failure_retry_at,
+                retry_at + protocol.DISPLAY_RETRY_MAX_SECONDS,
+            )
+        harness.client.update_error = None
+        harness.tick(harness.agent._failure_retry_at)
+        self.assertTrue(harness.agent.ready)
 
     def test_tick_guard_keeps_the_glib_source_alive(self):
         harness = Harness(make_state())
