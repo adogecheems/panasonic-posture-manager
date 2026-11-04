@@ -718,6 +718,22 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
             failures.push('manual tent mode stayed enabled without tent mode');
         const tabletTarget = {{mode: 'tablet', tablet: true, rotation: null,
                               disable_internal_input: true}};
+        const pendingTabletState = Object.assign({{}}, state, {{
+            hardware: false, hardware_status: 'ok', manual: 'tablet',
+            pose: 'tent', target: tabletTarget, applied: null,
+            pending_notification: null, pending_prompt: null,
+            error_code: null, error_detail: null,
+        }});
+        ui.posturePage.update(pendingTabletState);
+        ui.settingsPage.update(pendingTabletState);
+        if (ui.posturePage._pose !== 'tablet')
+            failures.push('pending manual mode did not update the illustration');
+        const failedTabletState = Object.assign({{}}, pendingTabletState, {{
+            error_code: 'display-transform-not-applied', error_detail: 'test',
+        }});
+        ui.posturePage.update(failedTabletState);
+        if (ui.posturePage._pose !== 'tent')
+            failures.push('failed manual mode left the pending illustration visible');
         const manualTabletState = Object.assign({{}}, state, {{
             hardware: false, hardware_status: 'ok', manual: 'tablet',
             pose: 'tent', target: tabletTarget, applied: tabletTarget,

@@ -24,6 +24,18 @@ function displayedPose(state) {
         return 'tablet';
     if (POSE_SET.has(appliedMode))
         return appliedMode;
+
+    // SetMode clears ``applied`` while the next display transaction is in
+    // flight.  Rendering the unchanged physical pose during that window makes
+    // manual switches appear to be ignored until the acknowledgement arrives.
+    // Keep the reported error state authoritative so a failed switch still
+    // falls back to the last physical posture instead of claiming success.
+    const manualMode = state.manual;
+    if (!state.error_code
+        && POSE_SET.has(manualMode)
+        && state.target?.mode === manualMode)
+        return manualMode;
+
     return POSE_SET.has(state.pose) ? state.pose : 'unknown';
 }
 
