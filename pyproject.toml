@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "panasonic-posture-manager"
-version = "2.1.2"
+version = "2.2.0"
 description = "Posture management and screen orientation for convertible 2-in-1 laptops on GNOME and KDE Plasma 6 Wayland"
 readme = "README.md"
 requires-python = ">=3.11"
