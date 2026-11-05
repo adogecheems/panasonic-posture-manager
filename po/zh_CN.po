@@ -43,9 +43,6 @@ msgstr "进入支架模式"
 msgid "Retry"
 msgstr "重试"
 
-msgid "Mode switching is paused. Keep the device still and try again."
-msgstr "模式切换已暂停，请将设备静置后再试。"
-
 msgid "The tablet switch is unavailable. Restart the background service if this continues."
 msgstr "无法读取平板开关状态。若持续出现，请重启后台服务。"
 

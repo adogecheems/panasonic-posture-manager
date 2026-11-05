@@ -817,8 +817,8 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
         ui.posturePage.update(Object.assign({{}}, pendingTabletState, {{
             target: {{mode: 'unavailable'}},
         }}));
-        if (ui.posturePage._detail.label !== 'Mode switching is paused. Keep the device still and try again.')
-            failures.push('unavailable target did not explain the pause');
+        if (ui.posturePage._detail.visible || ui.posturePage._detail.label)
+            failures.push('undetermined posture showed an unnecessary pause message');
         const failedTabletState = Object.assign({{}}, pendingTabletState, {{
             error_code: 'display-transform-not-applied', error_detail: 'test',
         }});
@@ -1025,7 +1025,11 @@ app.connect('activate', () => {
         check(page._detail.label.includes('tablet switch') && page._detail.label.includes('Restart'),
             'hardware pause did not explain the next action');
         page.update({...state, target: {mode: 'unavailable'}});
-        check(page._detail.label.includes('Keep the device still'), 'generic pause had no next action');
+        check(!page._detail.visible && page._detail.label === '' && timers.size === 0,
+            'undetermined posture retained a pause message or transition timer');
+        check(page._pose === 'laptop', 'undetermined posture lost the last illustration');
+        page.update({...state, target: {mode: 'unavailable'}, support_tier: 'compatible'});
+        check(!page._detail.visible, 'undetermined posture showed a fallback status message');
         page.update({...state, error_code: 'display-transform-not-applied'});
         check(page._detail.label.startsWith('Mode change failed') && timers.size === 0,
             'waiting feedback hid a failure');

@@ -218,8 +218,6 @@ export class PosturePage {
                 text = _('The tablet switch is unavailable. Restart the background service if this continues.');
             } else if (reason === 'sensor') {
                 text = _('No posture data is available. Keep the device still; switching will resume automatically.');
-            } else {
-                text = _('Mode switching is paused. Keep the device still and try again.');
             }
         } else if (this._transitionSlow) {
             text = _('Switching is taking longer than usual. Please wait or choose another mode in Settings.');
