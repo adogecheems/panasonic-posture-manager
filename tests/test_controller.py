@@ -196,6 +196,27 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertEqual(self.controller.target.rotation, 0)
         self.assertTrue(self.controller.target.disable_internal_input)
 
+    def test_hardware_release_to_stand_never_targets_laptop(self):
+        self.hold(180.0, hardware=True)
+        old_generation = self.controller.generation
+        self.controller.acknowledge(old_generation, True)
+        generation, target = self.step(175.0)
+        self.assertEqual(target, Target())
+        self.assertIsNone(self.controller.applied)
+        self.assertFalse(self.controller.acknowledge(old_generation, True))
+        for _ in range(20):
+            if self.controller.policy.stable:
+                break
+            _, target = self.step(175.0)
+            self.assertIn(target.mode, ("unavailable", "stand"))
+        self.assertTrue(self.controller.policy.stable)
+        self.assertEqual(target.mode, "stand")
+        self.assertGreater(self.controller.generation, generation)
+        self.assertIsNone(self.controller.applied)
+        self.assertFalse(self.controller.acknowledge(generation, True))
+        self.assertTrue(self.controller.acknowledge(self.controller.generation, True))
+        self.assertEqual(self.controller.applied, target)
+
     def test_stand_prompt_waits_for_confirmation(self):
         self.controller.stand_prompt = True
         self.hold(175.0)

@@ -295,6 +295,74 @@ class PostureClassificationTests(PolicyTestCase):
         self.hold(0.0, hardware=False)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
 
+    def test_hardware_release_waits_for_stable_pose_without_laptop_fallback(self):
+        for dt in (0.1, 0.5):
+            for pitch, expected in ((175.0, MODE_STAND), (80.0, MODE_TENT)):
+                with self.subTest(dt=dt, pitch=pitch):
+                    self.hold(180.0, hardware=True)
+                    modes = [self.step(pitch, dt=dt, stand_prompt=True)]
+                    self.assertEqual(modes[0], MODE_DISABLED)
+                    self.assertFalse(self.policy.stable)
+                    for _ in range(20):
+                        if self.policy.stable:
+                            break
+                        modes.append(self.step(pitch, dt=dt, stand_prompt=True))
+                    self.assertTrue(self.policy.stable)
+                    self.assertEqual(modes[-1], expected)
+                    self.assertNotIn(MODE_LAPTOP, modes)
+                    self.assertIsNone(self.policy.pending_notification)
+
+    def test_hardware_release_respects_disabled_tent_mode(self):
+        self.hold(180.0, hardware=True)
+        self.hold(80.0, tent_enabled=False)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.assertIsNone(self.policy.pending_notification)
+
+    def test_suspend_cancels_pending_hardware_release(self):
+        self.hold(180.0, hardware=True)
+        self.step(175.0)
+        self.policy.reset_after_suspend()
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+
+    def test_hardware_release_cannot_reuse_a_pre_release_sample(self):
+        self.hold(175.0, hardware=True)
+        reading = sample(175.0, stamp=self.now)
+        for _ in range(10):
+            self.now += 0.1
+            self.policy.update(self.now, reading, False)
+            self.assertEqual(self.policy.mode, MODE_DISABLED)
+            self.assertFalse(self.policy.stable)
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+    def test_hardware_release_with_missing_sensor_stays_unconfirmed(self):
+        self.hold(180.0, hardware=True)
+        for _ in range(60):
+            self.feed_invalid("missing")
+            self.assertEqual(self.policy.mode, MODE_DISABLED)
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+    def test_hardware_release_through_unknown_switch_rebuilds_stable_run(self):
+        self.hold(180.0, hardware=True)
+        self.hold(175.0, hardware=None)
+        self.assertEqual(self.policy.mode, MODE_DISABLED)
+        self.assertEqual(self.step(175.0), MODE_DISABLED)
+        self.assertFalse(self.policy.stable)
+        self.hold(175.0)
+        self.assertEqual(self.policy.mode, MODE_STAND)
+
+    def test_hardware_reentry_cancels_unconfirmed_release(self):
+        self.hold(180.0, hardware=True)
+        self.step(175.0)
+        self.assertEqual(self.step(175.0, hardware=True), MODE_HARDWARE)
+        self.assertEqual(self.step(0.0), MODE_DISABLED)
+        self.hold(0.0)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+
     def test_old_notification_cannot_confirm(self):
         self.hold(80.0)
         stale_epoch = self.policy.epoch
@@ -430,11 +498,11 @@ class PostureClassificationTests(PolicyTestCase):
         self.hold(180.0, hardware=True)
         self.assertEqual(self.policy.mode, MODE_HARDWARE)
 
-        # The switch can turn off before the hinge reaches the tent zone.  A
-        # transient L must not turn the rest of the fold into a laptop-origin
+        # The switch can turn off before the hinge reaches the tent zone.  An
+        # unconfirmed transition must not turn the fold into a laptop-origin
         # tent transition that prompts again.
         self.step(30.0, hardware=False)
-        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.assertEqual(self.policy.mode, MODE_DISABLED)
         modes = [self.step(80.0) for _ in range(30)]
 
         self.assertEqual(self.policy.mode, MODE_TENT)
@@ -474,7 +542,7 @@ class PostureClassificationTests(PolicyTestCase):
         self.assertEqual(self.policy.mode, MODE_HARDWARE)
         self.now += 0.1
         self.policy.update(self.now, sample(0.0, stamp=self.now), False)
-        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.assertEqual(self.policy.mode, MODE_DISABLED)
         self.assertFalse(self.policy.stable)
         self.hold(175.0)
         self.assertEqual(self.policy.mode, MODE_STAND)

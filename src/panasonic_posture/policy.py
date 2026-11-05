@@ -204,6 +204,7 @@ class _SourceState:
 
     origin: _Origin = _Origin.UNKNOWN
     startup_pending: bool = True
+    hardware_release_pending: bool = False
     tent_exit_at: float | None = None
 
 
@@ -407,6 +408,8 @@ class Policy:
             self._clear_run()
             self._source.origin = _Origin.NON_LAPTOP
             self._source.startup_pending = False
+            self._source.hardware_release_pending = True
+            self._set_mode(MODE_DISABLED)
         elif previous_hardware is not True and hardware is True:
             # Entering hardware tablet mode: the switch takes over.
             self._clear_run()
@@ -431,6 +434,7 @@ class Policy:
             self._clear_run()
             self._source.origin = _Origin.NON_LAPTOP
             self._source.startup_pending = False
+            self._source.hardware_release_pending = False
             self._source.tent_exit_at = None
             self._set_mode(MODE_HARDWARE)
             return
@@ -447,7 +451,10 @@ class Policy:
             self._set_mode(MODE_DISABLED)
             return
 
-        if self.mode in (MODE_HARDWARE, MODE_DISABLED):
+        if (
+            self.mode in (MODE_HARDWARE, MODE_DISABLED)
+            and not self._source.hardware_release_pending
+        ):
             self._set_mode(MODE_LAPTOP)
 
         pitch, roll, flat = self._classify()
@@ -469,6 +476,23 @@ class Policy:
         )
         stand = flat is not None and flat >= STAND_MIN_FLAT
         stand_hold = flat is not None and flat >= STAND_HOLD_MIN_FLAT
+
+        if self._source.hardware_release_pending:
+            # The released switch says nothing about the new posture.  Keep
+            # the decision unconfirmed until fresh samples settle, then adopt
+            # that pose directly instead of applying a temporary laptop target
+            # and starting a second entry debounce.
+            if not self.stable or flat is None:
+                return
+            self._source.hardware_release_pending = False
+            if stand:
+                self._set_mode(MODE_STAND)
+            elif tent:
+                self._set_mode(MODE_TENT)
+            else:
+                self._set_mode(MODE_LAPTOP)
+            self._clear_timers()
+            return
 
         if self.stable and self._source.startup_pending:
             # The service has no prior decision to preserve.  Adopt the first

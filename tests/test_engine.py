@@ -1400,6 +1400,44 @@ class PresentationTests(EngineTestCase):
         self.tick(engine)
         self.assertEqual(engine.state.pose.value, "tablet")
 
+    def test_real_hardware_to_stand_handoff_never_publishes_laptop(self) -> None:
+        from panasonic_posture.controller import Controller
+        from panasonic_posture.presentation import PosePresentation
+
+        self.controller = Controller()
+        self.presentation = PosePresentation()
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        engine = self.make()
+        self.hardware = True
+        self.sensor._reading = SensorReading(
+            (0.0, 0.0, 9.81), self.boot.value, SensorSource.IIO
+        )
+        self.tick(engine)
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(engine.state.applied, HARDWARE)
+
+        self.hardware = False
+        for _ in range(20):
+            self.boot.value += 0.1
+            self.mono.value += 0.1
+            self.sensor._reading = SensorReading(
+                (0.0, -0.85, 9.77), self.boot.value, SensorSource.IIO
+            )
+            self.tick(engine)
+            self.assertIs(engine.state.hardware, False)
+            self.assertIn(engine.state.target.mode, ("unavailable", "stand"))
+            self.assertIn(engine.state.pose, (Pose.TABLET, Pose.STAND))
+            if engine.state.target == STAND:
+                self.lease(engine)
+                self.tick(engine)
+            else:
+                self.assertIsNone(engine.state.applied)
+
+        self.assertEqual(engine.state.pose, Pose.STAND)
+        self.assertEqual(engine.state.applied, STAND)
+        self.assertTrue(self.actuator.running)
+
     def test_stale_sensor_clears_presentation_stamp(self) -> None:
         engine = self.make()
         self.controller.policy.mode = "T"
