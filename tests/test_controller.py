@@ -175,6 +175,29 @@ class ManualModeTests(ControllerTestCase):
 
 
 class AutomaticModeTests(ControllerTestCase):
+    def test_tent_reentry_after_laptop_keeps_input_enabled_until_confirmed(self):
+        self.hold(80.0)
+        old_epoch = self.controller.pending_notification
+        self.assertTrue(self.controller.confirm_tent(old_epoch))
+        self.step(80.0)
+        self.assertEqual(self.controller.target.mode, "tent")
+        self.hold(0.0, seconds=1.2)
+        self.assertEqual(self.controller.target.mode, "laptop")
+        generation = self.controller.generation
+        for _ in range(30):
+            _, target = self.step(80.0)
+            self.assertEqual(target.mode, "laptop")
+            self.assertFalse(target.disable_internal_input)
+            self.assertEqual(self.controller.generation, generation)
+        self.assertEqual(self.controller.pending_prompt, "tent")
+        self.assertNotEqual(self.controller.pending_notification, old_epoch)
+        self.assertFalse(self.controller.confirm_tent(old_epoch))
+        self.assertTrue(self.controller.confirm_tent(self.controller.pending_notification))
+        self.step(80.0)
+        self.assertEqual(self.controller.target.mode, "tent")
+        self.assertTrue(self.controller.target.disable_internal_input)
+        self.assertIsNone(self.controller.applied)
+
     def test_tent_prompt_is_not_a_target_until_confirmed(self):
         self.hold(80.0)
         self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)

@@ -544,7 +544,6 @@ class PostureClassificationTests(PolicyTestCase):
         self.assertEqual(self.policy.mode, MODE_TENT)
         self.hold(0.0)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
-        self.hold(0.0, seconds=5.2)
         self.hold(80.0)
         self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
 
@@ -734,13 +733,39 @@ class TentReentryTests(PolicyTestCase):
         self.hold(0.0, seconds=1.2)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
 
-    def test_recent_reentry_restores_tent_without_prompt(self):
+    def test_recent_reentry_after_laptop_requires_new_confirmation(self):
         self.confirm_tent()
+        old_epoch = self.policy.epoch
         self.leave_tent()
+        modes = [self.step(80.0) for _ in range(30)]
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+        self.assertNotIn(MODE_TENT, modes)
+        self.assertNotEqual(self.policy.pending_notification, old_epoch)
+        self.assertFalse(self.policy.confirm(old_epoch))
+        self.assertTrue(self.policy.confirm(self.policy.epoch))
+
+    def test_intermediate_exit_still_allows_direct_reentry(self):
+        self.confirm_tent()
+        self.hold(-80.0, seconds=1.2)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
         modes = [self.step(80.0) for _ in range(30)]
         self.assertEqual(self.policy.mode, MODE_TENT)
         self.assertNotIn(MODE_TENT_PROMPT, modes)
         self.assertIsNone(self.policy.pending_notification)
+
+    def test_laptop_after_intermediate_exit_closes_reentry_window(self):
+        self.confirm_tent()
+        self.hold(-80.0, seconds=1.2)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.leave_tent()
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+
+    def test_disabled_prompt_still_allows_reentry_after_laptop(self):
+        self.confirm_tent()
+        self.leave_tent()
+        self.hold(80.0, tent_prompt=False)
+        self.assertEqual(self.policy.mode, MODE_TENT)
 
     def test_reentry_after_grace_requires_confirmation(self):
         self.confirm_tent()

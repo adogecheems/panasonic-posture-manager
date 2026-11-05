@@ -108,7 +108,8 @@ class PolicyConfig:
     stand_leave_seconds: float = 2.0
     # A confirmed tent mode may be restored without another prompt when the
     # device briefly leaves and re-enters the tent zone (for example while the
-    # user adjusts the hinge).  A stale exit never skips confirmation.
+    # user adjusts the hinge).  A settled laptop pose cancels this grace;
+    # a stale exit never skips confirmation either.
     tent_reentry_seconds: float = 5.0
     # The IIO/sysfs hand-off on this sensor hub can take more than two
     # seconds.  Releasing a software takeover on the first short gap makes the
@@ -469,6 +470,7 @@ class Policy:
         pitch, roll, flat = self._classify()
         if self.stable and flat is not None and flat < LAPTOP_MAX_FLAT:
             self._source.origin = _Origin.LAPTOP
+            self._source.tent_exit_at = None
         if not tent_enabled and self.mode in (MODE_TENT, MODE_TENT_PROMPT):
             # The preference is an explicit off switch, not another debounce:
             # leave the software takeover on this update even while the sensor
@@ -559,8 +561,8 @@ class Policy:
         elif tent and self.mode not in (MODE_TENT, MODE_TENT_PROMPT):
             # Leaving a non-laptop posture for a stable tent posture is an
             # explicit posture change, so it does not need the laptop-mode
-            # confirmation prompt.  Re-entering shortly after a confirmed tent
-            # mode is likewise a debounce and restores T directly.
+            # confirmation prompt.  A recent tent exit may only skip the
+            # prompt while no settled laptop pose has superseded that source.
             if (
                 not tent_prompt
                 or self._source.origin is _Origin.NON_LAPTOP
@@ -626,9 +628,12 @@ class Policy:
 
     def _set_mode(self, mode: str, now: float | None = None) -> None:
         if self.mode == MODE_TENT and mode in (MODE_LAPTOP, MODE_STAND):
-            # Only a posture-driven exit from confirmed tent mode opens the
-            # re-entry window.  Hardware/D/reset transitions clear it instead.
-            self._source.tent_exit_at = now
+            # A settled laptop origin must not reopen the grace that its
+            # sample just cleared.  Other posture exits keep the window;
+            # hardware/D/reset transitions clear it instead.
+            self._source.tent_exit_at = (
+                now if self._source.origin is not _Origin.LAPTOP else None
+            )
         elif mode == MODE_TENT:
             self._source.tent_exit_at = None
         if mode in (MODE_TENT, MODE_STAND):
