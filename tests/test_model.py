@@ -109,6 +109,7 @@ class StateSnapshotTests(unittest.TestCase):
             support_tier="validated",
             tent_enabled=False,
             stand_prompt=True,
+            posture_pending=True,
             sensor_calibrated=True,
             pending_notification=8,
             pending_prompt="stand",
@@ -122,10 +123,16 @@ class StateSnapshotTests(unittest.TestCase):
         self.assertEqual(parsed.support_tier, "validated")
         self.assertFalse(parsed.tent_enabled)
         self.assertTrue(parsed.stand_prompt)
+        self.assertTrue(parsed.posture_pending)
         self.assertTrue(parsed.sensor_calibrated)
         self.assertEqual(parsed.pending_notification, 8)
         self.assertEqual(parsed.pending_prompt, "stand")
         self.assertIsNone(parsed.applied)
+
+    def test_legacy_state_defaults_to_no_posture_wait(self):
+        state = StateSnapshot().to_dict()
+        state.pop("posture_pending")
+        self.assertFalse(parse_state_snapshot(json.dumps(state)).posture_pending)
 
     def test_version_mismatch_rejected(self):
         with self.assertRaises(ValueError):
@@ -147,6 +154,7 @@ class StateSnapshotTests(unittest.TestCase):
             ("generation", -1),
             ("hardware", 1),
             ("tent_enabled", 1),
+            ("posture_pending", 1),
             ("tent_prompt", 1),
             ("session_connected", "false"),
             ("pending_notification", True),

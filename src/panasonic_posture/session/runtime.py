@@ -49,6 +49,7 @@ _ECHO_ERROR_CODES = frozenset(
 #: Delay before retrying after a transient transport failure (the hard grace
 #: before the display is restored is ``contracts.AGENT_FAILURE_GRACE_SECONDS``).
 TRANSIENT_RETRY_SECONDS = 0.5
+HARDWARE_SETTLE_SECONDS = 2.0
 
 
 @dataclass
@@ -115,6 +116,8 @@ class SessionRuntime:
         # per-generation readiness and even a failed or superseded apply.
         self._display_needs_restore = True
         self._restore_retry_at = 0.0
+        self._hold_key: tuple[str, int] | None = None
+        self._hold_until = 0.0
 
         # lease/authorization failure mode
         self.failure_active = False
@@ -209,7 +212,7 @@ class SessionRuntime:
             task = self._tasks[0]
             if not task.future.done():
                 return
-            if task.kind in ("apply", "restore") and self._lease_task is not None:
+            if task.kind in ("apply", "hold", "restore") and self._lease_task is not None:
                 # A not-ready heartbeat must finish before a ready report, or
                 # its late arrival would revoke the just-confirmed transaction.
                 return
@@ -231,6 +234,9 @@ class SessionRuntime:
             self._handle_state(result, now)
         elif task.kind == "probe":
             self._probe_succeeded(result, now)
+        elif task.kind == "hold":
+            if not self.failure_active:
+                self._submit("state", self.client.get_state)
         elif task.kind == "apply":
             if self.failure_active:
                 return  # finish the queued restore, never verify rejected work
@@ -277,12 +283,15 @@ class SessionRuntime:
             self._handle_service_failure(now, error)
         elif task.kind == "probe":
             self._enter_failure(now, error)
-        elif task.kind == "apply":
+        elif task.kind in ("apply", "hold"):
+            self._hold_until = 0.0
             state, generation, daemon_error = task.context
             if isinstance(error, DisplayError):
                 self._fail_display(error.code, error.detail, now)
             else:
                 self._fail_display(ErrorCode.INTERNAL, describe_error(error), now)
+            if task.kind == "hold":
+                self._restore_display_async(now)
             self._queue_feedback(state, generation, now, daemon_error)
         elif task.kind == "restore":
             self._restore_retry_at = now + contracts.DISPLAY_RETRY_BASE_SECONDS
@@ -294,7 +303,7 @@ class SessionRuntime:
         if self.failure_active or self._lease_task is not None:
             return
         task = self._tasks[0]
-        if task.kind not in ("apply", "restore") or task.future.done():
+        if task.kind not in ("apply", "hold", "restore") or task.future.done():
             self._lease_wait_since = None
             return
         if self._lease_wait_since is None:
@@ -356,6 +365,7 @@ class SessionRuntime:
     def _enter_failure(self, now: float, error: BaseException) -> None:
         """Stop display transactions after an authorization/lease failure."""
         self._reset_transient()
+        self._hold_until = 0.0
         if not self.failure_active:
             self.failure_active = True
             message = describe_error(error)
@@ -431,6 +441,7 @@ class SessionRuntime:
 
         daemon_error = self._daemon_error(state)
         if daemon_error:
+            self._hold_until = 0.0
             # A failed privileged backend must not keep a rotated display: undo
             # our transaction and wait until the backend recovers.
             self._restore_display_async(now)
@@ -472,6 +483,24 @@ class SessionRuntime:
             return True
         if not (self.apply_now or (self.retry_display and now >= self.retry_at)):
             return True
+        key = (state.instance, generation)
+        waiting = (
+            state.posture_pending and state.hardware is False
+            and state.target.mode == "unavailable" and state.session_connected
+            and not state.sensor_error and not state.error_code and state.supported
+        )
+        if waiting:
+            if self._hold_key != key:
+                self._hold_key = key
+                self._hold_until = now + HARDWARE_SETTLE_SECONDS
+                self._display_needs_restore = True
+                self._submit("hold", self.display.hold_orientation,
+                             context=(state, generation, ""))
+                return False
+            if now < self._hold_until:
+                return True  # heartbeat remains not-ready during the hold
+        else:
+            self._hold_until = 0.0
         self._display_needs_restore = True
         self._submit(
             "apply",

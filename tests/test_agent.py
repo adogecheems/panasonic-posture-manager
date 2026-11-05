@@ -996,5 +996,86 @@ class SlowDisplayLeaseTests(unittest.TestCase):
         self.assertFalse(runtime.ready)
 
 
+class HardwareHandoffTests(unittest.TestCase):
+    def waiting(self):
+        state = make_state(target=Target(mode="unavailable"))
+        state.hardware = False
+        state.posture_pending = True
+        return state
+
+    def test_wait_holds_without_ack_then_applies_stable_target(self):
+        h = Harness(self.waiting())
+        h.display.hold_orientation = mock.Mock()
+        h.tick(0.0)
+        h.tick(0.5)
+        h.display.hold_orientation.assert_called_once()
+        self.assertEqual(h.display.applied, [])
+        self.assertFalse(h.client.updates[-1][1])
+        h.set_state(make_state(generation=2))
+        h.tick(0.8)
+        self.assertEqual([t.mode for t in h.display.applied], ["tent"])
+        self.assertTrue(h.client.updates[-1][1])
+
+    def test_wait_expires_without_rearming_same_generation(self):
+        h = Harness(self.waiting())
+        h.display.hold_orientation = mock.Mock()
+        for now in (0.0, 1.0, 2.1, 3.0):
+            h.tick(now)
+        h.display.hold_orientation.assert_called_once()
+        self.assertEqual([t.mode for t in h.display.applied], ["unavailable"])
+
+    def test_lost_sensor_or_hardware_cancels_wait_in_same_generation(self):
+        for field, value in (("posture_pending", False), ("sensor_error", "lost"),
+                             ("hardware", None), ("session_connected", False)):
+            with self.subTest(field=field):
+                h = Harness(self.waiting())
+                h.display.hold_orientation = mock.Mock()
+                h.tick(0.0)
+                setattr(h.client.state, field, value)
+                h.tick(0.1)
+                self.assertEqual([t.mode for t in h.display.applied], ["unavailable"])
+
+    def test_failed_hold_restores_instead_of_reporting_ready(self):
+        h = Harness(self.waiting())
+        h.display.hold_orientation = mock.Mock(side_effect=DisplayError(
+            ErrorCode.DISPLAY_LOCK, "lock failed"))
+        h.tick(0.0)
+        self.assertFalse(h.client.updates[-1][1])
+        h.tick(1.0)
+        self.assertGreater(h.display.restores, 0)
+
+    def test_shutdown_and_rejected_lease_restore_during_hold(self):
+        for reject in (False, True):
+            with self.subTest(reject=reject):
+                h = Harness(self.waiting())
+                h.display.hold_orientation = mock.Mock()
+                h.tick(0.0)
+                if reject:
+                    h.client.update_error = service_error(ErrorCode.ACCESS_DENIED, "inactive")
+                    h.tick(0.7)
+                    self.assertTrue(h.agent.runtime.failure_active)
+                else:
+                    h.agent.runtime.close()
+                self.assertGreater(h.display.restores, 0)
+                self.assertFalse(h.agent.ready)
+
+    def test_slow_hold_reads_new_target_before_any_ready_report(self):
+        executor = DeferredExecutor()
+        h = Harness(self.waiting(), executor=executor)
+        h.display.hold_orientation = mock.Mock()
+        h.tick(0.0)
+        executor.run_next()  # GetState
+        h.tick(0.1)  # hold queued
+        h.set_state(make_state(generation=2, instance="new-daemon"))
+        for _ in range(10):
+            if not executor.calls:
+                break
+            executor.run_next()
+            h.agent.runtime.drain_completed_tasks(0.8)
+        self.assertEqual([t.mode for t in h.display.applied], ["tent"])
+        self.assertTrue(h.client.updates[-1][1])
+        self.assertTrue(all(not ready for gen, ready, _, _ in h.client.updates if gen == 1))
+
+
 if __name__ == "__main__":
     unittest.main()

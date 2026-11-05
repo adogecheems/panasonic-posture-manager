@@ -233,6 +233,21 @@ class SoftwareTransitionTests(PolicyTestCase):
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
 
 
+class HardwarePostureWaitTests(PolicyTestCase):
+    def test_wait_only_covers_fresh_hardware_exit(self):
+        self.assertFalse(self.policy.posture_pending)
+        self.step(175.0, hardware=True)
+        self.assertFalse(self.policy.posture_pending)
+        self.step(80.0, hardware=False)
+        self.assertTrue(self.policy.posture_pending)
+        self.feed_invalid("missing", dt=self.config.stale_seconds + 0.1)
+        self.assertFalse(self.policy.posture_pending)
+        self.hold(80.0)
+        self.assertFalse(self.policy.posture_pending)
+        self.step(80.0, hardware=None)
+        self.assertFalse(self.policy.posture_pending)
+
+
 class InitialStateTests(PolicyTestCase):
     def setUp(self):
         self.reset_policy()

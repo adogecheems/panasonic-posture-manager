@@ -34,6 +34,9 @@ export function parseState(text) {
         throw new Error('state document has no generation');
     if (state.target === null || typeof state.target !== 'object')
         throw new Error('state document has no target');
+    if (state.posture_pending !== undefined && typeof state.posture_pending !== 'boolean')
+        throw new Error('posture_pending must be a boolean');
+    state.posture_pending ??= false;
     return state;
 }
 

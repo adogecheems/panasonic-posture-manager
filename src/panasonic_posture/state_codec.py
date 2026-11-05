@@ -84,6 +84,7 @@ def parse_state_snapshot(text: str) -> StateSnapshot:
         support_tier=support_tier,
         sensor_source=SensorSource(data.get("sensor_source", "starting")),
         sensor_error=optional_string("sensor_error"),
+        posture_pending=boolean("posture_pending", False),
         sensor_calibrated=boolean("sensor_calibrated", False),
         profile=string("profile", "generic"),
         model=string("model", ""),

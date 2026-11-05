@@ -217,6 +217,23 @@ class PlasmaTransactionTests(unittest.TestCase):
     def display(self, command, **environ):
         return PlasmaDisplay(command, self.journal, lambda text: text, sleep=lambda _s: None, environ=environ)
 
+    def test_hardware_hold_and_crash_recovery_keep_native_direction(self):
+        command = FakePlasmaCommand(transform=0, policy="always")
+        display = self.display(command)
+        display.apply(Target(mode="tent"))
+        command.calls.clear()
+        display.apply(Target(mode="hardware"))
+        self.assertEqual(command.transform, 2)
+        self.assertFalse(any(c[0] == "rotation" for c in command.calls))
+        command.transform = 1
+        display.hold_orientation()
+        self.assertEqual(command.transform, 1)
+        self.assertEqual(command.policy, "never")
+        self.display(command)  # restart recovers the outstanding lock journal
+        self.assertEqual(command.transform, 1)
+        self.assertEqual(command.policy, "always")
+        self.assertIsNone(self.journal.load())
+
     def test_recovery_restores_preexisting_external_output_journal(self):
         class ExternalOnly(FakePlasmaCommand):
             def query(self):
@@ -265,7 +282,7 @@ class PlasmaTransactionTests(unittest.TestCase):
         self.assertEqual(command.transform, 0)
         self.assertEqual(command.policy, "never")
         display.apply(Target(mode="hardware"))
-        self.assertEqual(command.transform, 2)
+        self.assertEqual(command.transform, 0)
         self.assertEqual(command.policy, "in-tablet-mode")
         self.assertIsNotNone(self.journal.load())
         display.apply(Target(mode="unavailable"))
@@ -281,7 +298,7 @@ class PlasmaTransactionTests(unittest.TestCase):
         self.assertIsNotNone(document)
         self.assertEqual(document["written_transform"], 0)
         display.apply(Target(mode="hardware"))
-        self.assertEqual(command.transform, 1)
+        self.assertEqual(command.transform, 0)
         self.assertEqual(command.policy, "in-tablet-mode")
         self.assertIsNotNone(self.journal.load())
         display.apply(Target(mode="unavailable"))
@@ -295,7 +312,7 @@ class PlasmaTransactionTests(unittest.TestCase):
         self.assertEqual(command.transform, 0)
         self.assertEqual(command.policy, "never")
         display.apply(Target(mode="hardware"))
-        self.assertEqual(command.transform, 2)
+        self.assertEqual(command.transform, 0)
         self.assertEqual(command.policy, "in-tablet-mode")
         self.assertIsNotNone(self.journal.load())
         display.apply(Target(mode="unavailable"))

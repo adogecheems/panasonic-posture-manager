@@ -339,6 +339,25 @@ class EngineTestCase(unittest.TestCase):
 
 
 class StateSnapshotTests(EngineTestCase):
+    def test_posture_wait_is_not_published_without_healthy_service_evidence(self):
+        engine = self.make()
+        self.controller.policy.posture_pending = True
+        self.sensor._reading = SensorReading((0.0, 0.0, -9.81), self.boot.value, SensorSource.SYSFS)
+        self.lease(engine)
+        self.tick(engine)
+        self.assertTrue(engine.state.posture_pending)
+        self.sensor.sensor_error = "lost sensor"
+        self.tick(engine)
+        self.assertFalse(engine.state.posture_pending)
+        self.sensor.sensor_error = None
+        self.controller.error_code = ErrorCode.RELAY_INPUT
+        self.tick(engine)
+        self.assertFalse(engine.state.posture_pending)
+        self.controller.error_code = None
+        self.mono.value += 10.0
+        self.tick(engine)
+        self.assertFalse(engine.state.posture_pending)
+
     def test_initial_state_uses_schema_version_two(self) -> None:
         engine = self.make()
         state = engine.state.to_dict()
@@ -1452,9 +1471,11 @@ class PresentationTests(EngineTestCase):
             self.assertIn(engine.state.target.mode, ("unavailable", "stand"))
             self.assertIn(engine.state.pose, (Pose.TABLET, Pose.STAND))
             if engine.state.target == STAND:
+                self.assertFalse(engine.state.posture_pending)
                 self.lease(engine)
                 self.tick(engine)
             else:
+                self.assertTrue(engine.state.posture_pending)
                 self.assertIsNone(engine.state.applied)
 
         self.assertEqual(engine.state.pose, Pose.STAND)

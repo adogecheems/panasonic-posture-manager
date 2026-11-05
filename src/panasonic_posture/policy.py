@@ -251,6 +251,15 @@ class Policy:
     # -- public state --------------------------------------------------------
 
     @property
+    def posture_pending(self) -> bool:
+        """A healthy hardware exit is waiting for a settled posture."""
+        return (
+            self.hardware is False and self.fresh
+            and self.mode == MODE_DISABLED
+            and self._source.hardware_release_pending
+        )
+
+    @property
     def pending_notification(self) -> int | None:
         """Epoch of the tent or stand confirmation prompt, or ``None``.
 

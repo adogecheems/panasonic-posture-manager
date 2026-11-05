@@ -149,7 +149,7 @@ def exercise_platform_boundaries():
     session.tick(now)
     engine.tick()
     assert not actuator.running and engine.state.applied.mode == "hardware"
-    assert display.current.transform == 0 and display.current.lock is False
+    assert display.current.transform == 2 and display.current.lock is False
 
     now += 4
     engine.tick()

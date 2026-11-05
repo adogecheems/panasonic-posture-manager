@@ -244,6 +244,34 @@ class PurePlanTests(unittest.TestCase):
 
 
 class ApplyTransactionTests(unittest.TestCase):
+    def test_hardware_hold_and_restore_never_rewind_native_rotation(self):
+        h = Harness(transform=0, locked=False)
+        h.display.apply(Target(mode="tent"))
+        h.timeline.clear()
+        h.display.apply(Target(mode="hardware"))
+        self.assertEqual(h.mutter.transform, 2)
+        self.assertNotIn("ApplyMonitorsConfig", h.timeline)
+        self.assertIsNone(h.journal.document["written_transform"])
+        h.mutter.transform = 1
+        h.display.hold_orientation()
+        self.assertEqual(h.mutter.transform, 1)
+        self.assertTrue(h.settings.value)
+        self.assertNotIn("ApplyMonitorsConfig", h.timeline)
+        h.display.restore()
+        self.assertEqual(h.mutter.transform, 1)
+        self.assertFalse(h.settings.value)
+        self.assertIsNone(h.journal.document)
+
+    def test_hardware_hold_then_tent_rotates_only_to_final_direction(self):
+        h = Harness(transform=0, locked=False)
+        h.display.apply(Target(mode="hardware"))
+        h.mutter.transform = 1
+        h.display.hold_orientation()
+        h.timeline.clear()
+        h.display.apply(Target(mode="tent"))
+        self.assertEqual(h.mutter.transform, 2)
+        self.assertEqual(h.timeline.count("ApplyMonitorsConfig"), 1)
+
     def test_tent_locks_then_rotates_and_journals_intent(self):
         harness = Harness(transform=0, locked=False)
         harness.display.apply(Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True))
@@ -311,32 +339,32 @@ class ApplyTransactionTests(unittest.TestCase):
         self.assertTrue(harness.settings.value)
         self.assertIsNotNone(harness.journal.document)
         harness.display.apply(Target(mode="hardware"))
-        self.assertEqual(harness.mutter.transform, 2)
+        self.assertEqual(harness.mutter.transform, 0)
         self.assertFalse(harness.settings.value)
         self.assertIsNotNone(harness.journal.document)
         harness.display.apply(Target(mode="unavailable"))
         self.assertTrue(harness.settings.value)
         self.assertIsNone(harness.journal.document)
 
-    def test_tent_to_laptop_to_hardware_restores_original_state(self):
+    def test_tent_to_laptop_to_hardware_keeps_current_direction(self):
         harness = Harness(transform=2, locked=False)
         harness.display.apply(Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True))
         harness.display.apply(Target(mode="laptop", tablet=False, rotation=0, disable_internal_input=False))
         self.assertEqual(harness.mutter.transform, 0)
         self.assertTrue(harness.settings.value)
         harness.display.apply(Target(mode="hardware"))
-        self.assertEqual(harness.mutter.transform, 2)
+        self.assertEqual(harness.mutter.transform, 0)
         self.assertFalse(harness.settings.value)
         self.assertIsNotNone(harness.journal.document)
         harness.display.apply(Target(mode="unavailable"))
         self.assertIsNone(harness.journal.document)
 
-    def test_hardware_mode_restores_display(self):
+    def test_hardware_mode_keeps_direction_and_releases_lock(self):
         harness = Harness(transform=0, locked=False)
         harness.display.apply(Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True))
         self.assertIsNotNone(harness.display.owned)
         harness.display.apply(Target(mode="hardware"))
-        self.assertEqual(harness.mutter.transform, 0)
+        self.assertEqual(harness.mutter.transform, 2)
         self.assertFalse(harness.settings.value)
         self.assertIsNotNone(harness.display.owned)
         self.assertIsNotNone(harness.journal.document)

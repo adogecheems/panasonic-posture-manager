@@ -902,6 +902,12 @@ class Engine:
             sensor_source=sensor_info.backend or "starting",
             sensor_info=sensor_info,
             sensor_error=sensor_info.error,
+            posture_pending=bool(
+                self.supported and lease and not error_code
+                and sensor_info.ready and not sensor_info.error
+                and target.mode == "unavailable"
+                and getattr(self._controller.policy, "posture_pending", False)
+            ),
             sensor_calibrated=self._sensor_calibration is not None,
             profile=self._device.id,
             model=self._device.product,

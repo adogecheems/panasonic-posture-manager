@@ -157,20 +157,41 @@ class SoftwareDisplay:
     def _apply_hardware(self) -> None:
         """Release the panel to native hardware tablet mode.
 
-        The physical switch means the platform should own rotation.  Restore
-        the pre-takeover transform, but override a locked orientation policy
-        with the unlocked equivalent so automatic rotation keeps working in
-        tablet mode.  The journal stays in place so leaving hardware mode can
-        restore the user's original lock policy.
+        Keep the current direction while the desktop takes over rotation.
+        Only lock ownership remains, so recovery cannot undo a native rotation
+        merely because it happens to match our previous software direction.
         """
-
         state = self._read_transaction_state()
         if not self.owned:
             self.owned = self._journal_document(state)
             self._persist()
-        # Only a controllable orientation policy needs a deferred journal:
-        # leaving hardware mode must restore the user's original lock.
-        self.restore(release_lock=True, keep_journal=state.lock_supported)
+        try:
+            # Relinquish rotation before unlocking: a crash after the desktop
+            # takes over must not restore a coincidentally matching direction.
+            self.owned["written_transform"] = None
+            self._persist()
+            if state.lock_supported:
+                self._write_owned_lock(state, False)
+            if not state.lock_supported:
+                self.journal.clear()
+                self.owned = None
+        except (DisplayError, OSError, ValueError):
+            self._rollback()
+            raise
+
+    def hold_orientation(self) -> None:
+        """Temporarily lock the current direction without writing a rotation."""
+        state = self._read_transaction_state()
+        if not state.lock_supported:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, "orientation-lock-unavailable")
+        if not self.owned:
+            self.owned = self._journal_document(state)
+            self._persist()
+        try:
+            self._write_owned_lock(state, True)
+        except (DisplayError, OSError, ValueError):
+            self._rollback()
+            raise
 
     def restore(
         self,
@@ -181,8 +202,8 @@ class SoftwareDisplay:
     ) -> None:
         """Undo journaled changes and keep the journal if recovery fails.
 
-        ``release_lock`` is used by hardware tablet mode: instead of restoring
-        the captured lock policy, actively unlock automatic rotation.
+        ``release_lock`` actively unlocks automatic rotation instead of
+        restoring the captured policy (retained for existing callers).
         ``keep_journal`` leaves the original state available for the eventual
         hardware-to-software transition or session shutdown.
         """

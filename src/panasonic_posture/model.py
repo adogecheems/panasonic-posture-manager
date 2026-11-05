@@ -174,6 +174,7 @@ class StateSnapshot:
     sensor_source: str = "starting"
     sensor_error: str | None = None
     sensor_info: SensorInfo = field(default_factory=SensorInfo)
+    posture_pending: bool = False
     sensor_calibrated: bool = False
     profile: str = "generic"
     model: str = ""
@@ -203,6 +204,7 @@ class StateSnapshot:
             "support_tier": self.support_tier,
             "sensor_source": str(self.sensor_source),
             "sensor_error": self.sensor_error,
+            "posture_pending": self.posture_pending,
             "sensor_calibrated": self.sensor_calibrated,
             "profile": self.profile,
             "model": self.model,

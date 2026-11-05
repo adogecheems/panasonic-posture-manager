@@ -375,7 +375,12 @@ const sample = {json.dumps(sample)};
 
 check(STATE_VERSION === {protocol.STATE_VERSION}, 'STATE_VERSION');
 check(parseState(sample).generation === 1, 'parse a v2 snapshot');
-for (const bad of ['[]', '{{"version":1}}', '{{"version":2}}',
+const legacy = JSON.parse(sample);
+delete legacy.posture_pending;
+check(parseState(JSON.stringify(legacy)).posture_pending === false, 'legacy posture wait');
+legacy.posture_pending = true;
+check(parseState(JSON.stringify(legacy)).posture_pending === true, 'posture wait');
+for (const bad of [JSON.stringify({{...legacy, posture_pending: 'true'}}), '[]', '{{"version":1}}', '{{"version":2}}',
                    '{{"version":2,"generation":"x","target":{{}}}}',
                    '{{"version":2,"generation":1,"target":5}}']) {{
     let accepted = false;
