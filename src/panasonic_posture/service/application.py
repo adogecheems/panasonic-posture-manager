@@ -19,7 +19,7 @@ from typing import Any, Callable
 from ..controller import Controller
 from ..hardware.profile import load_profile
 from ..hardware.sysfs import SwitchReader
-from ..model import StateSnapshot
+from ..model import StateSnapshot, DeviceInfo
 from ..presentation import PosePresentation
 from .access import AccessControl
 from .actuator import Actuator
@@ -93,10 +93,17 @@ class ServiceApplication:
             controller=resolved_controller,
             sensor=resolved_sensor,
             actuator=resolved_actuator,
-            access=resolved_access,
             presentation=resolved_presentation,
             settings=resolved_settings,
-            profile=resolved_profile,
+            device=DeviceInfo(
+                id=str(getattr(resolved_profile, "id", "generic") or "generic"),
+                product=str(getattr(resolved_profile, "product", "") or ""),
+                vendor=str(getattr(resolved_profile, "vendor", "") or ""),
+                support_tier=str(
+                    getattr(resolved_profile, "support_tier", "compatible") or "compatible"
+                ),
+                platform="linux",
+            ),
             hardware_query=resolved_switch.read,
             instance=instance,
             development=development,

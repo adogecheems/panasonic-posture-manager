@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Callable, Mapping
 
 from .errors import DisplayError, ErrorCode
-from .journal import Journal
+from .journal import Journal, default_path
 from .transaction import DisplayState, SoftwareDisplay
 
 COMMAND_TIMEOUT_SECONDS = 2.5
@@ -346,7 +346,7 @@ class PlasmaDisplay(SoftwareDisplay):
         self.command = command
         environment = os.environ if environ is None else environ
         self._forced_output = environment.get("PANASONIC_POSTURE_OUTPUT") or None
-        super().__init__(journal, gettext, sleep=sleep)
+        super().__init__(journal if journal is not None else Journal(default_path()), gettext, sleep=sleep)
 
     def _read_state(self) -> DisplayState:
         return self._output_state(self.command.query(), self._forced_output)

@@ -21,7 +21,12 @@ import os
 from pathlib import Path
 from typing import Callable
 
-from ..protocol import LOCALE_DIR, LOCALE_DOMAIN, ErrorCode
+from ..linux_contract import LOCALE_DIR, LOCALE_DOMAIN
+from ..contracts import ErrorCode
+from .failures import (
+    DisplayError as DisplayError, SessionError as SessionError,
+    ServiceError as ServiceError, describe_error as describe_error,
+)
 
 Translator = Callable[[str], str]
 
@@ -116,57 +121,6 @@ def error_text(code: str | None) -> str:
 
     key = code if code in ERROR_MESSAGES else ErrorCode.INTERNAL
     return ERROR_MESSAGES[key]
-
-
-def describe_error(error: BaseException) -> str:
-    """Best-effort message for a ``GLib.Error`` without calling ``str()``.
-
-    PyGObject's ``GLib.Error.__str__`` can itself raise for D-Bus remote
-    errors, so logging must never rely on it.
-    """
-
-    message = getattr(error, "message", None)
-    if isinstance(message, str) and message:
-        return message
-    try:
-        return str(error)
-    except Exception:  # pragma: no cover - defensive
-        return error.__class__.__name__
-
-
-class SessionError(Exception):
-    """Base class for session layer failures with a stable protocol code."""
-
-    def __init__(self, code: str = ErrorCode.INTERNAL, detail: str | None = None):
-        self.code = str(code or ErrorCode.INTERNAL)
-        self.detail = detail or None
-        super().__init__(self.code if not self.detail else f"{self.code}: {self.detail}")
-
-    def __str__(self) -> str:  # pragma: no cover - inherited formatting is fine
-        return super().__str__()
-
-
-class ServiceError(SessionError):
-    """The privileged service rejected a call or was unreachable.
-
-    ``name`` keeps the D-Bus error name (for example
-    ``org.freedesktop.DBus.Error.AccessDenied``) when one was reported, so the
-    agent can distinguish authorization/lease failures from other errors.
-    """
-
-    def __init__(
-        self,
-        code: str = ErrorCode.INTERNAL,
-        detail: str | None = None,
-        *,
-        name: str = "",
-    ):
-        self.name = name or ""
-        super().__init__(code, detail)
-
-
-class DisplayError(SessionError, ValueError):
-    """A display transaction failed; ``code`` is a ``protocol.ErrorCode``."""
 
 
 __all__ = [

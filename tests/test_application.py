@@ -10,7 +10,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 from panasonic_posture.controller import Controller
-from panasonic_posture.model import HardwareStatus, SensorReading
+from panasonic_posture.model import HardwareStatus, SensorReading, SensorInfo
+from panasonic_posture.service.ports import SessionOwner
 from panasonic_posture.service.application import ServiceApplication
 from panasonic_posture.service.hardware_monitor import HardwareMonitor
 from panasonic_posture.service.settings import SettingsStore
@@ -22,6 +23,8 @@ class FakePresentation:
 
 
 class FakeSensor:
+    info = SensorInfo()
+
     def __init__(self) -> None:
         self.started = 0
         self.closed = 0
@@ -117,7 +120,7 @@ class ApplicationTests(unittest.TestCase):
 
     def test_sleep_invalidates_switch_and_resets_engine(self) -> None:
         application = self.make()
-        application.engine.agent_uid = 1000
+        application.engine.session_owner = SessionOwner("linux-uid", "1000")
         application.sleep_event(True)
         self.assertEqual(self.switch.invalidated, 1)
         self.assertTrue(application.engine.suspended)

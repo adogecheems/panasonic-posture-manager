@@ -36,7 +36,7 @@ SOURCE_ROOTS = (Path("src/panasonic_posture/session"), Path("data/ui"))
 SOURCE_SUFFIXES = {".py", ".js"}
 POTFILES = Path("po/POTFILES.in")
 CATALOGS = (Path("po/zh_CN.po"),)
-PROTOCOL = Path("src/panasonic_posture/protocol.py")
+PROTOCOL = Path("src/panasonic_posture/contracts.py")
 PY_ERRORS = Path("src/panasonic_posture/session/errors.py")
 JS_ERRORS = Path("data/ui/errors.js")
 

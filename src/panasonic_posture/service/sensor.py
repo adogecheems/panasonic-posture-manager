@@ -35,7 +35,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from ..model import SensorReading, SensorSource
+from ..model import SensorReading, SensorInfo
+from ..linux_contract import SensorSource
 from ..protocol import IIO_NO_SAMPLE_SECONDS, SENSOR_RETRY_SECONDS
 from .sensor_sources import (
     DEFAULT_ACCEL_NAME,
@@ -144,6 +145,15 @@ class SensorManager:
     def reading(self) -> SensorReading:
         with self._lock:
             return self._reading
+
+    @property
+    def info(self) -> SensorInfo:
+        with self._lock:
+            return SensorInfo(
+                ready=self._reading.valid and self._error is None,
+                backend="" if self._source == SensorSource.STARTING else str(self._source),
+                error=self._error,
+            )
 
     @property
     def source(self) -> SensorSource:

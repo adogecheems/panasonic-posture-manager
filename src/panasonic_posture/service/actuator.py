@@ -29,6 +29,7 @@ from ..protocol import (
     ErrorCode,
 )
 from .ports import ActuatorError as ActuatorError
+from ..model import Target
 
 LOG = logging.getLogger(__name__)
 
@@ -49,6 +50,12 @@ class RelayState:
     hardware: bool
     physical: bool
     error: str | None = None
+
+    def satisfies(self, target: Target) -> bool:
+        # Linux needs both the virtual tablet switch and the input grabs.
+        # Neither a partial report nor a report carrying an error confirms it.
+        return (self.error is None and target.disable_internal_input
+                and target.tablet is True and self.tablet and self.input_disabled)
 
     @classmethod
     def from_message(cls, payload: Mapping[str, Any]) -> RelayState:

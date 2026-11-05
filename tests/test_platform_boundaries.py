@@ -26,6 +26,12 @@ def exercise_platform_boundaries():
         def find_spec(self, name, path=None, target=None):
             if name in {
                 "gi",
+                "panasonic_posture.protocol",
+                "panasonic_posture.linux_contract",
+                "panasonic_posture.state_codec",
+                "panasonic_posture.session.errors",
+                "panasonic_posture.service.callbacks",
+                "panasonic_posture.session.journal",
                 "panasonic_posture.service.actuator",
                 "panasonic_posture.service.access",
                 "panasonic_posture.service.sensor",
@@ -40,12 +46,16 @@ def exercise_platform_boundaries():
         del time.CLOCK_BOOTTIME
 
     from panasonic_posture.controller import Controller
-    from panasonic_posture.model import HardwareStatus, SensorReading, SensorSource, Target
+    from panasonic_posture.model import HardwareStatus, SensorReading, SensorInfo, DeviceInfo, Target
     from panasonic_posture.presentation import PosePresentation
     from panasonic_posture.service.engine import Engine
     from panasonic_posture.session.runtime import SessionRuntime
     from panasonic_posture.session.transaction import DisplayState, SoftwareDisplay
+    from panasonic_posture.mounting import apply_mount
+    from panasonic_posture.service.settings_schema import encode_settings, parse_settings
+    from panasonic_posture.service.ports import Settings
     from panasonic_posture.tasks import InlineExecutor
+    from panasonic_posture.service.ports import SessionOwner
 
     class InputControl:
         running = False
@@ -54,7 +64,7 @@ def exercise_platform_boundaries():
 
         def keep(self, now):
             self.running = True
-            self.state = SimpleNamespace(tablet=True, input_disabled=True, error=None)
+            self.state = SimpleNamespace(satisfies=lambda target: target.disable_internal_input, error=None)
 
         def release(self):
             self.running = False
@@ -91,6 +101,9 @@ def exercise_platform_boundaries():
         def _write_lock(self, state, locked):
             self.current = replace(self.current, lock=locked)
 
+    assert apply_mount((0, 0, -9.81), None) == (0, 0, -9.81)
+    assert parse_settings(encode_settings(Settings())) == Settings()
+
     now = 100.0
     hardware = False
     actuator = InputControl()
@@ -98,13 +111,13 @@ def exercise_platform_boundaries():
         controller=Controller(),
         sensor=SimpleNamespace(
             reading=lambda: SensorReading((0, 0, -9.81), now),
-            source=SensorSource.STARTING,
+            info=SensorInfo(ready=True, backend="test-sensor", device="panel"),
             sensor_error=None,
         ),
         actuator=actuator,
         presentation=PosePresentation(),
         settings=None,
-        profile=None,
+        device=DeviceInfo(platform="test"),
         hardware_query=lambda: (hardware, HardwareStatus.OK),
         monotonic=lambda: now,
         executor=InlineExecutor(),
@@ -113,13 +126,15 @@ def exercise_platform_boundaries():
     session = SessionRuntime(
         SimpleNamespace(
             get_state=lambda: engine.state,
-            session_update=lambda *args: engine.session_update(*args, sender_uid=1),
+            session_update=lambda *args: engine.session_update(*args, owner=SessionOwner("test", "user/session")),
         ),
         display,
         None,
         executor=InlineExecutor(),
     )
 
+    assert engine.state.sensor_info.backend == "test-sensor"
+    assert engine.state.sensor_source == "test-sensor"
     engine.set_mode("tent")
     engine.tick()
     assert engine.state.target.mode == "tent"

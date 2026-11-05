@@ -44,7 +44,9 @@ from ..protocol import (
 from ..tasks import thread_executor
 from .access import AccessDenied
 from .application import ServiceApplication
-from .engine import ServiceError, guard
+from .engine import ServiceError
+from .callbacks import guard
+from .ports import SessionOwner
 from .settings import DEFAULT_SETTINGS_PATH
 
 LOG = logging.getLogger("panasonic_posture.service.daemon")
@@ -326,7 +328,8 @@ class Daemon:
             elif method == "SessionUpdate":
                 generation, ready, error_code, error_detail = arguments
                 self.application.engine.session_update(
-                    int(generation), bool(ready), str(error_code), str(error_detail), uid
+                    int(generation), bool(ready), str(error_code), str(error_detail),
+                    SessionOwner("linux-uid", str(uid))
                 )
             else:
                 raise ServiceError(ErrorCode.INTERNAL, "unknown-method")

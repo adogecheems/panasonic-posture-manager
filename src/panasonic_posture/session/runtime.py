@@ -19,11 +19,11 @@ from concurrent.futures import Executor, Future
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .. import protocol
+from .. import contracts
 from ..model import StateSnapshot
 from ..tasks import thread_executor
-from . import errors
-from .errors import DisplayError, ErrorCode, ServiceError, describe_error
+from . import failures as errors
+from .failures import DisplayError, ErrorCode, FailureKind, ServiceError, describe_error
 from .ports import DisplayBackend, PostureNotifier, SessionClient
 
 log = logging.getLogger(__name__)
@@ -46,25 +46,8 @@ _ECHO_ERROR_CODES = frozenset(
     }
 )
 
-#: D-Bus error names that mean "identity/lease rejected", not a transient
-#: transport failure.  They must stop display transactions immediately (P3).
-AUTH_ERROR_NAMES = frozenset(
-    {
-        "org.freedesktop.DBus.Error.AccessDenied",
-        "org.freedesktop.DBus.Error.AuthFailed",
-        "org.freedesktop.DBus.Error.NotAuthorized",
-    }
-)
-
-#: Error detail markers used by the service for the same class of rejection.
-AUTH_ERROR_DETAIL_MARKERS = (
-    "access-denied",
-    "not-session-adapter",
-    "session-lease-busy",
-)
-
 #: Delay before retrying after a transient transport failure (the hard grace
-#: before the display is restored is ``protocol.AGENT_FAILURE_GRACE_SECONDS``).
+#: before the display is restored is ``contracts.AGENT_FAILURE_GRACE_SECONDS``).
 TRANSIENT_RETRY_SECONDS = 0.5
 
 
@@ -164,7 +147,7 @@ class SessionRuntime:
             self._transient_since is not None
             and now < self._transient_retry_at
             and now - self._transient_since
-            < protocol.AGENT_FAILURE_GRACE_SECONDS
+            < contracts.AGENT_FAILURE_GRACE_SECONDS
         ):
             # A transient transport failure is being retried: keep the display
             # as it is until either the call succeeds or the grace expires.
@@ -302,7 +285,7 @@ class SessionRuntime:
                 self._fail_display(ErrorCode.INTERNAL, describe_error(error), now)
             self._queue_feedback(state, generation, now, daemon_error)
         elif task.kind == "restore":
-            self._restore_retry_at = now + protocol.DISPLAY_RETRY_BASE_SECONDS
+            self._restore_retry_at = now + contracts.DISPLAY_RETRY_BASE_SECONDS
             log.warning("display restore pending: %s", describe_error(error))
 
     # -- lease recovery --------------------------------------------------
@@ -319,7 +302,7 @@ class SessionRuntime:
         last = max(self.last_feedback_at, self._lease_attempt_at)
         if last == float("-inf"):
             last = self._lease_wait_since
-        if now - last < protocol.AGENT_HEARTBEAT_SECONDS:
+        if now - last < contracts.AGENT_HEARTBEAT_SECONDS:
             return
         self._lease_attempt_at = now
         # Display work remains serialized on its own worker. This independent
@@ -389,8 +372,8 @@ class SessionRuntime:
             self._close_notifier()
             self._restore_display_async(now)
         self._failure_retry_delay = min(
-            protocol.DISPLAY_RETRY_MAX_SECONDS,
-            self._failure_retry_delay * 2 or protocol.DISPLAY_RETRY_BASE_SECONDS,
+            contracts.DISPLAY_RETRY_MAX_SECONDS,
+            self._failure_retry_delay * 2 or contracts.DISPLAY_RETRY_BASE_SECONDS,
         )
         self.failure_retry_at = now + self._failure_retry_delay
 
@@ -402,23 +385,8 @@ class SessionRuntime:
 
     @staticmethod
     def _is_lease_rejection(error: BaseException) -> bool:
-        """True when the service rejected our identity/lease (not a timeout).
-
-        ``ACCESS_DENIED`` (and the D-Bus authorization error names) mean the
-        adapter is no longer allowed to act: display transactions stop at once.
-        Everything else (NoReply, timeouts, ServiceUnknown) is a transient
-        transport failure and gets a grace period instead of an immediate
-        display restore (0.2.x behaved the same way).
-        """
-        if isinstance(error, ServiceError):
-            if error.code == ErrorCode.ACCESS_DENIED:
-                return True
-            if error.name in AUTH_ERROR_NAMES:
-                return True
-            detail = error.detail or ""
-            if any(marker in detail for marker in AUTH_ERROR_DETAIL_MARKERS):
-                return True
-        return False
+        """Reject immediately only when the client classified the failure."""
+        return isinstance(error, ServiceError) and error.kind == FailureKind.REJECTED
 
     def _handle_service_failure(self, now: float, error: BaseException) -> None:
         if self._is_lease_rejection(error):
@@ -429,10 +397,10 @@ class SessionRuntime:
             self._transient_since = now
             log.warning(
                 "transient session service failure (grace %ss): %s",
-                protocol.AGENT_FAILURE_GRACE_SECONDS,
+                contracts.AGENT_FAILURE_GRACE_SECONDS,
                 describe_error(error),
             )
-        if now - self._transient_since >= protocol.AGENT_FAILURE_GRACE_SECONDS:
+        if now - self._transient_since >= contracts.AGENT_FAILURE_GRACE_SECONDS:
             self._reset_transient()
             self._enter_failure(now, error)
             return
@@ -522,10 +490,10 @@ class SessionRuntime:
         self.apply_now = False
         self.retry_display = True
         if not self.retry_delay:
-            self.retry_delay = protocol.DISPLAY_RETRY_BASE_SECONDS
+            self.retry_delay = contracts.DISPLAY_RETRY_BASE_SECONDS
         else:
             self.retry_delay = min(
-                protocol.DISPLAY_RETRY_MAX_SECONDS, self.retry_delay * 2
+                contracts.DISPLAY_RETRY_MAX_SECONDS, self.retry_delay * 2
             )
         self.retry_at = now + self.retry_delay
         log.warning(
@@ -549,7 +517,7 @@ class SessionRuntime:
         )
         if (
             feedback == self.last_feedback
-            and now - self.last_feedback_at < protocol.AGENT_HEARTBEAT_SECONDS
+            and now - self.last_feedback_at < contracts.AGENT_HEARTBEAT_SECONDS
         ):
             self._after_feedback(state, now, daemon_error)
             return
@@ -569,7 +537,7 @@ class SessionRuntime:
     # -- screen lock / notification --------------------------------------
 
     def _maybe_check_lock(self, now: float) -> None:
-        if now - self._last_lock_check < protocol.SESSION_CHECK_SECONDS:
+        if now - self._last_lock_check < contracts.SESSION_CHECK_SECONDS:
             return
         self._last_lock_check = now
         if self._screen_locked is None:
@@ -590,7 +558,7 @@ class SessionRuntime:
             return
         pending = state.pending_notification
         prompt = state.pending_prompt
-        if prompt not in protocol.PROMPTS:
+        if prompt not in contracts.PROMPTS:
             # Older daemons only exposed the epoch; their prompt was always
             # the tent prompt.
             prompt = "tent" if pending is not None else None
@@ -662,8 +630,6 @@ class SessionRuntime:
 
 
 __all__ = [
-    "AUTH_ERROR_DETAIL_MARKERS",
-    "AUTH_ERROR_NAMES",
     "NOTIFY_ACTIONS",
     "SessionRuntime",
     "TRANSIENT_RETRY_SECONDS",

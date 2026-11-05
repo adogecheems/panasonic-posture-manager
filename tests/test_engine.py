@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 import unittest
 from concurrent.futures import Executor, Future
 from types import SimpleNamespace
@@ -21,6 +22,8 @@ from panasonic_posture.service.access import AccessDenied
 from panasonic_posture.service.actuator import ActuatorError, RelayState
 from panasonic_posture.service.engine import Engine, ServiceError, guard
 from panasonic_posture.tasks import InlineExecutor
+from panasonic_posture.model import SensorInfo, DeviceInfo
+from panasonic_posture.service.ports import SessionOwner
 from panasonic_posture.service.settings import Settings
 from panasonic_posture.session.runtime import SessionRuntime
 
@@ -158,6 +161,11 @@ class FakeSensor:
         self.started = 0
         self.closed = 0
 
+    @property
+    def info(self):
+        return SensorInfo(ready=self._reading.valid, backend="" if self.source == "starting" else str(self.source),
+                          error=self.sensor_error)
+
     def start(self) -> None:
         self.started += 1
 
@@ -264,16 +272,9 @@ class FakeSettings:
         self.value = settings
 
 
-def validated_profile() -> SimpleNamespace:
-    return SimpleNamespace(
-        support_tier="validated",
-        id="cfqv8",
-        product="CFQV8",
-        vendor="Panasonic Corporation",
-        accel_name="accel_3d",
-        mount_matrix=None,
-        switch_name=None,
-    )
+def validated_profile() -> DeviceInfo:
+    return DeviceInfo(support_tier="validated", id="cfqv8", product="CFQV8",
+                      vendor="Panasonic Corporation", platform="linux")
 
 
 class EngineTestCase(unittest.TestCase):
@@ -304,10 +305,9 @@ class EngineTestCase(unittest.TestCase):
             controller=self.controller,
             sensor=self.sensor,
             actuator=self.actuator,
-            access=self.access,
             presentation=self.presentation,
             settings=self.settings,
-            profile=self.profile,
+            device=self.profile,
             hardware_query=self.query,
             instance="0123456789abcdef",
             development=False,
@@ -333,7 +333,7 @@ class EngineTestCase(unittest.TestCase):
             ready,
             code,
             detail,
-            uid,
+            SessionOwner("linux-uid", str(uid)),
         )
 
 
@@ -397,7 +397,7 @@ class StateSnapshotTests(EngineTestCase):
 
     def test_unsupported_model_is_gated(self) -> None:
         profile = validated_profile()
-        profile.support_tier = "unsupported"
+        profile = replace(profile, support_tier="unsupported")
         self.profile = profile
         engine = self.make()
         self.controller.target = TENT
@@ -418,11 +418,9 @@ class StateSnapshotTests(EngineTestCase):
 
     def test_compatible_support_does_not_depend_on_the_vendor(self) -> None:
         profile = validated_profile()
-        profile.support_tier = "compatible"
-        profile.id = "generic"
-        profile.vendor = "Another Vendor"
-        profile.product = "Convertible-1"
-        engine = self.make(profile=profile)
+        profile = replace(profile, support_tier="compatible", id="generic",
+                          vendor="Another Vendor", product="Convertible-1")
+        engine = self.make(device=profile)
         self.tick(engine)
         self.assertTrue(engine.state.supported)
         self.assertEqual(engine.state.support_tier, "compatible")
@@ -816,7 +814,7 @@ class ActuatorTransactionTests(EngineTestCase):
         engine = self.make()
         self.controller.target = TENT
         # Lease is present but the display prepared an older generation.
-        engine.agent_uid = 1000
+        engine.session_owner = SessionOwner("linux-uid", "1000")
         engine.agent_seen = self.mono.value
         engine.agent_ready = self.controller.generation - 1
         self.actuator.running = True
@@ -886,6 +884,30 @@ class ActuatorTransactionTests(EngineTestCase):
         self.tick(engine, now=103.5)
         self.assertFalse(engine.state.session_connected)
         self.assertIsNone(engine.state.applied)
+
+    def test_opaque_owners_cannot_refresh_or_steal_each_others_lease(self):
+        engine = self.make()
+        owner = SessionOwner("platform-a", "user/session")
+        other = SessionOwner("platform-b", "user/session")
+        generation = self.controller.generation
+        engine.session_update(generation, True, None, None, owner)
+        self.mono.value += 1
+        with self.assertRaises(ServiceError):
+            engine.session_update(generation, True, None, None, other)
+        self.assertEqual(engine.session_owner, owner)
+        self.assertEqual(engine.agent_seen, 100)
+        self.assertFalse(engine.session_update(generation - 1, True, None, None, owner))
+        self.assertEqual(engine.agent_seen, 100)
+        self.mono.value += 3
+        self.assertTrue(engine.session_update(generation, True, None, None, other))
+        self.assertEqual(engine.session_owner, other)
+
+    def test_invalid_owner_never_refreshes_lease(self):
+        engine = self.make()
+        with self.assertRaises(TypeError):
+            engine.session_update(self.controller.generation, True, None, None, None)
+        self.assertIsNone(engine.session_owner)
+        self.assertEqual(engine.agent_seen, float("-inf"))
 
     def test_other_uid_cannot_steal_an_active_lease(self) -> None:
         engine = self.make()
@@ -1163,8 +1185,8 @@ class RetryTests(EngineTestCase):
 
     def test_retry_unsupported_model_raises(self) -> None:
         profile = validated_profile()
-        profile.support_tier = "unsupported"
-        engine = self.make(profile=profile)
+        profile = replace(profile, support_tier="unsupported")
+        engine = self.make(device=profile)
         with self.assertRaises(ServiceError) as caught:
             engine.retry()
         self.assertEqual(caught.exception.code, ErrorCode.UNSUPPORTED_MODEL)
@@ -1188,7 +1210,7 @@ class SleepEventTests(EngineTestCase):
         self.assertEqual(self.actuator.calls.count("release"), 1)
         self.assertEqual(self.controller.reset_calls, 1)
         self.assertEqual(self.controller.generation, generation + 1)
-        self.assertIsNone(engine.agent_uid)
+        self.assertIsNone(engine.session_owner)
         self.assertIsNone(engine.agent_ready)
         self.assertIsNone(engine._hardware_monitor.last_valid)
         self.tick(engine)
@@ -1337,7 +1359,7 @@ class SensorCalibrationTests(EngineTestCase):
         engine._log.warning.assert_called()  # type: ignore[attr-defined]
 
     def test_guard_contains_callback_exceptions(self) -> None:
-        with mock.patch("panasonic_posture.service.engine.LOG") as log:
+        with mock.patch("panasonic_posture.service.callbacks.LOG") as log:
             callback = mock.Mock(side_effect=RuntimeError("boom"))
             wrapped = guard(callback)
             self.assertTrue(wrapped())  # GLib.SOURCE_CONTINUE
@@ -1500,10 +1522,9 @@ class RealDomainIntegrationTests(unittest.TestCase):
             controller=controller,
             sensor=sensor,
             actuator=FakeActuator(),
-            access=FakeAccess(),
             presentation=PosePresentation(),
             settings=FakeSettings(),
-            profile=validated_profile(),
+            device=validated_profile(),
             hardware_query=lambda: (hardware[0], HardwareStatus.OK),
             instance="integration",
             monotonic=mono,
@@ -1535,7 +1556,7 @@ class SlowDisplayIntegrationTests(EngineTestCase):
         runtime = SessionRuntime(
             SimpleNamespace(
                 get_state=lambda: engine.state,
-                session_update=lambda *args: engine.session_update(*args, sender_uid=1000),
+                session_update=lambda *args: engine.session_update(*args, owner=SessionOwner("linux-uid", "1000")),
             ),
             display, None, executor=executor, lease_executor=InlineExecutor(),
         )

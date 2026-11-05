@@ -16,13 +16,17 @@ from __future__ import annotations
 import fnmatch
 import json
 import logging
-import math
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Iterable, Sequence
 
 from ..protocol import CONFIG_DIR, DATA_DIR, PROFILE_VERSION, SUPPORT_TIERS
+from ..mounting import (
+    MOUNT_TOLERANCE as MOUNT_TOLERANCE,
+    parse_mount_matrix as parse_mount_matrix,
+    apply_mount as apply_mount,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -37,10 +41,6 @@ SOURCE_PROFILE_DIR = Path(__file__).resolve().parents[3] / "data" / "profiles"
 PROFILE_DIRS = (CONFIG_PROFILE_DIR, SOURCE_PROFILE_DIR, DATA_PROFILE_DIR)
 
 DEFAULT_ACCEL_NAME = "accel_3d"
-
-#: Mount matrices are rotations: rows must be unit length and orthogonal.
-#: Real profiles use integer matrices, so a tight tolerance is safe.
-MOUNT_TOLERANCE = 1e-3
 
 
 class _Match(Enum):
@@ -109,38 +109,6 @@ def _optional_name(data: dict, key: str) -> str | None:
         # only show up as an opaque ValueError in the privileged executor.
         raise _InvalidProfile(f"{key!r} contains control characters")
     return name or None
-
-
-def parse_mount_matrix(value: object) -> tuple[float, ...] | None:
-    """Validate a row-major 3x3 mount matrix.
-
-    Raises :class:`ValueError` for wrong shapes, non-finite values or matrices
-    that are not approximately orthonormal (those would make every attitude
-    sample permanently invalid).
-    """
-    if value is None:
-        return None
-    if not isinstance(value, (list, tuple)) or len(value) != 9:
-        raise ValueError("mount_matrix must be a list of 9 numbers")
-    numbers: list[float] = []
-    for item in value:
-        if isinstance(item, bool) or not isinstance(item, (int, float)):
-            raise ValueError("mount_matrix entries must be numbers")
-        number = float(item)
-        if not math.isfinite(number):
-            raise ValueError("mount_matrix entries must be finite")
-        numbers.append(number)
-    matrix = tuple(numbers)
-    for row in range(3):
-        for column in range(3):
-            dot = sum(
-                matrix[3 * row + offset] * matrix[3 * column + offset]
-                for offset in range(3)
-            )
-            expected = 1.0 if row == column else 0.0
-            if not math.isclose(dot, expected, rel_tol=0.0, abs_tol=MOUNT_TOLERANCE):
-                raise ValueError("mount_matrix is not approximately orthonormal")
-    return matrix
 
 
 def _parse_support_tier(value: object) -> str:
@@ -318,19 +286,3 @@ def dmi_values() -> tuple[str, str]:
 def profile_directories() -> tuple[Path, ...]:
     """Return the profile lookup order (useful for the probe/documentation)."""
     return PROFILE_DIRS
-
-
-def apply_mount(
-    vector: Sequence[float], matrix: Sequence[float] | None
-) -> tuple[float, ...]:
-    """Apply a row-major 3x3 mount matrix to an ``(x, y, z)`` vector."""
-    if len(vector) != 3:
-        raise ValueError("vector must have three components")
-    if not matrix:
-        return tuple(vector)
-    if len(matrix) != 9:
-        raise ValueError("mount matrix must have nine entries")
-    return tuple(
-        sum(matrix[3 * row + column] * vector[column] for column in range(3))
-        for row in range(3)
-    )

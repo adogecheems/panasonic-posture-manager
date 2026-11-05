@@ -5,30 +5,39 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..model import SensorReading, SensorSource
-from ..protocol import error_message
+from ..model import SensorReading, SensorInfo, Target
+from ..contracts import error_message
 
 
 class SensorBackend(Protocol):
     """Supply normalized samples stamped in the engine's sample clock."""
 
     @property
-    def source(self) -> SensorSource: ...
-
-    @property
-    def sensor_error(self) -> str | None: ...
+    def info(self) -> SensorInfo: ...
 
     def reading(self) -> SensorReading: ...
 
 
+@dataclass(frozen=True)
+class SessionOwner:
+    """Opaque identity supplied only after platform authentication."""
+
+    authority: str
+    subject: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.authority, str) or not self.authority:
+            raise ValueError("session authority must be non-empty")
+        if not isinstance(self.subject, str) or not self.subject:
+            raise ValueError("session subject must be non-empty")
+
+
 class InputState(Protocol):
-    """Report the observed tablet signal and input suppression separately."""
+    """Platform execution evidence, distinct from physical switch state."""
 
-    @property
-    def tablet(self) -> bool: ...
-
-    @property
-    def input_disabled(self) -> bool: ...
+    def satisfies(self, target: Target) -> bool:
+        """True only after every platform-specific target effect is confirmed."""
+        ...
 
     @property
     def error(self) -> str | None: ...
@@ -44,7 +53,7 @@ class ActuatorError(RuntimeError):
 
 
 class InputActuator(Protocol):
-    """Maintain bounded software ownership of tablet signaling and input."""
+    """Maintain bounded ownership of platform input-control effects."""
 
     @property
     def state(self) -> InputState | None: ...

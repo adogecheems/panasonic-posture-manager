@@ -13,7 +13,9 @@ import logging
 from gi.repository import Gio, GLib
 
 from .. import model, protocol
-from .errors import ErrorCode, ServiceError, describe_error
+from .failures import ErrorCode, ServiceError, describe_error
+
+from .dbus_errors import service_error
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +74,7 @@ class SystemClient:
             name, code, detail = _split_dbus_error(describe_error(error))
             if name:
                 log.debug("D-Bus call %s failed: %s: %s", method, name, detail)
-            raise ServiceError(code, detail or None, name=name) from error
+            raise service_error(code, detail or None, name=name) from error
 
     def get_state(self) -> model.StateSnapshot:
         """Return the validated, strictly typed state snapshot."""

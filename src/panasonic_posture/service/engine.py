@@ -10,13 +10,12 @@ The engine is the only component that mutates the domain state.  Every tick it
 5. updates the display presentation and builds the public state snapshot.
 
 Everything is injected (controller, sensor, actuator, access, presentation,
-settings, profile, clocks, hardware query, state listener) so the complete
+settings, machine identity, clocks, hardware query, state listener) so the complete
 transaction can be unit tested without root, D-Bus, a relay binary or hardware.
 """
 
 from __future__ import annotations
 
-import functools
 import logging
 import secrets
 import time
@@ -40,12 +39,12 @@ from ..model import (
     Mode,
     Pose,
     SensorReading,
-    SensorSource,
+    DeviceInfo,
     StateSnapshot,
     Target,
     dumps_state,
 )
-from ..protocol import (
+from ..contracts import (
     ALL_ERROR_CODES,
     LEASE_SECONDS,
     MODES,
@@ -57,7 +56,9 @@ from ..protocol import (
 from ..policy import geometry
 from ..tasks import thread_executor
 from .hardware_monitor import HardwareMonitor, HardwareObservation
-from .ports import ActuatorError, InputActuator, SensorBackend, Settings, SettingsBackend
+from .ports import (
+    ActuatorError, InputActuator, SensorBackend, Settings, SettingsBackend, SessionOwner,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -89,33 +90,6 @@ class _ReleaseTask:
     retry: bool = False
 
 
-def guard(callback: Callable[..., Any], default: Any = True) -> Callable[..., Any]:
-    """Wrap a GLib callback so one exception never removes the event source.
-
-    ``default`` is returned after logging the exception; GLib treats a truthy
-    return value from a timeout callback as ``SOURCE_CONTINUE``.
-    """
-
-    @functools.wraps(callback)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        try:
-            return callback(*args, **kwargs)
-        except Exception:
-            LOG.exception(
-                "unhandled exception in %s", getattr(callback, "__name__", repr(callback))
-            )
-            return default
-
-    return wrapper
-
-
-def _as_sensor_source(value: Any) -> SensorSource:
-    try:
-        return SensorSource(value)
-    except (TypeError, ValueError):
-        return SensorSource.STARTING
-
-
 class Engine:
     """Own the per-tick transaction and the public service state."""
 
@@ -125,10 +99,9 @@ class Engine:
         controller: Any,
         sensor: SensorBackend,
         actuator: InputActuator,
-        access: Any = None,
         presentation: Any,
         settings: SettingsBackend | None,
-        profile: Any,
+        device: DeviceInfo,
         hardware_query: Callable[[], tuple[bool | None, Any]] | None = None,
         hardware_monitor: HardwareMonitor | None = None,
         instance: str | None = None,
@@ -145,7 +118,7 @@ class Engine:
         self._actuator = actuator
         self._presentation = presentation
         self._settings = settings
-        self._profile = profile
+        self._device = device
         if hardware_monitor is None:
             if hardware_query is None:
                 raise TypeError("hardware_query or hardware_monitor is required")
@@ -173,7 +146,7 @@ class Engine:
         self._last_release_key: tuple[int, Target] | None = None
 
         support_tier = str(
-            getattr(profile, "support_tier", "compatible") or "compatible"
+            device.support_tier or "compatible"
         )
         if support_tier not in SUPPORT_TIERS:
             support_tier = "compatible"
@@ -184,14 +157,9 @@ class Engine:
         # Sensor-source preference follows the effective hardware state.
         self._prefer_shared: bool | None = None
 
-        # Session lease.  ``access`` is kept as a dependency for the daemon's
-        # wiring but the engine deliberately performs no blocking logind checks
-        # in its 100 ms tick: every SessionUpdate is authenticated by the
-        # daemon (adapter name owner + active local session + user-unit cgroup)
-        # before it reaches session_update().  Rejected heartbeats therefore do
-        # not refresh the lease and it expires after LEASE_SECONDS.
-        self._access = access
-        self.agent_uid: int | None = None
+        # Identity is authenticated by the host before entering this engine.
+        # The core only arbitrates ownership and checks lease deadlines.
+        self.session_owner: SessionOwner | None = None
         self.agent_ready: int | None = None
         self.agent_error_code: str | None = None
         self.agent_error_detail: str | None = None
@@ -469,16 +437,15 @@ class Engine:
         ready: bool,
         error_code: str | None,
         error_detail: str | None,
-        sender_uid: int,
+        owner: SessionOwner,
     ) -> bool:
         """Accept feedback from the session adapter for the current generation.
 
-        Only the daemon may call this, and only after it authenticated the
-        sender with :meth:`AccessControl.verify_session_adapter` (name owner,
-        active local session, user-unit cgroup).  A heartbeat from an inactive
-        session never reaches the engine, so it cannot refresh the lease; the
-        previous lease naturally expires after ``LEASE_SECONDS``.
+        The platform host must authenticate the caller and establish its
+        owner identity first. Rejected callers must never refresh a lease.
         """
+        if not isinstance(owner, SessionOwner):
+            raise TypeError("an authenticated SessionOwner is required")
         now = self._monotonic()
         try:
             generation_value = int(generation)
@@ -490,14 +457,14 @@ class Engine:
             )
             return False
         if (
-            self.agent_uid is not None
-            and sender_uid != self.agent_uid
+            self.session_owner is not None
+            and owner != self.session_owner
             and now - self.agent_seen < LEASE_SECONDS
         ):
             # Another authenticated user's adapter must wait for the current
             # lease to expire before taking over (fast user switch).
             raise ServiceError(ErrorCode.ACCESS_DENIED, "session-lease-busy")
-        self.agent_uid = int(sender_uid)
+        self.session_owner = owner
         self.agent_seen = now
         if ready:
             self.agent_ready = generation_value
@@ -535,7 +502,7 @@ class Engine:
         except Exception:  # noqa: BLE001 - never abort the sleep handler
             self._log.exception("cannot release relay on suspend/resume")
         self._controller.reset_after_suspend()
-        self.agent_uid = None
+        self.session_owner = None
         self.agent_ready = None
         self.agent_error_code = None
         self.agent_error_detail = None
@@ -558,7 +525,7 @@ class Engine:
     # -- tick ------------------------------------------------------------
 
     def tick(self, now: float | None = None) -> None:
-        """Run one transaction; never raises, so the GLib source survives."""
+        """Run one transaction; contain failures so the host scheduler survives."""
         started = self._monotonic()
         recovering = self._tick_error_code is not None
         self._tick_error_code = None
@@ -664,7 +631,7 @@ class Engine:
         policy_mode = str(getattr(self._controller.policy, "mode", ""))
         desired = bool(
             hardware is True
-            or target.tablet is True
+            or target.disable_internal_input
             or policy_mode in ("P", "Q", "T", "S")
         )
         if desired == self._prefer_shared:
@@ -678,7 +645,7 @@ class Engine:
                 self._log.exception("cannot update sensor source preference")
 
     def _lease_active(self, now: float) -> bool:
-        if self.suspended or self.agent_uid is None:
+        if self.suspended or self.session_owner is None:
             return False
         return now - self.agent_seen < LEASE_SECONDS
 
@@ -699,14 +666,14 @@ class Engine:
             # wait until the pending release/recovery has completed.
             return
         prepared = self._prepared(lease, generation)
-        software_tablet = target.tablet is True
+        needs_input_control = target.disable_internal_input
         hardware_off = self._hardware_observation.effective is False
-        if software_tablet and self._controller.error_code == ErrorCode.NATIVE_RECOVERY:
+        if needs_input_control and self._controller.error_code == ErrorCode.NATIVE_RECOVERY:
             # A fast display acknowledgement cannot make a failed reset safe.
             self._ensure_release(generation, target)
             return
         try:
-            if software_tablet and hardware_off and prepared:
+            if needs_input_control and hardware_off and prepared:
                 self._actuator.keep(now)
                 self._last_release_key = None
                 state = self._actuator.state
@@ -715,7 +682,7 @@ class Engine:
                 # against the fresh clock (review Q-03).
                 lease = self._lease_active(self._monotonic())
                 prepared = self._prepared(lease, generation)
-                if state is not None and state.tablet and state.input_disabled:
+                if state is not None and state.error is None and state.satisfies(target):
                     if prepared:
                         self._controller.acknowledge(generation, True)
                 elif state is not None and state.error:
@@ -723,7 +690,7 @@ class Engine:
                         generation, False, ErrorCode.RELAY_INPUT, state.error
                     )
             elif (
-                software_tablet
+                needs_input_control
                 and hardware_off
                 and lease
                 and self.agent_error_code is None
@@ -744,7 +711,7 @@ class Engine:
                     self._release_task is None
                     and self._last_release_key == key
                     and self._actuator.error_code is None
-                    and target.tablet is not None
+                    and target.mode in ("laptop", "hardware")
                     and not target.disable_internal_input
                     and self._controller.applied != target
                     and self._prepared(self._lease_active(self._monotonic()), generation)
@@ -882,6 +849,7 @@ class Engine:
         return code, detail
 
     def _build_state(self, lease: bool) -> StateSnapshot:
+        sensor_info = self._sensor.info
         """Build the public snapshot from the current transaction state."""
         error_code, error_detail = self._effective_error()
         target = self._target if self.supported else Target(mode="unavailable")
@@ -931,14 +899,13 @@ class Engine:
             session_connected=lease,
             supported=self.supported,
             support_tier=self.support_tier,
-            sensor_source=_as_sensor_source(
-                getattr(self._sensor, "source", SensorSource.STARTING)
-            ),
-            sensor_error=getattr(self._sensor, "sensor_error", None),
+            sensor_source=sensor_info.backend or "starting",
+            sensor_info=sensor_info,
+            sensor_error=sensor_info.error,
             sensor_calibrated=self._sensor_calibration is not None,
-            profile=str(getattr(self._profile, "id", "generic") or "generic"),
-            model=str(getattr(self._profile, "product", "") or ""),
-            vendor=str(getattr(self._profile, "vendor", "") or ""),
+            profile=self._device.id,
+            model=self._device.product,
+            vendor=self._device.vendor,
         )
 
     def _publish_state(self) -> None:
@@ -961,3 +928,10 @@ class Engine:
 
 
 __all__ = ["MODE_TO_POSE", "Engine", "ServiceError", "guard"]
+
+
+def __getattr__(name: str):
+    if name == "guard":
+        from .callbacks import guard
+        return guard
+    raise AttributeError(name)

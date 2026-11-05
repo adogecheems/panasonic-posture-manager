@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from ..model import SensorSource
+from ..linux_contract import SensorSource
 
 SYSFS_SLOW_READ_SECONDS = 1.8
 IIO_DEVICE_GLOB = "iio:device*"

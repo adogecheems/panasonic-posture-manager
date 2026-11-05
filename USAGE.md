@@ -75,9 +75,30 @@ make WERROR=1 check
 `service/ports.py` 和 `session/ports.py` 提供平台实现。传感器适配器需将数据换算到策略
 使用的设备坐标系，以 m/s² 提供三轴采样，时间戳与传给引擎的采样时钟一致。
 
-Linux 入口分别由 `service/application.py` 和 `session/agent.py` 装配。新增平台需要提供
-本地会话与权限校验、输入控制、显示读写和恢复日志。`test_platform_boundaries.py` 使用
-标准库和替身验证共用流程，无需真实设备或桌面。当前安装包面向 Linux。
+Linux 入口分别由 `service/application.py` 和 `session/agent.py` 装配。共用常量与错误码在
+`contracts.py`，Linux 通信、设备和安装配置在 `linux_contract.py`；`protocol.py` 保留旧导入入口。
+`session/failures.py` 只定义异常与失败类别，D-Bus 客户端在边界将鉴权拒绝、暂时通信故障和
+服务不可用分类；共用运行时不解析平台错误名或错误详情。
+
+服务宿主完成鉴权后，向引擎传入带命名空间的 `SessionOwner`。Linux 继续以已校验的 UID
+表示持有者，原有总线名、活跃会话和单元归属检查不变。输入执行器的状态通过
+`satisfies(target)` 提供执行证据；Linux 仍要求软件平板信号和内置输入抓取均成功，错误报告
+不能确认模式。物理平板开关仍是独立的硬件观察值。
+
+`SensorInfo` 区分采样就绪、后端标识、设备身份和错误，`DeviceInfo` 只传递机型身份与当前
+平台的支持等级。Linux 设备匹配留在 `hardware/profile.py`，纯安装方向矩阵运算在
+`mounting.py`。其他平台不可继承 Linux 的已验证等级。`state_codec.py` 继续严格解析现有
+Linux 状态 v2；新的内部传感器信息不扩展该线协议。
+
+显示事务必须显式注入 `DisplayJournal`，不能自行选择用户目录。设置与日志的纯格式校验
+分别在 `service/settings_schema.py` 和 `session/journal_schema.py`，现有 Linux 文件适配器
+保留原子写入、权限和损坏隔离。异常类型独立于本地化加载，新平台需提供适合其系统的持久化
+实现，不能直接复用 Unix 文件权限操作。
+
+新增平台仍需实现本地会话与权限校验、输入控制、显示读写和恢复日志。
+`test_platform_boundaries.py` 禁止导入 Linux 适配、配置、翻译加载及文件日志模块，使用
+非 Linux 的会话标识、传感器来源和没有软件平板信号的输入替身验证共用流程。
+这些测试无需真实设备或桌面，不代表 Windows 真机支持；当前安装包仍面向 Linux。
 
 ### 发行版打包
 

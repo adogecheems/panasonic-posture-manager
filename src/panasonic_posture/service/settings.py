@@ -17,14 +17,11 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from ..calibration import parse_calibration_matrix
-from ..protocol import STATE_DIR
+from .settings_schema import SETTINGS_VERSION, parse_settings, encode_settings
+from ..linux_contract import STATE_DIR
 from .ports import Settings as Settings
 
 LOG = logging.getLogger(__name__)
-
-#: Schema version of the JSON file written by :class:`SettingsStore`.
-SETTINGS_VERSION = 1
 
 DEFAULT_SETTINGS_PATH = Path(STATE_DIR) / "settings.json"
 
@@ -76,51 +73,13 @@ class SettingsStore:
             self._quarantine(str(error))
             return Settings()
 
-    def _parse(self, data: object) -> Settings:
-        if not isinstance(data, dict):
-            raise ValueError("settings must be a JSON object")
-        version = data.get("version")
-        if version != SETTINGS_VERSION:
-            raise ValueError(f"unsupported settings version {version!r}")
-        tent_enabled = data.get("tent_enabled", True)
-        if not isinstance(tent_enabled, bool):
-            raise ValueError("tent_enabled must be a boolean")
-        tent_prompt = data.get("tent_prompt")
-        if not isinstance(tent_prompt, bool):
-            raise ValueError("tent_prompt must be a boolean")
-        stand_prompt = data.get("stand_prompt", False)
-        if not isinstance(stand_prompt, bool):
-            raise ValueError("stand_prompt must be a boolean")
-        try:
-            sensor_calibration = parse_calibration_matrix(
-                data.get("sensor_calibration")
-            )
-        except ValueError as error:
-            raise ValueError(f"invalid sensor_calibration: {error}") from error
-        return Settings(
-            tent_enabled=tent_enabled,
-            tent_prompt=tent_prompt,
-            stand_prompt=stand_prompt,
-            sensor_calibration=sensor_calibration,
-        )
+    _parse = staticmethod(parse_settings)
 
     # -- writing ---------------------------------------------------------
 
     def save(self, settings: Settings) -> None:
         """Atomically replace the settings file with ``settings``."""
-        if not isinstance(settings, Settings):
-            raise TypeError("settings must be a Settings instance")
-        payload = {
-            "version": SETTINGS_VERSION,
-            "tent_enabled": bool(settings.tent_enabled),
-            "tent_prompt": bool(settings.tent_prompt),
-            "stand_prompt": bool(settings.stand_prompt),
-            "sensor_calibration": (
-                list(settings.sensor_calibration)
-                if settings.sensor_calibration is not None
-                else None
-            ),
-        }
+        payload = encode_settings(settings)
         directory = self.path.parent
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         temporary: Path | None = None

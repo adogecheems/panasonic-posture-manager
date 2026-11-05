@@ -13,9 +13,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..model import Target
-from . import errors
-from .errors import DisplayError, ErrorCode
-from .journal import JOURNAL_VERSION, Journal, default_path
+from .failures import DisplayError, ErrorCode
+from .journal_schema import JOURNAL_VERSION
 from .ports import DisplayJournal
 
 log = logging.getLogger(__name__)
@@ -60,14 +59,14 @@ class SoftwareDisplay:
 
     def __init__(
         self,
-        journal: DisplayJournal | None = None,
+        journal: DisplayJournal,
         gettext: Callable[[str], str] | None = None,
         *,
         sleep: Callable[[float], None] = time.sleep,
     ):
-        self._ = gettext or errors.get_translator()
+        self._ = gettext or (lambda message: message)
         self._sleep = sleep
-        self.journal = journal if journal is not None else Journal(default_path())
+        self.journal = journal
         self.owned: dict | None = None
         self._recover()
 

@@ -17,7 +17,8 @@ from panasonic_posture.protocol import ErrorCode
 from panasonic_posture.session.agent import Agent
 from panasonic_posture.session.client import SystemClient
 from panasonic_posture.session.display import DisplayError
-from panasonic_posture.session.errors import ServiceError
+from panasonic_posture.session.failures import ServiceError, FailureKind
+from panasonic_posture.session.dbus_errors import service_error
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.tasks import InlineExecutor
 
@@ -345,7 +346,7 @@ class AdapterTickTests(unittest.TestCase):
 
     def test_lease_failure_stops_transactions_and_recovers(self):
         harness = Harness(make_state())
-        harness.client.update_error = ServiceError(
+        harness.client.update_error = service_error(
             ErrorCode.INTERNAL, "denied", name="org.freedesktop.DBus.Error.AccessDenied"
         )
         harness.tick(0.0)
@@ -368,7 +369,7 @@ class AdapterTickTests(unittest.TestCase):
 
     def test_lease_recovery_probes_current_generation_before_applying(self):
         harness = Harness(make_state())
-        harness.client.update_error = ServiceError(ErrorCode.ACCESS_DENIED, "session-lease-busy")
+        harness.client.update_error = service_error(ErrorCode.ACCESS_DENIED, "session-lease-busy")
         harness.tick(0.0)
         harness.set_state(make_state(generation=2))
 
@@ -385,7 +386,7 @@ class AdapterTickTests(unittest.TestCase):
 
     def test_lease_recovery_does_not_apply_after_probe_becomes_stale(self):
         harness = Harness(make_state())
-        harness.client.update_error = ServiceError(ErrorCode.ACCESS_DENIED, "session-lease-busy")
+        harness.client.update_error = service_error(ErrorCode.ACCESS_DENIED, "session-lease-busy")
         harness.tick(0.0)
 
         for state in (make_state(generation=2), make_state(instance="instance-b")):
@@ -404,7 +405,7 @@ class AdapterTickTests(unittest.TestCase):
         harness = Harness(make_state())
         harness.tick(0.0)
         self.assertTrue(harness.agent.ready)
-        harness.client.get_error = ServiceError(
+        harness.client.get_error = service_error(
             ErrorCode.ACCESS_DENIED, "inactive-session", name=protocol.DBUS_ERROR)
         harness.tick(0.6)
         self.assertTrue(harness.agent._failure_active)
@@ -414,7 +415,7 @@ class AdapterTickTests(unittest.TestCase):
     def test_identity_rejection_detail_is_an_immediate_lease_failure(self):
         harness = Harness(make_state())
         harness.tick(0.0)
-        harness.client.update_error = ServiceError(
+        harness.client.update_error = service_error(
             ErrorCode.INTERNAL, "not-session-adapter")
         harness.tick(0.6)
         self.assertTrue(harness.agent._failure_active)
@@ -425,7 +426,7 @@ class AdapterTickTests(unittest.TestCase):
         harness.tick(0.0)
         self.assertTrue(harness.agent.ready)
         calls = harness.client.get_calls
-        harness.client.get_error = ServiceError(
+        harness.client.get_error = service_error(
             ErrorCode.INTERNAL, "timed out",
             name="org.freedesktop.DBus.Error.NoReply")
         harness.tick(0.1)
@@ -444,7 +445,7 @@ class AdapterTickTests(unittest.TestCase):
     def test_continuous_transient_failure_restores_after_grace(self):
         harness = Harness(make_state())
         harness.tick(0.0)
-        harness.client.get_error = ServiceError(
+        harness.client.get_error = service_error(
             ErrorCode.INTERNAL, "timed out",
             name="org.freedesktop.DBus.Error.NoReply")
         for moment in (0.1, 0.7, 1.4, 2.2, 3.0):
@@ -458,7 +459,7 @@ class AdapterTickTests(unittest.TestCase):
     def test_single_transient_session_update_error_does_not_restore(self):
         harness = Harness(make_state())
         harness.tick(0.0)
-        harness.client.update_error = ServiceError(
+        harness.client.update_error = service_error(
             ErrorCode.INTERNAL, "timed out",
             name="org.freedesktop.DBus.Error.NoReply")
         harness.tick(0.6)  # heartbeat fails transiently
@@ -473,7 +474,7 @@ class AdapterTickTests(unittest.TestCase):
     def test_continuous_session_update_failure_escalates_after_grace(self):
         harness = Harness(make_state())
         harness.tick(0.0)
-        harness.client.update_error = ServiceError(
+        harness.client.update_error = service_error(
             ErrorCode.INTERNAL, "timed out",
             name="org.freedesktop.DBus.Error.NoReply")
         for moment in (0.6, 1.2, 1.9, 2.7, 3.5):
@@ -486,7 +487,7 @@ class AdapterTickTests(unittest.TestCase):
 
     def test_lease_failure_backoff_doubles_and_is_capped(self):
         harness = Harness(make_state())
-        harness.client.update_error = ServiceError(ErrorCode.ACCESS_DENIED, "inactive")
+        harness.client.update_error = service_error(ErrorCode.ACCESS_DENIED, "inactive")
         harness.tick(0.0)
         self.assertEqual(harness.agent._failure_retry_at, 2.0)
         harness.tick(2.0)
@@ -844,6 +845,7 @@ class SystemClientTests(unittest.TestCase):
         with self.assertRaises(ServiceError) as caught:
             client.session_update(1, True, "", "")
         self.assertEqual(caught.exception.name, "org.freedesktop.DBus.Error.AccessDenied")
+        self.assertEqual(caught.exception.kind, FailureKind.REJECTED)
         self.assertEqual(caught.exception.code, ErrorCode.INTERNAL)
 
     def test_session_update_uses_the_new_signature(self):
@@ -944,7 +946,7 @@ class SlowDisplayLeaseTests(unittest.TestCase):
 
     def test_heartbeat_rejection_restores_after_inflight_display_finishes(self):
         runtime = self.make_runtime()
-        self.client.update_error = ServiceError(ErrorCode.ACCESS_DENIED, "inactive")
+        self.client.update_error = service_error(ErrorCode.ACCESS_DENIED, "inactive")
         runtime.tick(0.7)
         self.assertTrue(runtime.failure_active)
         self.assertFalse(runtime.ready)
@@ -985,7 +987,7 @@ class SlowDisplayLeaseTests(unittest.TestCase):
 
     def test_continuous_heartbeat_failure_stops_slow_transaction(self):
         runtime = self.make_runtime()
-        self.client.get_error = ServiceError(ErrorCode.INTERNAL, "transport timeout")
+        self.client.get_error = service_error(ErrorCode.INTERNAL, "transport timeout")
         for now in (0.7, 1.3, 1.9, 2.5, 3.1, 3.8):
             runtime.tick(now)
         self.assertTrue(runtime.failure_active)

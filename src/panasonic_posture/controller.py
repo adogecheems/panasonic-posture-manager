@@ -21,7 +21,7 @@ from .policy import (
     Policy,
     PolicyConfig,
 )
-from .protocol import ErrorCode
+from .contracts import ErrorCode
 
 # Automatic policy mode -> public software target mode.
 AUTO_TARGET_MODES = {

@@ -12,9 +12,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from .protocol import (
-    PROMPTS,
-    SENSOR_SOURCES,
+from .contracts import (
     STATE_VERSION,
     SUPPORT_TIERS,
     TARGET_MODES,
@@ -45,12 +43,6 @@ class HardwareStatus(StrEnum):
     READ_ERROR = "read_error"
 
 
-class SensorSource(StrEnum):
-    STARTING = "starting"
-    IIO = "iio"
-    SYSFS = "sysfs"
-
-
 class BackendState(StrEnum):
     READY = "ready"
     ERROR = "error"
@@ -62,10 +54,10 @@ class BackendState(StrEnum):
 class Target:
     """What the service wants the backend to apply.
 
-    ``tablet`` is ``None`` when the target is unavailable/native (no software
-    takeover requested), otherwise it is the aggregated tablet status the
-    relay must expose.  ``rotation`` is ``None`` when native rotation policy is
-    allowed (hardware tablet) and 0/180 for the locked software modes.
+    ``tablet`` preserves the Linux state-v2 aggregate signal intent. Execution
+    decisions use ``disable_internal_input`` and platform completion evidence;
+    this field is not a physical hardware observation. ``rotation`` is ``None``
+    when native rotation policy is allowed (hardware tablet) and 0/180 for the locked software modes.
     """
 
     mode: str = "unavailable"
@@ -108,12 +100,37 @@ class Target:
 
 
 @dataclass(frozen=True)
+class SensorInfo:
+    """Acquisition status and diagnostic identity, independent of transport."""
+
+    ready: bool = False
+    backend: str = ""
+    device: str = ""
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class DeviceInfo:
+    """Machine identity and support evidence for this platform only.
+
+    Device selectors and mount transforms belong to acquisition adapters.
+    A platform must not inherit another platform's validation tier.
+    """
+
+    id: str = "generic"
+    product: str = ""
+    vendor: str = ""
+    support_tier: str = "compatible"
+    platform: str = ""
+
+
+@dataclass(frozen=True)
 class SensorReading:
     """Latest accelerometer sample (normalised in the profile mount frame)."""
 
     vector: tuple[float, float, float] | None = None
     stamp: float | None = None
-    source: SensorSource = SensorSource.STARTING
+    source: str = "starting"
 
     @property
     def valid(self) -> bool:
@@ -130,7 +147,10 @@ class SensorReading:
 
 @dataclass
 class StateSnapshot:
-    """Serializable public state returned by GetState/StateChanged."""
+    """Internal state with a compatible Linux v2 projection via ``to_dict``.
+
+    ``sensor_info`` retains platform diagnostics and is not part of v2.
+    """
 
     instance: str = ""
     generation: int = 0
@@ -151,8 +171,9 @@ class StateSnapshot:
     session_connected: bool = False
     supported: bool = True
     support_tier: str = "compatible"
-    sensor_source: SensorSource = SensorSource.STARTING
+    sensor_source: str = "starting"
     sensor_error: str | None = None
+    sensor_info: SensorInfo = field(default_factory=SensorInfo)
     sensor_calibrated: bool = False
     profile: str = "generic"
     model: str = ""
@@ -205,95 +226,23 @@ def loads_state(text: str) -> dict[str, Any]:
 
 
 def parse_state_snapshot(text: str) -> StateSnapshot:
-    """Strict parser used by the session adapter and tests."""
-    data = loads_state(text)
-
-    def boolean(key: str, default: bool) -> bool:
-        value = data.get(key, default)
-        if not isinstance(value, bool):
-            raise ValueError(f"{key} must be a boolean")
-        return value
-
-    def optional_boolean(key: str) -> bool | None:
-        value = data.get(key)
-        if value is not None and not isinstance(value, bool):
-            raise ValueError(f"{key} must be a boolean or null")
-        return value
-
-    def integer(key: str, default: int) -> int:
-        value = data.get(key, default)
-        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            raise ValueError(f"{key} must be a non-negative integer")
-        return value
-
-    def optional_string(key: str) -> str | None:
-        value = data.get(key)
-        if value is not None and not isinstance(value, str):
-            raise ValueError(f"{key} must be a string or null")
-        return value
-
-    def string(key: str, default: str) -> str:
-        value = data.get(key, default)
-        if not isinstance(value, str):
-            raise ValueError(f"{key} must be a string")
-        return value
-
-    raw_support_tier = data.get("support_tier")
-    if raw_support_tier is None:
-        support_tier = "unsupported" if data.get("supported") is False else "compatible"
-    else:
-        if not isinstance(raw_support_tier, str) or raw_support_tier not in SUPPORT_TIERS:
-            raise ValueError(f"invalid support tier {raw_support_tier!r}")
-        support_tier = raw_support_tier
-    raw_prompt = data.get("pending_prompt")
-    if raw_prompt is not None and raw_prompt not in PROMPTS:
-        raise ValueError(f"invalid pending prompt {raw_prompt!r}")
-    pending_notification = data.get("pending_notification")
-    if pending_notification is not None and (
-        not isinstance(pending_notification, int)
-        or isinstance(pending_notification, bool)
-        or pending_notification < 0
-    ):
-        raise ValueError("pending_notification must be a non-negative integer or null")
-    raw_target = data.get("target", {})
-    if not isinstance(raw_target, dict):
-        raise ValueError("target must be an object")
-    raw_applied = data.get("applied")
-    if raw_applied is not None and not isinstance(raw_applied, dict):
-        raise ValueError("applied must be an object or null")
-    return StateSnapshot(
-        instance=string("instance", ""),
-        generation=integer("generation", 0),
-        pose=Pose(data.get("pose", "laptop")),
-        hardware=optional_boolean("hardware"),
-        hardware_status=HardwareStatus(data.get("hardware_status", "absent")),
-        manual=Mode(data.get("manual", "auto")),
-        tent_enabled=boolean("tent_enabled", True),
-        tent_prompt=boolean("tent_prompt", True),
-        stand_prompt=boolean("stand_prompt", False),
-        target=Target.from_dict(raw_target),
-        applied=Target.from_dict(raw_applied) if raw_applied is not None else None,
-        pending_notification=pending_notification,
-        pending_prompt=raw_prompt,
-        backend=BackendState(data.get("backend", "ready")),
-        error_code=optional_string("error_code"),
-        error_detail=optional_string("error_detail"),
-        session_connected=boolean("session_connected", False),
-        supported=boolean("supported", support_tier != "unsupported"),
-        support_tier=support_tier,
-        sensor_source=SensorSource(data.get("sensor_source", "starting")),
-        sensor_error=optional_string("sensor_error"),
-        sensor_calibrated=boolean("sensor_calibrated", False),
-        profile=string("profile", "generic"),
-        model=string("model", ""),
-        vendor=string("vendor", ""),
-    )
+    """Compatibility entry point for the Linux v2 state decoder."""
+    from .state_codec import parse_state_snapshot as parse
+    return parse(text)
 
 
-def ensure_sensor_source(value: str) -> SensorSource:
-    if value not in SENSOR_SOURCES:
-        return SensorSource.STARTING
-    return SensorSource(value)
+def ensure_sensor_source(value: str):
+    from .state_codec import ensure_sensor_source as ensure
+    return ensure(value)
+
+
+def __getattr__(name: str):
+    # Keep existing Linux callers compatible without loading platform enums
+    # when the domain model is imported by another platform.
+    if name == "SensorSource":
+        from .linux_contract import SensorSource
+        return SensorSource
+    raise AttributeError(name)
 
 
 def ensure_support_tier(value: str) -> str:

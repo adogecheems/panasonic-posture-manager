@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..model import HardwareStatus
-from ..protocol import HARDWARE_UNKNOWN_DEBOUNCE_SECONDS
+from ..contracts import HARDWARE_UNKNOWN_DEBOUNCE_SECONDS
 
 LOG = logging.getLogger(__name__)
 

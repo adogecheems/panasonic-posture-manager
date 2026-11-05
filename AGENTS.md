@@ -26,7 +26,9 @@
 
 - **共用逻辑**包括姿态策略、服务引擎、会话运行时和显示事务。平台实现通过
   `service/ports.py` 和 `session/ports.py` 接入。Linux 的采样时钟、设备、设置、
-  D-Bus 和桌面组件由 `service/application.py` 与 `session/agent.py` 装配。
+  D-Bus 和桌面组件由 `service/application.py` 与 `session/agent.py` 装配。共用层使用
+  `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`／`DeviceInfo` 和输入完成判定；
+  Linux 配置与传输分类留在平台边界。显示事务必须显式注入恢复日志。
 - **root 系统服务**拥有系统 D-Bus 名。`service/daemon.py` 验证、分发方法调用并发布状态，
   `service/engine.py` 编排领域状态、租约和执行事务。传感器和硬件观察结果经 `policy.py` 决策，
   由 `controller.py` 生成 `Target` 和 generation。
@@ -63,8 +65,10 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 
 - D-Bus 端点和方法、per-uid 总线名、权限／polkit 语义、错误码及版本化载荷属于兼容契约。
   修改前必须取得明确授权，按实际调用方同步 Python、C、GJS、打包配置和契约测试。
-- 从定义确认版本。`protocol.py` 定义状态快照 v2、relay 协议 v2、profile v1。
-  `service/settings.py` 和 `session/journal.py` 分别定义设置 v1、显示日志 v1。
+- 从定义确认版本。`protocol.py` 兼容导出 `contracts.py` 的状态快照 v2 和
+  `linux_contract.py` 的 relay 协议 v2、profile v1。
+  `service/settings_schema.py` 和 `session/journal_schema.py` 分别定义设置 v1、显示日志 v1，
+  原存储模块继续兼容导出版本号。
   不兼容变更须同步版本、迁移和调用方。
 - 用户可见行为变更同步 README。文案同步英文源文案、`po/zh_CN.po` 和 UI 契约。
   错误码同步 `protocol.py`、`session/errors.py`、`data/ui/errors.js`。界面用简短的本地化文案说明
@@ -434,3 +438,16 @@ make WERROR=1 check
   要求匹配代次的显示回执和 relay 执行成功，鉴权、租约、状态版本和协议不变。
   帐篷总开关及从稳定笔记本姿态发起的确认提示仍生效。
 - 同步：`policy.py`、策略和控制器回归测试、服务状态与插画联动测试及 README。
+
+### 2026-11-05 - 完成共用层与 Linux 语义分离
+
+- 变更：共用运行时使用已分类的失败，共用引擎使用带命名空间的会话持有者、平台输入
+  完成证据及独立的传感器和机型信息。Linux 保留 UID 鉴权、relay 双条件确认和状态 v2。
+  显示日志改为显式注入；设置和日志格式校验、安装方向数学、异常类型与平台 I/O 分离。
+  共用常量、Linux 配置和兼容导入入口各自独立，GLib 回调边界移至宿主模块。
+- 动机：避免新平台伪造 D-Bus 错误名、UID、IIO 来源或软件平板信号才能使用共用事务。
+- 影响：补充“分离共用事务与 Linux 平台装配”。不改变 Linux 鉴权、租约时长、per-uid
+  名称、特权职责、外部协议或持久化版本；仍遵守硬件优先、严格执行确认和失效撤销。
+  不新增 Windows 支持声明，也不继承跨平台真机验证等级。
+- 同步：服务和会话接口与装配、数据模型及兼容协议、存储格式模块、平台边界及安全回归
+  测试、`USAGE.md` 和本文件。

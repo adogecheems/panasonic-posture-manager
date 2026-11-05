@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from panasonic_posture.service.ports import SessionOwner
+
 import tempfile
 import threading
 import unittest
@@ -592,7 +594,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         )
         self.assertIsNotNone(heartbeat.value)
         daemon.application.engine.session_update.assert_called_once_with(
-            7, True, "", "", 1000
+            7, True, "", "", SessionOwner("linux-uid", "1000")
         )
 
         with mock.patch.object(GLib, "idle_add") as idle:
@@ -641,7 +643,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         )
         daemon.application.access.verify_session_adapter.assert_called_once_with(":1.42")
         daemon.application.engine.session_update.assert_called_once_with(
-            7, True, "", "", 1000
+            7, True, "", "", SessionOwner("linux-uid", "1000")
         )
         self.assertIsNone(invocation.error)
 
@@ -753,7 +755,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         )
         daemon.application.access.verify_session_adapter.assert_not_called()
         daemon.application.engine.session_update.assert_called_once_with(
-            7, True, "", "", 0
+            7, True, "", "", SessionOwner("linux-uid", "0")
         )
         self.assertIsNone(invocation.error)
 
