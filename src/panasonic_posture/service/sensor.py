@@ -7,7 +7,8 @@ temporary failure (buffer busy, device re-enumerated) does not degrade the
 service permanently.
 
 When the hardware reports tablet mode, or a software posture takeover is
-active or awaiting confirmation (``prefer_shared``), the sysfs source is
+active, awaiting confirmation, or settling after hardware release
+(``prefer_shared``), the sysfs source is
 preferred.  This lets ``iio-sensor-proxy``/GNOME own the buffer for automatic
 rotation, and keeps the software takeover fed by a source that this firmware
 does not repeatedly stop.  While shared mode is active no periodic IIO probing

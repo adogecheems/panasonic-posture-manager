@@ -633,6 +633,10 @@ class Engine:
             hardware is True
             or target.disable_internal_input
             or policy_mode in ("P", "Q", "T", "S")
+            # Keep the shared source while rebuilding posture evidence after
+            # hardware release. Reopening IIO here interrupts that evidence
+            # and can contend with the desktop's still-active sensor buffer.
+            or getattr(self._controller.policy, "posture_pending", False)
         )
         if desired == self._prefer_shared:
             return

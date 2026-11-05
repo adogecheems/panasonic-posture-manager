@@ -550,6 +550,42 @@ class HardwareDebounceTests(EngineTestCase):
         self.tick(engine)
         self.assertEqual(self.sensor.prefer_shared_calls, [True])
 
+    def test_hardware_handoff_keeps_source_until_laptop_or_sensor_loss(self) -> None:
+        from panasonic_posture.controller import Controller
+
+        for sensor_lost in (False, True):
+            with self.subTest(sensor_lost=sensor_lost):
+                self.setUp()
+                self.controller = Controller()
+                engine = self.make()
+                self.hardware = True
+                self.sensor._reading = SensorReading(
+                    (0.0, 0.0, 9.81), self.boot.value, SensorSource.SYSFS
+                )
+                self.tick(engine)
+                self.lease(engine)
+                self.hardware = False
+                self.tick(engine)
+                self.assertTrue(engine.state.posture_pending)
+                self.assertEqual(self.sensor.prefer_shared_calls, [True])
+                self.assertFalse(self.actuator.running)
+                self.assertIsNone(engine.state.applied)
+                if sensor_lost:
+                    self.boot.value += self.controller.config.stale_seconds + 0.1
+                    self.sensor._reading = SensorReading()
+                    self.tick(engine)
+                    self.assertEqual(engine.state.target, Target())
+                else:
+                    for _ in range(10):
+                        self.boot.value += 0.1
+                        self.sensor._reading = SensorReading(
+                            (0.0, 0.0, -9.81), self.boot.value, SensorSource.SYSFS
+                        )
+                        self.tick(engine)
+                    self.assertEqual(engine.state.target, LAPTOP)
+                self.assertFalse(engine.state.posture_pending)
+                self.assertEqual(self.sensor.prefer_shared_calls, [True, False])
+
 
 class ActuatorTransactionTests(EngineTestCase):
     def test_successful_applied_report_acknowledges_target(self) -> None:
@@ -1470,6 +1506,7 @@ class PresentationTests(EngineTestCase):
             self.assertIs(engine.state.hardware, False)
             self.assertIn(engine.state.target.mode, ("unavailable", "stand"))
             self.assertIn(engine.state.pose, (Pose.TABLET, Pose.STAND))
+            self.assertEqual(self.sensor.prefer_shared_calls, [True])
             if engine.state.target == STAND:
                 self.assertFalse(engine.state.posture_pending)
                 self.lease(engine)
