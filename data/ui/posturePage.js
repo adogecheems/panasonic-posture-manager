@@ -10,6 +10,7 @@ import GLib from 'gi://GLib';
 import {DATA_ROOT, _} from './i18n.js';
 import {describeError, errorText} from './errors.js';
 import {POSE_SET, posturePixbuf} from './illustration.js';
+import {pauseReason} from './service.js';
 
 const POSE_NAMES = {
     laptop: _('Laptop'),
@@ -17,6 +18,8 @@ const POSE_NAMES = {
     stand: _('Stand'),
     tablet: _('Tablet'),
 };
+
+const SLOW_TRANSITION_MS = 2000;
 
 function displayedPose(state) {
     const appliedMode = state.applied?.mode;
@@ -50,6 +53,9 @@ export class PosturePage {
         this._pendingEpoch = null;
         this._pendingPrompt = null;
         this._latestState = null;
+        this._transition = null;
+        this._transitionTimer = 0;
+        this._transitionSlow = false;
         this._build();
         this._updatePicture();
     }
@@ -66,6 +72,7 @@ export class PosturePage {
         this._syncing = true;
         try {
             this._latestState = state;
+            this._trackTransition(state);
             // Prefer the mode the service actually applied.  Recognised pose
             // is the fallback while a transition is pending or unavailable.
             // There is no user-facing "waiting for posture" state, so keep
@@ -99,6 +106,8 @@ export class PosturePage {
     }
 
     setUnavailable() {
+        this._latestState = null;
+        this._clearTransition();
         this._syncing = true;
         try {
             this._detail.visible = true;
@@ -112,6 +121,10 @@ export class PosturePage {
 
     refreshTheme() {
         this._updatePicture();
+    }
+
+    close() {
+        this._clearTransition();
     }
 
     // -- construction -----------------------------------------------------
@@ -200,12 +213,54 @@ export class PosturePage {
         } else if (state.supported === false) {
             text = _('This model does not support automatic mode changes.');
         } else if (state.target?.mode === 'unavailable') {
-            text = _('Mode switching is paused.');
+            const reason = pauseReason(state);
+            if (reason === 'hardware') {
+                text = _('The tablet switch is unavailable. Restart the background service if this continues.');
+            } else if (reason === 'sensor') {
+                text = _('No posture data is available. Keep the device still; switching will resume automatically.');
+            } else {
+                text = _('Mode switching is paused. Keep the device still and try again.');
+            }
+        } else if (this._transitionSlow) {
+            text = _('Switching is taking longer than usual. Please wait or choose another mode in Settings.');
         } else if (state.support_tier === 'compatible') {
             text = _('Compatibility mode: this model is supported but has not been individually validated.');
         }
         this._detail.label = text;
         this._detail.visible = Boolean(text);
+    }
+
+    _trackTransition(state) {
+        const mode = state.target?.mode;
+        const pending = !state.error_code && state.session_connected
+            && state.supported !== false
+            && mode && mode !== 'unavailable' && state.applied?.mode !== mode;
+        const key = `${state.instance}:${state.generation}:${mode}`;
+        if (pending && this._transition?.key === key)
+            return;
+        this._clearTransition();
+        if (!pending)
+            return;
+        const transition = {key};
+        this._transition = transition;
+        this._transitionTimer = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT, SLOW_TRANSITION_MS, () => {
+                if (this._transition !== transition)
+                    return GLib.SOURCE_REMOVE;
+                this._transitionTimer = 0;
+                this._transitionSlow = true;
+                this._renderDetail(this._latestState);
+                return GLib.SOURCE_REMOVE;
+            });
+    }
+
+    _clearTransition() {
+        this._transition = null;
+        this._transitionSlow = false;
+        if (this._transitionTimer) {
+            GLib.source_remove(this._transitionTimer);
+            this._transitionTimer = 0;
+        }
     }
 
     _updatePicture() {

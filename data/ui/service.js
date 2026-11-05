@@ -37,10 +37,20 @@ export function parseState(text) {
     return state;
 }
 
+// Only a reason category reaches the caption; diagnostic details stay private.
+export function pauseReason(state) {
+    if (state.hardware === null)
+        return 'hardware';
+    if (state.sensor_error || state.sensor_source === 'starting')
+        return 'sensor';
+    return 'unknown';
+}
+
 export class PostureService {
     constructor(bus = Gio.DBus.system) {
         this._bus = bus;
         this._proxy = null;
+        this._proxyHandlers = [];
         this._creating = false;
         this._retryId = 0;
         this._refreshPending = false;
@@ -63,7 +73,7 @@ export class PostureService {
             GLib.source_remove(this._retryId);
             this._retryId = 0;
         }
-        this._proxy = null;
+        this._dropProxy();
     }
 
     refresh() {
@@ -77,9 +87,9 @@ export class PostureService {
         this._refreshPending = true;
         proxy.call('GetState', null, Gio.DBusCallFlags.NONE, CALL_TIMEOUT_MS, null,
             (source, result) => {
-                this._refreshPending = false;
-                if (this._closed)
+                if (this._closed || proxy !== this._proxy)
                     return;
+                this._refreshPending = false;
                 let text;
                 try {
                     text = source.call_finish(result).deepUnpack()[0];
@@ -227,9 +237,17 @@ export class PostureService {
                     this._scheduleReconnect();
                     return;
                 }
-                this._proxy.connect('g-signal',
-                    (_proxy, _sender, signal, parameters) => this._onSignal(signal, parameters));
-                this._proxy.connect('notify::g-name-owner', () => this._onOwnerChanged());
+                const proxy = this._proxy;
+                this._proxyHandlers = [
+                    proxy.connect('g-signal', (_proxy, _sender, signal, parameters) => {
+                        if (proxy === this._proxy)
+                            this._onSignal(signal, parameters);
+                    }),
+                    proxy.connect('notify::g-name-owner', () => {
+                        if (proxy === this._proxy)
+                            this._onOwnerChanged();
+                    }),
+                ];
                 this._onOwnerChanged();
             });
     }
@@ -260,8 +278,12 @@ export class PostureService {
     }
 
     _dropProxy() {
-        // Dropping the only reference also disconnects the signal handlers.
+        const proxy = this._proxy;
         this._proxy = null;
+        for (const id of this._proxyHandlers)
+            proxy.disconnect(id);
+        this._proxyHandlers = [];
+        this._refreshPending = false;
     }
 
     _scheduleReconnect() {

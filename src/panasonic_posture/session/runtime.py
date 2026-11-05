@@ -89,6 +89,7 @@ class SessionRuntime:
         screen_locked: Callable[[], bool] | None = None,
         adapter_errors: tuple[type[Exception], ...] = (),
         executor: Executor | None = None,
+        lease_executor: Executor | None = None,
         schedule_completion: Callable[[], None] | None = None,
     ) -> None:
         self.client = client
@@ -100,6 +101,13 @@ class SessionRuntime:
             "posture-session-runtime"
         )
         self._owns_executor = executor is None
+        self._lease_executor = lease_executor if lease_executor is not None else thread_executor(
+            "posture-session-lease"
+        )
+        self._owns_lease_executor = lease_executor is None
+        self._lease_task: Future[Any] | None = None
+        self._lease_wait_since: float | None = None
+        self._lease_attempt_at = float("-inf")
         self._schedule_completion = schedule_completion
         self._tasks: deque[_Task] = deque()
         self._closing = False
@@ -143,7 +151,9 @@ class SessionRuntime:
             return
         self.drain_completed_tasks(now)
         if self._tasks:
+            self._maintain_display_lease(now)
             return
+        self._lease_wait_since = None
         if self._restore_retry_at and now >= self._restore_retry_at:
             self._restore_display_async(now)
         elif self.failure_active:
@@ -168,6 +178,9 @@ class SessionRuntime:
         self._closing = True
         tasks = tuple(self._tasks)
         self._tasks.clear()
+        if self._lease_task is not None:
+            tasks += (_Task("lease", self._lease_task),)
+            self._lease_task = None
         for task in tasks:
             try:
                 task.future.result()
@@ -175,6 +188,8 @@ class SessionRuntime:
                 log.debug("background task failed during shutdown", exc_info=True)
         if self._owns_executor:
             self._executor.shutdown(wait=True, cancel_futures=True)
+        if self._owns_lease_executor:
+            self._lease_executor.shutdown(wait=True, cancel_futures=True)
         self._close_notifier()
         self._restore_display()
 
@@ -204,11 +219,16 @@ class SessionRuntime:
         """Advance pending work without starting another periodic state read."""
         if self._closing:
             return
+        self._poll_display_lease(now)
         for _ in range(16):
             if not self._tasks:
                 return
             task = self._tasks[0]
             if not task.future.done():
+                return
+            if task.kind in ("apply", "restore") and self._lease_task is not None:
+                # A not-ready heartbeat must finish before a ready report, or
+                # its late arrival would revoke the just-confirmed transaction.
                 return
             self._tasks.popleft()
             try:
@@ -229,11 +249,15 @@ class SessionRuntime:
         elif task.kind == "probe":
             self._probe_succeeded(result, now)
         elif task.kind == "apply":
+            if self.failure_active:
+                return  # finish the queued restore, never verify rejected work
             state, _generation, _daemon_error = task.context
             if state.target.mode == "unavailable":
                 self._display_needs_restore = False
             self._submit("verify", self.client.get_state, context=task.context)
         elif task.kind == "verify":
+            if self.failure_active:
+                return
             state, generation, _daemon_error = task.context
             if not isinstance(result, StateSnapshot):
                 self._handle_service_failure(
@@ -282,6 +306,47 @@ class SessionRuntime:
             log.warning("display restore pending: %s", describe_error(error))
 
     # -- lease recovery --------------------------------------------------
+
+    def _maintain_display_lease(self, now: float) -> None:
+        if self.failure_active or self._lease_task is not None:
+            return
+        task = self._tasks[0]
+        if task.kind not in ("apply", "restore") or task.future.done():
+            self._lease_wait_since = None
+            return
+        if self._lease_wait_since is None:
+            self._lease_wait_since = now
+        last = max(self.last_feedback_at, self._lease_attempt_at)
+        if last == float("-inf"):
+            last = self._lease_wait_since
+        if now - last < protocol.AGENT_HEARTBEAT_SECONDS:
+            return
+        self._lease_attempt_at = now
+        # Display work remains serialized on its own worker. This independent
+        # lane only renews a verified current lease; it never reports readiness.
+        try:
+            self._lease_task = self._lease_executor.submit(self._probe_lease)
+        except Exception as error:
+            self._handle_service_failure(now, error)
+            return
+        schedule = self._schedule_completion
+        if schedule is not None and not self._lease_task.done():
+            self._lease_task.add_done_callback(lambda _future: schedule())
+        self._poll_display_lease(now)
+
+    def _poll_display_lease(self, now: float) -> None:
+        task = self._lease_task
+        if task is None or not task.done():
+            return
+        self._lease_task = None
+        try:
+            state = task.result()
+        except Exception as error:
+            self._handle_service_failure(now, error)
+            return
+        self.last_feedback = (state.generation, False, "", "")
+        self.last_feedback_at = now
+        self._reset_transient()
 
     def _probe_lease(self) -> StateSnapshot:
         state = self.client.get_state()
@@ -563,6 +628,7 @@ class SessionRuntime:
             self.display is not None
             and self._display_needs_restore
             and now >= self._restore_retry_at
+            and not any(task.kind == "restore" for task in self._tasks)
         ):
             self._submit("restore", self.display.restore)
 

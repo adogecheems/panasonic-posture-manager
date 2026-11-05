@@ -43,8 +43,17 @@ msgstr "进入支架模式"
 msgid "Retry"
 msgstr "重试"
 
-msgid "Mode switching is paused."
-msgstr "模式切换已暂停。"
+msgid "Mode switching is paused. Keep the device still and try again."
+msgstr "模式切换已暂停，请将设备静置后再试。"
+
+msgid "The tablet switch is unavailable. Restart the background service if this continues."
+msgstr "无法读取平板开关状态。若持续出现，请重启后台服务。"
+
+msgid "No posture data is available. Keep the device still; switching will resume automatically."
+msgstr "暂时没有姿态数据，请将设备静置，恢复后会自动继续切换。"
+
+msgid "Switching is taking longer than usual. Please wait or choose another mode in Settings."
+msgstr "切换耗时较长，请稍候，或到设置中选择其他模式。"
 
 msgid "Retrying…"
 msgstr "正在重试…"

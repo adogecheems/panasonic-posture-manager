@@ -410,6 +410,84 @@ System.exit(0);
         result = run_gjs(source)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
+    def test_reconnection_ignores_old_replies_errors_and_signals(self):
+        source = """
+import Gio from 'gi://Gio';
+import {PostureService} from __SERVICE_URI__;
+const service = new PostureService(null);
+const states = [];
+let unavailable = 0;
+service._onState = state => states.push(state.generation);
+service._onUnavailable = () => unavailable++;
+const snapshot = generation => JSON.stringify({version: 2, generation, target: {mode: 'laptop'}});
+function proxy(generation, fail = false) {
+    return {
+        callback: null, disconnected: [],
+        call(_method, _args, _flags, _timeout, _cancel, callback) { this.callback = callback; },
+        call_finish() {
+            if (fail) throw new Error('old connection timed out');
+            return {deepUnpack: () => [snapshot(generation)]};
+        },
+        disconnect(id) { this.disconnected.push(id); },
+    };
+}
+function check(condition, message) { if (!condition) throw new Error(message); }
+for (const fail of [false, true]) {
+    const old = proxy(1, fail);
+    service._proxy = old;
+    service._proxyHandlers = [11, 12];
+    service.refresh();
+    service._dropProxy();
+    check(old.disconnected.join(',') === '11,12', 'old signal handlers stayed attached');
+    const current = proxy(10);
+    service._proxy = current;
+    service.refresh();
+    check(current.callback !== null, 'old refresh blocked the new connection');
+    old.callback(old, {});
+    check(service._proxy === current && service._refreshPending, 'old callback changed new connection');
+    check(unavailable === 0 && states.length === (fail ? 1 : 0), 'old reply or error reached the page');
+    current.callback(current, {});
+}
+check(states.join(',') === '10,10', 'fresh states were not delivered');
+service.stop();
+check(service._proxy === null, 'stop retained a proxy');
+
+const connected = new PostureService(null);
+connected._onState = () => { throw new Error('old signal reached the page'); };
+let next = null;
+Gio.DBusProxy.new = (...args) => args.at(-1)(null, {});
+Gio.DBusProxy.new_finish = () => next;
+function connectedProxy() {
+    const result = proxy(20);
+    result.handlers = new Map();
+    result.g_name_owner = ':1.20';
+    result.connect = (signal, callback) => {
+        const id = result.handlers.size + 1;
+        result.handlers.set(id, {signal, callback});
+        return id;
+    };
+    return result;
+}
+next = connectedProxy();
+connected._connect();
+const oldSignals = Array.from(next.handlers.values());
+connected._dropProxy();
+next = connectedProxy();
+connected._connect();
+next.g_name_owner = null;
+for (const {signal, callback} of oldSignals) {
+    if (signal === 'g-signal')
+        callback(null, ':1.old', 'StateChanged', {deepUnpack: () => [snapshot(1)]});
+    else
+        callback();
+}
+check(connected._proxy === next, 'old owner change dropped the new proxy');
+connected.stop();
+print('reconnection callback check passed');
+""".replace("__SERVICE_URI__", json.dumps(_js_uri("data/ui/service.js")))
+        result = run_gjs(source)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
     def test_retry_falls_back_to_set_mode_for_older_services(self):
         source = f"""
 import GLib from 'gi://GLib';
@@ -739,7 +817,7 @@ GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
         ui.posturePage.update(Object.assign({{}}, pendingTabletState, {{
             target: {{mode: 'unavailable'}},
         }}));
-        if (ui.posturePage._detail.label !== 'Mode switching is paused.')
+        if (ui.posturePage._detail.label !== 'Mode switching is paused. Keep the device still and try again.')
             failures.push('unavailable target did not explain the pause');
         const failedTabletState = Object.assign({{}}, pendingTabletState, {{
             error_code: 'display-transform-not-applied', error_detail: 'test',
@@ -891,6 +969,80 @@ System.exit(app.run([System.programInvocationName]));
             result.returncode, 0, (result.stderr or "") + (result.stdout or "")
         )
         self.assertIn("responsive settings self-check passed", result.stdout)
+
+    def test_slow_transition_feedback_and_pause_reasons(self):
+        source = """
+import Adw from 'gi://Adw?version=1';
+import GLib from 'gi://GLib';
+import System from 'system';
+import {PosturePage} from __POSTURE_URI__;
+const app = new Adw.Application({application_id: 'work.mmoe.panasonic.PostureManager.SlowTest'});
+const timers = new Map();
+let nextId = 100000;
+const timeoutAdd = GLib.timeout_add;
+const sourceRemove = GLib.source_remove;
+GLib.timeout_add = (priority, delay, callback) => {
+    if (delay !== 2000) return timeoutAdd(priority, delay, callback);
+    const id = ++nextId;
+    timers.set(id, callback);
+    return id;
+};
+GLib.source_remove = id => timers.delete(id) || sourceRemove(id);
+function check(condition, message) { if (!condition) throw new Error(message); }
+app.connect('activate', () => {
+    try {
+        const page = new PosturePage({});
+        const target = {mode: 'tent', tablet: true, rotation: 180, disable_internal_input: true};
+        const state = {instance: 'a', generation: 1, manual: 'tent', pose: 'laptop',
+            hardware: false, hardware_status: 'ok', supported: true, support_tier: 'validated',
+            session_connected: true, sensor_source: 'iio', sensor_error: null,
+            target, applied: null, error_code: null};
+        page.update(state);
+        check(!page._detail.visible && timers.size === 1, 'ordinary transition was noisy');
+        const [id, elapsed] = timers.entries().next().value;
+        page.update(state);
+        check(timers.size === 1, 'state refresh restarted the timer');
+        timers.delete(id);
+        elapsed();
+        check(page._detail.label.includes('taking longer than usual'), 'long transition stayed silent');
+        page.update({...state, applied: target});
+        check(!page._detail.visible && timers.size === 0, 'completed mode retained its waiting message');
+
+        page.update({...state, generation: 2});
+        const stale = timers.values().next().value;
+        page.update({...state, instance: 'b', generation: 2});
+        stale();
+        check(!page._detail.visible && timers.size === 1, 'stale timer affected the new service');
+        page.setUnavailable();
+        check(timers.size === 0, 'disconnect retained the timer');
+        stale();
+        check(page._detail.label === 'Background service unavailable', 'old timer overwrote disconnection');
+
+        page.update({...state, target: {mode: 'unavailable'}, sensor_error: 'internal-secret'});
+        check(page._detail.label.includes('No posture data') && !page._detail.label.includes('internal-secret'),
+            'sensor pause did not explain a safe next action');
+        page.update({...state, target: {mode: 'unavailable'}, hardware: null, hardware_status: 'ambiguous'});
+        check(page._detail.label.includes('tablet switch') && page._detail.label.includes('Restart'),
+            'hardware pause did not explain the next action');
+        page.update({...state, target: {mode: 'unavailable'}});
+        check(page._detail.label.includes('Keep the device still'), 'generic pause had no next action');
+        page.update({...state, error_code: 'display-transform-not-applied'});
+        check(page._detail.label.startsWith('Mode change failed') && timers.size === 0,
+            'waiting feedback hid a failure');
+        page.update({...state, generation: 3});
+        page.close();
+        check(timers.size === 0, 'closing retained the timer');
+        print('slow transition feedback check passed');
+        app.quit();
+    } catch (error) {
+        logError(error);
+        System.exit(1);
+    }
+});
+System.exit(app.run([System.programInvocationName]));
+""".replace("__POSTURE_URI__", json.dumps(_js_uri("data/ui/posturePage.js")))
+        result = run_gjs(source, env=self._environment, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
     def test_keyboard_browsing_and_delayed_responses(self):
         source = """

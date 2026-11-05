@@ -22,6 +22,7 @@ from panasonic_posture.service.actuator import ActuatorError, RelayState
 from panasonic_posture.service.engine import Engine, ServiceError, guard
 from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.service.settings import Settings
+from panasonic_posture.session.runtime import SessionRuntime
 
 LAPTOP = Target(mode="laptop", tablet=False, rotation=0, disable_internal_input=False)
 TENT = Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True)
@@ -588,6 +589,18 @@ class ActuatorTransactionTests(EngineTestCase):
         self.assertEqual(engine.state.error_code, ErrorCode.RELAY_HEARTBEAT)
         self.assertIsNone(engine.state.applied)
 
+    def test_healthy_report_can_recover_from_a_transient_input_grab_error(self) -> None:
+        engine = self.make()
+        self.controller.target = TENT
+        self.lease(engine)
+        self.actuator.keep_state = RelayState(True, False, False, True, "input-grab-failed")
+        self.tick(engine)
+        self.assertEqual(engine.state.error_code, ErrorCode.RELAY_INPUT)
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        self.tick(engine)
+        self.assertIsNone(engine.state.error_code)
+        self.assertEqual(engine.state.applied, TENT)
+
     def test_failed_keep_releases_asynchronously_and_publishes_error(self) -> None:
         executor = DeferredExecutor()
         engine = self.make(executor=executor)
@@ -1022,6 +1035,92 @@ class ModeMethodTests(EngineTestCase):
 
 
 class RetryTests(EngineTestCase):
+    def test_retry_waits_for_release_on_worker_without_blocking_method(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = TENT
+        self.tick(engine)
+        release = engine._release_task.future
+        generation = self.controller.generation
+        with mock.patch.object(release, "result", side_effect=RuntimeError("would block")) as wait:
+            self.assertTrue(engine.retry())
+            wait.assert_not_called()
+        self.assertEqual(self.actuator.calls, [])
+        self.assertEqual(self.controller.generation, generation + 1)
+        self.assertFalse(self.lease(engine, generation=generation))
+        executor.run_next()
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["release"])
+        self.assertEqual(len(executor.calls), 1)
+        self.lease(engine)
+        self.tick(engine)
+        self.assertNotIn("keep", self.actuator.calls)
+        executor.run_next()
+        self.tick(engine)
+        self.assertIn("retry", self.actuator.calls)
+        self.assertIsNone(engine.state.applied)
+
+    def test_retry_reset_runs_on_worker_and_repeated_requests_are_coalesced(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = TENT
+        self.actuator.error_code = ErrorCode.RELAY_EXITED
+        self.assertTrue(engine.retry())
+        self.assertTrue(engine.retry())
+        self.assertEqual(self.actuator.calls, [])
+        self.assertEqual(len(executor.calls), 1)
+        self.tick(engine)
+        self.assertIsNone(engine.state.error_code)
+        self.assertIsNone(engine.state.applied)
+        self.assertEqual(self.actuator.error_code, ErrorCode.RELAY_EXITED)
+        executor.run_next()
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls.count("retry"), 1)
+
+    def test_reset_failure_is_published_without_confirming_target(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = TENT
+        self.actuator.retry = mock.Mock(side_effect=ActuatorError(ErrorCode.NATIVE_RECOVERY, "failed"))
+        engine.retry()
+        engine.retry()  # coalesce onto the reset, retaining the newest generation
+        self.lease(engine)  # display can finish before the input reset does
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        executor.run_next()
+        self.tick(engine)
+        self.assertEqual(engine.state.error_code, ErrorCode.NATIVE_RECOVERY)
+        self.assertIsNone(engine.state.applied)
+        self.assertNotIn("keep", self.actuator.calls)
+
+    def test_mode_change_with_failed_actuator_schedules_reset(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.actuator.error_code = ErrorCode.RELAY_EXITED
+        self.assertTrue(engine.set_mode("tent"))
+        self.assertEqual(self.actuator.calls, [])
+        self.assertEqual(len(executor.calls), 1)
+        self.tick(engine)
+        self.assertNotIn("keep", self.actuator.calls)
+        executor.run_next()
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls.count("retry"), 1)
+
+    def test_mode_change_cannot_hide_a_running_reset_failure(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.actuator.retry = mock.Mock(side_effect=RuntimeError("reset failed"))
+        engine.retry()
+        engine.set_mode("stand")
+        self.controller.target = STAND
+        self.lease(engine)
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        executor.run_next()
+        self.tick(engine)
+        self.assertEqual(engine.state.error_code, ErrorCode.NATIVE_RECOVERY)
+        self.assertIsNone(engine.state.applied)
+        self.assertNotIn("keep", self.actuator.calls)
+
     def test_retry_clears_backend_errors_and_bumps_generation(self) -> None:
         engine = self.make()
         self.controller.target = TENT
@@ -1383,6 +1482,48 @@ class RealDomainIntegrationTests(unittest.TestCase):
         hardware[0] = False
         engine.tick(mono.value)
         self.assertNotEqual(engine.state.target.mode, "hardware")
+
+
+class SlowDisplayIntegrationTests(EngineTestCase):
+    def test_orientation_change_keeps_input_while_display_exceeds_lease_duration(self) -> None:
+        engine = self.make()
+        self.controller.target = TENT
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(engine.state.applied, TENT)
+        executor = DeferredExecutor()
+        display = mock.Mock()
+        runtime = SessionRuntime(
+            SimpleNamespace(
+                get_state=lambda: engine.state,
+                session_update=lambda *args: engine.session_update(*args, sender_uid=1000),
+            ),
+            display, None, executor=executor, lease_executor=InlineExecutor(),
+        )
+        runtime.tick(100.0)
+        executor.run_next()
+        runtime.tick(100.1)
+        engine.set_mode("stand")
+        self.controller.target = STAND
+        self.tick(engine, now=100.2)
+        for now in (100.7, 101.3, 101.9, 102.5, 103.1, 103.7):
+            self.mono.value = now
+            runtime.tick(now)
+            self.tick(engine)
+            self.assertTrue(self.actuator.running)
+            self.assertTrue(engine.state.session_connected)
+            self.assertIsNone(engine.state.applied)
+        for _ in range(8):
+            if not executor.calls:
+                break
+            executor.run_next()
+            runtime.drain_completed_tasks(103.8)
+        self.tick(engine)
+        self.assertEqual(engine.state.applied, STAND)
+        self.assertEqual(self.actuator.calls.count("release"), 0)
+        self.assertEqual(display.apply.call_args.args, (STAND,))
+        runtime.close()
 
 
 if __name__ == "__main__":

@@ -86,6 +86,7 @@ class ServiceError(Exception):
 class _ReleaseTask:
     future: Future[Any]
     generation: int
+    retry: bool = False
 
 
 def guard(callback: Callable[..., Any], default: Any = True) -> Callable[..., Any]:
@@ -168,6 +169,7 @@ class Engine:
         )
         self._owns_executor = executor is None
         self._release_task: _ReleaseTask | None = None
+        self._retry_requested = False
         self._last_release_key: tuple[int, Target] | None = None
 
         support_tier = str(
@@ -242,6 +244,7 @@ class Engine:
 
     def shutdown(self) -> None:
         """Release software control on shutdown (bounded by the actuator)."""
+        self._retry_requested = False
         self._wait_for_release()
         try:
             self._actuator.release()
@@ -273,8 +276,6 @@ class Engine:
         retry_actuator = self._manage_actuator and bool(
             getattr(self._actuator, "error_code", None)
         )
-        if retry_actuator:
-            self._wait_for_release()
         try:
             self._controller.set_manual(value)
         except ValueError as error:
@@ -293,7 +294,7 @@ class Engine:
         # between tent/stand/tablet would release and re-grab the internal
         # input devices for no reason.
         if retry_actuator:
-            self._actuator.retry()
+            self._queue_retry()
         self._log.info("manual mode changed to %s (generation %s)", value, self._controller.generation)
         return True
 
@@ -308,10 +309,9 @@ class Engine:
         """
         if not self.supported:
             raise ServiceError(ErrorCode.UNSUPPORTED_MODEL)
-        if self._manage_actuator:
-            self._wait_for_release()
-            self._actuator.retry()
         self._bump_generation()
+        if self._manage_actuator:
+            self._queue_retry()
         self._tick_error_code = None
         self._tick_error_detail = None
         self._log.info(
@@ -527,6 +527,7 @@ class Engine:
     def sleep_event(self, suspended: bool) -> None:
         """PrepareForSleep: drop the lease, release the relay, invalidate anchors."""
         self.suspended = bool(suspended)
+        self._retry_requested = False
         self._log.info("PrepareForSleep: suspended=%s", self.suspended)
         self._wait_for_release()
         try:
@@ -700,6 +701,10 @@ class Engine:
         prepared = self._prepared(lease, generation)
         software_tablet = target.tablet is True
         hardware_off = self._hardware_observation.effective is False
+        if software_tablet and self._controller.error_code == ErrorCode.NATIVE_RECOVERY:
+            # A fast display acknowledgement cannot make a failed reset safe.
+            self._ensure_release(generation, target)
+            return
         try:
             if software_tablet and hardware_off and prepared:
                 self._actuator.keep(now)
@@ -759,13 +764,28 @@ class Engine:
             self._last_release_key = key
             self._submit_release(generation)
 
-    def _submit_release(self, generation: int) -> None:
+    def _queue_retry(self) -> None:
+        if self._release_task is not None and self._release_task.retry:
+            return  # the running reset also serves the newer generation
+        self._retry_requested = True
+        self._start_retry()
+
+    def _start_retry(self) -> None:
+        if not self._retry_requested or self._release_task is not None:
+            return
+        self._retry_requested = False
+        self._last_release_key = None
+        self._submit_release(self._controller.generation, retry=True)
+
+    def _submit_release(self, generation: int, *, retry: bool = False) -> None:
         try:
-            future = self._executor.submit(self._actuator.release)
+            future = self._executor.submit(
+                self._actuator.retry if retry else self._actuator.release
+            )
         except Exception as error:  # noqa: BLE001 - executor shutdown race
             future = Future()
             future.set_exception(error)
-        self._release_task = _ReleaseTask(future, generation)
+        self._release_task = _ReleaseTask(future, generation, retry)
         # InlineExecutor (tests) completes synchronously.  Poll once so the
         # production thread pool keeps the same one-tick acknowledgement flow;
         # a real release remains asynchronous and is consumed on a later tick.
@@ -789,22 +809,29 @@ class Engine:
         if task is None or not task.future.done():
             return
         self._release_task = None
+        # A reset serves every target queued while it runs. Its failure is a
+        # current backend fault; ordinary release results stay generation-bound.
+        generation = self._controller.generation if task.retry else task.generation
         try:
             task.future.result()
         except Exception as error:  # noqa: BLE001 - actuator errors are state input
             self._last_release_key = None
-            code = getattr(error, "code", ErrorCode.INTERNAL)
+            code = getattr(
+                error, "code", ErrorCode.NATIVE_RECOVERY if task.retry else ErrorCode.INTERNAL
+            )
             detail = getattr(error, "detail", None) or str(error)
-            self._controller.acknowledge(task.generation, False, code, detail)
+            self._controller.acknowledge(generation, False, code, detail)
+            self._start_retry()
             return
 
         if self._actuator.error_code:
             self._controller.acknowledge(
-                task.generation,
+                generation,
                 False,
                 self._actuator.error_code,
                 self._actuator.error_detail,
             )
+        self._start_retry()
 
     def _update_presentation(
         self, boot_now: float, reading: SensorReading, hardware: bool | None
@@ -840,7 +867,12 @@ class Engine:
         detail = getattr(self._controller, "error_detail", None)
         if code is None and self.agent_error_code is not None and self.agent_ready is None:
             code, detail = self.agent_error_code, self.agent_error_detail
-        if code is None and self._manage_actuator:
+        resetting = self._retry_requested or (
+            self._release_task is not None and self._release_task.retry
+        )
+        if code is None and self._manage_actuator and not resetting:
+            # The old error is not the result of the reset still in progress.
+            # Completion publishes a new failure before any input takeover.
             actuator_code = getattr(self._actuator, "error_code", None)
             if actuator_code is not None:
                 code = actuator_code

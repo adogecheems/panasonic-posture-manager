@@ -231,6 +231,7 @@ export function createApplication(applicationId = APPLICATION_ID) {
     });
     application.connect('activate', () => ensureUi(application));
     application.connect('shutdown', () => {
+        ui?.posturePage.close();
         if (service) {
             service.stop();
             service = null;

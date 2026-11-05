@@ -18,6 +18,7 @@ from panasonic_posture.session.agent import Agent
 from panasonic_posture.session.client import SystemClient
 from panasonic_posture.session.display import DisplayError
 from panasonic_posture.session.errors import ServiceError
+from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.tasks import InlineExecutor
 
 
@@ -904,6 +905,93 @@ class FakeConnection:
 
             return FakeReply((json.dumps(self.state),))
         return FakeReply(())
+
+
+class SlowDisplayLeaseTests(unittest.TestCase):
+    def make_runtime(self, *, lease_executor=None):
+        self.client = FakeClient(make_state())
+        self.display = FakeDisplay()
+        self.executor = DeferredExecutor()
+        runtime = SessionRuntime(
+            self.client, self.display, None,
+            executor=self.executor,
+            lease_executor=lease_executor or InlineExecutor(),
+        )
+        runtime.tick(0.0)
+        self.executor.run_next()
+        runtime.tick(0.1)
+        return runtime
+
+    def finish_tasks(self, runtime, now):
+        for _ in range(12):
+            if not self.executor.calls:
+                return
+            self.executor.run_next()
+            runtime.drain_completed_tasks(now)
+        self.fail("session work did not settle")
+
+    def test_slow_display_keeps_lease_without_acknowledging_success(self):
+        runtime = self.make_runtime()
+        for now in (0.7, 1.3, 1.9, 2.5, 3.1, 3.7):
+            runtime.tick(now)
+        self.assertGreaterEqual(len(self.client.updates), 5)
+        self.assertTrue(all(update == (1, False, "", "") for update in self.client.updates))
+        self.assertFalse(runtime.ready)
+        self.assertEqual(self.display.applied, [])
+        self.finish_tasks(runtime, 3.8)
+        self.assertTrue(runtime.ready)
+        self.assertEqual(self.client.updates[-1], (1, True, "", ""))
+
+    def test_heartbeat_rejection_restores_after_inflight_display_finishes(self):
+        runtime = self.make_runtime()
+        self.client.update_error = ServiceError(ErrorCode.ACCESS_DENIED, "inactive")
+        runtime.tick(0.7)
+        self.assertTrue(runtime.failure_active)
+        self.assertFalse(runtime.ready)
+        self.finish_tasks(runtime, 0.8)
+        self.assertEqual(self.display.restores, 1)
+        self.assertFalse(runtime.ready)
+        self.assertTrue(all(not update[1] for update in self.client.updates))
+
+    def test_heartbeat_uses_current_target_and_stale_display_is_not_acknowledged(self):
+        for change in ({"generation": 2}, {"instance": "instance-b"}):
+            with self.subTest(change=change):
+                runtime = self.make_runtime()
+                self.client.state = make_state(
+                    target=Target(mode="stand", tablet=True, rotation=0), **change
+                )
+                runtime.tick(0.7)
+                self.assertEqual(self.client.updates[-1][0], self.client.state.generation)
+                self.assertFalse(self.client.updates[-1][1])
+                self.finish_tasks(runtime, 0.8)
+                self.assertEqual(self.display.applied[-1].mode, "stand")
+                self.assertEqual(runtime.instance, self.client.state.instance)
+                self.assertEqual(runtime.generation, self.client.state.generation)
+                self.assertEqual(sum(update[1] for update in self.client.updates), 1)
+
+    def test_display_completion_waits_for_inflight_heartbeat_before_ready(self):
+        leases = DeferredExecutor()
+        runtime = self.make_runtime(lease_executor=leases)
+        runtime.tick(0.7)
+        self.assertEqual(len(leases.calls), 1)
+        self.executor.run_next()
+        runtime.tick(0.8)
+        self.assertFalse(runtime.ready)
+        self.assertEqual(self.executor.calls, [])
+        leases.run_next()
+        runtime.drain_completed_tasks(0.9)
+        self.finish_tasks(runtime, 1.0)
+        self.assertEqual(self.client.updates, [(1, False, "", ""), (1, True, "", "")])
+
+    def test_continuous_heartbeat_failure_stops_slow_transaction(self):
+        runtime = self.make_runtime()
+        self.client.get_error = ServiceError(ErrorCode.INTERNAL, "transport timeout")
+        for now in (0.7, 1.3, 1.9, 2.5, 3.1, 3.8):
+            runtime.tick(now)
+        self.assertTrue(runtime.failure_active)
+        self.finish_tasks(runtime, 3.9)
+        self.assertEqual(self.display.restores, 1)
+        self.assertFalse(runtime.ready)
 
 
 if __name__ == "__main__":
