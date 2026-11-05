@@ -207,26 +207,21 @@ class SensorManager:
         sysfs = str(SensorSource.SYSFS)
         while not self._stopped():
             order = self._priority()
-            for index, kind in enumerate(order):
+            if order[0] == iio and self._monotonic() < self._iio_retry_at:
+                # After a failed handover, resume sysfs before probing again.
+                # Keep IIO as the fallback if sysfs also fails: backoff must
+                # not strand us without samples when one source still works.
+                order = (sysfs, iio)
+            for kind in order:
                 if self._stopped():
                     return
-                if (
-                    kind == iio
-                    and index > 0
-                    and order[0] == iio
-                    and self._monotonic() < self._iio_retry_at
-                ):
-                    # IIO is preferred but recently failed: the sysfs fallback
-                    # below retries it as a shadow trial when it is due.
-                    continue
-                shadow = kind == sysfs and order[0] == iio and not self.prefer_shared
+                shadow = kind == sysfs and not self.prefer_shared
                 result, switched = self._run_source(kind, shadow_iio=shadow)
                 if result == "stopped":
                     return
                 if result == "switch" and switched is not None:
-                    # The shadow trial got its first sample (already published)
-                    # and handed the open IIO source over; keep reading it on
-                    # the manager thread.
+                    # The shadow trial sustained a healthy sample window and
+                    # handed the open source over; keep reading it here.
                     self._iio_retry_at = float("inf")
                     result, _ = self._run_source(iio, source=switched)
                     if result == "stopped":

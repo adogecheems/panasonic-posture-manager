@@ -593,7 +593,13 @@ class Policy:
             # run in the new posture.  Without this gate, several seconds of
             # noisy samples below the hold edge could release stand mode and
             # immediately re-enter it when the signal settles.
-            if self.stable and now - self.leave_since >= leave_seconds:
+            # A stable alternative software posture has its own entry timer.
+            # Let that timer finish without releasing input via a temporary L
+            # target. Motion, an abandoned candidate and real laptop poses
+            # still follow the existing exit rules; stale data and hardware
+            # changes have already revoked this path above.
+            transferring = self.pending in (MODE_TENT, MODE_STAND)
+            if self.stable and not transferring and now - self.leave_since >= leave_seconds:
                 self._set_mode(MODE_LAPTOP, now)
                 self._clear_timers()
         else:

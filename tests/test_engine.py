@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
 import unittest
 from concurrent.futures import Executor, Future
@@ -1500,6 +1501,61 @@ class PresentationTests(EngineTestCase):
 
         self.assertEqual(engine.state.pose, Pose.LAPTOP)
         self.assertEqual(self.presentation.calls[-1][3], 1000.001)
+
+
+class SoftwarePostureIntegrationTests(EngineTestCase):
+    def test_slow_samples_keep_input_through_both_orientation_changes(self) -> None:
+        from panasonic_posture.controller import Controller
+        from panasonic_posture.presentation import PosePresentation
+
+        self.controller = Controller()
+        self.presentation = PosePresentation()
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        engine = self.make()
+
+        def step(pitch):
+            self.boot.value += 0.6
+            self.mono.value += 0.6
+            angle = math.radians(pitch)
+            self.sensor._reading = SensorReading(
+                (0.0, -9.81 * math.sin(angle), -9.81 * math.cos(angle)),
+                self.boot.value, SensorSource.SYSFS,
+            )
+            self.lease(engine)
+            self.tick(engine)
+
+        for _ in range(8):
+            step(80.0)
+        self.assertEqual(engine.state.applied, TENT)
+        releases = self.actuator.calls.count("release")
+        preferences = list(self.sensor.prefer_shared_calls)
+        previous = TENT
+        for path, target in (
+            ([120.0, 135.0, 150.0, 165.0] + [175.0] * 8, STAND),
+            ([125.0, 110.0, 125.0, 110.0] + [80.0] * 8, TENT),
+        ):
+            old_generation = engine.state.generation
+            for pitch in path:
+                step(pitch)
+                self.assertIn(engine.state.target, (TENT, STAND))
+                self.assertEqual(self.actuator.calls.count("release"), releases)
+                self.assertTrue(self.actuator.running)
+                if engine.state.target != previous:
+                    self.assertIsNone(engine.state.applied)
+                    self.assertFalse(self.lease(engine, generation=old_generation))
+                    previous = engine.state.target
+            self.assertEqual(engine.state.applied, target)
+            self.assertEqual(engine.state.generation, old_generation + 1)
+        self.assertEqual(self.sensor.prefer_shared_calls, preferences)
+
+        # A failure in the new display transaction must still revoke input.
+        self.lease(engine, ready=False, code=ErrorCode.DISPLAY_UNAVAILABLE,
+                   detail="display disappeared")
+        self.tick(engine)
+        self.tick(engine)
+        self.assertIsNone(engine.state.applied)
+        self.assertFalse(self.actuator.running)
+        self.assertGreater(self.actuator.calls.count("release"), releases)
 
 
 class RealDomainIntegrationTests(unittest.TestCase):

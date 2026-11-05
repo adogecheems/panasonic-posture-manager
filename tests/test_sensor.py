@@ -144,6 +144,32 @@ class SensorTestCase(unittest.TestCase):
 
 
 class SourceSelectionTests(SensorTestCase):
+    def test_failed_handover_returns_to_sysfs_during_iio_backoff(self) -> None:
+        manager = self.make(monotonic=lambda: 100.0)
+        handed_over = self.iio()
+        with mock.patch.object(manager, "_run_source", side_effect=[
+            ("failed", None), ("switch", handed_over),
+            ("failed", None), ("stopped", None),
+        ]) as run:
+            manager._acquire_loop()
+        self.assertEqual([call.args[0] for call in run.call_args_list],
+                         ["iio", "sysfs", "iio", "sysfs"])
+        self.assertTrue(run.call_args_list[-1].kwargs["shadow_iio"])
+        self.assertEqual(manager._iio_retry_at, 100.0 + sensor_module.SENSOR_RETRY_SECONDS)
+
+    def test_sysfs_failure_can_use_iio_even_during_backoff(self) -> None:
+        for shared in (False, True):
+            with self.subTest(shared=shared):
+                manager = self.make(monotonic=lambda: 100.0)
+                manager.set_prefer_shared(shared)
+                manager._iio_retry_at = 160.0
+                with mock.patch.object(manager, "_run_source", side_effect=[
+                    ("failed", None), ("stopped", None),
+                ]) as run:
+                    manager._acquire_loop()
+                self.assertEqual([call.args[0] for call in run.call_args_list],
+                                 ["sysfs", "iio"])
+
     def test_prefers_iio_source(self) -> None:
         self.iio.vector((0.1, 0.2, -9.8))
         self.sysfs.fail_open = True

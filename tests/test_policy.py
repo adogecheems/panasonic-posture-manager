@@ -187,6 +187,52 @@ class PolicyTestCase(unittest.TestCase):
         return self.policy.mode
 
 
+class SoftwareTransitionTests(PolicyTestCase):
+    def start_tent_transfer(self):
+        self.reset_policy()
+        self.hold(80.0)
+        self.step(175.0, dt=0.6)
+        self.step(175.0, dt=0.6)
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.assertEqual(self.policy.pending, MODE_STAND)
+
+    def test_software_postures_switch_without_laptop_or_prompt(self):
+        for start, finish, path, expected in (
+            (80.0, 175.0, [120.0, 135.0, 150.0, 165.0], MODE_STAND),
+            (175.0, 80.0, [125.0, 110.0, 125.0, 110.0], MODE_TENT),
+        ):
+            for dt in (0.1, 0.6):
+                with self.subTest(start=start, dt=dt):
+                    self.reset_policy()
+                    self.hold(start)
+                    modes = [self.step(pitch, dt=dt, stand_prompt=True)
+                             for pitch in path + [finish] * 30]
+                    self.assertEqual(modes[-1], expected)
+                    self.assertTrue(set(modes) <= {MODE_TENT, MODE_STAND}, modes)
+                    self.assertIsNone(self.policy.pending_prompt)
+
+    def test_abandoned_transfer_still_releases_for_laptop(self):
+        self.start_tent_transfer()
+        self.hold(0.0)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+        self.assertIsNone(self.policy.pending)
+
+    def test_pending_transfer_never_masks_hardware_or_sensor_loss(self):
+        for hardware, expected in ((True, MODE_HARDWARE), (None, MODE_DISABLED)):
+            with self.subTest(hardware=hardware):
+                self.start_tent_transfer()
+                self.step(175.0, hardware=hardware)
+                self.assertEqual(self.policy.mode, expected)
+        self.start_tent_transfer()
+        self.feed_invalid("missing", dt=self.config.stale_seconds + 0.1)
+        self.assertEqual(self.policy.mode, MODE_DISABLED)
+
+    def test_disabling_tent_during_transfer_releases_immediately(self):
+        self.start_tent_transfer()
+        self.step(175.0, tent_enabled=False)
+        self.assertEqual(self.policy.mode, MODE_LAPTOP)
+
+
 class InitialStateTests(PolicyTestCase):
     def setUp(self):
         self.reset_policy()
