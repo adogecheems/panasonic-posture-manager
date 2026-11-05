@@ -70,6 +70,18 @@ class JournalTests(unittest.TestCase):
 
     # -- corruption isolation --------------------------------------------
 
+    def test_non_utf8_journal_is_quarantined_and_can_be_replaced(self):
+        self.directory.mkdir(parents=True)
+        corrupt = b"\xff\xfe\x00"
+        self.path.write_bytes(corrupt)
+        self.assertIsNone(self.journal.load())
+        self.assertFalse(self.path.exists())
+        quarantined = self.directory / "display.json.corrupt-1234"
+        self.assertEqual(quarantined.read_bytes(), corrupt)
+        self.assertIsNone(self.journal.load())
+        self.journal.save(document())
+        self.assertEqual(self.journal.load(), document())
+
     def test_invalid_json_is_quarantined(self):
         self.directory.mkdir(parents=True)
         self.path.write_text("not json at all", encoding="utf-8")

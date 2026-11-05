@@ -676,14 +676,46 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         daemon.loop.quit.assert_called_once()
         self.assertEqual(daemon._exit_code, 1)
 
-    def test_name_lost_before_acquisition_is_clean_exit(self) -> None:
+    def test_duplicate_name_before_acquisition_is_clean_exit(self) -> None:
         daemon = self.make_daemon()
         daemon.loop = mock.Mock()
-        daemon._name_acquired_ok = False
-        daemon._exit_code = 0
-        daemon._name_lost(None, NAME)
+        bus = FakeBus()
+        bus.set("NameHasOwner", GLib.Variant("(b)", (True,)))
+        daemon._name_lost(bus, NAME)
         daemon.loop.quit.assert_called_once()
         self.assertEqual(daemon._exit_code, 0)
+        call = bus.call_for("NameHasOwner")
+        self.assertEqual(call.destination, "org.freedesktop.DBus")
+        self.assertEqual(call.unpacked(), (NAME,))
+        self.assertEqual(call.timeout_ms, 500)
+
+    def test_unavailable_bus_before_acquisition_is_failure_exit(self) -> None:
+        daemon = self.make_daemon()
+        daemon.loop = mock.Mock()
+        daemon._name_lost(None, NAME)
+        daemon.loop.quit.assert_called_once()
+        self.assertEqual(daemon._exit_code, 1)
+
+    def test_unowned_or_unverifiable_name_is_failure_exit(self) -> None:
+        for reply in (GLib.Variant("(b)", (False,)), gerror("bus disconnected")):
+            with self.subTest(reply=reply):
+                daemon = self.make_daemon()
+                daemon.loop = mock.Mock()
+                bus = FakeBus()
+                bus.set("NameHasOwner", reply)
+                daemon._name_lost(bus, NAME)
+                daemon.loop.quit.assert_called_once()
+                self.assertEqual(daemon._exit_code, 1)
+
+    def test_duplicate_name_does_not_clear_an_initialization_failure(self) -> None:
+        daemon = self.make_daemon()
+        daemon.loop = mock.Mock()
+        daemon._exit_code = 1
+        bus = FakeBus()
+        bus.set("NameHasOwner", GLib.Variant("(b)", (True,)))
+        daemon._name_lost(bus, NAME)
+        daemon.loop.quit.assert_called_once()
+        self.assertEqual(daemon._exit_code, 1)
 
     def test_bus_acquired_failure_sets_failure_exit(self) -> None:
         daemon = self.make_daemon()

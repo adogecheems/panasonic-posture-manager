@@ -746,8 +746,12 @@ class Engine:
                 ):
                     self._controller.acknowledge(generation, True)
         except ActuatorError as error:
-            self._actuator.release()
             self._controller.acknowledge(generation, False, error.code, error.detail)
+            # A failed keep may have changed the relay even after this target
+            # was released before. Record the failure before scheduling cleanup
+            # so a later recovery failure can supersede the original error.
+            self._last_release_key = None
+            self._ensure_release(generation, target)
 
     def _ensure_release(self, generation: int, target: Target) -> None:
         key = (generation, target)

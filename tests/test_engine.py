@@ -588,6 +588,90 @@ class ActuatorTransactionTests(EngineTestCase):
         self.assertEqual(engine.state.error_code, ErrorCode.RELAY_HEARTBEAT)
         self.assertIsNone(engine.state.applied)
 
+    def test_failed_keep_releases_asynchronously_and_publishes_error(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = TENT
+        self.actuator.keep_state = RelayState(True, True, False, True, None)
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(engine.state.applied, TENT)
+
+        self.actuator.keep_error = ActuatorError(ErrorCode.RELAY_HEARTBEAT, "no reports")
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["keep", "keep"])
+        self.assertEqual(len(executor.calls), 1)
+        self.assertEqual(engine.state.error_code, ErrorCode.RELAY_HEARTBEAT)
+        self.assertIsNone(engine.state.applied)
+
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["keep", "keep"])
+        self.assertEqual(len(executor.calls), 1)
+        self.lease(engine, ready=False)
+        self.tick(engine)
+        self.assertTrue(engine.state.session_connected)
+        executor.run_next()
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["keep", "keep", "release"])
+        self.assertEqual(engine.state.error_code, ErrorCode.RELAY_HEARTBEAT)
+        self.assertIsNone(engine.state.applied)
+
+    def test_failed_keep_releases_even_after_same_target_was_released(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = TENT
+        self.tick(engine)
+        executor.run_next()
+        self.lease(engine)
+        self.actuator.keep_error = ActuatorError(ErrorCode.RELAY_START, "cannot start")
+
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["release", "keep"])
+        self.assertEqual(len(executor.calls), 1)
+        self.assertEqual(engine.state.error_code, ErrorCode.RELAY_START)
+
+    def test_failed_keep_surfaces_native_recovery_failure(self) -> None:
+        for deferred in (False, True):
+            with self.subTest(deferred=deferred):
+                self.setUp()
+                executor = DeferredExecutor() if deferred else InlineExecutor()
+                engine = self.make(executor=executor)
+                self.controller.target = TENT
+                self.lease(engine)
+                self.actuator.keep_error = ActuatorError(ErrorCode.RELAY_HEARTBEAT, "no reports")
+
+                def fail_recovery() -> None:
+                    self.actuator.error_code = ErrorCode.NATIVE_RECOVERY
+                    self.actuator.error_detail = "cannot restore native state"
+
+                self.actuator.release_hook = fail_recovery
+                self.tick(engine)
+                if deferred:
+                    self.assertEqual(engine.state.error_code, ErrorCode.RELAY_HEARTBEAT)
+                    executor.run_next()
+                    self.lease(engine, ready=False)
+                    self.tick(engine)
+                self.assertEqual(engine.state.error_code, ErrorCode.NATIVE_RECOVERY)
+                self.assertEqual(engine.state.error_detail, "cannot restore native state")
+                self.assertIsNone(engine.state.applied)
+
+    def test_stale_failed_release_does_not_overwrite_new_generation(self) -> None:
+        executor = DeferredExecutor()
+        engine = self.make(executor=executor)
+        self.controller.target = TENT
+        self.lease(engine)
+        self.actuator.keep_error = ActuatorError(ErrorCode.RELAY_HEARTBEAT, "no reports")
+        self.actuator.release_hook = mock.Mock(side_effect=RuntimeError("release failed"))
+        self.tick(engine)
+
+        engine.set_mode("laptop")
+        self.controller.target = LAPTOP
+        executor.run_next()
+        self.tick(engine)
+        self.assertIsNone(engine.state.error_code)
+        self.assertIsNone(engine.state.applied)
+        self.assertEqual(len(executor.calls), 1)
+
     def test_slow_actuator_release_does_not_extend_the_lease(self) -> None:
         engine = self.make()
         self.controller.target = LAPTOP

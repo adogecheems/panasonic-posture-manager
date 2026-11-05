@@ -145,16 +145,36 @@ class Daemon:
         self._name_acquired_ok = True
         LOG.info("owning %s", name)
 
-    def _name_lost(self, _connection: Any, name: str) -> None:
+    def _name_lost(self, connection: Any, name: str) -> None:
+        duplicate = False
+        if not self._name_acquired_ok and not self._exit_code and connection is not None:
+            try:
+                reply = connection.call_sync(
+                    "org.freedesktop.DBus",
+                    "/org/freedesktop/DBus",
+                    "org.freedesktop.DBus",
+                    "NameHasOwner",
+                    GLib.Variant("(s)", (name,)),
+                    GLib.VariantType.new("(b)"),
+                    Gio.DBusCallFlags.NONE,
+                    500,
+                    None,
+                )
+                duplicate = reply.unpack()[0] is True
+            except GLib.Error:
+                LOG.warning("cannot check ownership of bus name %s", name, exc_info=True)
         if self._name_acquired_ok:
             # We served requests and then lost the name: restarting is the only
             # way back, so let systemd (Restart=on-failure) do it.
             LOG.error("lost bus name %s; exiting with failure", name)
             self._exit_code = 1
-        else:
-            # Name never acquired: most likely another instance is running.
+        elif duplicate:
+            # Only a confirmed duplicate is a successful early exit.
             LOG.info("bus name %s is already owned; exiting", name)
             self._exit_code = 0
+        else:
+            LOG.error("cannot acquire bus name %s; exiting with failure", name)
+            self._exit_code = 1
         self.loop.quit()
 
     def _bus_acquired(self, connection: Any, _name: str) -> None:

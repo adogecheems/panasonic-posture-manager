@@ -98,6 +98,9 @@ class Journal:
             raw = self.path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return None
+        except UnicodeDecodeError as error:
+            self._quarantine(error)
+            return None
         except IsADirectoryError:
             log.warning("display journal %s is a directory; ignoring", self.path)
             return None
