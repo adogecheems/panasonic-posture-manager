@@ -30,7 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOTS = (Path("src/panasonic_posture/session"), Path("src/panasonic_posture/ui"))
+SOURCE_ROOTS = (Path("src/panasonic_posture/session"), Path("src/panasonic_posture/ui"),
+                Path("src/panasonic_posture/fluent"))
 SOURCE_SUFFIXES = {".py"}
 POTFILES = Path("po/POTFILES.in")
 CATALOGS = (Path("po/zh_CN.po"),)

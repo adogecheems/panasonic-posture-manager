@@ -17,3 +17,4 @@ __pycache__/
 /packaging/aur/*.pkg.tar.zst
 /packaging/aur/*.pkg.tar.zst.sig
 *.log
+/.venv-windows/

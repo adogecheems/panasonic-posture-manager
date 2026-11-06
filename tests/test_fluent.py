@@ -1,0 +1,182 @@
+"""Windows UI preview: pure demo state plus optional isolated Qt widgets."""
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+import unittest
+
+from panasonic_posture.fluent.demo import DemoClient, UnavailableClient
+
+
+class DemoTests(unittest.TestCase):
+    def setUp(self):
+        self.jobs, self.states = [], []
+        self.client = DemoClient(lambda delay, callback: self.jobs.append(callback))
+        self.client.start(self.states.append, lambda: None)
+
+    def drain(self):
+        while self.jobs:
+            self.jobs.pop(0)()
+
+    def test_mode_request_and_completion_are_distinct(self):
+        future = self.client.set_mode('tent')
+        self.assertTrue(future.done())
+        self.assertIsNone(self.states[-1]['applied'])
+        self.assertEqual(self.states[-1]['target']['mode'], 'tent')
+        self.drain()
+        self.assertEqual(self.states[-1]['applied']['mode'], 'tent')
+
+    def test_hardware_and_disabled_tent_reject_requests(self):
+        self.client.scenario('hardware')
+        self.assertIsNotNone(self.client.set_mode('laptop').exception())
+        self.client.scenario('laptop')
+        self.client.set_preference('tent_enabled', False)
+        self.assertIsNotNone(self.client.set_mode('tent').exception())
+
+    def test_stale_completion_and_stop_do_not_publish(self):
+        self.client.set_mode('tent')
+        self.client.scenario('hardware')
+        self.drain()
+        self.assertEqual(self.states[-1]['applied']['mode'], 'hardware')
+        self.client.scenario('laptop')
+        self.client.set_mode('stand')
+        self.client.stop()
+        count = len(self.states)
+        self.drain()
+        self.assertEqual(len(self.states), count)
+
+    def test_prompt_epoch_and_calibration(self):
+        self.client.scenario('prompt')
+        self.assertIsNotNone(self.client.confirm_prompt('tent', 0).exception())
+        epoch = self.states[-1]['pending_notification']
+        self.client.confirm_prompt('tent', epoch)
+        self.drain()
+        self.assertEqual(self.states[-1]['applied']['mode'], 'tent')
+        self.client.calibrate()
+        self.assertTrue(self.states[-1]['sensor_calibrated'])
+        self.client.reset_calibration()
+        self.assertFalse(self.states[-1]['sensor_calibrated'])
+
+    def test_unavailable_client_never_reports_success(self):
+        client = UnavailableClient()
+        unavailable = []
+        client.start(lambda value: self.fail('unexpected state'), lambda: unavailable.append(True))
+        self.assertEqual(unavailable, [True])
+        self.assertIsNotNone(client.set_mode('tent').exception())
+
+    def test_cli_help_does_not_load_qt_or_gi(self):
+        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent', '--help'],
+                                text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--demo', result.stdout)
+
+    def test_source_catalog_fallback(self):
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        from panasonic_posture.fluent.resources import translator
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'po').mkdir()
+            (root / 'po/zh_CN.po').write_text('msgid "Laptop"\nmsgstr "笔记本"\n', encoding='utf-8')
+            with patch.dict(os.environ, PANASONIC_POSTURE_DATA_DIR=str(root / 'data')):
+                self.assertEqual(translator('zh_CN')('Laptop'), '笔记本')
+                self.assertEqual(translator('en')('Laptop'), 'Laptop')
+
+
+@unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
+                     'optional Fluent preview dependencies are not installed')
+class FluentWidgetTests(unittest.TestCase):
+    def run_ui(self, body):
+        env = dict(os.environ, QT_QPA_PLATFORM='offscreen', LANGUAGE='en', LANG='C.UTF-8')
+        root = Path(__file__).resolve().parents[1]
+        env['PYTHONPATH'] = str(root / 'src')
+        prelude = '''
+import sys
+class Block:
+    def find_spec(self, name, path=None, target=None):
+        if name == 'gi' or name.endswith('linux_contract'):
+            raise AssertionError(name)
+sys.meta_path.insert(0, Block())
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtTest import QTest
+from panasonic_posture.fluent.app import Window
+from panasonic_posture.fluent.demo import DemoClient, UnavailableClient
+app = QApplication([])
+window = Window(demo=True, language='en')
+window.show()
+QTest.qWait(100)
+'''
+        result = subprocess.run([sys.executable, '-c', prelude + body + '\nwindow.close()\n'],
+                                env=env, text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
+    def test_mode_settings_and_calibration(self):
+        self.run_ui('''
+window.settings.radios['tent'].click()
+QTest.qWait(450)
+assert window.home.heading.text() == 'Tent'
+window.settings.switches['tent_enabled'].setChecked(False)
+assert not window.settings.radios['tent'].isEnabled()
+window.settings.calibration.run('calibrate', window.client.calibrate)
+assert window.settings.reset_button.isVisibleTo(window.settings)
+''')
+
+    def test_scenarios_disconnect_and_restore(self):
+        self.run_ui('''
+window.client.scenario('hardware')
+assert not any(button.isEnabled() for button in window.settings.radios.values())
+assert window.home.heading.text() == 'Tablet'
+window.client.scenario('prompt')
+assert window.home.confirm_button.isVisibleTo(window.home)
+window.home.confirm_button.click()
+QTest.qWait(450)
+assert window.home.heading.text() == 'Tent'
+window.client.scenario('disconnected')
+assert not window.settings.calibrate_button.isEnabled()
+window.client.scenario('laptop')
+assert window.settings.radios['laptop'].isEnabled()
+''')
+
+    def test_normal_start_has_no_simulated_connection(self):
+        self.run_ui('''
+normal = Window(language='en')
+assert isinstance(normal.client, UnavailableClient)
+assert not normal.settings.radios['tent'].isEnabled()
+assert 'not connected' in normal.home.detail.text().lower()
+normal.close()
+''')
+
+    def test_keyboard_browsing_and_late_confirmation(self):
+        self.run_ui('''
+from PyQt6.QtCore import Qt
+window.switchTo(window.settings)
+radio = window.settings.radios['auto']
+radio.setFocus()
+QTest.keyClick(radio, Qt.Key.Key_Down)
+assert window.client.state['manual'] == 'auto'
+assert window.settings.radios['auto'].isChecked()
+window.client.scenario('slow')
+QTest.qWait(2100)
+assert 'longer than usual' in window.home.detail.text()
+window.client.scenario('disconnected')
+assert not window.home.timer.isActive()
+''')
+
+    def test_chinese_dark_and_minimum_layout(self):
+        self.run_ui('''
+from qfluentwidgets import setTheme, Theme
+translated = Window(demo=True, language='zh_CN')
+translated.resize(760, 620)
+translated.show()
+setTheme(Theme.DARK)
+QTest.qWait(100)
+assert translated.home.heading.text() == '笔记本'
+assert translated.home.horizontalScrollBar().maximum() == 0
+translated.switchTo(translated.settings)
+QTest.qWait(100)
+assert translated.settings.horizontalScrollBar().maximum() == 0
+assert translated.grab().width() == 760
+translated.close()
+''')

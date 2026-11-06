@@ -1,0 +1,3 @@
+# Optional source-preview environment; the core package has no runtime dependencies.
+PyQt6==6.12.0
+PyQt6-Fluent-Widgets==1.11.3

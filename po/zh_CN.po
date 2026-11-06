@@ -259,3 +259,81 @@ msgstr "帐篷模式"
 msgid "Stand mode"
 msgstr "支架模式"
 
+
+msgid "A comfortable view, in every position."
+msgstr "自在翻转，舒适使用。"
+
+msgid "Appearance"
+msgstr "外观"
+
+msgid "Automatic rotation"
+msgstr "自动旋转"
+
+msgid "Built-in keyboard and touchpad"
+msgstr "内置键盘和触控板"
+
+msgid "Choose mode"
+msgstr "选择模式"
+
+msgid "Dark"
+msgstr "深色"
+
+msgid "Demo preview · Changes stay in this window."
+msgstr "演示预览 · 所有更改仅在此窗口中生效。"
+
+msgid "Disabled"
+msgstr "已停用"
+
+msgid "Disconnected"
+msgstr "连接中断"
+
+msgid "Enabled"
+msgstr "已启用"
+
+msgid "Landscape"
+msgstr "正常横屏"
+
+msgid "Light"
+msgstr "浅色"
+
+msgid "Make each posture work for you."
+msgstr "按你的习惯设置每一种姿态。"
+
+msgid "Physical tablet mode"
+msgstr "物理平板模式"
+
+msgid "Please try again."
+msgstr "请重试。"
+
+msgid "Preview scenarios"
+msgstr "预览场景"
+
+msgid "Preview updated"
+msgstr "预览已更新"
+
+msgid "Screen orientation"
+msgstr "屏幕方向"
+
+msgid "Slow switching"
+msgstr "切换等待"
+
+msgid "Switch failure"
+msgstr "切换失败"
+
+msgid "System"
+msgstr "跟随系统"
+
+msgid "Tent confirmation"
+msgstr "帐篷模式确认"
+
+msgid "Unable to complete the operation"
+msgstr "操作未能完成"
+
+msgid "Unavailable"
+msgstr "暂不可用"
+
+msgid "Upside down"
+msgstr "倒置横屏"
+
+msgid "Windows preview · The backend is not connected yet."
+msgstr "Windows 界面预览 · 后台服务尚未接入。"

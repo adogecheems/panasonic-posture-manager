@@ -20,6 +20,16 @@
 | 桌面 | x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland。X11、Plasma 5 和其他 Wayland 桌面不在支持范围内。 |
 | 安装包 | Arch Linux、Ubuntu 24.04+／Debian 13+ 和 Fedora 稳定版。 |
 
+## Windows 界面预览
+
+新增使用 Python、PyQt6 和 Fluent Widgets 的独立界面预览，包含姿态主页、模式选择、
+自动模式设置、校准交互、中英文和深浅主题。默认启动显示后台服务尚未接入；使用
+`--demo` 可以演示模式切换、姿态确认、物理平板限制、等待、故障和断线状态。
+演示数据只存在于窗口内，不会旋转屏幕、停用输入设备或保存系统设置。
+
+Windows 后端和安装包尚未提供，预览不代表 Windows 设备支持。
+从源码启动的方法见 [Windows 界面预览](USAGE.md#windows-界面预览)。
+
 ## 安装并打开
 
 1. 下载与系统匹配的安装包。Arch Linux 也可从 AUR 安装。 [下载页面](https://github.com/adogecheems/panasonic-posture-manager/releases) · [安装命令](USAGE.md#安装)

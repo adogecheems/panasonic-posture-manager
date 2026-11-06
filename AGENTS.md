@@ -19,7 +19,7 @@
 - 用户可见行为、机型和桌面支持范围写入 [README.md](README.md)。安装、构建、发布和运维写入 [USAGE.md](USAGE.md)。
   用户文档保留这两页。不要恢复旧的 `docs/`、`CHANGELOG` 或独立硬件验收文档。
 - 机型支持等级核对 `data/profiles/` 和运行时 probe。其他 360° 翻转本按硬件能力判断兼容性。
-  支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland。
+  支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland；`fluent/` 仅为 Windows 界面预览，不代表 Windows 硬件支持。
 - 使用 Python 3.11+、C11 relay、PyGObject／GTK 4／libadwaita。Python 包的运行时依赖列表保持为空，PyGObject 由发行版提供。
 
 ## 3. 运行边界与状态回执
@@ -46,7 +46,8 @@
   Linux 客户端用 `GetState` 读取快照，用 `SessionUpdate` 上报该 generation 的准备状态并维护租约。
   系统服务综合会话与 relay 的执行结果，
   经 `GetState`／`StateChanged` 发布确认状态。
-- **UI** 只通过 D-Bus 发起操作并渲染已校验的状态快照。**只读探针**仅查看 sysfs 和 profile，
+- **Linux UI** 只通过 D-Bus 发起操作并渲染已校验的状态快照。Windows Fluent 预览默认
+  使用不可用客户端，显式 `--demo` 才使用内存演示客户端；两者均不操作真实设备或桌面。**只读探针**仅查看 sysfs 和 profile，
   禁止打开输入设备或写入内核。
 
 ## 4. 定位代码与测试
@@ -627,3 +628,15 @@ make WERROR=1 check
   本条补充上一条的界面分层，不改变 GTK 外观和既定交互；同步抛错与异步失败统一处理，
   取消的设置请求也会释放忙碌状态。尚未增加 Qt 依赖或声明 Windows 支持。
 - 同步：`frontend/`、GTK 页面与服务客户端、共用层及界面回归测试、USAGE 和本手册。
+
+### 2026-11-07 - 增加 Windows Fluent 界面预览
+
+- 变更：新增独立 Python/PyQt6 Fluent 前端和可选依赖清单，提供主页、设置、关于、
+  中英文、主题和内存演示场景。默认显示后台未接入，显式 `--demo` 才启用演示交互。
+- 动机：先完成 Windows 界面与交互，复用共用展示和动作模型，后端在后续阶段接入。
+- 影响：Windows 预览不声明设备支持，不接触真实硬件、系统服务、显示设置或持久化
+  用户配置。Linux UI 与三进程职责、鉴权、租约和线协议不变；不引入 C# 或 .NET。
+  PyQt6/Fluent 仅安装在独立预览环境，核心运行时依赖列表不变。箭头只浏览模式，
+  激活才提交；演示目标与完成回执分离，旧代次完成回调失效。
+- 同步：`fluent/`、Windows 预览依赖和启动脚本、Qt/演示测试、翻译检查与目录、
+  README、USAGE 和本手册。Qt 验证使用离屏平台，Windows 原生环境尚未验收。

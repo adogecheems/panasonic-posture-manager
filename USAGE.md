@@ -126,7 +126,50 @@ Linux GTK 页面通过 `ui/service.py` 将这些操作映射到既有 D-Bus 契�
 客户端和调度器。客户端必须在界面所属主循环派发状态和 Future 完成回调，并限制 I/O
 等待时间；不能从工作线程直接更新交互对象或控件。状态校验、身份认证和错误分类仍由
 平台边界负责，不得把 UI 客户端当成会话就绪回执的来源。`test_frontend.py` 禁止 GUI
-和 Linux 配置导入，覆盖共用交互及失败路径。目前未提供 Qt 前端或 Windows 后端。
+和 Linux 配置导入，覆盖共用交互及失败路径。Qt 前端目前提供独立预览，Windows 后端尚未实现。
+
+### Windows 界面预览
+
+当前只提供从源码运行的 PyQt6 Fluent 界面，不包含 Windows 服务、传感器、输入驱动或
+屏幕控制。Python 核心的运行时依赖保持为空，界面依赖在独立的预览环境安装。
+在 Windows 仓库根目录的命令提示符中运行（Python 3.11+，64 位）：
+
+```bat
+py -3 -m venv .venv-windows
+.venv-windows\Scripts\python -m pip install -r packaging\windows\requirements-ui.txt
+packaging\windows\preview.cmd --language zh_CN
+```
+
+`preview.cmd` 明确启用 `--demo`。不带演示数据启动时使用：
+
+```bat
+set PYTHONPATH=src
+.venv-windows\Scripts\python -m panasonic_posture.fluent --language zh_CN
+```
+
+命令支持 `--language en`；省略时按环境语言选择。预览从源码目录读取 `data/assets/`，
+优先加载 `locale/` 中已编译的翻译；Windows 源码预览没有编译翻译时读取同一份
+`po/zh_CN.po`，无需安装 GNU gettext。可用 `PANASONIC_POSTURE_DATA_DIR` 指定资源目录。
+启动时使用新建窗口，不提供系统托盘常驻或 Windows 单实例管理。
+
+演示客户端只生成内存快照，模式请求与延迟完成使用不同状态；代次改变、断线或退出会
+丢弃旧的完成回调。场景选择器可预览物理平板限制、姿态确认、慢切换、失败和连接中断。
+关闭后丢弃所有演示设置；校准对话框也只演示操作，不读取真实传感器。
+未来的 Windows 客户端通过 `frontend.ports.UIClient` 注入 `fluent.app.Window`，其鉴权、
+状态验证、通信和实际设备操作仍需独立实现，不得将演示客户端用于生产控制。
+
+依赖版本固定在 `packaging/windows/requirements-ui.txt`。PyQt6 和 Fluent Widgets 的
+上游许可文件与声明需随未来安装包一并核对、分发；本仓库许可仍为 AGPL-3.0-or-later。
+这不是已签名的 Windows 发布制品，未完成 Windows 真机验收。
+
+可在独立环境中执行 Qt 检查：
+
+```sh
+PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p test_fluent.py -v
+```
+
+该命令在 Linux 使用离屏 Qt 平台，不访问真实显示或设备。系统解释器未安装可选界面
+依赖时，完整检查会明确跳过 Qt 控件测试，纯 Python 演示客户端测试仍执行。
 
 ### 发行版打包
 
