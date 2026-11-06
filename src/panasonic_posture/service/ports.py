@@ -77,6 +77,21 @@ class InputActuator(Protocol):
 
     def retry(self) -> None: ...
 
+    @property
+    def touch_activity(self) -> TouchActivity | None: ...
+
+    def request_wake(self, serial: int) -> None:
+        """Queue one bounded, contact-backed wake event; never renew a lease."""
+        ...
+
+
+@dataclass(frozen=True)
+class TouchActivity:
+    """Contact evidence stamped in the engine's monotonic clock domain."""
+
+    serial: int
+    observed_at: float
+
 
 @dataclass(frozen=True)
 class Settings:

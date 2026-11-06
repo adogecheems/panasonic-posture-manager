@@ -50,6 +50,7 @@ from ..contracts import (
     LEASE_SECONDS,
     MODES,
     SLOW_TICK_WARN_SECONDS,
+    TOUCH_WAKE_SECONDS,
     SUPPORT_TIERS,
     ErrorCode,
     error_message,
@@ -168,6 +169,7 @@ class Engine:
         self.agent_error_detail: str | None = None
         self.agent_seen: float = float("-inf")
         self.suspended = False
+        self._pending_wake: tuple[int, int, SessionOwner] | None = None
 
         self._tick_error_code: str | None = None
         self._tick_error_detail: str | None = None
@@ -497,6 +499,7 @@ class Engine:
     def sleep_event(self, suspended: bool) -> None:
         """PrepareForSleep: drop the lease, release the relay, invalidate anchors."""
         self.suspended = bool(suspended)
+        self._pending_wake = None
         self._retry_requested = False
         self._log.info("PrepareForSleep: suspended=%s", self.suspended)
         self._wait_for_release()
@@ -515,6 +518,35 @@ class Engine:
             None, None, HardwareStatus.ABSENT
         )
         self._prefer_shared = None
+
+    def _touch_wake(self, lease: bool) -> int | None:
+        event = getattr(self._actuator, "touch_activity", None)
+        if (event is None or not lease or self._release_task is not None
+                or not self._manage_actuator or self._effective_error()[0]
+                or not self._prepared(lease, self._controller.generation)
+                or not self._target.disable_internal_input
+                or self._controller.applied != self._target):
+            return None
+        age = self._monotonic() - event.observed_at
+        return event.serial if 0 <= age <= TOUCH_WAKE_SECONDS else None
+
+    def session_wake(self, generation: int, serial: int, owner: SessionOwner) -> None:
+        """Accept contact-backed wake only from the current authenticated owner."""
+        if (owner != self.session_owner or generation != self._controller.generation
+                or self._touch_wake(self._lease_active(self._monotonic())) != serial):
+            return
+        self._pending_wake = (generation, serial, owner)
+
+    def _flush_touch_wake(self) -> None:
+        pending, self._pending_wake = self._pending_wake, None
+        if pending is None:
+            return
+        generation, serial, owner = pending
+        # A mode change or lease loss can occur after the method reply but
+        # before the tick. Do not forward that queued request to the relay.
+        if (owner == self.session_owner and generation == self._controller.generation
+                and self._touch_wake(self._lease_active(self._monotonic())) == serial):
+            self._actuator.request_wake(serial)
 
     def _bump_generation(self) -> None:
         self._controller.generation += 1
@@ -683,6 +715,7 @@ class Engine:
             if self._follow_hardware(now, lease, generation, target, prepared):
                 return
             if needs_input_control and hardware_off and prepared:
+                self._flush_touch_wake()
                 self._actuator.keep(now)
                 self._following_hardware = False
                 self._handoff_until = None
@@ -962,6 +995,7 @@ class Engine:
             error_code=error_code,
             error_detail=error_detail,
             session_connected=lease,
+            touch_wake=self._touch_wake(lease),
             supported=self.supported,
             support_tier=self.support_tier,
             sensor_source=sensor_info.backend or "starting",

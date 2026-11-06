@@ -53,6 +53,9 @@ check-c:
 		backend/input.c backend/switch.c backend/uinput.c $(LDFLAGS) \
 		-o build/relay-test
 	./build/relay-test
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror backend/tests/input_test.c \
+		backend/uinput.c $(LDFLAGS) -o build/input-test
+	./build/input-test
 
 check-compile:
 	PYTHONPATH=src $(PYTHON) -m compileall -q src

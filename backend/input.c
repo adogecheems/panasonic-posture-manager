@@ -153,6 +153,99 @@ static int touchpad_candidate(int fd, const struct device_info *info,
            !has_prop(fd, INPUT_PROP_DIRECT);
 }
 
+static int touchscreen_candidate(int fd, const struct device_info *info) {
+    /* USB may be an integrated panel. Bus/name alone cannot establish touch
+     * capability; unlike the keyboard path, accept exactly one direct panel. */
+    return !info->own && has_prop(fd, INPUT_PROP_DIRECT) &&
+           has_key(fd, BTN_TOUCH) && !has_key(fd, KEY_A) &&
+           has_abs(fd, ABS_MT_POSITION_X) && has_abs(fd, ABS_MT_POSITION_Y);
+}
+
+int input_refresh_touchscreen(int current) {
+    glob_t paths;
+    size_t index;
+    int found = -1;
+    int candidates = 0;
+    int uncertain = 0;
+
+    memset(&paths, 0, sizeof paths);
+    if (glob("/dev/input/event*", 0, NULL, &paths) != 0)
+        goto done;
+    for (index = 0; index < paths.gl_pathc; index++) {
+        struct device_info info;
+        int fd = relay_open_event_device(paths.gl_pathv[index]);
+
+        if (fd < 0) {
+            uncertain = 1; /* An unreadable candidate could be another panel. */
+            continue;
+        }
+        if (read_device_info(fd, &info) < 0 ||
+            !relay_identity_matches_sysfs(fd, paths.gl_pathv[index])) {
+            uncertain = 1;
+            close(fd);
+            continue;
+        }
+        if (touchscreen_candidate(fd, &info)) {
+            candidates++;
+            if (found < 0) {
+                found = fd;
+                continue;
+            }
+        }
+        close(fd);
+    }
+done:
+    globfree(&paths);
+    if (candidates != 1 || uncertain) {
+        if (found >= 0)
+            close(found);
+        found = -1;
+    }
+    if (current >= 0 && found >= 0) {
+        struct stat old_node, new_node;
+        struct device_info old_info, new_info;
+
+        if (fstat(current, &old_node) == 0 && fstat(found, &new_node) == 0 &&
+            old_node.st_rdev == new_node.st_rdev &&
+            read_device_info(current, &old_info) == 0 &&
+            read_device_info(found, &new_info) == 0 &&
+            memcmp(&old_info, &new_info, sizeof old_info) == 0 &&
+            touchscreen_candidate(current, &old_info)) {
+            close(found);
+            return current;
+        }
+    }
+    if (current >= 0)
+        close(current);
+    return found;
+}
+
+int input_touch_activity(int fd, int *desynchronized) {
+    struct input_event events[64];
+    ssize_t size = read(fd, events, sizeof events);
+    size_t index;
+    int contact = 0;
+
+    if (size < 0 && (errno == EAGAIN || errno == EINTR))
+        return 0;
+    if (size <= 0 || size % sizeof events[0] != 0)
+        return -1;
+    for (index = 0; index < (size_t)size / sizeof events[0]; index++) {
+        struct input_event *event = &events[index];
+
+        if (event->type == EV_SYN && event->code == SYN_DROPPED) {
+            *desynchronized = 1;
+            contact = 0;
+        } else if (event->type == EV_SYN && event->code == SYN_REPORT) {
+            *desynchronized = 0;
+        } else if (!*desynchronized && event->type == EV_KEY &&
+                   event->code == BTN_TOUCH && event->value == 1) {
+            contact = 1;
+        }
+    }
+    return contact;
+}
+
 static int slot_candidate(int fd, const struct device_info *info,
                           int slot, const char *wanted) {
     if (slot == PPM_INPUT_KEYBOARD)

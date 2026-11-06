@@ -22,6 +22,8 @@ class SessionClient(Protocol):
 
     def confirm_stand(self, epoch: int) -> None: ...
 
+    def wake_screen(self, generation: int, serial: int) -> None: ...
+
 
 class DisplayBackend(Protocol):
     """Apply a display target and restore any outstanding ownership."""

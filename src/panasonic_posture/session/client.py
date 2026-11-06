@@ -114,6 +114,9 @@ class SystemClient:
     def confirm_tent(self, epoch: int) -> None:
         self._call("ConfirmTent", GLib.Variant("(u)", (int(epoch),)))
 
+    def wake_screen(self, generation: int, serial: int) -> None:
+        self._call("SessionWake", GLib.Variant("(ut)", (int(generation), int(serial))))
+
     def set_tent_enabled(self, enabled: bool) -> None:
         self._call("SetTentEnabled", GLib.Variant("(b)", (bool(enabled),)))
 

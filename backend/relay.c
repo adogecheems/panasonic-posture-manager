@@ -7,10 +7,11 @@
  * device to the desktop. Hardware monitoring follows the real switch, with a
  * non-renewable two-second display handoff after its falling edge.
  *
- * stdin  (v3): '1' = software control, '0' = hardware monitoring; both refresh
+ * stdin  (v4): '1' = software control, '0' = hardware monitoring; both refresh
  *              the existing 3 s lease. Newlines are ignored. EOF, lease expiry
- *              or any other byte releases. Repeated '0' cannot extend a handoff.
- * stdout (v3): one JSON object per line, see common.h.
+ *              or an invalid byte releases. 'w' requests one contact-backed
+ *              wake without refreshing the lease or changing the command.
+ * stdout (v4): one JSON object per line, see common.h.
  */
 #include "common.h"
 #include "input.h"
@@ -135,6 +136,13 @@ struct relay_state {
     double next_scan;
     double next_input;
     double last_report;
+    int touch_fd;
+    int wake_fd;
+    int touch_desynchronized;
+    unsigned int touch_serial;
+    unsigned int touch_consumed;
+    double last_touch;
+    double next_touch_scan;
 };
 
 static void relay_init(struct relay_state *relay, const struct options *options) {
@@ -142,6 +150,8 @@ static void relay_init(struct relay_state *relay, const struct options *options)
     relay->options = *options;
     relay->virtual_fd = -1;
     relay->monitor_fd = -1;
+    relay->touch_fd = -1;
+    relay->wake_fd = -1;
     relay->hardware_state = 0;
     relay->output = -1;
     relay->reported_hardware = -1;
@@ -188,7 +198,7 @@ static void emit_applied(const struct relay_state *relay) {
 
     printf("{\"protocol\":%d,\"kind\":\"applied\",\"hardware\":%s,"
            "\"tablet\":%s,\"input_disabled\":%s,\"physical\":%s,"
-           "\"error\":%s,\"request\":%u}\n",
+           "\"error\":%s,\"request\":%u,\"touch_serial\":%u}\n",
            RELAY_PROTOCOL,
            relay->hardware_state ? "true" : "false",
            desired ? "true" : "false",
@@ -196,7 +206,7 @@ static void emit_applied(const struct relay_state *relay) {
            relay->physical ? "true" : "false",
            input_error
                    ? "\"input-grab-failed\""
-                   : "null", relay->request);
+                   : "null", relay->request, relay->touch_serial);
 }
 
 static void emit_if_changed(struct relay_state *relay, double now) {
@@ -432,6 +442,82 @@ static void maintain_input(struct relay_state *relay, double now) {
 
 /* --- Main loop I/O -------------------------------------------------------- */
 
+static void close_touch(struct relay_state *relay) {
+    if (relay->touch_fd >= 0)
+        close(relay->touch_fd);
+    relay->touch_fd = -1;
+    uinput_destroy(relay->wake_fd);
+    relay->wake_fd = -1;
+    relay->touch_desynchronized = 0;
+    relay->touch_consumed = relay->touch_serial;
+    relay->last_touch = 0.0;
+}
+
+static void maintain_touch(struct relay_state *relay, double now) {
+    int previous;
+
+    if (!relay->software || relay->hardware_state || !relay_input_disabled(relay)) {
+        close_touch(relay);
+        relay->next_touch_scan = 0.0;
+        return;
+    }
+    if (now < relay->next_touch_scan)
+        return;
+    relay->next_touch_scan = now + RELAY_SCAN_SECONDS;
+    previous = relay->touch_fd;
+    relay->touch_fd = input_refresh_touchscreen(previous);
+    if (previous != relay->touch_fd) {
+        relay->touch_desynchronized = 0;
+        relay->touch_consumed = relay->touch_serial;
+        relay->last_touch = 0.0;
+    }
+    if (relay->touch_fd < 0) {
+        close_touch(relay);
+        return;
+    }
+    if (relay->wake_fd < 0)
+        relay->wake_fd = uinput_create_wake();
+}
+
+static int relay_can_wake(const struct relay_state *relay, double now) {
+    return relay->software && !relay->hardware_state &&
+           !relay->release_requested && now < relay->lease &&
+           relay_input_disabled(relay) && relay->touch_fd >= 0 && relay->wake_fd >= 0 &&
+           relay->touch_serial != relay->touch_consumed &&
+           now >= relay->last_touch && now - relay->last_touch <= RELAY_TOUCH_SECONDS;
+}
+
+static void request_wake(struct relay_state *relay, double now) {
+    if (!relay_can_wake(relay, now))
+        return;
+    relay->touch_consumed = relay->touch_serial;
+    if (uinput_emit_wake(relay->wake_fd) < 0) {
+        relay_log_errno("touch wake failed");
+        close_touch(relay);
+    }
+}
+
+static void handle_touch(struct relay_state *relay, short revents) {
+    double now = monotonic_now();
+    int contact;
+
+    if ((revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+        close_touch(relay);
+        return;
+    }
+    contact = input_touch_activity(relay->touch_fd, &relay->touch_desynchronized);
+    if (contact < 0) {
+        close_touch(relay);
+    } else if (contact && relay->wake_fd >= 0 &&
+               (relay->touch_serial == 0 || now - relay->last_touch >= 0.5)) {
+        relay->touch_serial++;
+        if (relay->touch_serial == 0)
+            relay->touch_serial = 1;
+        relay->last_touch = now;
+        relay->reported_once = 0;
+    }
+}
+
 static void detach_switch(struct relay_state *relay) {
     relay_log("physical tablet switch went away; detaching");
     release_monitor(relay, 1);
@@ -473,6 +559,8 @@ static int handle_stdin(struct relay_state *relay, short revents) {
                 relay->software = byte == '1';
                 relay->monitor = byte == '0';
                 relay->lease = monotonic_now() + RELAY_LEASE_SECONDS;
+            } else if (byte == 'w') {
+                request_wake(relay, monotonic_now());
             } else if (byte != '\n') {
                 relay_log("invalid stdin byte 0x%02x", (unsigned int)byte);
                 return RELAY_EXIT_PROTOCOL;
@@ -515,10 +603,11 @@ static void handle_input_event(struct relay_state *relay) {
 }
 
 static int poll_events(struct relay_state *relay) {
-    struct pollfd fds[1 + 1 + PPM_INPUT_DEVICES];
+    struct pollfd fds[1 + 1 + 1 + PPM_INPUT_DEVICES];
     nfds_t count = 0;
     int stdin_index;
     int monitor_index = -1;
+    int touch_index = -1;
     int input_index[PPM_INPUT_DEVICES];
     int ready;
     int slot;
@@ -535,6 +624,13 @@ static int poll_events(struct relay_state *relay) {
     if (relay->monitor_fd >= 0) {
         monitor_index = (int)count;
         fds[count].fd = relay->monitor_fd;
+        fds[count].events = POLLIN;
+        fds[count].revents = 0;
+        count++;
+    }
+    if (relay->touch_fd >= 0) {
+        touch_index = (int)count;
+        fds[count].fd = relay->touch_fd;
         fds[count].events = POLLIN;
         fds[count].revents = 0;
         count++;
@@ -569,6 +665,8 @@ static int poll_events(struct relay_state *relay) {
             (fds[input_index[slot]].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
             handle_input_event(relay);
     }
+    if (touch_index >= 0 && fds[touch_index].revents != 0)
+        handle_touch(relay, fds[touch_index].revents);
     return RELAY_EXIT_OK;
 }
 
@@ -720,6 +818,7 @@ static int run_relay(const struct options *options) {
         }
         update_handoff(&relay, now);
         maintain_input(&relay, now);
+        maintain_touch(&relay, now);
 
         desired = relay_tablet_state(&relay);
         if (relay.output != desired) {
@@ -745,6 +844,7 @@ cleanup:
      * switch ON after the device has returned to laptop mode.
      */
     final_state = read_cleanup_state(&relay);
+    close_touch(&relay);
     input_release(&relay.inputs);
     release_monitor(&relay, 0);
     if (relay.virtual_fd >= 0) {

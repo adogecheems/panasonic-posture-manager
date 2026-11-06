@@ -2,9 +2,10 @@
  * Shared definitions for the privileged relay (backend/).
  *
  * The relay is the only root component that touches /dev/uinput and
- * /dev/input.  It never reads keyboard event content: it only queries device
+ * /dev/input.  It never reads keyboard event content: it queries device
  * capabilities and switch state, and optionally grabs the internal keyboard
- * and touchpad while the aggregated tablet mode is on.
+ * and touchpad while the aggregated tablet mode is on. It may observe contact
+ * on a unique touchscreen and emit a session-approved KEY_WAKEUP (no text).
  */
 #ifndef PPM_COMMON_H
 #define PPM_COMMON_H
@@ -27,9 +28,12 @@
  */
 #define VIRTUAL_NAME "Panasonic posture managed switch"
 #define VIRTUAL_PHYS "panasonic-posture-manager/relay"
+#define WAKE_NAME "Panasonic posture touch wake"
+#define WAKE_PHYS "panasonic-posture-manager/wake"
 
 /* stdout protocol version written to the service, one JSON object per line. */
-#define RELAY_PROTOCOL 3
+#define RELAY_PROTOCOL 4
+#define RELAY_TOUCH_SECONDS 2.0
 
 /* Lease and timing policy (seconds / milliseconds). */
 #define RELAY_LEASE_SECONDS 3.0

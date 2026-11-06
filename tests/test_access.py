@@ -490,8 +490,9 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         daemon._authorization_workers = {
             "request": InlineExecutor(),
             "session": InlineExecutor(),
+            "wake": InlineExecutor(),
         }
-        daemon._authorization_pending = {"request": 0, "session": 0}
+        daemon._authorization_pending = {"request": 0, "session": 0, "wake": 0}
         daemon._exit_code = 0
         daemon._name_acquired_ok = False
         daemon.connection = None
@@ -503,6 +504,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         else:
             access.verify_session_adapter.return_value = 1000
         engine = mock.Mock()
+        daemon._wake_access = mock.Mock(verify_session_adapter=access.verify_session_adapter)
         engine.state_json.return_value = '{"version": 2}'
         daemon.application = SimpleNamespace(
             access=access,
@@ -743,6 +745,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         connection.register_object.return_value = 42
         daemon._bus_acquired(connection, NAME)
         daemon.application.access.attach.assert_called_once_with(connection)
+        daemon._wake_access.attach.assert_called_once_with(connection)
         self.assertEqual(daemon.registration, 42)
         daemon.application.start.assert_called_once()
         daemon._tick.assert_called_once()

@@ -54,7 +54,7 @@ def emit(payload):
 if mode == "exit":
     sys.exit(3)
 
-emit({"protocol": 3, "kind": "ready", "physical": True})
+emit({"protocol": 4, "kind": "ready", "physical": True})
 if mode == "sigkill":
     os.kill(os.getpid(), signal.SIGKILL)
 if mode == "garbage":
@@ -62,7 +62,7 @@ if mode == "garbage":
     sys.stdout.write(json.dumps({"protocol": 1, "kind": "applied"}) + "\n")
     sys.stdout.flush()
 applied = {
-    "protocol": 3,
+    "protocol": 4,
     "kind": "applied",
     "hardware": False,
     "tablet": True,
@@ -80,7 +80,7 @@ while True:
     data = os.read(stdin, 64)
     if not data:
         code = int(os.environ.get("FAKE_RELAY_RELEASE_EXIT", "0"))
-        emit({"protocol": 3, "kind": "released", "exit": code})
+        emit({"protocol": 4, "kind": "released", "exit": code})
         sys.exit(code)
     if mode == "silent":
         continue
@@ -229,7 +229,7 @@ class RelayStateTests(unittest.TestCase):
     def test_applied_message(self) -> None:
         state = RelayState.from_message(
             {
-                "protocol": 3,
+                "protocol": 4,
                 "kind": "applied",
                 "hardware": False,
                 "tablet": True,
@@ -270,7 +270,7 @@ class ActuatorLifecycleTests(FakeRelayTestCase):
         self.assertIs(actuator.process, process)
         self.assertIsNone(actuator.state)
         self.assertEqual(actuator._request, old_request + 1)
-        stale = dict(protocol=3, kind="applied", request=old_request,
+        stale = dict(protocol=4, kind="applied", request=old_request,
                      tablet=True, input_disabled=True, hardware=False, physical=True)
         last_report = actuator.last_report
         actuator._accept_report(json.dumps(stale).encode(), self.clock.value + 1.0)

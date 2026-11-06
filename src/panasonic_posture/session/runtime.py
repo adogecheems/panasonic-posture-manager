@@ -89,6 +89,13 @@ class SessionRuntime:
             "posture-session-lease"
         )
         self._owns_lease_executor = lease_executor is None
+        # Wake authorization must not delay display reconciliation or lease
+        # heartbeats. Tests may supply one deterministic executor for all work.
+        self._wake_executor = executor if executor is not None else thread_executor(
+            "posture-session-wake"
+        )
+        self._owns_wake_executor = executor is None
+        self._wake_task: Future[Any] | None = None
         self._lease_task: Future[Any] | None = None
         self._lease_wait_since: float | None = None
         self._lease_attempt_at = float("-inf")
@@ -106,6 +113,8 @@ class SessionRuntime:
         self.last_feedback: tuple | None = None
         self.last_feedback_at = float("-inf")
         self._last_lock_check = float("-inf")
+        self._touch_instance: str | None = None
+        self._touch_seen: int | None = None
 
         # display retry (transient compositor/backend failures)
         self.apply_now = False
@@ -168,6 +177,9 @@ class SessionRuntime:
         if self._lease_task is not None:
             tasks += (_Task("lease", self._lease_task),)
             self._lease_task = None
+        if self._wake_task is not None:
+            tasks += (_Task("wake", self._wake_task),)
+            self._wake_task = None
         for task in tasks:
             try:
                 task.future.result()
@@ -177,6 +189,8 @@ class SessionRuntime:
             self._executor.shutdown(wait=True, cancel_futures=True)
         if self._owns_lease_executor:
             self._lease_executor.shutdown(wait=True, cancel_futures=True)
+        if self._owns_wake_executor:
+            self._wake_executor.shutdown(wait=True, cancel_futures=True)
         self._close_notifier()
         self._restore_display()
 
@@ -207,6 +221,7 @@ class SessionRuntime:
         if self._closing:
             return
         self._poll_display_lease(now)
+        self._poll_wake(now)
         for _ in range(16):
             if not self._tasks:
                 return
@@ -420,7 +435,49 @@ class SessionRuntime:
 
     # -- state reconciliation -------------------------------------------
 
+    def _poll_wake(self, now: float) -> None:
+        task = self._wake_task
+        if task is None or not task.done():
+            return
+        self._wake_task = None
+        try:
+            task.result()
+        except Exception as error:  # noqa: BLE001 - worker result boundary
+            if self._is_lease_rejection(error):
+                self._handle_service_failure(now, error)
+            else:
+                log.warning("touch wake failed: %s", describe_error(error))
+
+    def _maybe_wake(self, state: StateSnapshot, now: float) -> None:
+        self._poll_wake(now)
+        token = state.touch_wake
+        same_instance = self._touch_instance == state.instance
+        fresh_touch = same_instance and token is not None and token != self._touch_seen
+        if not same_instance:
+            self._touch_seen = None
+        self._touch_instance = state.instance
+        if token is not None:
+            self._touch_seen = token
+        if (not fresh_touch or self._wake_task is not None or not self.ready
+                or self.failure_active or state.generation != self.generation
+                or not state.session_connected or state.error_code
+                or state.applied != state.target or not state.target.disable_internal_input):
+            return
+        try:
+            self._wake_task = self._wake_executor.submit(
+                self.client.wake_screen, state.generation, token
+            )
+        except RuntimeError as error:
+            log.warning("cannot schedule touch wake: %s", error)
+            return
+        if self._schedule_completion is not None and not self._wake_task.done():
+            self._wake_task.add_done_callback(lambda _task: self._schedule_completion())
+        self._poll_wake(now)
+
     def _handle_state(self, state: StateSnapshot, now: float) -> None:
+        self._maybe_wake(state, now)
+        if self.failure_active:
+            return
         instance = state.instance
         if instance != self.instance:
             # The daemon restarted: policy epochs and generations start over.

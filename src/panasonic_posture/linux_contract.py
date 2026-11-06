@@ -18,7 +18,7 @@ def session_name(uid: int) -> str:
 
 POLKIT_ACTION = NAME + ".configure"
 DBUS_ERROR = NAME + ".Error"
-RELAY_PROTOCOL = 3
+RELAY_PROTOCOL = 4
 PROFILE_VERSION = 1
 SENSOR_SOURCES = ("starting", "iio", "sysfs")
 
@@ -55,6 +55,10 @@ DBUS_XML = """<node>
       <arg type="b" direction="in"/>
       <arg type="s" direction="in"/>
       <arg type="s" direction="in"/>
+    </method>
+    <method name="SessionWake">
+      <arg type="u" direction="in"/>
+      <arg type="t" direction="in"/>
     </method>
     <signal name="StateChanged"><arg type="s"/></signal>
   </interface>

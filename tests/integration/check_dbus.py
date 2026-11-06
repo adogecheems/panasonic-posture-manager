@@ -209,6 +209,14 @@ def main() -> int:
             assert connected, "session lease did not connect"
             generation = state()["generation"]
 
+            # Contact-free wake requests are harmless, including on the
+            # development backend where no privileged actuator exists.
+            current = state()
+            call("SessionWake", GLib.Variant("(ut)", (current["generation"], 1)))
+            after_wake = state()
+            assert after_wake["generation"] == current["generation"], after_wake
+            assert after_wake["touch_wake"] is None, after_wake
+
             # 7. The old three-argument SessionUpdate signature must be refused.
             try:
                 call("SessionUpdate", GLib.Variant("(ubs)", (generation, True, "")))

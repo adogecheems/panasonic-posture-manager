@@ -48,4 +48,13 @@ int input_acquire(struct input_set *set, const char *keyboard_name,
  * hotplug replacement. */
 int input_lost(const struct input_set *set);
 
+/* Passive observation only; never grabs the touchscreen. Rejects ambiguous
+ * discovery. Refresh preserves the existing fd for the same device, otherwise
+ * closes it. A negative result leaves wake unavailable, not input grabbed. */
+int input_refresh_touchscreen(int current);
+
+/* Read a bounded batch and report only a contact start, never coordinates.
+ * SYN_DROPPED suppresses events until the next SYN_REPORT. -1 means lost fd. */
+int input_touch_activity(int fd, int *desynchronized);
+
 #endif /* PPM_INPUT_H */

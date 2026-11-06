@@ -11,6 +11,10 @@ int uinput_create_switch(void);
 /* Emit one SW_TABLET_MODE value (0/1) followed by SYN_REPORT.  0 or -1. */
 int uinput_emit_switch(int fd, int value);
 
+/* A separate wake-only device: no power key, characters or pointer events. */
+int uinput_create_wake(void);
+int uinput_emit_wake(int fd);
+
 /* Destroy the virtual device (UI_DEV_DESTROY) and close the fd.  A negative
  * descriptor is ignored, so cleanup paths can call this unconditionally. */
 void uinput_destroy(int fd);

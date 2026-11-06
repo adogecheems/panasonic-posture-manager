@@ -42,7 +42,7 @@ from ..protocol import (
     error_message,
 )
 from ..tasks import thread_executor
-from .access import AccessDenied
+from .access import AccessControl, AccessDenied
 from .application import ServiceApplication
 from .engine import ServiceError
 from .callbacks import guard
@@ -84,8 +84,12 @@ class Daemon:
         self._authorization_workers = {
             "request": thread_executor("posture-request-auth"),
             "session": thread_executor("posture-session-auth"),
+            "wake": thread_executor("posture-wake-auth"),
         }
-        self._authorization_pending = {"request": 0, "session": 0}
+        self._authorization_pending = {"request": 0, "session": 0, "wake": 0}
+        # Independent caches and worker: wake authorization cannot occupy the
+        # heartbeat queue or race its mutable identity/session caches.
+        self._wake_access = AccessControl(None)
 
         self.application = ServiceApplication.create(
             stop=self.stop,
@@ -183,6 +187,7 @@ class Daemon:
         try:
             self.connection = connection
             self.application.access.attach(connection)
+            self._wake_access.attach(connection)
             info = Gio.DBusNodeInfo.new_for_xml(DBUS_XML).interfaces[0]
             self.registration = connection.register_object(
                 PATH, info, self._method, None, None
@@ -258,6 +263,8 @@ class Daemon:
         access = self.application.access
         if method == "SessionUpdate":
             lane, authorize = "session", access.verify_session_adapter
+        elif method == "SessionWake":
+            lane, authorize = "wake", self._wake_access.verify_session_adapter
         else:
             lane, authorize = "request", access.authorize
         if self._authorization_pending[lane] >= MAX_PENDING_AUTHORIZATIONS:
@@ -330,6 +337,10 @@ class Daemon:
                 self.application.engine.session_update(
                     int(generation), bool(ready), str(error_code), str(error_detail),
                     SessionOwner("linux-uid", str(uid))
+                )
+            elif method == "SessionWake":
+                self.application.engine.session_wake(
+                    int(arguments[0]), int(arguments[1]), SessionOwner("linux-uid", str(uid))
                 )
             else:
                 raise ServiceError(ErrorCode.INTERNAL, "unknown-method")

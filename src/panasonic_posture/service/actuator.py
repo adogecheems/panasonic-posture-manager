@@ -31,6 +31,8 @@ from ..protocol import (
 )
 from .ports import ActuatorError as ActuatorError
 from ..model import Target
+from ..contracts import TOUCH_WAKE_SECONDS
+from .ports import TouchActivity
 
 LOG = logging.getLogger(__name__)
 
@@ -119,6 +121,11 @@ class Actuator:
         self._buffer = b""
         self._command = b"1"
         self._request = 0
+        self.touch_activity: TouchActivity | None = None
+        self._touch_serial = 0
+        self._touch_token = 0
+        self._wake_pending: int | None = None
+        self._wake_consumed: int | None = None
         # A relay that exits on EOF runs its own cleanup and emits the native
         # switch state, so no separate --recover is needed.  Recovery is only
         # required when the relay had to be killed, or when a previous instance
@@ -171,6 +178,8 @@ class Actuator:
                 raise ActuatorError(self.error_code, self.error_detail)
             self._check_report_timeout(now)
             if command != self._command:
+                self.touch_activity = None
+                self._wake_pending = None
                 self._command = command
                 self._request = (self._request + 1) & 0xffffffff
                 self.state = None
@@ -195,6 +204,8 @@ class Actuator:
         exit (the final switch state may not have been written).
         """
         process, self.process = self.process, None
+        self.touch_activity = None
+        self._wake_pending = None
         self.state = None
         self.physical = None
         self._buffer = b""
@@ -272,6 +283,9 @@ class Actuator:
     # -- process plumbing ------------------------------------------------
 
     def _spawn(self, now: float) -> None:
+        self.touch_activity = None
+        self._touch_serial = 0
+        self._wake_pending = None
         try:
             process = self._popen(
                 self.command(),
@@ -346,6 +360,16 @@ class Actuator:
                 return  # A previous command's receipt cannot confirm this mode.
             self.state = RelayState.from_message(payload)
             self.physical = self.state.physical
+            serial = payload.get("touch_serial", 0)
+            if (type(serial) is int and 0 < serial <= 0xffffffff
+                    and (serial > self._touch_serial
+                         or self._touch_serial == 0xffffffff and serial == 1)
+                    and self._command == b"1"
+                    and self.state.input_disabled and not self.state.hardware
+                    and self.state.error is None):
+                self._touch_serial = serial
+                self._touch_token = self._touch_token % (2**64 - 1) + 1
+                self.touch_activity = TouchActivity(self._touch_token, now)
         elif kind == "physical":
             self.physical = bool(payload.get("present"))
         elif kind == "ready":
@@ -373,6 +397,18 @@ class Actuator:
         process = self.process
         if process is None or process.stdin is None:
             return
+        pending, self._wake_pending = self._wake_pending, None
+        event = self.touch_activity
+        if (pending is not None and event is not None and pending == event.serial
+                and pending != self._wake_consumed and self._command == b"1"
+                and 0 <= now - event.observed_at <= TOUCH_WAKE_SECONDS):
+            self._wake_consumed = pending
+            try:
+                process.stdin.write(b"w\n")
+                process.stdin.flush()
+            except (OSError, ValueError) as error:
+                self._fail(ErrorCode.RELAY_EXITED, f"relay wake: {error}")
+                return
         if self.last_sent is not None and now - self.last_sent < RELAY_HEARTBEAT_SECONDS:
             return
         try:
@@ -383,6 +419,11 @@ class Actuator:
             self._log.error("cannot heartbeat relay: %s", error)
             return
         self.last_sent = now
+
+    def request_wake(self, serial: int) -> None:
+        # No I/O in the D-Bus callback. The next normal keep serializes the
+        # request with mode commands and rechecks contact freshness.
+        self._wake_pending = serial
 
     def _handle_exit(self, process: Any) -> None:
         if self.process is not process:

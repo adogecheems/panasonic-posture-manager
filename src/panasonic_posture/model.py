@@ -179,6 +179,7 @@ class StateSnapshot:
     profile: str = "generic"
     model: str = ""
     vendor: str = ""
+    touch_wake: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -209,6 +210,7 @@ class StateSnapshot:
             "profile": self.profile,
             "model": self.model,
             "vendor": self.vendor,
+            "touch_wake": self.touch_wake,
         }
 
 

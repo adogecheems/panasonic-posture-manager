@@ -57,6 +57,11 @@ def parse_state_snapshot(text: str) -> StateSnapshot:
     ):
         raise ValueError("pending_notification must be a non-negative integer or null")
     raw_target = data.get("target", {})
+    touch_wake = data.get("touch_wake")
+    if touch_wake is not None and (
+        type(touch_wake) is not int or not 0 < touch_wake < 2**64
+    ):
+        raise ValueError("touch_wake must be a positive uint64 or null")
     if not isinstance(raw_target, dict):
         raise ValueError("target must be an object")
     raw_applied = data.get("applied")
@@ -76,6 +81,7 @@ def parse_state_snapshot(text: str) -> StateSnapshot:
         applied=Target.from_dict(raw_applied) if raw_applied is not None else None,
         pending_notification=pending_notification,
         pending_prompt=raw_prompt,
+        touch_wake=touch_wake,
         backend=BackendState(data.get("backend", "ready")),
         error_code=optional_string("error_code"),
         error_detail=optional_string("error_detail"),

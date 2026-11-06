@@ -51,6 +51,8 @@ static void test_event_index(void) {
 static void test_virtual_identity(void) {
     CHECK(uinput_is_own(VIRTUAL_NAME, "") == 1);
     CHECK(uinput_is_own("", VIRTUAL_PHYS) == 1);
+    CHECK(uinput_is_own(WAKE_NAME, "") == 1);
+    CHECK(uinput_is_own("", WAKE_PHYS) == 1);
     CHECK(uinput_is_own("Intel HID switches", "PNP0C50/input0") == 0);
     CHECK(uinput_is_own(NULL, NULL) == 0);
 }
@@ -128,17 +130,17 @@ static void test_protocol_messages(void) {
     end_capture(path, saved, output, sizeof output);
 
     CHECK(strstr(output,
-                 "{\"protocol\":3,\"kind\":\"ready\",\"physical\":true}\n") !=
+                 "{\"protocol\":4,\"kind\":\"ready\",\"physical\":true}\n") !=
           NULL);
     CHECK(strstr(output,
-                 "{\"protocol\":3,\"kind\":\"physical\",\"present\":false}\n") !=
+                 "{\"protocol\":4,\"kind\":\"physical\",\"present\":false}\n") !=
           NULL);
     CHECK(strstr(output,
-                 "{\"protocol\":3,\"kind\":\"released\",\"exit\":4}\n") != NULL);
+                 "{\"protocol\":4,\"kind\":\"released\",\"exit\":4}\n") != NULL);
     CHECK(strstr(output,
-                 "{\"protocol\":3,\"kind\":\"applied\",\"hardware\":true,"
+                 "{\"protocol\":4,\"kind\":\"applied\",\"hardware\":true,"
                  "\"tablet\":true,\"input_disabled\":false,"
-                 "\"physical\":true,\"error\":null,\"request\":0}\n") != NULL);
+                 "\"physical\":true,\"error\":null,\"request\":0,\"touch_serial\":0}\n") != NULL);
 
     relay.software = 1;
     relay.input_error = RELAY_ERROR_INPUT_GRAB;
@@ -271,6 +273,14 @@ static void test_monitor_commands_and_input_release(void) {
         CHECK(relay.monitor == (sequence[i] == '0'));
     }
     CHECK(relay.next_scan == 0.0); /* First hardware command forces discovery. */
+    {
+        double lease = relay.lease;
+        unsigned int request = relay.request;
+        CHECK(write(commands[1], "w", 1) == 1);
+        CHECK(handle_stdin(&relay, POLLIN) == RELAY_EXIT_OK);
+        CHECK(relay.lease == lease);
+        CHECK(relay.request == request);
+    }
     close(commands[1]);
     CHECK(handle_stdin(&relay, POLLIN) == RELAY_EXIT_OK);
     CHECK(relay.release_requested == 1);
@@ -320,6 +330,49 @@ static void test_cleanup_state(void) {
     CHECK(relay_cleanup_state(1, 0, NULL) == 0);
 }
 
+static void test_contact_backed_wake(void) {
+    struct relay_state relay;
+    struct options options = {0};
+    struct input_event events[4];
+    int output[2];
+
+    relay_init(&relay, &options);
+    CHECK(pipe(output) == 0);
+    relay.software = 1;
+    relay.inputs.fds[0] = relay.inputs.fds[1] = 0;
+    relay.touch_fd = 0;
+    relay.wake_fd = output[1];
+    relay.lease = 20.0;
+    relay.last_touch = 10.0;
+    relay.touch_serial = 9;
+    CHECK(relay_can_wake(&relay, 11.0));
+    CHECK(!relay_can_wake(&relay, 9.0));
+    CHECK(!relay_can_wake(&relay, 12.01));
+    relay.lease = 11.0;
+    CHECK(!relay_can_wake(&relay, 11.0));
+    relay.lease = 20.0;
+    relay.hardware_state = 1;
+    CHECK(!relay_can_wake(&relay, 11.0));
+    relay.hardware_state = 0;
+    relay.software = 0;
+    CHECK(!relay_can_wake(&relay, 11.0));
+    relay.software = 1;
+    relay.inputs.fds[1] = -1;
+    CHECK(!relay_can_wake(&relay, 11.0));
+    relay.inputs.fds[1] = 0;
+    request_wake(&relay, 11.0);
+    CHECK(!relay_can_wake(&relay, 11.0));
+    CHECK(relay.lease == 20.0);
+    CHECK(relay.request == 0);
+    CHECK(read(output[0], events, sizeof events) == sizeof events);
+    CHECK(events[0].type == EV_KEY && events[0].code == KEY_WAKEUP && events[0].value == 1);
+    CHECK(events[1].type == EV_SYN && events[1].code == SYN_REPORT);
+    CHECK(events[2].type == EV_KEY && events[2].code == KEY_WAKEUP && events[2].value == 0);
+    CHECK(events[3].type == EV_SYN && events[3].code == SYN_REPORT);
+    close(output[0]);
+    close(output[1]);
+}
+
 int main(void) {
     setbuf(stdout, NULL);
     srand((unsigned)getpid());
@@ -331,6 +384,7 @@ int main(void) {
     test_cleanup_state();
     test_hardware_handoff();
     test_monitor_commands_and_input_release();
+    test_contact_backed_wake();
     if (failures != 0) {
         fprintf(stderr, "%d relay test(s) failed\n", failures);
         return 1;

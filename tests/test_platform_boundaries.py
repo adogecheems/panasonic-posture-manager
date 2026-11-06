@@ -55,12 +55,19 @@ def exercise_platform_boundaries():
     from panasonic_posture.service.settings_schema import encode_settings, parse_settings
     from panasonic_posture.service.ports import Settings
     from panasonic_posture.tasks import InlineExecutor
-    from panasonic_posture.service.ports import SessionOwner
+    from panasonic_posture.service.ports import SessionOwner, TouchActivity
 
     class InputControl:
         running = False
         state = None
         error_code = error_detail = None
+        touch_activity = None
+
+        def __init__(self):
+            self.wake_requests = []
+
+        def request_wake(self, serial):
+            self.wake_requests.append(serial)
 
         def keep(self, now):
             self.running = True
@@ -131,6 +138,8 @@ def exercise_platform_boundaries():
         SimpleNamespace(
             get_state=lambda: engine.state,
             session_update=lambda *args: engine.session_update(*args, owner=SessionOwner("test", "user/session")),
+            wake_screen=lambda generation, serial: engine.session_wake(
+                generation, serial, SessionOwner("test", "user/session")),
         ),
         display,
         None,
@@ -147,6 +156,17 @@ def exercise_platform_boundaries():
     engine.tick()
     assert display.current.transform == 2 and display.current.lock is True
     assert actuator.running and engine.state.applied.mode == "tent"
+
+    # The complete contact/owner/ready receipt path uses the same injected
+    # clock and opaque session identity, with no Linux transport dependency.
+    generation = engine.state.generation
+    actuator.touch_activity = TouchActivity(1, now)
+    engine.tick()
+    session.tick(now)
+    engine.tick()
+    assert actuator.wake_requests == [1]
+    assert engine.state.applied.mode == "tent"
+    assert engine.state.generation == generation
 
     hardware = True
     engine.tick()
