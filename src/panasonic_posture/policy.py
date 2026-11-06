@@ -546,21 +546,41 @@ class Policy:
                 self._set_mode(MODE_TENT, now)
                 self._clear_timers()
 
-        desired: str | None = None
+        desired = self._desired_mode(
+            now, tent=tent, stand=stand,
+            tent_prompt=tent_prompt, stand_prompt=stand_prompt,
+        )
+        # Entry runs first: a pending software transfer prevents a temporary
+        # laptop target, and a completed entry changes which hold band applies.
+        self._advance_entry(now, desired)
+        self._advance_leave(now, tent_hold=tent_hold, stand_hold=stand_hold)
+
+    # -- internals -----------------------------------------------------------
+
+    def _desired_mode(
+        self,
+        now: float,
+        *,
+        tent: bool,
+        stand: bool,
+        tent_prompt: bool,
+        stand_prompt: bool,
+    ) -> str | None:
+        """Choose a candidate without changing the mode or its timers."""
+
         if stand:
             if self.mode == MODE_STAND_PROMPT:
-                desired = MODE_STAND_PROMPT
-            elif (
+                return MODE_STAND_PROMPT
+            if (
                 stand_prompt
                 and self.mode == MODE_LAPTOP
                 and self._source.origin is not _Origin.NON_LAPTOP
             ):
                 # An explicit posture change from tent/stand already carries
                 # intent; only the initial laptop-to-stand transition asks.
-                desired = MODE_STAND_PROMPT
-            else:
-                desired = MODE_STAND
-        elif tent and self.mode not in (MODE_TENT, MODE_TENT_PROMPT):
+                return MODE_STAND_PROMPT
+            return MODE_STAND
+        if tent and self.mode not in (MODE_TENT, MODE_TENT_PROMPT):
             # Leaving a non-laptop posture for a stable tent posture is an
             # explicit posture change, so it does not need the laptop-mode
             # confirmation prompt.  A recent tent exit may only skip the
@@ -571,9 +591,12 @@ class Policy:
                 or self.mode == MODE_STAND_PROMPT
                 or self._recent_tent_exit(now)
             ):
-                desired = MODE_TENT
-            else:
-                desired = MODE_TENT_PROMPT
+                return MODE_TENT
+            return MODE_TENT_PROMPT
+        return None
+
+    def _advance_entry(self, now: float, desired: str | None) -> None:
+        """Require stable sample evidence for the candidate's entry delay."""
 
         if self.stable and desired is not None and desired != self.mode:
             if self.pending != desired:
@@ -589,6 +612,11 @@ class Policy:
         else:
             self.pending = None
             self.pending_since = None
+
+    def _advance_leave(
+        self, now: float, *, tent_hold: bool, stand_hold: bool,
+    ) -> None:
+        """Debounce departure while allowing a software transfer to finish."""
 
         hold = True
         if self.mode == MODE_TENT:
@@ -618,8 +646,6 @@ class Policy:
                 self._clear_timers()
         else:
             self.leave_since = None
-
-    # -- internals -----------------------------------------------------------
 
     def _prune(self, now: float) -> None:
         window = self.config.history_seconds
