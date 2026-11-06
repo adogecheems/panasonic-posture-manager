@@ -9,18 +9,18 @@
 下载适合当前系统的安装包和同一发布版本的 `SHA256SUMS`。在下载目录执行
 `sha256sum --ignore-missing --check SHA256SUMS`，确认所下载的安装包通过校验。 [GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases)
 
-以下以 2.3.1 为例。安装时只执行当前发行版对应的命令，并使用下载文件的实际名称。
+以下以 2.3.2 为例。安装时只执行当前发行版对应的命令，并使用下载文件的实际名称。
 Ubuntu／Debian 包要求 GTK 4.12+ 和 libadwaita 1.4+，包管理器会处理依赖。
 
 ```sh
 # Arch Linux
-sudo pacman -U ./panasonic-posture-manager-2.3.1-1-x86_64.pkg.tar.zst
+sudo pacman -U ./panasonic-posture-manager-2.3.2-1-x86_64.pkg.tar.zst
 
 # Ubuntu / Debian
-sudo apt install ./panasonic-posture-manager_2.3.1-1_amd64.deb
+sudo apt install ./panasonic-posture-manager_2.3.2-1_amd64.deb
 
 # Fedora
-sudo dnf install ./panasonic-posture-manager-2.3.1-1.x86_64.rpm
+sudo dnf install ./panasonic-posture-manager-2.3.2-1.x86_64.rpm
 ```
 
 ### AUR
@@ -124,7 +124,7 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 ## 发布
 
 1. 使项目、运行时、UI、AUR 元数据、翻译文件头和 README 中的版本一致。运行
-   `/usr/bin/python3 packaging/scripts/release_version.py --tag v2.3.1`，把示例标签替换为待发布标签。
+   `/usr/bin/python3 packaging/scripts/release_version.py --tag v2.3.2`，把示例标签替换为待发布标签。
 2. 推送版本标签后，工作流从标签对应的提交构建 Arch、Deb 和 RPM 安装包，生成 `SHA256SUMS`，上传至 GitHub Release，再更新两个 AUR 包。
 3. 如果需要为已有标签重建制品，可手动运行发布工作流并填写 `tag`。工作流检出派发时选定的提交，`tag` 决定更新哪个发布版本，同名附件会被替换。AUR 源码配方仍指向发布标签，二进制包使用此次上传的 Arch 安装包。
 
