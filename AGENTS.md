@@ -20,7 +20,7 @@
   用户文档保留这两页。不要恢复旧的 `docs/`、`CHANGELOG` 或独立硬件验收文档。
 - 机型支持等级核对 `data/profiles/` 和运行时 probe。其他 360° 翻转本按硬件能力判断兼容性。
   支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland。
-- 使用 Python 3.11+、C11 relay、GJS／GTK 4／libadwaita。Python 包的运行时依赖列表保持为空，PyGObject 由发行版提供。
+- 使用 Python 3.11+、C11 relay、PyGObject／GTK 4／libadwaita。Python 包的运行时依赖列表保持为空，PyGObject 由发行版提供。
 
 ## 3. 运行边界与状态回执
 
@@ -55,25 +55,25 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 手动模式、目标、状态及服务事务 | `protocol.py`、`model.py`、`controller.py`、`service/engine.py`；装配与方法入口见 `service/application.py`、`service/daemon.py` | `test_protocol`、`test_model`、`test_engine`、`test_application`、`test_ui_contract` |
 | 共用逻辑与平台装配 | `service/ports.py`、`session/ports.py`、`service/application.py`、`session/agent.py` | `test_platform_boundaries`、`test_application`、`test_agent`、`make check-dbus` |
 | 鉴权、会话身份、租约 | `service/access.py`、`service/daemon.py`、`service/engine.py`、`session/agent.py`、`packaging/dbus/`、`packaging/polkit/` | `test_access`、`test_engine`、`test_agent`、`make check-dbus` |
-| 设置、校准 | `service/settings.py`、`service/engine.py`、`calibration.py`、`protocol.py`、`data/ui/settingsPage.js` | `test_settings`、`test_calibration`、`test_engine`、`test_ui_contract`、`make check-i18n` |
+| 设置、校准 | `service/settings.py`、`service/engine.py`、`calibration.py`、`protocol.py`、`ui/settings.py` | `test_settings`、`test_calibration`、`test_engine`、`test_ui_contract`、`make check-i18n` |
 | 传感器、IIO、sysfs、profile | `service/sensor*.py`、`service/hardware_monitor.py`、`hardware/`、`data/profiles/` | `test_sensor`、`test_hardware_monitor`、`test_iio`、`test_sysfs`、`test_profile`、`test_calibration` |
 | relay、物理开关、输入抓取 | `backend/`、`service/actuator.py`、`protocol.py` | `make check-c`、`test_actuator`、`test_sysfs`；涉及会话时加 `make check-dbus` |
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
-| UI 布局、文案、插画、设置页 | `data/ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
+| UI 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
 ## 5. 兼容契约与联动检查
 
 - D-Bus 端点和方法、per-uid 总线名、权限／polkit 语义、错误码及版本化载荷属于兼容契约。
-  修改前必须取得明确授权，按实际调用方同步 Python、C、GJS、打包配置和契约测试。
+  修改前必须取得明确授权，按实际调用方同步 Python、C、打包配置和契约测试。
 - 从定义确认版本。`protocol.py` 兼容导出 `contracts.py` 的状态快照 v2 和
   `linux_contract.py` 的 relay 协议 v4、profile v1。
   `service/settings_schema.py` 和 `session/journal_schema.py` 分别定义设置 v1、显示日志 v1，
   原存储模块继续兼容导出版本号。
   不兼容变更须同步版本、迁移和调用方。
 - 用户可见行为变更同步 README。文案同步英文源文案、`po/zh_CN.po` 和 UI 契约。
-  错误码同步 `protocol.py`、`session/errors.py`、`data/ui/errors.js`。界面用简短的本地化文案说明
+  错误码同步 `protocol.py`、`session/errors.py`、`src/panasonic_posture/ui/errors.py`。界面用简短的本地化文案说明
   当前状态、操作结果和用户可采取的动作。内部技术细节留在日志和维护文档中。
 - 发布版本核对 `pyproject.toml`、`__version__`、UI `APP_VERSION`、`packaging/aur/PKGBUILD`、
   `packaging/aur/.SRCINFO`、`po/zh_CN.po` 和 README。由 `packaging/scripts/release_version.py`
@@ -150,7 +150,7 @@ make WERROR=1 check
 - C 改动必跑 `make check-c`，涉及 relay 和会话联动时加 `make check-dbus`。
   UI 文案或错误码改动必跑 `make check-i18n`。
 - D-Bus 集成测试使用临时会话总线，也会启动传感器探测。使用普通用户，在未映射真实传感器的隔离环境中运行。
-- UI 测试可能因缺少 `gjs` 或 `gtk4-broadwayd` 等依赖而跳过。涉及 UI 时说明跳过项和残余风险。
+- UI 测试可能因缺少 PyGObject 或 `gtk4-broadwayd` 等依赖而跳过。涉及 UI 时说明跳过项和残余风险。
 - Arch 包验收用 `make check-package PACKAGE=/path/to/package.pkg.tar.zst`。
   静态检查加 `PACKAGE_NO_INSTALL=1`。完整检查只在隔离 pacman 根目录中安装，详见 [USAGE.md](USAGE.md#构建和验收)。
 - 修复失败根因，禁止吞异常、跳过测试、放宽断言、缩短超时或删除分支来让检查通过。
@@ -161,7 +161,7 @@ make WERROR=1 check
 - **Python** 保持 3.11+ 兼容。纯逻辑无 I/O、时钟和 D-Bus。边界模块使用类型标注、现有
   dataclass／`StrEnum` 和错误码。D-Bus 回调执行有界工作，耗时任务交给现有调度。
 - **C** 使用 C11 并通过 `-Wall -Wextra -Werror`。保留字符设备打开时的安全检查。
-- **GJS** 沿用 ES module、四空格缩进及 `_()`。页面只读取校验过的快照字段，字段变更同步状态模型与契约测试。
+- **UI** 使用 PyGObject、四空格缩进及 `_()`。页面只读取校验过的快照字段，字段变更同步状态模型与契约测试。
 - **测试** 在进程、总线、文件系统边界注入 fake，临时文件放入 `TemporaryDirectory`。
 - **翻译** 以英文源文案为 msgid，确保 `po/POTFILES.in` 覆盖实际源文件。用构建流程生成 `.mo`。
 - **注释** 说明原因、不变量或失败路径。
@@ -603,3 +603,12 @@ make WERROR=1 check
   断开和释放不保留唤醒能力。此项仅通过隔离测试，未完成真机或桌面实际唤醒验证。
 - 同步：C 输入发现、relay 与 uinput、服务执行器/引擎/方法分发、状态模型和解码、会话
   客户端/运行时/接口、D-Bus 配置注释、C/服务/会话/鉴权/总线回归测试及 README/USAGE。
+
+### 2026-11-07 - 界面迁移至 Python/PyGObject
+
+- 变更：取代 GJS 界面实现，由 Python 调用 GTK 4/libadwaita；窗口、插画、设置、异步
+  D-Bus 客户端和隔离界面测试一起迁移，移除 GJS 运行依赖。界面复用严格状态解码和错误文案。
+- 动机：统一开发语言，减少重复状态与错误定义，同时保留原有外观和操作语义。
+- 影响：UI 仍为独立非特权进程，只通过既有 D-Bus 方法操作服务；硬件优先、鉴权、租约、
+  relay、状态版本和发布版本不变。保留延迟提示、旧连接回调隔离、按控件串行合并写入及键盘浏览。
+- 同步：Python UI、启动入口、翻译源清单、发行版打包与发布验证、界面回归测试、README 和 USAGE。

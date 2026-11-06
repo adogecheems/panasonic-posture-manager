@@ -3,7 +3,7 @@ Version: @VERSION@-1
 Architecture: @ARCH@
 Maintainer: adogecheems <adogecheems@outlook.com>
 Installed-Size: @INSTALLED_SIZE@
-Depends: dbus, gjs, gir1.2-adw-1 (>= 1.4), gir1.2-gtk-4.0 (>= 4.12), iio-sensor-proxy, libadwaita-1-0 (>= 1.4), libgtk-4-1 (>= 4.12), polkitd, python3 (>= 3.11), python3-gi, systemd
+Depends: dbus, gir1.2-adw-1 (>= 1.4), gir1.2-gtk-4.0 (>= 4.12), iio-sensor-proxy, libadwaita-1-0 (>= 1.4), libgtk-4-1 (>= 4.12), polkitd, python3 (>= 3.11), python3-gi, python3-gi-cairo, systemd
 Suggests: gnome-settings-daemon, gnome-shell, kscreen, mutter, plasma-workspace
 Section: utils
 Priority: optional

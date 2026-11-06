@@ -2,9 +2,8 @@
 
 The privileged daemon reports a machine readable :class:`protocol.ErrorCode`
 plus a free-form ``detail`` that is meant for logs only.  This module is the
-single Python copy of the code -> message mapping; the UI carries a mirrored
-copy in ``data/ui/errors.js``.  ``tests/check_i18n.py`` extracts every
-translatable literal from both files and verifies the gettext catalog covers
+shared code -> message mapping used by both the session adapter and Python UI.  ``tests/check_i18n.py`` extracts every
+translatable literal from this file and verifies the gettext catalog covers
 them.
 
 The translation catalog is resolved at import time.  Installed systems have

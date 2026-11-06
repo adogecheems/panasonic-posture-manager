@@ -1,8 +1,7 @@
 # Files containing translatable strings, relative to the repository root.
-# tests/check_i18n.py verifies that this list matches the source tree exactly.
 src/panasonic_posture/session/errors.py
 src/panasonic_posture/session/notify.py
-data/ui/app.js
-data/ui/errors.js
-data/ui/posturePage.js
-data/ui/settingsPage.js
+src/panasonic_posture/ui/app.py
+src/panasonic_posture/ui/errors.py
+src/panasonic_posture/ui/posture.py
+src/panasonic_posture/ui/settings.py

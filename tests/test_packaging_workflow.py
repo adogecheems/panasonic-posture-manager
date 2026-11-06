@@ -88,7 +88,7 @@ class DistributionPackagingTests(unittest.TestCase):
             "dbus",
             "gir1.2-adw-1",
             "gir1.2-gtk-4.0",
-            "gjs",
+            "python3-gi-cairo",
             "iio-sensor-proxy",
             "libadwaita-1-0",
             "libgtk-4-1",
@@ -117,7 +117,7 @@ class DistributionPackagingTests(unittest.TestCase):
     def test_rpm_spec_and_scriptlets_match_install_layout(self) -> None:
         spec = read("packaging/rpm/panasonic-posture-manager.spec.in")
         for content in (
-            "Requires:       gjs",
+            "Requires:       python3-cairo",
             "Requires:       gtk4",
             "Requires:       libadwaita",
             "Requires:       python3-gobject",

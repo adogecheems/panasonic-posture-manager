@@ -17,7 +17,7 @@ BuildRequires:  python3-setuptools >= 77
 BuildRequires:  python3-wheel
 
 Requires:       dbus
-Requires:       gjs
+Requires:       python3-cairo
 Requires:       gtk4
 Requires:       iio-sensor-proxy
 Requires:       libadwaita

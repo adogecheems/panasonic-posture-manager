@@ -1,1184 +1,524 @@
-"""JS <-> Python contract tests for the GJS UI and the shared protocol.
-
-The static checks always run and only need the standard library.  The dynamic
-checks spawn ``gjs`` (and optionally a headless ``gtk4-broadwayd``) and are
-skipped when the tools are unavailable, so ``make check`` stays green on
-machines without the GNOME runtime while still guarding the contract on the
-target system.
-
-Covered regressions (QA-session-ui / QA-core):
-* protocol.ErrorCode <-> session/errors.py <-> data/ui/errors.js parity;
-* STATE_VERSION / POSES / MODES / hardware-status / backend constants parity;
-* every ``state.<field>`` the UI reads exists in ``StateSnapshot.to_dict()``;
-* ``Retry()`` is exported by the service and used by the retry button;
-* the session adapter owns the per-uid bus name (``session_name(uid)``);
-* the D-Bus name is valid and differs from the deprecated machine-wide name;
-* headless GTK build of both pages, local ``--settings`` start page, error
-  text mapping (service unavailable / access denied / no detail leakage);
-* the illustration self-check stays green.
-"""
-
+"""Python UI contracts and real widget checks on a private Broadway display."""
+from concurrent.futures import Future
 import json
 import os
-import re
+from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+
+from panasonic_posture.contracts import ALL_ERROR_CODES
+from panasonic_posture.model import StateSnapshot, Target
+from panasonic_posture.ui.errors import describe_error, ServiceUnavailable
+from panasonic_posture.session.errors import ERROR_MESSAGES, error_text
+from panasonic_posture.ui.service import PostureService, parse_state
+from panasonic_posture.ui.common import DATA_ROOT
+from gi.repository import GLib
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def state(**values):
+    result = StateSnapshot().to_dict()
+    result.update(generation=1, target=Target(mode='laptop', tablet=False, rotation=0).to_dict(), session_connected=True,
+                  supported=True, support_tier='validated', sensor_source='sysfs', hardware=False)
+    result.update(values)
+    return result
+
+
+class FakeService:
+    def __init__(self):
+        self.calls = []
+        self.refreshes = 0
+        self.stopped = False
+
+    def call(self, method, parameters=None):
+        future = Future()
+        self.calls.append((method, parameters.unpack() if parameters else None, future))
+        return future
+
+    def retry(self, mode):
+        return self.call('Retry')
+
+    def refresh(self):
+        self.refreshes += 1
+
+    def start(self, on_state, on_unavailable):
+        self.on_state, self.on_unavailable = on_state, on_unavailable
+
+    def stop(self):
+        self.stopped = True
+
+
+class ProtocolTests(unittest.TestCase):
+    def test_error_mapping_shared_and_details_hidden(self):
+        self.assertEqual(set(ERROR_MESSAGES), set(ALL_ERROR_CODES))
+        for code in ALL_ERROR_CODES:
+            message = describe_error(Exception(f'GDBus.Error:work.mmoe.panasonic.Posture.Error: {code}: PRIVATE'))
+            self.assertEqual(message, error_text(code))
+            self.assertNotIn('PRIVATE', message)
+        self.assertIn('unavailable', describe_error(ServiceUnavailable()))
+        self.assertEqual(describe_error(Exception('AccessDenied: PRIVATE')), error_text('access-denied'))
+
+    def test_parse_state_strict_and_compatible_defaults(self):
+        raw = state()
+        for field in ('tent_enabled', 'posture_pending', 'touch_wake'):
+            raw.pop(field)
+        decoded = parse_state(json.dumps(raw))
+        self.assertTrue(decoded['tent_enabled'])
+        self.assertFalse(decoded['posture_pending'])
+        self.assertIsNone(decoded['touch_wake'])
+        for change in ({'version': 999}, {'generation': True}, {'target': []},
+                       {'posture_pending': 1}, {'applied': []}, {'manual': 'invalid'}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                parse_state(json.dumps(dict(raw, **change)))
+
+    def test_retry_fallback_only_for_unknown_method(self):
+        service = PostureService()
+        fake = FakeService()
+        service.call = fake.call
+        result = service.retry('tent')
+        fake.calls[0][2].set_exception(Exception('UnknownMethod'))
+        self.assertEqual(fake.calls[1][:2], ('SetMode', ('tent',)))
+        fake.calls[1][2].set_result(None)
+        self.assertIsNone(result.result())
+        result = service.retry('tent')
+        fake.calls[-1][2].set_exception(Exception('AccessDenied'))
+        self.assertIn('AccessDenied', str(result.exception()))
+        self.assertEqual(len(fake.calls), 3)
+
+    def test_old_proxy_refresh_action_and_signal_are_ignored(self):
+        class Proxy:
+            def __init__(self):
+                self.pending = []
+                self.disconnected = []
+            def call(self, *args):
+                self.pending.append(args[-1])
+            def call_finish(self, result):
+                if isinstance(result, BaseException):
+                    raise result
+                return GLib.Variant('(s)', (json.dumps(state()),))
+            def disconnect(self, handler):
+                self.disconnected.append(handler)
+        old, new = Proxy(), Proxy()
+        service = PostureService()
+        states, unavailable = [], []
+        service._on_state = states.append
+        service._on_unavailable = lambda: unavailable.append(True)
+        service._proxy = old
+        service._handlers = [1, 2]
+        service.refresh()
+        action = service.call('SetMode')
+        service._drop_proxy()
+        self.assertEqual(old.disconnected, [1, 2])
+        service._proxy = new
+        old.pending[0](old, None)
+        old.pending[1](old, None)
+        self.assertIsInstance(action.exception(), ServiceUnavailable)
+        service._signal(old, '', 'StateChanged', GLib.Variant('(s)', (json.dumps(state()),)))
+        self.assertEqual(states, [])
+        self.assertEqual(unavailable, [])
+        service.refresh()
+        new.pending[0](new, None)
+        self.assertEqual(len(states), 1)
+        service.stop()
+
+    def test_replaced_owner_invalidates_connection_and_pending_actions(self):
+        class Proxy:
+            def get_name_owner(self):
+                return ':1.2'
+        service = PostureService()
+        service._proxy = Proxy()
+        service._owner = ':1.1'
+        unavailable = []
+        service._on_unavailable = lambda: unavailable.append(True)
+        service._owner_changed(service._proxy)
+        self.assertEqual(unavailable, [True])
+        self.assertIsNone(service._proxy)
+        self.assertTrue(service._retry_id)
+        service.stop()
+        self.assertFalse(service._retry_id)
+
+    def test_malformed_signal_does_not_break_connection(self):
+        service = PostureService()
+        proxy = object()
+        service._proxy = proxy
+        with self.assertLogs('panasonic_posture.ui.service', level='ERROR'):
+            service._signal(proxy, '', 'StateChanged', GLib.Variant('()', ()))
+        self.assertIs(service._proxy, proxy)
+        service.stop()
+
+    def test_bad_state_and_render_error_do_not_drop_connection(self):
+        service = PostureService()
+        proxy = object()
+        service._proxy = proxy
+        service._on_state = lambda value: (_ for _ in ()).throw(RuntimeError('widget'))
+        with self.assertLogs('panasonic_posture.ui.service', level='ERROR'):
+            service._emit_state('[]')
+            service._emit_state(json.dumps(state()))
+        self.assertIs(service._proxy, proxy)
+        service.stop()
+
+    def test_per_uid_name_remains_valid(self):
+        from gi.repository import Gio
+        from panasonic_posture.linux_contract import session_name
+        self.assertTrue(Gio.dbus_is_name(session_name(1000)))
+
+    def test_python_entry_and_packaging(self):
+        import inspect
+        from panasonic_posture.cli import launch_ui
+        self.assertNotIn('execv', inspect.getsource(launch_ui))
+        for name in ('packaging/aur/PKGBUILD', 'packaging/aur/.SRCINFO',
+                     'packaging/aur-bin/PKGBUILD.in', 'packaging/deb/control.in',
+                     'packaging/rpm/panasonic-posture-manager.spec.in'):
+            self.assertNotIn('gjs', (ROOT / name).read_text())
+        self.assertFalse(list((ROOT / 'data/ui').glob('*.js')))
+
+
+class WidgetTests(unittest.TestCase):
+    """Run each scenario in a new process so GTK never uses the real display."""
+    @classmethod
+    def setUpClass(cls):
+        broadway = shutil.which('gtk4-broadwayd')
+        if not broadway:
+            raise unittest.SkipTest('gtk4-broadwayd is required')
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.env = dict(os.environ, GDK_BACKEND='broadway', GTK_A11Y='none',
+                       XDG_RUNTIME_DIR=cls.temp.name, LANG='C', LANGUAGE='C',
+                       GIO_USE_VFS='local', GSETTINGS_BACKEND='memory',
+                       PYTHONPATH=str(ROOT / 'src') + ':' + str(ROOT / 'tests'))
+        config = Path(cls.temp.name) / 'bus.conf'
+        config.write_text('<busconfig><type>session</type><listen>unix:tmpdir=' + cls.temp.name + '</listen><auth>EXTERNAL</auth><policy context="default"><allow send_destination="*"/><allow own="*"/><allow eavesdrop="true"/></policy></busconfig>')
+        cls.bus_config = config
+        # Choose a private socket and port; never attach to an existing display.
+        import socket
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0))
+            port = sock.getsockname()[1]
+        number = port
+        cls.env['BROADWAY_DISPLAY'] = f':{number}'
+        cls.server = subprocess.Popen([broadway, '--port', str(port), f':{number}'], env=cls.env,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        socket_path = Path(cls.temp.name) / f'broadway{number + 1}.socket'
+        deadline = time.monotonic() + 5
+        while not socket_path.exists() and time.monotonic() < deadline and cls.server.poll() is None:
+            time.sleep(.02)
+        if not socket_path.exists():
+            cls.server.terminate()
+            _, error = cls.server.communicate(timeout=5)
+            cls.temp.cleanup()
+            raise RuntimeError(f'Private Broadway failed: {error!r}')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.terminate()
+        cls.server.communicate(timeout=5)
+        cls.temp.cleanup()
+
+    def run_ui(self, body):
+        prelude = '''
+from test_ui_contract import FakeService, state
+from panasonic_posture.ui import app
+from panasonic_posture.ui.posture import PosturePage
+from panasonic_posture.ui.settings import SettingsPage
+from gi.repository import Adw, Gtk, Gdk, GLib
+Adw.init()
+service = FakeService()
+toasts = []
+page = PosturePage(service, toasts.append)
+settings = SettingsPage(service, toasts.append)
+s = state()
+page.update(s)
+settings.update(s)
+'''
+        result = subprocess.run(['dbus-run-session', '--config-file', str(self.bus_config), '--', sys.executable, '-c', prelude + body],
+                                env=self.env, text=True, capture_output=True, timeout=40)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertNotIn('CRITICAL', result.stderr)
+
+    def test_pages_and_window_shell(self):
+        self.run_ui('''
+application = app.Application(application_id='work.mmoe.Posture.Test', service_factory=lambda: service)
+assert application.register(None)
+application.ensure_ui()
+assert application.window.get_default_size() == (500, 660)
+assert application.stack.get_visible_child_name() == 'posture'
+class Command:
+    def get_arguments(self): return ['test', '--settings']
+application._command_line(application, Command())
+assert application.stack.get_visible_child_name() == 'settings'
+service.on_state(s)
+assert application.settings_page.radios['auto'].get_active()
+service.on_unavailable()
+assert not application.settings_page.radios['auto'].get_sensitive()
+loop = GLib.MainLoop()
+GLib.timeout_add(150, lambda: (loop.quit(), False)[1])
+loop.run()
+application._shutdown(application)
+assert service.stopped
+page.close()
+''')
+
+    def test_real_second_launch_forwards_settings_option(self):
+        self.run_ui('''
+import subprocess, sys
+application = app.Application(service_factory=lambda: service)
+assert application.register(None)
+application.ensure_ui()
+remote = subprocess.Popen([sys.executable, '-m', 'panasonic_posture.cli', '--settings'],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+loop = GLib.MainLoop()
+expired = []
+def poll():
+    if remote.poll() is not None:
+        loop.quit()
+        return False
+    return True
+def timeout():
+    expired.append(True)
+    remote.terminate()
+    loop.quit()
+    return False
+poll_id = GLib.timeout_add(10, poll)
+timeout_id = GLib.timeout_add(5000, timeout)
+loop.run()
+if expired:
+    GLib.source_remove(poll_id)
+else:
+    GLib.source_remove(timeout_id)
+output, errors = remote.communicate(timeout=5)
+assert not expired, errors
+assert remote.returncode == 0, errors
+assert application.stack.get_visible_child_name() == 'settings'
+application._shutdown(application)
+page.close()
+''')
+
+    def test_displayed_pose_and_readiness(self):
+        self.run_ui('''
+for mode, expected in [('tent','Tent'),('stand','Stand'),('hardware','Tablet'),('laptop','Laptop')]:
+    page.update(state(applied={'mode': mode}))
+    assert page.heading.get_label() == expected
+page.update(state(manual='tent', target={'mode':'tent'}, pose='laptop'))
+assert page.heading.get_label() == 'Tent'
+page.update(state(manual='tent', target={'mode':'tent'}, pose='laptop', error_code='internal-error'))
+assert page.heading.get_label() == 'Laptop'
+assert 'Mode change failed' in page.detail.get_label()
+page.update(state(pose='unknown', target={'mode':'unavailable'}, hardware=True))
+assert page.heading.get_label() == 'Laptop'
+assert not page.detail.get_visible()
+page.update(state(target={'mode':'unavailable'}, hardware=None))
+assert 'tablet switch is unavailable' in page.detail.get_label()
+page.update(state(target={'mode':'unavailable'}, sensor_source='starting'))
+assert 'No posture data' in page.detail.get_label()
+page.update(state(supported=False))
+assert 'does not support' in page.detail.get_label()
+page.update(state(support_tier='compatible'))
+assert 'Compatibility mode' in page.detail.get_label()
+page.update(state(session_connected=False))
+assert 'desktop to get ready' in page.detail.get_label()
+page.set_unavailable()
+assert page.detail.get_label() == 'Background service unavailable'
+page.close()
+''')
+
+    def test_transition_timer_and_generation_cleanup(self):
+        self.run_ui('''
+assert not page.detail.get_visible()
+loop = GLib.MainLoop()
+GLib.timeout_add(2150, lambda: (loop.quit(), False)[1])
+loop.run()
+assert 'longer than usual' in page.detail.get_label()
+page.update(state(generation=2))
+assert not page._slow
+page.update(state(generation=2, applied={'mode':'laptop'}))
+assert page._timer == 0
+page.update(state(generation=3))
+page.set_unavailable()
+assert page._timer == 0
+page.close()
+''')
+
+    def test_confirmation_dedup_and_current_prompt(self):
+        self.run_ui('''
+page.update(state(pending_notification=8, pending_prompt='tent'))
+page.confirm_button.emit('clicked')
+assert service.calls[-1][:2] == ('ConfirmTent', (8,))
+assert not page.confirm_button.get_sensitive()
+page.confirm_button.emit('clicked')
+assert len(service.calls) == 1
+page.update(state(pending_notification=9, pending_prompt='stand'))
+service.calls[0][2].set_result(None)
+assert page.confirm_button.get_label() == 'Enter stand mode'
+assert page.confirm_button.get_sensitive()
+page.retry_button.emit('clicked')
+assert service.calls[-1][0] == 'Retry'
+service.calls[-1][2].set_exception(Exception('internal-error: PRIVATE'))
+assert 'PRIVATE' not in page.detail.get_label()
+page.close()
+''')
+
+    def test_settings_coalesce_and_failure_resync(self):
+        self.run_ui('''
+settings.radios['tent'].set_active(True)
+settings.radios['stand'].set_active(True)
+assert len(service.calls) == 1
+settings.update(s)
+assert settings.radios['stand'].get_active()
+service.calls[0][2].set_exception(Exception('old failure'))
+assert service.calls[1][:2] == ('SetMode', ('stand',))
+assert not toasts
+service.calls[1][2].set_exception(Exception('internal-error'))
+assert settings.radios['auto'].get_active()
+assert len(toasts) == 1
+for field, method in [('tent_enabled','SetTentEnabled'),('tent_prompt','SetTentPrompt'),('stand_prompt','SetStandPrompt')]:
+    initial = settings.switches[field].get_active()
+    settings.switches[field].set_active(not initial)
+    settings.switches[field].set_active(initial)
+    before = len(service.calls)
+    assert service.calls[-1][0] == method
+    service.calls[-1][2].set_result(None)
+    assert len(service.calls) == before + 1
+    service.calls[-1][2].set_result(None)
+page.close()
+''')
+
+    def test_keyboard_and_hardware_safety(self):
+        self.run_ui('''
+window = Gtk.Window()
+window.set_child(settings.widget)
+window.present()
+settings.radios['auto'].grab_focus()
+assert settings.browse_modes(settings.radios['auto'], Gdk.KEY_Down)
+assert settings.radios['auto'].get_active()
+assert not service.calls
+settings.update(state(hardware=True))
+assert not any(b.get_sensitive() for b in settings.radios.values())
+settings.update(state(tent_enabled=False))
+assert not settings.radios['tent'].get_sensitive()
+assert not settings.switches['tent_prompt'].get_sensitive()
+settings.set_unavailable()
+assert not any(b.get_sensitive() for b in settings.radios.values())
+page.close()
+''')
+
+    def test_calibration_and_stale_results(self):
+        self.run_ui('''
+settings._calibrate()
+assert service.calls[-1][0] == 'CalibrateSensor'
+assert not settings.calibrate_button.get_sensitive()
+service.calls[-1][2].set_result(None)
+assert toasts[-1] == 'Sensor direction calibrated.'
+settings.update(state(sensor_calibrated=True))
+assert settings.reset_button.get_visible()
+settings._calibrate(True)
+service.calls[-1][2].set_exception(Exception('calibration-not-ready: PRIVATE'))
+assert 'PRIVATE' not in toasts[-1]
+settings.radios['tent'].set_active(True)
+old = service.calls[-1][2]
+settings.set_unavailable()
+settings.update(s)
+settings.radios['stand'].set_active(True)
+old.set_exception(Exception('old failure'))
+assert settings.radios['stand'].get_active()
+page.update(state(pending_notification=1))
+page.confirm_button.emit('clicked')
+old = service.calls[-1][2]
+page.set_unavailable()
+old.set_exception(Exception('old failure'))
+assert page.detail.get_label() == 'Background service unavailable'
+page.close()
+''')
+
+    def test_real_async_bus_connection_signal_retry_and_reconnect(self):
+        self.run_ui('''
+from gi.repository import Gio
+from panasonic_posture.ui.service import PostureService
+from panasonic_posture.linux_contract import NAME, PATH, IFACE, DBUS_XML
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+flags = Gio.DBusCallFlags.NONE
+bus.call_sync('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus',
+              'RequestName', GLib.Variant('(su)', (NAME, 0)), None, flags, 1000, None)
+methods = []
+def invoke(connection, sender, path, interface, method, parameters, invocation):
+    methods.append((method, parameters.unpack()))
+    if method == 'GetState':
+        import json
+        invocation.return_value(GLib.Variant('(s)', (json.dumps(s),)))
+    else:
+        invocation.return_value(None)
+registration = bus.register_object(PATH, Gio.DBusNodeInfo.new_for_xml(DBUS_XML).interfaces[0], invoke, None, None)
+client = PostureService(bus)
+states, unavailable = [], []
+client.start(states.append, lambda: unavailable.append(True))
+def wait_until(predicate):
+    loop = GLib.MainLoop()
+    expired = []
+    def check():
+        if predicate():
+            loop.quit()
+            return False
+        return True
+    def timeout():
+        expired.append(True)
+        loop.quit()
+        return False
+    check_id = GLib.timeout_add(10, check)
+    timeout_id = GLib.timeout_add(5000, timeout)
+    loop.run()
+    if expired:
+        GLib.source_remove(check_id)
+    else:
+        GLib.source_remove(timeout_id)
+    assert not expired, 'async operation timed out'
+wait_until(lambda: len(states) == 1)
+result = client.call('SetTentEnabled', GLib.Variant('(b)', (False,)))
+wait_until(result.done)
+assert result.exception() is None
+assert methods[-1] == ('SetTentEnabled', (False,))
+import json
+bus.emit_signal(None, PATH, IFACE, 'StateChanged', GLib.Variant('(s)', (json.dumps(state(generation=2)),)))
+wait_until(lambda: len(states) == 2)
+bus.call_sync('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus',
+              'ReleaseName', GLib.Variant('(s)', (NAME,)), None, flags, 1000, None)
+wait_until(lambda: bool(unavailable))
+assert client._proxy is None
+bus.call_sync('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus',
+              'RequestName', GLib.Variant('(su)', (NAME, 0)), None, flags, 1000, None)
+wait_until(lambda: len(states) == 3)
+client.stop()
+bus.unregister_object(registration)
+page.close()
+''')
+
+    def test_illustrations_all_themes_cache_and_fallback(self):
+        self.run_ui('''
+from panasonic_posture.ui.illustration import POSES, posture_pixbuf, _CACHE, CACHE_LIMIT
+from panasonic_posture.ui.common import DATA_ROOT
 from pathlib import Path
-
-REPO = Path(__file__).resolve().parents[1]
-_SRC = str(REPO / "src")
-if _SRC not in sys.path:  # make check already sets PYTHONPATH=src
-    sys.path.insert(0, _SRC)
-
-from panasonic_posture import protocol  # noqa: E402
-from panasonic_posture.model import StateSnapshot  # noqa: E402
-from panasonic_posture.session import errors as session_errors  # noqa: E402
-
-GJS = shutil.which("gjs")
-BROADWAY = shutil.which("gtk4-broadwayd")
-DBUS_DAEMON = shutil.which("dbus-daemon")
-UI_DIR = REPO / "data" / "ui"
-GLYCIN_NO_BWRAP_WARNING = (
-    "WARNING: Glycin running without sandbox. "
-    "Bubblewrap (bwrap) doesn't work in the environment.\n"
-)
-
-
-def read(relative: str) -> str:
-    return (REPO / relative).read_text(encoding="utf-8")
-
-
-def _js_uri(relative: str) -> str:
-    return (REPO / relative).as_uri()
-
-
-def run_gjs(source: str, *, env: dict | None = None, timeout: float = 40.0):
-    """Run a GJS ESM script and return the completed process."""
-
-    handle = tempfile.NamedTemporaryFile(
-        "w", suffix=".js", delete=False, encoding="utf-8"
-    )
-    try:
-        handle.write(source)
-        handle.close()
-        run_env = os.environ.copy()
-        run_env.update(
-            {
-                "LC_ALL": "C",
-                "LANG": "C",
-                "LANGUAGE": "C",
-                "PANASONIC_POSTURE_LOCALE_DIR": "/nonexistent-locale",
-            }
-        )
-        if env:
-            run_env.update(env)
-        return subprocess.run(
-            [GJS, "-m", handle.name],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=run_env,
-        )
-    finally:
-        try:
-            os.unlink(handle.name)
-        except OSError:
-            pass
-
-
-# ---------------------------------------------------------------------------
-# Static protocol <-> UI parity
-# ---------------------------------------------------------------------------
-
-
-class ProtocolUiParityTests(unittest.TestCase):
-    def test_error_code_lists_are_identical(self):
-        expected = set(protocol.ALL_ERROR_CODES)
-        js_codes = set(
-            re.findall(
-                r"^\s*'([a-z][a-z0-9-]+)':\s*_\(", read("data/ui/errors.js"), re.M
-            )
-        )
-        python_codes = set(session_errors.ERROR_MESSAGES)
-        self.assertEqual(js_codes, expected)
-        self.assertEqual(python_codes, expected)
-
-    def test_error_texts_are_identical_in_python_and_js(self):
-        python_source = read("src/panasonic_posture/session/errors.py")
-        python_map = {
-            getattr(protocol.ErrorCode, name): msgid
-            for name, msgid in re.findall(
-                r"ErrorCode\.([A-Z_]+):\s*_\(\s*\"([^\"]+)\"", python_source, re.S
-            )
-        }
-        js_map = {
-            code: msgid
-            for code, msgid in re.findall(
-                r"'([a-z][a-z0-9-]+)':\s*_\(\s*'([^']+)'", read("data/ui/errors.js")
-            )
-        }
-        self.assertEqual(python_map, js_map)
-
-    def test_access_denied_is_localized(self):
-        self.assertIn("access-denied", protocol.ALL_ERROR_CODES)
-        po = read("po/zh_CN.po")
-        self.assertIn(
-            'msgid "Please switch back to the local desktop and try again."\n'
-            'msgstr "请切回本机桌面后重试。"',
-            po,
-        )
-
-    def test_state_version_matches_protocol(self):
-        match = re.search(r"export const STATE_VERSION = (\d+);", read("data/ui/service.js"))
-        self.assertIsNotNone(match)
-        self.assertEqual(int(match.group(1)), protocol.STATE_VERSION)
-
-    def test_pose_whitelist_matches_protocol(self):
-        match = re.search(r"export const POSES = \[([^\]]+)\]", read("data/ui/illustration.js"))
-        self.assertIsNotNone(match)
-        poses = re.findall(r"'([a-z]+)'", match.group(1))
-        self.assertEqual(poses, list(protocol.POSES))
-
-    def test_mode_list_matches_protocol(self):
-        keys = re.findall(
-            r"\['(auto|laptop|tent|stand|tablet)',", read("data/ui/settingsPage.js")
-        )
-        self.assertEqual(tuple(keys), tuple(protocol.MODES))
-
-    def test_posture_page_only_uses_user_facing_state(self):
-        # The caption under the posture drawing must show only translated
-        # errors or a necessary readiness message.  Hardware/sensor/profile
-        # details live in GetState and the logs.
-        page = read("data/ui/posturePage.js")
-        for technical in (
-            "state.hardware_status",
-            "state.hardware",
-            "state.profile",
-            "state.sensor_error",
-            "state.sensor_source",
-            "state.backend",
-            "state.model",
-            "state.vendor",
-        ):
-            self.assertNotIn(technical, page, f"posture page exposes {technical}")
-        for text in (
-            "panasonic-posture-manager-probe",
-            "Generic Panasonic profile",
-            "Sensor data",
-            "First use",
-            "tablet switch is on",
-        ):
-            self.assertNotIn(text, page)
-
-    def test_posture_page_distinguishes_compatible_and_unsupported_devices(self):
-        page = read("data/ui/posturePage.js")
-        self.assertIn("state.support_tier === 'compatible'", page)
-        self.assertIn("has not been individually validated", page)
-
-    def test_posture_page_has_no_waiting_for_posture_state(self):
-        page = read("data/ui/posturePage.js")
-        self.assertNotIn("Waiting for posture", page)
-        self.assertNotIn("unknown: _(", page)
-        self.assertNotIn('msgid "Waiting for posture"', read("po/zh_CN.po"))
-
-    def test_posture_page_prefers_applied_mode(self):
-        page = read("data/ui/posturePage.js")
-        self.assertIn("state.applied?.mode", page)
-        self.assertIn("POSE_SET.has(appliedMode)", page)
-        self.assertIn("POSE_SET.has(state.pose)", page)
-
-    def test_mode_descriptions_are_user_facing(self):
-        settings = read("data/ui/settingsPage.js")
-        for technical in (
-            "Internal input disabled",
-            "inverted landscape",
-            "auto rotation",
-            "Keyboard enabled",
-        ):
-            self.assertNotIn(technical, settings)
-
-    def test_settings_about_exposes_author_and_repository(self):
-        settings = read("data/ui/settingsPage.js")
-        self.assertIn("export const AUTHOR_NAME = 'adogecheems';", settings)
-        self.assertIn(
-            "export const GITHUB_URL = "
-            "'https://github.com/adogecheems/panasonic-posture-manager';",
-            settings,
-        )
-        self.assertIn("new Gtk.LinkButton", settings)
-
-    def test_ui_state_fields_exist_in_the_snapshot(self):
-        known = set(StateSnapshot().to_dict())
-        used = set()
-        for path in sorted(UI_DIR.glob("*.js")):
-            used.update(
-                re.findall(r"(?<![A-Za-z_])state\.([a-z_]+)", path.read_text(encoding="utf-8"))
-            )
-        self.assertTrue(used)
-        self.assertLessEqual(used, known, f"unknown UI state fields: {sorted(used - known)}")
-
-    def test_session_adapter_uses_the_per_uid_bus_name(self):
-        source = read("src/panasonic_posture/session/agent.py")
-        self.assertIn("protocol.session_name(self.uid)", source)
-        self.assertIn("os.getuid()", source)
-
-    def test_per_uid_session_name_is_a_valid_dbus_name(self):
-        try:
-            import gi
-
-            gi.require_version("Gio", "2.0")
-            from gi.repository import Gio
-        except (ImportError, ValueError):  # pragma: no cover - PyGObject missing
-            self.skipTest("PyGObject is not available")
-        seen = set()
-        for uid in (0, 1000, 65534):
-            name = protocol.session_name(uid)
-            self.assertNotIn(name, seen)
-            seen.add(name)
-            self.assertTrue(name.startswith(protocol.SESSION_NAME_PREFIX))
-            self.assertNotEqual(name, "work.mmoe.panasonic.Posture.Session")
-            self.assertTrue(Gio.dbus_is_name(name), f"invalid D-Bus name {name}")
-        self.assertEqual(protocol.session_name(1000), protocol.session_name(1000))
-
-    def test_retry_method_is_exposed_and_used(self):
-        self.assertIn('<method name="Retry"/>', protocol.DBUS_XML)
-        service = read("data/ui/service.js")
-        self.assertIn("await this.call('Retry')", service)
-        self.assertIn("isUnknownMethodError(error)", service)
-        self.assertIn("await this.setMode(fallbackMode)", service)
-        page = read("data/ui/posturePage.js")
-        self.assertIn("this._service.retry(fallbackMode)", page)
-        self.assertIn("this._retryButton.connect('clicked', () => this._retry())", page)
-
-    def test_sensor_calibration_controls_are_wired(self):
-        self.assertIn('<method name="CalibrateSensor"/>', protocol.DBUS_XML)
-        self.assertIn('<method name="ResetSensorCalibration"/>', protocol.DBUS_XML)
-        service = read("data/ui/service.js")
-        self.assertIn("this.call('CalibrateSensor')", service)
-        self.assertIn("this.call('ResetSensorCalibration')", service)
-        page = read("data/ui/settingsPage.js")
-        self.assertIn("_showCalibrationDialog", page)
-        self.assertIn("_resetSensorCalibration", page)
-        self.assertIn("_latestState.sensor_calibrated", page)
-
-    def test_tent_mode_switch_is_wired(self):
-        self.assertIn('<method name="SetTentEnabled">', protocol.DBUS_XML)
-        service = read("data/ui/service.js")
-        self.assertIn("this.call('SetTentEnabled'", service)
-        page = read("data/ui/settingsPage.js")
-        self.assertIn("_queueTentMode", page)
-        self.assertIn("state.tent_enabled", page)
-
-    def test_command_line_handling_is_implemented(self):
-        app = read("data/ui/app.js")
-        self.assertIn("Gio.ApplicationFlags.HANDLES_COMMAND_LINE", app)
-        self.assertIn("connect('command-line'", app.replace('"', "'"))
-        self.assertIn("requestedPageFromCommandLine", app)
-        self.assertIn("get_arguments", app)
-        # --settings must stay a positional argument so GApplication forwards
-        # it to the primary instance (remote command lines carry no options).
-        self.assertNotIn("add_main_option", app)
-
-    def test_application_icon_is_configured_and_packaged(self):
-        app = read("data/ui/app.js")
-        self.assertIn("Gtk.Window.set_default_icon_name(APPLICATION_ID)", app)
-        self.assertIn("window.set_icon_name(windowIconName(", app)
-        self.assertNotIn("window.set_icon_name(APPLICATION_ID)", app)
-        self.assertIn("removeWindowIconFromDecoration(header)", app)
-        self.assertIn("header.pack_start(windowMark)", app)
-        self.assertIn("const WINDOW_MARK_WIDTH = 72;", app)
-        self.assertIn("margin_start: 12,", app)
-        self.assertIn("theme.add_search_path(ASSETS_DIR)", app)
-
-        desktop = read("packaging/desktop/work.mmoe.panasonic.PostureManager.desktop")
-        self.assertIn("Icon=work.mmoe.panasonic.PostureManager", desktop)
-
-        icon = REPO / "data/assets/work.mmoe.panasonic.PostureManager.png"
-        self.assertTrue(icon.is_file())
-        header = icon.read_bytes()[:24]
-        self.assertEqual(header[:8], b"\x89PNG\r\n\x1a\n")
-        self.assertEqual(int.from_bytes(header[16:20], "big"), 512)
-        self.assertEqual(int.from_bytes(header[20:24], "big"), 512)
-
-        custom_icons = []
-        for name in (
-            "lets-note-window-icon.png",
-            "lets-note-window-icon-dark.png",
-        ):
-            path = REPO / "data" / "assets" / name
-            self.assertTrue(path.is_file(), name)
-            data = path.read_bytes()
-            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
-            width = int.from_bytes(data[16:20], "big")
-            height = int.from_bytes(data[20:24], "big")
-            self.assertGreater(width, height, name)
-            custom_icons.append(data)
-        self.assertNotEqual(custom_icons[0], custom_icons[1])
-
-        pkgbuild = read("packaging/aur/PKGBUILD")
-        self.assertIn(
-            "/usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png",
-            pkgbuild,
-        )
-
-    def test_bottom_navigation_has_subtle_hover_feedback(self):
-        app = read("data/ui/app.js")
-        navigation = read("data/ui/navigation.js")
-        self.assertIn("createNavigationBar(stack)", app)
-        self.assertIn("button.toggle:hover:not(:checked)", navigation)
-        self.assertIn("background-color: alpha(currentColor, 0.08)", navigation)
-        self.assertNotIn("background-color: transparent", navigation)
-        self.assertIn("box-shadow: none", navigation)
-
-
-# ---------------------------------------------------------------------------
-# Dynamic JavaScript checks
-# ---------------------------------------------------------------------------
-
-
-def _gjs_probe(modules: list[str]) -> subprocess.CompletedProcess | None:
-    if not GJS:
-        return None
-    source = "".join(
-        f"import '{module}';\n" if module == "gettext" else f"import 'gi://{module}';\n"
-        for module in modules
-    )
-    source += "print('probe-ok');\n"
-    try:
-        return run_gjs(source, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):  # pragma: no cover - broken env
-        return None
-
-
-class JavaScriptContractTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        probe = _gjs_probe(["Gio", "GLib", "GdkPixbuf?version=2.0", "gettext"])
-        if probe is None or probe.returncode != 0:
-            raise unittest.SkipTest("gjs with the GIO/gettext typelibs is not usable")
-
-    def test_parse_state_and_error_mapping(self):
-        sample = json.dumps(StateSnapshot(generation=1, instance="i").to_dict())
-        source = f"""
-import System from 'system';
-import {{parseState, STATE_VERSION, serviceUnavailableError}} from {json.dumps(_js_uri('data/ui/service.js'))};
-import {{errorText, errorCodeFromMessage, describeError, isAccessDenied,
-        isUnknownMethodError}} from {json.dumps(_js_uri('data/ui/errors.js'))};
-
-const failures = [];
-const check = (condition, message) => {{ if (!condition) failures.push(message); }};
-const sample = {json.dumps(sample)};
-
-check(STATE_VERSION === {protocol.STATE_VERSION}, 'STATE_VERSION');
-check(parseState(sample).generation === 1, 'parse a v2 snapshot');
-const legacy = JSON.parse(sample);
-delete legacy.posture_pending;
-check(parseState(JSON.stringify(legacy)).posture_pending === false, 'legacy posture wait');
-legacy.posture_pending = true;
-check(parseState(JSON.stringify(legacy)).posture_pending === true, 'posture wait');
-for (const bad of [JSON.stringify({{...legacy, posture_pending: 'true'}}), '[]', '{{"version":1}}', '{{"version":2}}',
-                   '{{"version":2,"generation":"x","target":{{}}}}',
-                   '{{"version":2,"generation":1,"target":5}}']) {{
-    let accepted = false;
-    try {{ parseState(bad); accepted = true; }} catch (error) {{ }}
-    check(!accepted, 'parseState accepted ' + bad);
-}}
-check(errorCodeFromMessage(
-    'GDBus.Error:work.mmoe.panasonic.Posture.Error: display-transform-not-applied: x')
-    === 'display-transform-not-applied', 'code from D-Bus message');
-check(errorCodeFromMessage('plain text') === null, 'no code from plain text');
-check(errorText('access-denied') === 'Please switch back to the local desktop and try again.',
-      'access-denied text: ' + errorText('access-denied'));
-check(describeError(serviceUnavailableError()) === 'Background service unavailable',
-      'unavailable text: ' + describeError(serviceUnavailableError()));
-check(describeError(serviceUnavailableError()) !== describeError(new Error('boom')),
-      'unavailable must differ from the fallback');
-check(isAccessDenied(new Error(
-    'GDBus.Error:org.freedesktop.DBus.Error.AccessDenied: nope')), 'access denied detection');
-check(isUnknownMethodError(new Error(
-    'GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: nope')), 'unknown method detection');
-check(!isUnknownMethodError(new Error(
-    'GDBus.Error:org.freedesktop.DBus.Error.NoReply: nope')), 'NoReply is not UnknownMethod');
-check(describeError(new Error(
-    'GDBus.Error:org.freedesktop.DBus.Error.NoReply: nope')) === errorText('internal-error'),
-    'NoReply falls back to internal-error');
-if (failures.length) {{
-    printerr(failures.join('; '));
-    System.exit(1);
-}}
-System.exit(0);
-"""
-        result = run_gjs(source)
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-
-    def test_reconnection_ignores_old_replies_errors_and_signals(self):
-        source = """
-import Gio from 'gi://Gio';
-import {PostureService} from __SERVICE_URI__;
-const service = new PostureService(null);
-const states = [];
-let unavailable = 0;
-service._onState = state => states.push(state.generation);
-service._onUnavailable = () => unavailable++;
-const snapshot = generation => JSON.stringify({version: 2, generation, target: {mode: 'laptop'}});
-function proxy(generation, fail = false) {
-    return {
-        callback: null, disconnected: [],
-        call(_method, _args, _flags, _timeout, _cancel, callback) { this.callback = callback; },
-        call_finish() {
-            if (fail) throw new Error('old connection timed out');
-            return {deepUnpack: () => [snapshot(generation)]};
-        },
-        disconnect(id) { this.disconnected.push(id); },
-    };
-}
-function check(condition, message) { if (!condition) throw new Error(message); }
-for (const fail of [false, true]) {
-    const old = proxy(1, fail);
-    service._proxy = old;
-    service._proxyHandlers = [11, 12];
-    service.refresh();
-    service._dropProxy();
-    check(old.disconnected.join(',') === '11,12', 'old signal handlers stayed attached');
-    const current = proxy(10);
-    service._proxy = current;
-    service.refresh();
-    check(current.callback !== null, 'old refresh blocked the new connection');
-    old.callback(old, {});
-    check(service._proxy === current && service._refreshPending, 'old callback changed new connection');
-    check(unavailable === 0 && states.length === (fail ? 1 : 0), 'old reply or error reached the page');
-    current.callback(current, {});
-}
-check(states.join(',') === '10,10', 'fresh states were not delivered');
-service.stop();
-check(service._proxy === null, 'stop retained a proxy');
-
-const connected = new PostureService(null);
-connected._onState = () => { throw new Error('old signal reached the page'); };
-let next = null;
-Gio.DBusProxy.new = (...args) => args.at(-1)(null, {});
-Gio.DBusProxy.new_finish = () => next;
-function connectedProxy() {
-    const result = proxy(20);
-    result.handlers = new Map();
-    result.g_name_owner = ':1.20';
-    result.connect = (signal, callback) => {
-        const id = result.handlers.size + 1;
-        result.handlers.set(id, {signal, callback});
-        return id;
-    };
-    return result;
-}
-next = connectedProxy();
-connected._connect();
-const oldSignals = Array.from(next.handlers.values());
-connected._dropProxy();
-next = connectedProxy();
-connected._connect();
-next.g_name_owner = null;
-for (const {signal, callback} of oldSignals) {
-    if (signal === 'g-signal')
-        callback(null, ':1.old', 'StateChanged', {deepUnpack: () => [snapshot(1)]});
-    else
-        callback();
-}
-check(connected._proxy === next, 'old owner change dropped the new proxy');
-connected.stop();
-print('reconnection callback check passed');
-""".replace("__SERVICE_URI__", json.dumps(_js_uri("data/ui/service.js")))
-        result = run_gjs(source)
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-
-    def test_retry_falls_back_to_set_mode_for_older_services(self):
-        source = f"""
-import GLib from 'gi://GLib';
-import System from 'system';
-import {{PostureService}} from {json.dumps(_js_uri('data/ui/service.js'))};
-
-const failures = [];
-const check = (condition, message) => {{ if (!condition) failures.push(message); }};
-
-function fakeService(handler) {{
-    const proxy = {{
-        calls: [],
-        handler,
-        call(method, _params, _flags, _timeout, _cancellable, callback) {{
-            this.calls.push(method);
-            callback(this, {{method}});
-        }},
-        call_finish(result) {{
-            const error = this.handler(result.method);
-            if (error)
-                throw error;
-            return {{unpack: () => []}};
-        }},
-    }};
-    const service = new PostureService(null);
-    service._proxy = proxy;
-    return {{service, proxy}};
-}}
-
-const unknownMethod = new Error(
-    'GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: no Retry here');
-const {{service, proxy}} = fakeService(
-    method => method === 'Retry' ? unknownMethod : null);
-await service.retry('tent');
-check(proxy.calls.join(',') === 'Retry,SetMode',
-      'fallback order was ' + proxy.calls.join(','));
-
-const {{service: fatalService, proxy: fatalProxy}} = fakeService(
-    method => method === 'Retry'
-        ? new Error('GDBus.Error:org.freedesktop.DBus.Error.NoReply: slow')
-        : null);
-let rejected = false;
-try {{
-    await fatalService.retry('tent');
-}} catch (error) {{
-    rejected = true;
-}}
-check(rejected, 'non-UnknownMethod error must not fall back');
-check(fatalProxy.calls.join(',') === 'Retry',
-      'unexpected methods after fatal error: ' + fatalProxy.calls.join(','));
-
-if (failures.length) {{
-    printerr(failures.join('; '));
-    System.exit(1);
-}}
-System.exit(0);
-"""
-        result = run_gjs(source)
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-
-    def test_illustration_self_check(self):
-        # `gjs -m data/ui/illustration.js` runs the asset self-check and must be
-        # completely silent on success (QA: it was never executed by CI before).
-        environment = os.environ.copy()
-        environment.update(
-            {"LC_ALL": "C", "LANG": "C", "G_MESSAGES_DEBUG": "",
-             "PANASONIC_POSTURE_LOCALE_DIR": "/nonexistent-locale"}
-        )
-        completed = subprocess.run(
-            [GJS, "-m", str(UI_DIR / "illustration.js")],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=environment,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout, "")
-        # Glycin falls back to an unsandboxed worker when the CI container
-        # cannot create the namespaces used by bubblewrap.  Keep the
-        # self-check strict about every other stderr message.
-        stderr = completed.stderr.replace(GLYCIN_NO_BWRAP_WARNING, "")
-        self.assertEqual(stderr, "")
-
-
-class HeadlessUiTests(unittest.TestCase):
-    """Real GTK4/libadwaita build of both pages via the Broadway backend."""
-
-    @classmethod
-    def setUpClass(cls):
-        if not GJS or not BROADWAY or not DBUS_DAEMON:
-            raise unittest.SkipTest("gjs, gtk4-broadwayd and dbus-daemon are required")
-        probe = _gjs_probe(["Gtk?version=4.0", "Adw?version=1", "Gio", "GLib"])
-        if probe is None or probe.returncode != 0:
-            raise unittest.SkipTest("headless GTK4/libadwaita is not usable")
-
-    def setUp(self):
-        self._runtime = tempfile.TemporaryDirectory(prefix="posture-broadway-")
-        self.addCleanup(self._runtime.cleanup)
-        runtime = Path(self._runtime.name)
-        bus_path = runtime / "bus"
-        environment = os.environ.copy()
-        environment.update(
-            {"XDG_RUNTIME_DIR": str(runtime), "LC_ALL": "C", "GIO_USE_VFS": "local"}
-        )
-
-        # The UI uses the system bus.  Build tests must not depend on the
-        # developer's session or a running system dbus, so give GJS a private
-        # bus and stop it with the test.
-        self._bus = subprocess.Popen(
-            [DBUS_DAEMON, "--session", "--nofork", f"--address=unix:path={bus_path}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=environment,
-        )
-
-        def stop_bus():
-            if self._bus.poll() is None:
-                self._bus.terminate()
-                try:
-                    self._bus.wait(timeout=5)
-                except subprocess.TimeoutExpired:  # pragma: no cover
-                    self._bus.kill()
-            if self._bus.stdout is not None:
-                self._bus.stdout.close()
-
-        self.addCleanup(stop_bus)
-        deadline = time.monotonic() + 8
-        while time.monotonic() < deadline:
-            if bus_path.exists():
-                break
-            if self._bus.poll() is not None:
-                output = self._bus.stdout.read() if self._bus.stdout else ""
-                self.skipTest(f"private D-Bus session failed to start: {output.strip()}")
-            time.sleep(0.05)
-        else:
-            self.skipTest("private D-Bus session did not create a socket")
-
-        bus_address = f"unix:path={bus_path}"
-        environment.update(
-            {
-                "DBUS_SESSION_BUS_ADDRESS": bus_address,
-                "DBUS_SYSTEM_BUS_ADDRESS": bus_address,
-            }
-        )
-        self._daemon = subprocess.Popen(
-            [BROADWAY, ":99"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=environment,
-        )
-
-        def stop_daemon():
-            if self._daemon.poll() is None:
-                self._daemon.terminate()
-                try:
-                    self._daemon.wait(timeout=5)
-                except subprocess.TimeoutExpired:  # pragma: no cover
-                    self._daemon.kill()
-            if self._daemon.stdout is not None:
-                self._daemon.stdout.close()
-
-        self.addCleanup(stop_daemon)
-        deadline = time.monotonic() + 8
-        while time.monotonic() < deadline:
-            if any(Path(self._runtime.name).glob("*.socket")):
-                break
-            if self._daemon.poll() is not None:
-                self.skipTest("gtk4-broadwayd failed to start")
-            time.sleep(0.05)
-        else:
-            self.skipTest("gtk4-broadwayd did not create a socket")
-        self._environment = {
-            "XDG_RUNTIME_DIR": self._runtime.name,
-            "GDK_BACKEND": "broadway",
-            "BROADWAY_DISPLAY": ":99",
-            "DBUS_SESSION_BUS_ADDRESS": bus_address,
-            "DBUS_SYSTEM_BUS_ADDRESS": bus_address,
-            "GIO_USE_VFS": "local",
-        }
-
-    def test_both_pages_build_and_settings_command_line_works(self):
-        source = f"""
-import GLib from 'gi://GLib';
-import Gdk from 'gi://Gdk?version=4.0';
-import Gtk from 'gi://Gtk?version=4.0';
-import System from 'system';
-import {{createApplication, currentUi, requestedPageFromCommandLine,
-        applyRequestedPage}} from {json.dumps(_js_uri('data/ui/app.js'))};
-
-Gtk.init();
-Gtk.Settings.get_default().gtk_decoration_layout = 'icon,menu:minimize,maximize,close';
-const app = createApplication('work.mmoe.panasonic.PostureManager.HeadlessTest');
-const failures = [];
-
-function findWidget(widget, cssName) {{
-    if (widget.get_css_name && widget.get_css_name() === cssName)
-        return widget;
-    let child = widget.get_first_child ? widget.get_first_child() : null;
-    while (child) {{
-        const found = findWidget(child, cssName);
-        if (found)
-            return found;
-        child = child.get_next_sibling();
-    }}
-    return null;
-}}
-
-function findWidgetWithClass(widget, cssClass) {{
-    if (widget.has_css_class && widget.has_css_class(cssClass))
-        return widget;
-    let child = widget.get_first_child ? widget.get_first_child() : null;
-    while (child) {{
-        const found = findWidgetWithClass(child, cssClass);
-        if (found)
-            return found;
-        child = child.get_next_sibling();
-    }}
-    return null;
-}}
-
-GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2500, () => {{
-    const ui = currentUi();
-    if (!ui) {{
-        failures.push('window was not built');
-    }} else {{
-        // Broadway can map the window without allocating it when no browser
-        // is connected. Give GTK a window size so it can lay out the header.
-        if (ui.window.get_width() === 0) {{
-            const [width, height] = ui.window.get_default_size();
-            ui.window.allocate(width, height, -1, null);
-        }}
-        const switcherBar = findWidget(ui.window, 'viewswitcherbar');
-        if (!switcherBar || !switcherBar.has_css_class('posture-navigation'))
-            failures.push('bottom navigation style class missing');
-        try {{
-            const display = Gdk.Display.get_default();
-            const theme = Gtk.IconTheme.get_for_display(display);
-            if (!theme.has_icon('work.mmoe.panasonic.PostureManager'))
-                failures.push('application icon was not found');
-            for (const name of ['lets-note-window-icon', 'lets-note-window-icon-dark']) {{
-                if (!theme.has_icon(name))
-                    failures.push(name + ' was not found');
-            }}
-        }} catch (error) {{
-            failures.push('application icon check failed: ' + error.message);
-        }}
-        if (!ui.window.get_icon_name()?.startsWith('lets-note-window-icon'))
-            failures.push('window icon was not switched');
-        const windowMark = findWidgetWithClass(ui.window, 'window-mark');
-        if (!windowMark)
-            failures.push('window mark is missing');
-        else if (windowMark.get_width() !== 72)
-            failures.push('window mark width is ' + windowMark.get_width());
-        const header = findWidget(ui.window, 'headerbar');
-        const decoration = header?.get_decoration_layout() || '';
-        if (decoration.split(':').some(side => side.split(',').includes('icon')))
-            failures.push('duplicate window icon is still visible');
-        if (!findWidgetWithClass(ui.window, 'close'))
-            failures.push('window close button is missing');
-        if (ui.stack.visible_child_name !== 'settings')
-            failures.push('--settings opened ' + ui.stack.visible_child_name);
-        const commandLine = {{get_arguments: () => ['program', '--settings']}};
-        if (requestedPageFromCommandLine(commandLine) !== 'settings')
-            failures.push('command-line helper failed');
-        const empty = {{get_arguments: () => ['program']}};
-        if (requestedPageFromCommandLine(empty) !== null)
-            failures.push('default page helper failed');
-        applyRequestedPage('posture');
-        if (ui.stack.visible_child_name !== 'posture')
-            failures.push('applyRequestedPage failed');
-        // Exercise every rendering branch of the pages with a v2 state.
-        const target = {{mode: 'tent', tablet: true, rotation: 180,
-                         disable_internal_input: true}};
-        const state = {{
-            version: 2, instance: 'qa', generation: 4, pose: 'tent', hardware: true,
-            hardware_status: 'ambiguous', manual: 'auto', tent_prompt: true,
-            stand_prompt: false, target, applied: target, pending_notification: 4,
-            pending_prompt: 'tent', backend: 'ready',
-            error_code: 'access-denied', error_detail: 'inactive', session_connected: true,
-            supported: true, sensor_source: 'iio', sensor_error: null,
-            sensor_calibrated: false,
-            profile: 'generic', model: 'CFQV8', vendor: 'Panasonic',
-        }};
-        ui.posturePage.update(state);
-        ui.settingsPage.update(state);
-        const standTarget = {{mode: 'stand', tablet: true, rotation: 0,
-                              disable_internal_input: true}};
-        const standState = Object.assign({{}}, state, {{
-            pose: 'stand', target: standTarget, applied: standTarget,
-            pending_notification: 5, pending_prompt: 'stand', stand_prompt: true,
-            error_code: null, error_detail: null,
-        }});
-        ui.posturePage.update(standState);
-        ui.settingsPage.update(standState);
-        if (ui.posturePage._confirmButton.label !== 'Enter stand mode')
-            failures.push('stand confirmation label is not used');
-        if (!ui.settingsPage._standSwitch.active)
-            failures.push('stand prompt setting was not rendered');
-        if (!ui.settingsPage._tentModeSwitch.active)
-            failures.push('tent mode setting was not rendered');
-        const tentDisabledState = Object.assign({{}}, state, {{
-            tent_enabled: false,
-        }});
-        ui.settingsPage.update(tentDisabledState);
-        if (ui.settingsPage._tentModeSwitch.active)
-            failures.push('disabled tent mode was not rendered');
-        if (ui.settingsPage._tentPromptSwitch.sensitive)
-            failures.push('tent notification stayed enabled without tent mode');
-        if (ui.settingsPage._radios.get('tent').sensitive)
-            failures.push('manual tent mode stayed enabled without tent mode');
-        const tabletTarget = {{mode: 'tablet', tablet: true, rotation: null,
-                              disable_internal_input: true}};
-        const pendingTabletState = Object.assign({{}}, state, {{
-            hardware: false, hardware_status: 'ok', manual: 'tablet',
-            pose: 'tent', target: tabletTarget, applied: null,
-            pending_notification: null, pending_prompt: null,
-            error_code: null, error_detail: null,
-        }});
-        ui.posturePage.update(pendingTabletState);
-        ui.settingsPage.update(pendingTabletState);
-        if (ui.posturePage._pose !== 'tablet')
-            failures.push('pending manual mode did not update the illustration');
-        if (ui.posturePage._detail.visible)
-            failures.push('an ordinary pending transition showed a status message');
-        ui.posturePage.update(Object.assign({{}}, pendingTabletState, {{
-            target: {{mode: 'unavailable'}},
-        }}));
-        if (ui.posturePage._detail.visible || ui.posturePage._detail.label)
-            failures.push('undetermined posture showed an unnecessary pause message');
-        const failedTabletState = Object.assign({{}}, pendingTabletState, {{
-            error_code: 'display-transform-not-applied', error_detail: 'test',
-        }});
-        ui.posturePage.update(failedTabletState);
-        if (ui.posturePage._pose !== 'tent')
-            failures.push('failed manual mode left the pending illustration visible');
-        if (!ui.posturePage._detail.visible || !ui.posturePage._retryButton.visible)
-            failures.push('failed manual mode did not show the error and retry action');
-        const manualTabletState = Object.assign({{}}, state, {{
-            hardware: false, hardware_status: 'ok', manual: 'tablet',
-            pose: 'tent', target: tabletTarget, applied: tabletTarget,
-            pending_notification: null, pending_prompt: null,
-            error_code: null, error_detail: null,
-        }});
-        ui.posturePage.update(manualTabletState);
-        ui.settingsPage.update(manualTabletState);
-        if (ui.posturePage._heading.label !== 'Tablet')
-            failures.push('applied tablet mode did not override the recognised tent pose');
-        if (ui.posturePage._detail.visible)
-            failures.push('an ordinary applied mode showed a status message');
-        const hardwareState = Object.assign({{}}, manualTabletState, {{
-            pose: 'tablet', target: {{mode: 'hardware', tablet: true,
-                                     rotation: null, disable_internal_input: false}},
-            applied: {{mode: 'hardware', tablet: true, rotation: null,
-                       disable_internal_input: false}},
-        }});
-        ui.posturePage.update(hardwareState);
-        if (ui.posturePage._heading.label !== 'Tablet')
-            failures.push('applied hardware mode did not display the tablet pose');
-        const calibratedState = Object.assign({{}}, state, {{
-            hardware: false, hardware_status: 'ok', pose: 'laptop',
-            applied: null, sensor_calibrated: true,
-            error_code: null, error_detail: null,
-        }});
-        ui.posturePage.update(calibratedState);
-        ui.settingsPage.update(calibratedState);
-        if (ui.posturePage._heading.label !== 'Laptop')
-            failures.push('recognised pose was not used without an applied mode');
-        if (!ui.settingsPage._resetButton.visible)
-            failures.push('calibration reset action was not shown');
-        if (!ui.settingsPage._calibrateButton.sensitive)
-            failures.push('calibrate action was disabled in laptop posture');
-        ui.settingsPage._setCalibrationBusy(true, 'reset');
-        if (ui.settingsPage._calibrateButton.label !== 'Calibrate')
-            failures.push('reset operation changed the calibrate action label');
-        if (ui.settingsPage._resetButton.label !== 'Resetting…')
-            failures.push('reset action did not show its busy label');
-        ui.settingsPage._setCalibrationBusy(true, 'calibrate');
-        if (ui.settingsPage._calibrateButton.label !== 'Calibrating…')
-            failures.push('calibrate action did not show its busy label');
-        if (ui.settingsPage._resetButton.label !== 'Reset')
-            failures.push('calibrate operation changed the reset action label');
-        ui.settingsPage._setCalibrationBusy(false);
-        const unknownState = Object.assign({{}}, calibratedState, {{pose: 'unknown'}});
-        ui.posturePage.update(unknownState);
-        if (ui.posturePage._heading.label !== 'Laptop')
-            failures.push('unknown pose became a visible waiting state');
-        ui.posturePage.setUnavailable();
-        ui.settingsPage.setUnavailable();
-    }}
-    if (failures.length) {{
-        printerr(failures.join('; '));
-        System.exit(1);
-    }}
-    print('ui contract self-check passed');
-    app.quit();
-    return GLib.SOURCE_REMOVE;
-}});
-System.exit(app.run([System.programInvocationName, '--settings']));
-"""
-        result = run_gjs(source, env=self._environment, timeout=60)
-        self.assertEqual(result.returncode, 0, (result.stderr or "") + (result.stdout or ""))
-        self.assertIn("ui contract self-check passed", result.stdout)
-
-    def test_settings_selection_is_immediate_and_coalesced(self):
-        source = """
-import Adw from 'gi://Adw?version=1';
-import GLib from 'gi://GLib';
-import System from 'system';
-import {SettingsPage} from __SETTINGS_URI__;
-
-const app = new Adw.Application({
-    application_id: 'work.mmoe.panasonic.PostureManager.ResponsiveTest',
-});
-const failures = [];
-const calls = [];
-let refreshes = 0;
-let resolveFirst;
-const service = {
-    call(method, parameters) {
-        calls.push([method, parameters.deepUnpack()]);
-        if (calls.length === 1)
-            return new Promise(resolve => { resolveFirst = resolve; });
-        return Promise.resolve();
-    },
-    refresh() {
-        refreshes += 1;
-    },
-};
-
-app.connect('activate', () => {
-    const window = new Adw.ApplicationWindow({application: app});
-    const page = new SettingsPage(service);
-    window.content = page.widget;
-    window.present();
-    page.update({manual: 'auto', tent_prompt: true, hardware: false, supported: true});
-    const tent = page._radios.get('tent');
-    if (!tent.sensitive)
-        failures.push('mode controls were disabled before write');
-    tent.active = true;
-    if (!tent.active || !tent.sensitive)
-        failures.push('mode selection did not react immediately');
-    page.update({manual: 'auto', tent_prompt: true, hardware: false, supported: true});
-    if (!tent.active)
-        failures.push('a stale state update overwrote the pending selection');
-    const stand = page._radios.get('stand');
-    stand.active = true;
-    resolveFirst();
-    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 20, () => {
-        if (calls.length !== 2 || calls[0][0] !== 'SetMode' || calls[1][0] !== 'SetMode')
-            failures.push('unexpected calls: ' + JSON.stringify(calls));
-        if (calls.length > 1 && calls[1][1][0] !== 'stand')
-            failures.push('the latest mode was not coalesced');
-        if (!stand.active)
-            failures.push('the latest mode was not retained');
-        if (refreshes < 1)
-            failures.push('state refresh was not requested');
-        if (failures.length) {
-            printerr(failures.join('; '));
-            System.exit(1);
-        }
-        print('responsive settings self-check passed');
-        app.quit();
-        return GLib.SOURCE_REMOVE;
-    });
-});
-GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
-    printerr('responsive settings self-check timed out');
-    System.exit(1);
-});
-System.exit(app.run([System.programInvocationName]));
-"""
-        source = source.replace(
-            "__SETTINGS_URI__", json.dumps(_js_uri("data/ui/settingsPage.js"))
-        )
-        result = run_gjs(source, env=self._environment, timeout=30)
-        self.assertEqual(
-            result.returncode, 0, (result.stderr or "") + (result.stdout or "")
-        )
-        self.assertIn("responsive settings self-check passed", result.stdout)
-
-    def test_slow_transition_feedback_and_pause_reasons(self):
-        source = """
-import Adw from 'gi://Adw?version=1';
-import GLib from 'gi://GLib';
-import System from 'system';
-import {PosturePage} from __POSTURE_URI__;
-const app = new Adw.Application({application_id: 'work.mmoe.panasonic.PostureManager.SlowTest'});
-const timers = new Map();
-let nextId = 100000;
-const timeoutAdd = GLib.timeout_add;
-const sourceRemove = GLib.source_remove;
-GLib.timeout_add = (priority, delay, callback) => {
-    if (delay !== 2000) return timeoutAdd(priority, delay, callback);
-    const id = ++nextId;
-    timers.set(id, callback);
-    return id;
-};
-GLib.source_remove = id => timers.delete(id) || sourceRemove(id);
-function check(condition, message) { if (!condition) throw new Error(message); }
-app.connect('activate', () => {
-    try {
-        const page = new PosturePage({});
-        const target = {mode: 'tent', tablet: true, rotation: 180, disable_internal_input: true};
-        const state = {instance: 'a', generation: 1, manual: 'tent', pose: 'laptop',
-            hardware: false, hardware_status: 'ok', supported: true, support_tier: 'validated',
-            session_connected: true, sensor_source: 'iio', sensor_error: null,
-            target, applied: null, error_code: null};
-        page.update(state);
-        check(!page._detail.visible && timers.size === 1, 'ordinary transition was noisy');
-        const [id, elapsed] = timers.entries().next().value;
-        page.update(state);
-        check(timers.size === 1, 'state refresh restarted the timer');
-        timers.delete(id);
-        elapsed();
-        check(page._detail.label.includes('taking longer than usual'), 'long transition stayed silent');
-        page.update({...state, applied: target});
-        check(!page._detail.visible && timers.size === 0, 'completed mode retained its waiting message');
-
-        page.update({...state, generation: 2});
-        const stale = timers.values().next().value;
-        page.update({...state, instance: 'b', generation: 2});
-        stale();
-        check(!page._detail.visible && timers.size === 1, 'stale timer affected the new service');
-        page.setUnavailable();
-        check(timers.size === 0, 'disconnect retained the timer');
-        stale();
-        check(page._detail.label === 'Background service unavailable', 'old timer overwrote disconnection');
-
-        page.update({...state, target: {mode: 'unavailable'}, sensor_error: 'internal-secret'});
-        check(page._detail.label.includes('No posture data') && !page._detail.label.includes('internal-secret'),
-            'sensor pause did not explain a safe next action');
-        page.update({...state, target: {mode: 'unavailable'}, hardware: null, hardware_status: 'ambiguous'});
-        check(page._detail.label.includes('tablet switch') && page._detail.label.includes('Restart'),
-            'hardware pause did not explain the next action');
-        page.update({...state, target: {mode: 'unavailable'}});
-        check(!page._detail.visible && page._detail.label === '' && timers.size === 0,
-            'undetermined posture retained a pause message or transition timer');
-        check(page._pose === 'laptop', 'undetermined posture lost the last illustration');
-        page.update({...state, target: {mode: 'unavailable'}, support_tier: 'compatible'});
-        check(!page._detail.visible, 'undetermined posture showed a fallback status message');
-        page.update({...state, error_code: 'display-transform-not-applied'});
-        check(page._detail.label.startsWith('Mode change failed') && timers.size === 0,
-            'waiting feedback hid a failure');
-        page.update({...state, generation: 3});
-        page.close();
-        check(timers.size === 0, 'closing retained the timer');
-        print('slow transition feedback check passed');
-        app.quit();
-    } catch (error) {
-        logError(error);
-        System.exit(1);
-    }
-});
-System.exit(app.run([System.programInvocationName]));
-""".replace("__POSTURE_URI__", json.dumps(_js_uri("data/ui/posturePage.js")))
-        result = run_gjs(source, env=self._environment, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-
-    def test_keyboard_browsing_and_delayed_responses(self):
-        source = """
-import Adw from 'gi://Adw?version=1';
-import Gdk from 'gi://Gdk?version=4.0';
-import GLib from 'gi://GLib';
-import Gtk from 'gi://Gtk?version=4.0';
-import System from 'system';
-import {PosturePage} from __POSTURE_URI__;
-import {SettingsPage} from __SETTINGS_URI__;
-
-const app = new Adw.Application({
-    application_id: 'work.mmoe.panasonic.PostureManager.InteractionTest',
-});
-const requests = [];
-const toasts = [];
-const service = {
-    call(method, params) {
-        return new Promise((resolve, reject) => {
-            requests.push({method, args: params?.deepUnpack(), resolve, reject});
-        });
-    },
-    refresh() {},
-};
-const state = {
-    manual: 'laptop', pose: 'laptop', hardware: false, supported: true,
-    session_connected: true, sensor_calibrated: true, target: {mode: 'laptop'},
-};
-function check(condition, message) {
-    if (!condition)
-        throw new Error(message);
-}
-
-async function exercise() {
-    const settings = new SettingsPage(service, message => toasts.push(message));
-    const window = new Adw.ApplicationWindow({application: app, content: settings.widget});
-    window.present();
-    settings.update(state);
-    const laptop = settings._radios.get('laptop');
-    const tent = settings._radios.get('tent');
-    const stand = settings._radios.get('stand');
-    laptop.grab_focus();
-    const controllers = laptop.observe_controllers();
-    const keys = Array.from({length: controllers.get_n_items()}, (_, index) =>
-        controllers.get_item(index)).find(controller =>
-        controller instanceof Gtk.EventControllerKey &&
-        controller.get_propagation_phase() === Gtk.PropagationPhase.CAPTURE);
-    check(keys?.emit('key-pressed', Gdk.KEY_Down, 0, 0), 'mode arrow was not handled');
-    check(window.get_focus() === tent && laptop.active && requests.length === 0,
-        'browsing modes activated a choice');
-
-    tent.activate();
-    check(requests[0].args[0] === 'tent', 'explicit activation did not select tent');
-    stand.active = true;
-    requests[0].reject(new Error('first selection failed'));
-    await Promise.resolve();
-    check(requests[1]?.args[0] === 'stand' && stand.active && toasts.length === 0,
-        'failed request discarded the more recent choice');
-    requests[1].resolve();
-    await Promise.resolve();
-
-    tent.active = true;
-    const earlierTent = requests.at(-1);
-    stand.active = true;
-    tent.active = true;
-    earlierTent.reject(new Error('earlier tent selection failed'));
-    await Promise.resolve();
-    const latestTent = requests.at(-1);
-    check(latestTent !== earlierTent && latestTent.args[0] === 'tent',
-        'a new selection of the same mode was discarded');
-    latestTent.resolve();
-    await Promise.resolve();
-
-    const posture = new PosturePage(service);
-    posture.update({...state, pending_notification: 10, pending_prompt: 'tent'});
-    posture._confirmButton.emit('clicked');
-    check(posture._confirmButton.label === 'Enter tent mode' && !posture._confirmButton.sensitive,
-        'pending confirmation changed its label or allowed a second activation');
-    posture.update({...state, pending_notification: 11, pending_prompt: 'stand'});
-    requests.at(-1).resolve();
-    await Promise.resolve();
-    check(posture._confirmButton.label === 'Enter stand mode',
-        'a stale request rewrote the current prompt');
-    posture._confirmButton.emit('clicked');
-    const confirmation = requests.at(-1);
-    check(confirmation.method === 'ConfirmStand' && confirmation.args[0] === 11,
-        'the button did not act on the current prompt');
-    confirmation.resolve();
-
-    const calibration = settings._calibrateSensor();
-    const calibrationRequest = requests.at(-1);
-    check(calibrationRequest.method === 'CalibrateSensor', 'calibration did not start');
-    settings.setUnavailable();
-    calibrationRequest.reject(new Error('disconnected'));
-    await calibration;
-    check(!settings._calibrateButton.sensitive && !settings._resetButton.sensitive,
-        'a completed request re-enabled calibration while disconnected');
-    settings.update(state);
-    check(settings._calibrateButton.sensitive && settings._resetButton.sensitive,
-        'calibration stayed disabled after reconnecting');
-}
-
-app.connect('activate', () => {
-    GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
-        exercise().then(() => app.quit()).catch(error => {
-            logError(error);
-            System.exit(1);
-        });
-        return GLib.SOURCE_REMOVE;
-    });
-});
-GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
-    printerr('interaction self-check timed out');
-    System.exit(1);
-});
-System.exit(app.run([System.programInvocationName]));
-"""
-        for placeholder, path in (
-            ("__POSTURE_URI__", "data/ui/posturePage.js"),
-            ("__SETTINGS_URI__", "data/ui/settingsPage.js"),
-        ):
-            source = source.replace(placeholder, json.dumps(_js_uri(path)))
-        result = run_gjs(source, env=self._environment, timeout=30)
-        self.assertEqual(
-            result.returncode, 0, (result.stderr or "") + (result.stdout or "")
-        )
-
-
-if __name__ == "__main__":
+import tempfile
+import shutil
+for pose in POSES:
+    for dark in (False, True):
+        for hc in (False, True):
+            pixbuf = posture_pixbuf(DATA_ROOT, pose, dark, hc)
+            assert (pixbuf.get_width(), pixbuf.get_height()) == (640, 480)
+assert len(_CACHE) <= CACHE_LIMIT
+assert posture_pixbuf(DATA_ROOT, '../bad') is posture_pixbuf(DATA_ROOT, 'unknown')
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    (root / 'assets').mkdir()
+    shutil.copy(DATA_ROOT / 'assets/unknown.svg', root / 'assets/unknown.svg')
+    import unittest
+    with unittest.TestCase().assertLogs('panasonic_posture.ui.illustration', level='ERROR'):
+        assert posture_pixbuf(root, 'tent').get_width() == 640
+page.close()
+''')
+
+
+if __name__ == '__main__':
     unittest.main()

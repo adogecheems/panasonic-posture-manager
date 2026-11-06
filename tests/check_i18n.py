@@ -6,15 +6,13 @@ The check is part of ``make check`` and uses only the Python standard library.
 What is checked
 ---------------
 * source scan: ``_('...')`` / ``_("...")`` and ``gettext(...)`` literals in the
-  Python session package and the GJS UI files (``self._(...)`` included);
+  Python session and UI packages (``self._(...)`` included);
 * catalog: every referenced msgid has a non-empty, non-fuzzy ``msgstr`` and
   keeps the same printf placeholders; duplicate msgids are reported;
 * catalog cleanliness: msgids that are no longer referenced are an error
   (``--allow-stale`` demotes this to a warning);
-* parity: the Python error mapping (``session/errors.py``) and the mirrored
-  JS mapping (``data/ui/errors.js``) cover exactly the same stable codes with
-  exactly the same English msgids, and both cover all ``protocol.ErrorCode``
-  values;
+* parity: the shared Python error mapping (``session/errors.py``) covers all
+  ``protocol.ErrorCode`` values; the UI reuses this mapping;
 * ``po/POTFILES.in`` lists exactly the files that contain translatable
   strings.
 
@@ -32,13 +30,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOTS = (Path("src/panasonic_posture/session"), Path("data/ui"))
-SOURCE_SUFFIXES = {".py", ".js"}
+SOURCE_ROOTS = (Path("src/panasonic_posture/session"), Path("src/panasonic_posture/ui"))
+SOURCE_SUFFIXES = {".py"}
 POTFILES = Path("po/POTFILES.in")
 CATALOGS = (Path("po/zh_CN.po"),)
 PROTOCOL = Path("src/panasonic_posture/contracts.py")
 PY_ERRORS = Path("src/panasonic_posture/session/errors.py")
-JS_ERRORS = Path("data/ui/errors.js")
 
 #: Entries that are intentionally kept although currently unreferenced.
 STALE_WHITELIST: frozenset[str] = frozenset()
@@ -48,7 +45,6 @@ _CALL_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:_|gettext)\(\s*" + _STRING + r"\s*[,)]", re.S
 )
 _PY_MAP_RE = re.compile(r"ErrorCode\.([A-Z_]+):\s*_\(\s*" + _STRING + r"\s*\)", re.S)
-_JS_MAP_RE = re.compile(r"'([a-z][a-z0-9-]+)':\s*_\(\s*" + _STRING + r"\s*\)", re.S)
 _PLACEHOLDER_RE = re.compile(r"%[a-zA-Z%]")
 
 
@@ -200,15 +196,6 @@ def _python_error_mapping() -> dict[str, str]:
     }
 
 
-def _js_error_mapping() -> dict[str, str]:
-    text = (REPO_ROOT / JS_ERRORS).read_text(encoding="utf-8")
-    return {
-        name: _unescape(match.group("quote"), match.group("text"))
-        for match in _JS_MAP_RE.finditer(text)
-        for name in [match.group(1)]
-    }
-
-
 # ---------------------------------------------------------------------------
 # Main check
 # ---------------------------------------------------------------------------
@@ -298,7 +285,6 @@ def run(allow_stale: bool = False) -> int:
     # 4. error code parity -------------------------------------------------
     codes = _error_code_values()
     python_mapping = _python_error_mapping()
-    js_mapping = _js_error_mapping()
     if not codes:
         errors.append(f"{PROTOCOL}: cannot read the ErrorCode constants")
     if set(python_mapping) != set(codes):
@@ -307,21 +293,6 @@ def run(allow_stale: bool = False) -> int:
             f"missing={sorted(set(codes) - set(python_mapping))} "
             f"unknown={sorted(set(python_mapping) - set(codes))}"
         )
-    if set(js_mapping) != set(codes.values()):
-        errors.append(
-            "data/ui/errors.js mapping does not match protocol.ErrorCode values: "
-            f"missing={sorted(set(codes.values()) - set(js_mapping))} "
-            f"unknown={sorted(set(js_mapping) - set(codes.values()))}"
-        )
-    python_by_code = {codes[name]: text for name, text in python_mapping.items() if name in codes}
-    if python_by_code != js_mapping:
-        differing = sorted(
-            code
-            for code in set(python_by_code) | set(js_mapping)
-            if python_by_code.get(code) != js_mapping.get(code)
-        )
-        errors.append(f"error message text differs between Python and JS: {differing}")
-
     # 5. report ------------------------------------------------------------
     for warning in warnings:
         print(f"i18n warning: {warning}", file=sys.stderr)

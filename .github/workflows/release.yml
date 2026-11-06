@@ -48,7 +48,7 @@ jobs:
             bash -lc '
               set -euo pipefail
               pacman -Syu --noconfirm --needed \
-                dbus desktop-file-utils gcc gettext gjs git gtk4 iio-sensor-proxy \
+                dbus desktop-file-utils gcc gettext git gtk4 iio-sensor-proxy \
                 libadwaita libarchive libxml2 make polkit python python-build \
                 python-gobject python-installer python-setuptools python-wheel systemd
 
@@ -167,7 +167,7 @@ jobs:
               dpkg-deb --extract "$package" "$extract"
               test -x "$extract/usr/lib/panasonic-posture-manager/relay"
               test -f "$extract/usr/lib/python3/dist-packages/panasonic_posture/__init__.py"
-              test -f "$extract/usr/share/panasonic-posture-manager/ui/main.js"
+              test -f "$extract/usr/share/panasonic-posture-manager/assets/laptop.svg"
               grep -q "^ExecStart=/usr/bin/python3 " \
                 "$extract/usr/lib/systemd/system/panasonic-posture-manager.service"
               grep -q "^ExecStart=/usr/bin/python3 " \

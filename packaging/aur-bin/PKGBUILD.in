@@ -12,7 +12,7 @@ arch=('x86_64')
 url='https://github.com/adogecheems/panasonic-posture-manager'
 license=('AGPL-3.0-or-later')
 depends=(
-  'gjs'
+  'python-cairo'
   'gtk4>=4.12'
   'libadwaita>=1.4'
   'python>=3.11'

@@ -43,11 +43,6 @@ def release_version() -> str:
             read("src/panasonic_posture/__init__.py"),
             "runtime __version__",
         ),
-        "data/ui/settingsPage.js": match(
-            r"^export const APP_VERSION = '([^']+)';$",
-            read("data/ui/settingsPage.js"),
-            "UI APP_VERSION",
-        ),
         "packaging/aur/PKGBUILD": match(
             r"^pkgver=(\S+)$",
             read("packaging/aur/PKGBUILD"),

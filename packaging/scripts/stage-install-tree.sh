@@ -106,7 +106,7 @@ for required in \
   usr/bin/panasonic-posture-manager-probe \
   usr/lib/panasonic-posture-manager/relay \
   usr/share/licenses/panasonic-posture-manager/LICENSE \
-  usr/share/panasonic-posture-manager/ui/main.js \
+  usr/share/panasonic-posture-manager/assets/laptop.svg \
   usr/share/locale/zh_CN/LC_MESSAGES/panasonic-posture-manager.mo; do
   if [[ ! -e $destdir/$required ]]; then
     echo "error: staged tree is missing $required" >&2

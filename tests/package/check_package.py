@@ -681,7 +681,7 @@ class PackageAcceptance:
         with self.stage("installed Python and probe entry points"):
             site = self.extract_root / self.site_dir if self.extract_root else None
             ui_dir = (
-                self.extract_root / "usr/share/panasonic-posture-manager/ui"
+                self.extract_root / "usr/share/panasonic-posture-manager/assets"
                 if self.extract_root
                 else None
             )
@@ -690,14 +690,14 @@ class PackageAcceptance:
                 return
             env = os.environ.copy()
             env["PYTHONPATH"] = str(site)
-            env["PANASONIC_POSTURE_UI_DIR"] = str(ui_dir)
+            env["PANASONIC_POSTURE_UI_DIR"] = str(ui_dir.parent / "ui")
             code = (
                 "import panasonic_posture\n"
                 "from panasonic_posture import protocol\n"
-                "from panasonic_posture.cli import locate_ui_dir\n"
+                "from panasonic_posture.ui.common import DATA_ROOT\n"
                 f"assert panasonic_posture.__version__ == {self.version!r}\n"
                 f"assert protocol.NAME == {INTERFACE!r}\n"
-                "assert locate_ui_dir().name == 'ui'\n"
+                "assert (DATA_ROOT / 'assets/laptop.svg').is_file()\n"
             )
             result = self.run_checked([sys.executable, "-c", code], env=env)
             if result is not None:

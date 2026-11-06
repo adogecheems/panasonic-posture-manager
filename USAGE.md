@@ -62,7 +62,7 @@ Plasma 6 的显示适配器优先使用 `kscreenctl`，找不到时使用 `kscre
 
 从仓库根目录以普通用户运行完整检查。D-Bus 集成测试使用临时会话总线，传感器探测仍可能访问宿主 sysfs，
 因此请在未映射真实传感器的隔离环境中运行。需要 Python 3.11+、C 编译器、Make、gettext、PyGObject 和 `dbus-run-session`。
-UI 测试还需要 GJS、GTK 4、libadwaita 和 `gtk4-broadwayd`。
+UI 测试还需要 PyGObject、PyCairo、GTK 4、libadwaita 和 `gtk4-broadwayd`。
 
 ```sh
 make WERROR=1 check
