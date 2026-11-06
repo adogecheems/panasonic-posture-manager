@@ -2,9 +2,10 @@
 
 The daemon publishes ``pending_notification`` (the policy epoch of the current
 posture prompt) and ``pending_prompt`` (its kind).  A temporary gap in
-confirmability hides the notification while preserving delivery and retry
-state.  Failures are retried with a 1/2/4 second backoff.  After the last retry
-the epoch is marked as failed until a new prompt arrives or the caller
+confirmability hides the notification and rearms it after a stable return,
+while preserving failure retry state.  Failures are retried with a 1/2/4 second
+backoff.  After the last retry the epoch is marked as failed until a new prompt
+arrives or the caller
 explicitly resets the notifier with :meth:`Notifier.close`.
 """
 
@@ -28,6 +29,7 @@ NOTIFY_IFACE = NOTIFY_DEST
 
 #: Delay before each retry; three retries means four attempts for one epoch.
 RETRY_DELAYS = (1.0, 2.0, 4.0)
+RESUME_DELAY_SECONDS = 1.0
 DEFAULT_TIMEOUT_MS = 1200
 ICON_NAME = "work.mmoe.panasonic.PostureManager"
 
@@ -70,6 +72,8 @@ class Notifier:
         self._retry_at: float | None = None
         self._failed_key: tuple[int, str] | None = None
         self._capabilities: list[str] | None = None
+        self._interrupted_key: tuple[int, str] | None = None
+        self._resume_since: float | None = None
 
     # -- public API -------------------------------------------------------
 
@@ -88,20 +92,34 @@ class Notifier:
     ) -> None:
         """Converge the on-screen prompt towards *epoch*.
 
-        * ``epoch is None`` hides the notification without resetting delivery.
+        * ``epoch is None`` hides and rearms an interrupted notification.
         * A successfully shown ``(epoch, prompt)`` stays suppressed until the
-          prompt changes or :meth:`close` resets the notifier.
+          prompt changes, is interrupted, or :meth:`close` resets the notifier.
         * Failed attempts retry after 1/2/4 s; after the last retry the epoch
           is abandoned until it changes or :meth:`close` is called.
         """
 
         now = self._clock() if now is None else now
         if epoch is None:
+            if self.notification and self.epoch is not None and self.prompt is not None:
+                self._interrupted_key = (self.epoch, self.prompt)
+                self.shown_epoch = None
+                self._shown_prompt = None
+            self._resume_since = None
             self._close_notification()
             return
         epoch = int(epoch)
         prompt = prompt if prompt in protocol.PROMPTS else "tent"
         key = (epoch, prompt)
+        if key == self._interrupted_key:
+            # Require a continuous confirmable interval before redisplaying a
+            # prompt withdrawn by us; noisy samples must not flash notifications.
+            if self._resume_since is None:
+                self._resume_since = now
+            if now - self._resume_since < RESUME_DELAY_SECONDS:
+                return
+        self._interrupted_key = None
+        self._resume_since = None
         if key == (self.shown_epoch, self._shown_prompt):
             return
         if key == self._failed_key:
@@ -133,6 +151,8 @@ class Notifier:
         self._retry_at = None
         self._failed_key = None
         self._capabilities = None
+        self._interrupted_key = None
+        self._resume_since = None
 
     # -- internals --------------------------------------------------------
 

@@ -87,7 +87,7 @@ class NotifierTests(unittest.TestCase):
         self.notifier.sync(7, now=self.clock())
         self.assertEqual(self.bus.methods().count("Notify"), 1)
 
-    def test_crossing_vertical_does_not_repeat_the_same_tent_notification(self):
+    def test_crossing_vertical_restores_interrupted_tent_notification(self):
         controller = Controller()
 
         def sample(pitch):
@@ -112,7 +112,7 @@ class NotifierTests(unittest.TestCase):
         self.assertIsNotNone(epoch)
         self.assertEqual(self.notifier.epoch, epoch)
 
-        for pitch in (100, 80):
+        for count, pitch in enumerate((100, 80), start=2):
             sample(90)
             self.assertIsNone(controller.pending_notification)
             self.assertFalse(controller.confirm_tent(epoch))
@@ -120,13 +120,60 @@ class NotifierTests(unittest.TestCase):
             self.assertIsNone(self.notifier.epoch)
             settle(pitch)
             self.assertEqual(controller.pending_notification, epoch)
-            self.assertEqual(self.bus.methods().count("Notify"), 1)
+            self.assertEqual(self.bus.methods().count("Notify"), count)
+            self.assertEqual(self.notifier.epoch, epoch)
 
         settle(0)
         settle(100)
         self.assertNotEqual(controller.pending_notification, epoch)
         self.assertEqual(self.notifier.epoch, controller.pending_notification)
+        self.assertEqual(self.bus.methods().count("Notify"), 4)
+
+    def test_interrupted_prompt_requires_continuous_confirmability(self):
+        for prompt in ("tent", "stand"):
+            with self.subTest(prompt=prompt):
+                self.setUp()
+                self.notifier.sync(7, prompt=prompt, now=0)
+                for now in (0.1, 0.5, 1.0, 1.5):
+                    self.notifier.sync(None, now=now)
+                    self.notifier.sync(7, prompt=prompt, now=now + 0.1)
+                    self.assertEqual(self.notifier.notification, 0)
+                    self.assertIsNone(self.notifier.epoch)
+                self.assertEqual(self.bus.methods().count("Notify"), 1)
+                self.notifier.sync(7, prompt=prompt, now=2.6)
+                self.assertEqual(self.bus.methods().count("Notify"), 2)
+                self.assertEqual(self.notifier.epoch, 7)
+                self.notifier.sync(7, prompt=prompt, now=10)
+                self.assertEqual(self.bus.methods().count("Notify"), 2)
+
+    def test_new_prompt_does_not_inherit_interruption_delay(self):
+        self.notifier.sync(7, now=0)
+        self.notifier.sync(None, now=0.1)
+        self.notifier.sync(8, now=0.2)
+        self.assertEqual(self.notifier.epoch, 8)
+
+    def test_close_resets_interruption_delay(self):
+        self.notifier.sync(7, now=0)
+        self.notifier.sync(None, now=0.1)
+        self.notifier.close()
+        self.notifier.sync(7, now=0.2)
+        self.assertEqual(self.notifier.epoch, 7)
         self.assertEqual(self.bus.methods().count("Notify"), 2)
+
+    def test_resumed_notification_failure_keeps_retry_backoff(self):
+        self.notifier.sync(7, now=0)
+        self.notifier.sync(None, now=0.1)
+        self.notifier.sync(7, now=0.2)
+        self.bus.fail["Notify"] = 1
+        self.notifier.sync(7, now=1.3)
+        self.assertEqual(self.bus.methods().count("Notify"), 2)
+        self.assertIsNone(self.notifier.epoch)
+        self.notifier.sync(None, now=1.4)
+        self.notifier.sync(7, now=1.5)
+        self.assertEqual(self.bus.methods().count("Notify"), 2)
+        self.notifier.sync(7, now=2.4)
+        self.assertEqual(self.bus.methods().count("Notify"), 3)
+        self.assertEqual(self.notifier.epoch, 7)
 
     def test_notification_payload_carries_tent_action(self):
         self.notifier.sync(7, now=self.clock())
@@ -252,10 +299,10 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual(self.notifier.shown_epoch, 7)
         self.assertEqual(self.bus.methods().count("Notify"), 2)
 
-    def test_sync_none_closes_without_forgetting_the_shown_prompt(self):
+    def test_sync_none_closes_and_rearms_interrupted_prompt(self):
         self.notifier.sync(7, now=self.clock())
         self.notifier.sync(None, now=self.clock())
-        self.assertEqual(self.notifier.shown_epoch, 7)
+        self.assertIsNone(self.notifier.shown_epoch)
         self.assertEqual(self.notifier.notification, 0)
         self.assertIn("CloseNotification", self.bus.methods())
 
