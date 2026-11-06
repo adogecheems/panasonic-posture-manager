@@ -43,7 +43,7 @@ class ContractTests(unittest.TestCase):
             protocol.SESSION_NAME_PREFIX))
         self.assertEqual(protocol.POLKIT_ACTION, protocol.NAME + ".configure")
         self.assertEqual(protocol.STATE_VERSION, 2)
-        self.assertEqual(protocol.RELAY_PROTOCOL, 2)
+        self.assertEqual(protocol.RELAY_PROTOCOL, 3)
 
     def test_dbus_xml_has_retry(self):
         self.assertIn('<method name="Retry"/>', protocol.DBUS_XML)

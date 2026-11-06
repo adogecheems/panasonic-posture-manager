@@ -193,6 +193,14 @@ class FakeActuator:
         self.keep_error: ActuatorError | None = None
         self.keep_hook = None
         self.release_hook = None
+        self.follow_state = None
+
+    def follow_hardware(self, now) -> None:
+        self.calls.append("follow_hardware")
+        if self.keep_error is not None:
+            raise self.keep_error
+        self.running = True
+        self.state = self.follow_state
 
     def keep(self, now) -> None:
         self.calls.append("keep")
@@ -585,6 +593,116 @@ class HardwareDebounceTests(EngineTestCase):
                     self.assertEqual(engine.state.target, LAPTOP)
                 self.assertFalse(engine.state.posture_pending)
                 self.assertEqual(self.sensor.prefer_shared_calls, [True, False])
+
+
+class HardwareRelayHandoffTests(EngineTestCase):
+    def start_hardware(self):
+        self.hardware = True
+        self.controller.target = HARDWARE
+        self.controller.policy.fresh = True
+        self.actuator.running = True
+        self.actuator.follow_state = RelayState(True, True, True, True)
+        engine = self.make()
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["follow_hardware"])
+        self.assertEqual(engine.state.applied, HARDWARE)
+        return engine
+
+    def leave_hardware(self, engine):
+        self.hardware = False
+        self.controller.generation += 1
+        self.controller.applied = None
+        self.controller.target = Target()
+        self.controller.policy.posture_pending = True
+        self.actuator.follow_state = RelayState(True, False, False, True)
+        self.lease(engine, ready=False)
+        self.tick(engine, 100.1)
+
+    def test_first_physical_switch_keeps_bridge_before_display_ack(self):
+        self.hardware = True
+        self.controller.target = HARDWARE
+        self.controller.policy.fresh = True
+        self.actuator.running = True
+        self.actuator.state = RelayState(True, True, False, False)
+        engine = self.make()
+        self.lease(engine, ready=False)
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["follow_hardware"])
+        self.assertIsNone(engine.state.applied)
+
+    def test_native_tablet_without_existing_software_bridge_stays_native(self):
+        self.hardware = True
+        self.controller.target = HARDWARE
+        self.controller.policy.fresh = True
+        engine = self.make()
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls, ["release"])
+        self.assertEqual(engine.state.applied, HARDWARE)
+
+    def test_hardware_wait_tent_has_no_release_or_premature_input_grab(self):
+        engine = self.start_hardware()
+        self.leave_hardware(engine)
+        self.assertIsNone(engine.state.applied)
+        self.controller.target = TENT
+        self.controller.policy.posture_pending = False
+        self.controller.generation += 1
+        self.tick(engine, 100.2)
+        self.assertEqual(self.actuator.calls, ["follow_hardware"] * 3)
+        self.assertIsNone(engine.state.applied)
+        self.actuator.keep_state = RelayState(True, True, False, True)
+        self.lease(engine)
+        self.tick(engine, 100.3)
+        self.assertEqual(self.actuator.calls[-1], "keep")
+        self.assertEqual(engine.state.applied, TENT)
+
+    def test_deadline_is_not_extended_by_heartbeats(self):
+        engine = self.start_hardware()
+        self.leave_hardware(engine)
+        for now in (101.0, 102.0, 102.1, 102.2):
+            self.lease(engine, ready=False)
+            self.tick(engine, now)
+        self.assertEqual(self.actuator.calls.count("release"), 1)
+        self.assertFalse(self.actuator.running)
+        self.assertIsNone(engine.state.applied)
+
+    def test_handoff_releases_on_fault_unknown_sensor_loss_or_laptop(self):
+        for failure in ("lease", "display", "sensor", "sensor_error", "hardware", "laptop", "backend"):
+            with self.subTest(failure=failure):
+                self.setUp()
+                engine = self.start_hardware()
+                self.leave_hardware(engine)
+                if failure == "lease":
+                    engine.agent_seen = 0.0
+                elif failure == "display":
+                    self.lease(engine, ready=False, code=ErrorCode.DISPLAY_LOCK)
+                elif failure == "sensor":
+                    self.controller.policy.fresh = False
+                elif failure == "sensor_error":
+                    self.sensor.sensor_error = "read failed"
+                elif failure == "hardware":
+                    self.hardware = None
+                    self.hardware_status = HardwareStatus.READ_ERROR
+                elif failure == "laptop":
+                    self.controller.target = LAPTOP
+                else:
+                    self.actuator.keep_error = ActuatorError(ErrorCode.RELAY_EXITED)
+                self.tick(engine, 100.2)
+                self.assertIn("release", self.actuator.calls)
+                self.assertFalse(self.actuator.running)
+                self.assertIsNone(engine.state.applied)
+
+    def test_suspend_forgets_bridge_before_native_resume(self):
+        engine = self.start_hardware()
+        engine.sleep_event(True)
+        engine.sleep_event(False)
+        self.controller.target = HARDWARE
+        self.controller.policy.fresh = True
+        self.lease(engine)
+        self.tick(engine)
+        self.assertEqual(self.actuator.calls.count("follow_hardware"), 1)
+        self.assertFalse(self.actuator.running)
 
 
 class ActuatorTransactionTests(EngineTestCase):
@@ -1485,6 +1603,7 @@ class PresentationTests(EngineTestCase):
         self.controller = Controller()
         self.presentation = PosePresentation()
         self.actuator.keep_state = RelayState(True, True, False, True, None)
+        self.actuator.follow_state = RelayState(True, False, True, True)
         engine = self.make()
         self.hardware = True
         self.sensor._reading = SensorReading(

@@ -128,18 +128,19 @@ static void test_protocol_messages(void) {
     end_capture(path, saved, output, sizeof output);
 
     CHECK(strstr(output,
-                 "{\"protocol\":2,\"kind\":\"ready\",\"physical\":true}\n") !=
+                 "{\"protocol\":3,\"kind\":\"ready\",\"physical\":true}\n") !=
           NULL);
     CHECK(strstr(output,
-                 "{\"protocol\":2,\"kind\":\"physical\",\"present\":false}\n") !=
+                 "{\"protocol\":3,\"kind\":\"physical\",\"present\":false}\n") !=
           NULL);
     CHECK(strstr(output,
-                 "{\"protocol\":2,\"kind\":\"released\",\"exit\":4}\n") != NULL);
+                 "{\"protocol\":3,\"kind\":\"released\",\"exit\":4}\n") != NULL);
     CHECK(strstr(output,
-                 "{\"protocol\":2,\"kind\":\"applied\",\"hardware\":true,"
+                 "{\"protocol\":3,\"kind\":\"applied\",\"hardware\":true,"
                  "\"tablet\":true,\"input_disabled\":false,"
-                 "\"physical\":true,\"error\":null}\n") != NULL);
+                 "\"physical\":true,\"error\":null,\"request\":0}\n") != NULL);
 
+    relay.software = 1;
     relay.input_error = RELAY_ERROR_INPUT_GRAB;
     begin_capture(path, sizeof path, &saved);
     emit_applied(&relay);
@@ -180,6 +181,116 @@ static void test_report_rate_limiting(void) {
     CHECK(count_occurrences(output, "\"kind\":\"applied\"") == 2);
 }
 
+static void test_hardware_handoff(void) {
+    struct relay_state relay;
+    struct options options = {0};
+    char path[128];
+    char output[512];
+    int saved;
+
+    relay_init(&relay, &options);
+    relay.monitor = 1;
+    relay.lease = 20.0;
+    /* The physical device can first appear while software tent is active. */
+    relay.physical = 1;
+    update_handoff(&relay, 9.0);
+    CHECK(relay_tablet_state(&relay) == 0); /* OFF alone cannot arm a hold. */
+    relay.hardware_state = 1;
+    update_handoff(&relay, 10.0);
+    CHECK(relay_tablet_state(&relay) == 1);
+    CHECK(relay_input_disabled(&relay) == 0);
+    relay.hardware_state = 0;
+    update_handoff(&relay, 11.0);
+    CHECK(relay.hardware_state == 0);
+    CHECK(relay_tablet_state(&relay) == 1);
+    CHECK(relay.handoff_until == 13.0);
+    begin_capture(path, sizeof path, &saved);
+    emit_applied(&relay);
+    end_capture(path, saved, output, sizeof output);
+    CHECK(strstr(output, "\"hardware\":false,\"tablet\":true,"
+                        "\"input_disabled\":false") != NULL);
+    update_handoff(&relay, 12.9);
+    CHECK(relay.handoff_until == 13.0);
+    CHECK(relay_tablet_state(&relay) == 1);
+    update_handoff(&relay, 13.0);
+    CHECK(relay_tablet_state(&relay) == 0);
+    update_handoff(&relay, 14.0);
+    CHECK(relay_tablet_state(&relay) == 0); /* Heartbeats cannot rearm it. */
+
+    relay.hardware_state = 1;
+    update_handoff(&relay, 14.1);
+    relay.hardware_state = 0;
+    update_handoff(&relay, 14.2);
+    relay.software = 1;
+    relay.monitor = 0;
+    update_handoff(&relay, 14.3);
+    CHECK(relay_tablet_state(&relay) == 1); /* Stable tent: no intermediate OFF. */
+    CHECK(relay.handoff_active == 0);
+
+    relay.software = 0;
+    relay.monitor = 1;
+    relay.hardware_state = 1;
+    update_handoff(&relay, 15.0);
+    relay.hardware_state = 0;
+    update_handoff(&relay, 15.1);
+    relay.physical = 0;
+    update_handoff(&relay, 15.2);
+    CHECK(relay_tablet_state(&relay) == 0);
+
+    relay.physical = 1;
+    relay.hardware_state = 1;
+    update_handoff(&relay, 16.0);
+    relay.hardware_state = 0;
+    update_handoff(&relay, 16.1);
+    relay.lease = 16.2;
+    update_handoff(&relay, 16.2);
+    CHECK(relay_tablet_state(&relay) == 0);
+}
+
+static void test_monitor_commands_and_input_release(void) {
+    struct relay_state relay;
+    struct options options = {0};
+    int commands[2];
+    int inputs[2];
+    int saved_stdin = dup(STDIN_FILENO);
+    const char *sequence = "1001";
+    unsigned int expected[] = {1, 2, 2, 3};
+    size_t i;
+
+    CHECK(saved_stdin >= 0);
+    CHECK(pipe(commands) == 0);
+    CHECK(dup2(commands[0], STDIN_FILENO) >= 0);
+    close(commands[0]);
+    relay_init(&relay, &options);
+    relay.next_scan = 100.0;
+    for (i = 0; i < 4; i++) {
+        CHECK(write(commands[1], sequence + i, 1) == 1);
+        CHECK(handle_stdin(&relay, POLLIN) == RELAY_EXIT_OK);
+        CHECK(relay.request == expected[i]);
+        CHECK(relay.software == (sequence[i] == '1'));
+        CHECK(relay.monitor == (sequence[i] == '0'));
+    }
+    CHECK(relay.next_scan == 0.0); /* First hardware command forces discovery. */
+    close(commands[1]);
+    CHECK(handle_stdin(&relay, POLLIN) == RELAY_EXIT_OK);
+    CHECK(relay.release_requested == 1);
+    CHECK(dup2(saved_stdin, STDIN_FILENO) >= 0);
+    close(saved_stdin);
+
+    /* Pipe fds stand in for held inputs: no real devices are opened. */
+    CHECK(pipe(inputs) == 0);
+    relay.inputs.fds[0] = inputs[0];
+    relay.inputs.fds[1] = inputs[1];
+    relay.hardware_state = 0;
+    relay.software = 0;
+    relay.handoff_active = 1;
+    relay.next_input = 100.0;
+    maintain_input(&relay, 10.0);
+    CHECK(!input_ready(&relay.inputs));
+    CHECK(relay.next_input == 0.0);
+    CHECK(relay_tablet_state(&relay) == 1);
+}
+
 static void test_cleanup_state(void) {
     struct switch_hardware hardware;
 
@@ -218,6 +329,8 @@ int main(void) {
     test_protocol_messages();
     test_report_rate_limiting();
     test_cleanup_state();
+    test_hardware_handoff();
+    test_monitor_commands_and_input_release();
     if (failures != 0) {
         fprintf(stderr, "%d relay test(s) failed\n", failures);
         return 1;

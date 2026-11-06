@@ -66,6 +66,10 @@ def exercise_platform_boundaries():
             self.running = True
             self.state = SimpleNamespace(satisfies=lambda target: target.disable_internal_input, error=None)
 
+        def follow_hardware(self, now):
+            self.running = True
+            self.state = SimpleNamespace(satisfies=lambda target: target.mode == "hardware", error=None)
+
         def release(self):
             self.running = False
             self.state = None
@@ -148,12 +152,13 @@ def exercise_platform_boundaries():
     engine.tick()
     session.tick(now)
     engine.tick()
-    assert not actuator.running and engine.state.applied.mode == "hardware"
+    assert actuator.running and engine.state.applied.mode == "hardware"
     assert display.current.transform == 2 and display.current.lock is False
 
     now += 4
     engine.tick()
     assert engine.state.applied is None
+    assert not actuator.running
     session.close()
     assert display.journal.load() is None
     engine.shutdown()

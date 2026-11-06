@@ -1,8 +1,9 @@
 """Bounded ownership of the privileged relay subprocess.
 
-The relay is started on demand when the service wants to take software control
-of the tablet switch, kept alive with a heartbeat byte stream and released as
-soon as the target no longer needs it.  The engine runs release on a dedicated
+The relay is started on demand for software control, and can remain as a
+hardware bridge across the following physical-tablet transition. Mode commands
+also refresh its lease; receipts must match the current command sequence.
+The engine runs release on a dedicated
 single-worker executor and serializes keep/retry around it, so a slow recovery
 does not stall the 100 ms tick.  Every blocking operation has an explicit
 timeout and the actuator has no GLib dependency.
@@ -52,6 +53,9 @@ class RelayState:
     error: str | None = None
 
     def satisfies(self, target: Target) -> bool:
+        if target.mode == "hardware":
+            return (self.error is None and self.physical and self.hardware
+                    and self.tablet and self.input_disabled)
         # Linux needs both the virtual tablet switch and the input grabs.
         # Neither a partial report nor a report carrying an error confirms it.
         return (self.error is None and target.disable_internal_input
@@ -113,6 +117,8 @@ class Actuator:
         self.last_sent: float | None = None
         self.last_report: float | None = None
         self._buffer = b""
+        self._command = b"1"
+        self._request = 0
         # A relay that exits on EOF runs its own cleanup and emits the native
         # switch state, so no separate --recover is needed.  Recovery is only
         # required when the relay had to be killed, or when a previous instance
@@ -151,6 +157,12 @@ class Actuator:
 
     def keep(self, now: float) -> None:
         """Ensure a healthy relay process and refresh its software lease."""
+        self._keep_mode(now, b"1")
+
+    def follow_hardware(self, now: float) -> None:
+        self._keep_mode(now, b"0")
+
+    def _keep_mode(self, now: float, command: bytes) -> None:
         if self.error_code is not None:
             raise ActuatorError(self.error_code, self.error_detail)
         if self.process is not None:
@@ -158,8 +170,14 @@ class Actuator:
             if self.error_code is not None:
                 raise ActuatorError(self.error_code, self.error_detail)
             self._check_report_timeout(now)
+            if command != self._command:
+                self._command = command
+                self._request = (self._request + 1) & 0xffffffff
+                self.state = None
+                self.last_sent = None
             self._heartbeat(now)
             return
+        self._command = command
         self._spawn(now)
         if self.error_code is not None:
             raise ActuatorError(self.error_code, self.error_detail)
@@ -272,6 +290,7 @@ class Actuator:
         self._buffer = b""
         self.last_sent = None
         self.last_report = now
+        self._request = 1
         self._heartbeat(now)
         self._log.info("started relay %s", self.executable)
 
@@ -320,9 +339,11 @@ class Actuator:
                 "ignoring relay report with protocol %r", payload.get("protocol")
             )
             return
-        self.last_report = now
         kind = payload.get("kind")
         if kind == "applied":
+            request = payload.get("request")
+            if type(request) is not int or request != self._request:
+                return  # A previous command's receipt cannot confirm this mode.
             self.state = RelayState.from_message(payload)
             self.physical = self.state.physical
         elif kind == "physical":
@@ -335,6 +356,8 @@ class Actuator:
             self._log.info("relay reported release (exit=%s)", payload.get("exit"))
         else:
             self._log.debug("ignoring relay report kind %r", kind)
+            return
+        self.last_report = now
 
     def _check_report_timeout(self, now: float) -> None:
         if self.last_report is None or now - self.last_report > RELAY_REPORT_TIMEOUT_SECONDS:
@@ -353,7 +376,7 @@ class Actuator:
         if self.last_sent is not None and now - self.last_sent < RELAY_HEARTBEAT_SECONDS:
             return
         try:
-            process.stdin.write(b"1\n")
+            process.stdin.write(self._command + b"\n")
             process.stdin.flush()
         except (OSError, ValueError) as error:
             self._fail(ErrorCode.RELAY_EXITED, f"relay stdin: {error}")

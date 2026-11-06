@@ -49,7 +49,7 @@ _ECHO_ERROR_CODES = frozenset(
 #: Delay before retrying after a transient transport failure (the hard grace
 #: before the display is restored is ``contracts.AGENT_FAILURE_GRACE_SECONDS``).
 TRANSIENT_RETRY_SECONDS = 0.5
-HARDWARE_SETTLE_SECONDS = 2.0
+HARDWARE_SETTLE_SECONDS = contracts.HARDWARE_HANDOFF_SECONDS
 
 
 @dataclass

@@ -4,18 +4,13 @@
  * The system service keeps a 3 s software lease alive by writing heartbeat
  * bytes to stdin.  The relay aggregates the physical SW_TABLET_MODE switch
  * with that software request and exposes exactly one switch-only uinput
- * device to GNOME.  While the aggregate is ON it also grabs the internal
- * keyboard and touchpad; a grab failure is retried and reported instead of
- * killing the main loop.
+ * device to the desktop. Hardware monitoring follows the real switch, with a
+ * non-renewable two-second display handoff after its falling edge.
  *
- * stdin  (v2): byte '1' = heartbeat (refreshes the 3 s lease), '\n' is
- *              ignored, any other byte is a protocol error; EOF or lease
- *              expiry releases.
- * stdout (v2): one JSON object per line, see common.h:
- *              {"protocol":2,"kind":"ready","physical":bool}
- *              {"protocol":2,"kind":"physical","present":bool}
- *              {"protocol":2,"kind":"applied",...}
- *              {"protocol":2,"kind":"released","exit":int}
+ * stdin  (v3): '1' = software control, '0' = hardware monitoring; both refresh
+ *              the existing 3 s lease. Newlines are ignored. EOF, lease expiry
+ *              or any other byte releases. Repeated '0' cannot extend a handoff.
+ * stdout (v3): one JSON object per line, see common.h.
  */
 #include "common.h"
 #include "input.h"
@@ -117,11 +112,18 @@ struct relay_state {
     int physical;
     int hardware_state; /* 1 when the physical switch is ON, else 0 */
     int software;       /* set once the service refreshes the lease */
+    int monitor;
+    unsigned int request;
+    unsigned char command;
+    int handoff_armed;
+    int handoff_active;
+    double handoff_until;
     int output;         /* last value emitted through the virtual switch */
     int reported_hardware;
     int reported_physical;
     int reported_error;
     int reported_input;
+    int reported_tablet;
     int reported_once;
     int input_error;
     int input_waiting;
@@ -146,25 +148,47 @@ static void relay_init(struct relay_state *relay, const struct options *options)
     relay->reported_physical = -1;
     relay->reported_error = -1;
     relay->reported_input = -1;
+    relay->reported_tablet = -1;
     relay->input_error = RELAY_ERROR_NONE;
     relay->input_waiting = 0;
     input_init(&relay->inputs);
 }
 
+static int relay_tablet_state(const struct relay_state *relay) {
+    return relay->hardware_state || relay->software || relay->handoff_active;
+}
+
+static void update_handoff(struct relay_state *relay, double now) {
+    relay->handoff_active = 0;
+    if (!relay->monitor || !relay->physical || now >= relay->lease) {
+        relay->handoff_armed = 0;
+        relay->handoff_until = 0.0;
+        return;
+    }
+    if (relay->hardware_state) {
+        relay->handoff_armed = 1;
+        relay->handoff_until = 0.0;
+    } else if (relay->handoff_armed) {
+        relay->handoff_armed = 0;
+        relay->handoff_until = now + RELAY_HANDOFF_SECONDS;
+        relay_log("hardware exit: holding desktop tablet state for at most 2 s");
+    }
+    relay->handoff_active = now < relay->handoff_until;
+}
+
 static int relay_input_disabled(const struct relay_state *relay) {
-    int desired = relay->hardware_state || relay->software;
-    return desired && input_ready(&relay->inputs);
+    return input_ready(&relay->inputs);
 }
 
 static void emit_applied(const struct relay_state *relay) {
-    int desired = relay->hardware_state || relay->software;
+    int desired = relay_tablet_state(relay);
     int input_disabled = relay_input_disabled(relay);
-    int input_error = !input_disabled && desired &&
+    int input_error = !input_disabled && (relay->software || relay->hardware_state) &&
                       relay->input_error == RELAY_ERROR_INPUT_GRAB;
 
     printf("{\"protocol\":%d,\"kind\":\"applied\",\"hardware\":%s,"
            "\"tablet\":%s,\"input_disabled\":%s,\"physical\":%s,"
-           "\"error\":%s}\n",
+           "\"error\":%s,\"request\":%u}\n",
            RELAY_PROTOCOL,
            relay->hardware_state ? "true" : "false",
            desired ? "true" : "false",
@@ -172,7 +196,7 @@ static void emit_applied(const struct relay_state *relay) {
            relay->physical ? "true" : "false",
            input_error
                    ? "\"input-grab-failed\""
-                   : "null");
+                   : "null", relay->request);
 }
 
 static void emit_if_changed(struct relay_state *relay, double now) {
@@ -181,6 +205,7 @@ static void emit_if_changed(struct relay_state *relay, double now) {
         relay->reported_physical == relay->physical &&
         relay->reported_error == relay->input_error &&
         relay->reported_input == relay_input_disabled(relay) &&
+        relay->reported_tablet == relay_tablet_state(relay) &&
         now - relay->last_report < RELAY_REPORT_SECONDS)
         return;
     emit_applied(relay);
@@ -188,6 +213,7 @@ static void emit_if_changed(struct relay_state *relay, double now) {
     relay->reported_physical = relay->physical;
     relay->reported_error = relay->input_error;
     relay->reported_input = relay_input_disabled(relay);
+    relay->reported_tablet = relay_tablet_state(relay);
     relay->reported_once = 1;
     relay->last_report = now;
 }
@@ -359,11 +385,12 @@ static int maintain_switch(struct relay_state *relay) {
 /* --- Internal input grabbing ---------------------------------------------- */
 
 static void maintain_input(struct relay_state *relay, double now) {
-    int desired = relay->hardware_state || relay->software;
+    int desired = relay->software || relay->hardware_state;
     int acquired;
 
     if (!desired) {
         input_release(&relay->inputs);
+        relay->next_input = 0.0;
         relay->input_error = RELAY_ERROR_NONE;
         relay->input_waiting = 0;
         return;
@@ -433,8 +460,18 @@ static int handle_stdin(struct relay_state *relay, short revents) {
         for (index = 0; index < length; index++) {
             unsigned char byte = (unsigned char)buffer[index];
 
-            if (byte == '1') {
-                relay->software = 1;
+            if (byte == '1' || byte == '0') {
+                if (byte != relay->command) {
+                    relay->request++;
+                    relay->command = byte;
+                    relay->reported_once = 0;
+                    relay_log("control mode: %s (request=%u)",
+                              byte == '0' ? "hardware" : "software", relay->request);
+                }
+                if (byte == '0' && !relay->monitor)
+                    relay->next_scan = 0.0; /* Discover a newly created switch now. */
+                relay->software = byte == '1';
+                relay->monitor = byte == '0';
                 relay->lease = monotonic_now() + RELAY_LEASE_SECONDS;
             } else if (byte != '\n') {
                 relay_log("invalid stdin byte 0x%02x", (unsigned int)byte);
@@ -671,12 +708,20 @@ static int run_relay(const struct options *options) {
         }
         if (relay.monitor_fd >= 0) {
             int state = switch_read_state(relay.monitor_fd);
-            if (state >= 0)
-                relay.hardware_state = state;
+            if (state < 0) {
+                result = RELAY_EXIT_HARDWARE;
+                break;
+            }
+            relay.hardware_state = state;
         }
+        if (relay.monitor && !relay.physical) {
+            result = RELAY_EXIT_HARDWARE;
+            break;
+        }
+        update_handoff(&relay, now);
         maintain_input(&relay, now);
 
-        desired = relay.hardware_state || relay.software;
+        desired = relay_tablet_state(&relay);
         if (relay.output != desired) {
             if (uinput_emit_switch(relay.virtual_fd, desired) < 0) {
                 result = RELAY_EXIT_EMIT;

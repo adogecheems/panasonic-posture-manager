@@ -29,10 +29,11 @@
 #define VIRTUAL_PHYS "panasonic-posture-manager/relay"
 
 /* stdout protocol version written to the service, one JSON object per line. */
-#define RELAY_PROTOCOL 2
+#define RELAY_PROTOCOL 3
 
 /* Lease and timing policy (seconds / milliseconds). */
 #define RELAY_LEASE_SECONDS 3.0
+#define RELAY_HANDOFF_SECONDS 2.0
 #define RELAY_POLL_MILLISECONDS 100
 #define RELAY_REPORT_SECONDS 1.0
 #define RELAY_SCAN_SECONDS 1.0

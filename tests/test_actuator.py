@@ -54,7 +54,7 @@ def emit(payload):
 if mode == "exit":
     sys.exit(3)
 
-emit({"protocol": 2, "kind": "ready", "physical": True})
+emit({"protocol": 3, "kind": "ready", "physical": True})
 if mode == "sigkill":
     os.kill(os.getpid(), signal.SIGKILL)
 if mode == "garbage":
@@ -62,7 +62,7 @@ if mode == "garbage":
     sys.stdout.write(json.dumps({"protocol": 1, "kind": "applied"}) + "\n")
     sys.stdout.flush()
 applied = {
-    "protocol": 2,
+    "protocol": 3,
     "kind": "applied",
     "hardware": False,
     "tablet": True,
@@ -71,6 +71,8 @@ applied = {
     "error": None,
 }
 stdin = sys.stdin.fileno()
+command = None
+request = 0
 while True:
     readable, _, _ = select.select([stdin], [], [], 0.2)
     if not readable:
@@ -78,10 +80,17 @@ while True:
     data = os.read(stdin, 64)
     if not data:
         code = int(os.environ.get("FAKE_RELAY_RELEASE_EXIT", "0"))
-        emit({"protocol": 2, "kind": "released", "exit": code})
+        emit({"protocol": 3, "kind": "released", "exit": code})
         sys.exit(code)
     if mode == "silent":
         continue
+    for byte in data:
+        if byte in (ord('0'), ord('1')) and byte != command:
+            command = byte
+            request += 1
+    applied['request'] = request
+    applied['hardware'] = command == ord('0')
+    applied['input_disabled'] = True  # Both software ON and physical ON disable inputs.
     emit(applied)
 '''
 
@@ -220,7 +229,7 @@ class RelayStateTests(unittest.TestCase):
     def test_applied_message(self) -> None:
         state = RelayState.from_message(
             {
-                "protocol": 2,
+                "protocol": 3,
                 "kind": "applied",
                 "hardware": False,
                 "tablet": True,
@@ -252,6 +261,47 @@ class RelayStateTests(unittest.TestCase):
 
 
 class ActuatorLifecycleTests(FakeRelayTestCase):
+    def test_hardware_monitor_switches_immediately_and_rejects_old_receipts(self):
+        actuator = self.make()
+        self.start_and_wait(actuator)
+        process = actuator.process
+        old_request = actuator._request
+        actuator.follow_hardware(self.clock.value)
+        self.assertIs(actuator.process, process)
+        self.assertIsNone(actuator.state)
+        self.assertEqual(actuator._request, old_request + 1)
+        stale = dict(protocol=3, kind="applied", request=old_request,
+                     tablet=True, input_disabled=True, hardware=False, physical=True)
+        last_report = actuator.last_report
+        actuator._accept_report(json.dumps(stale).encode(), self.clock.value + 1.0)
+        self.assertIsNone(actuator.state)
+        self.assertEqual(actuator.last_report, last_report)
+
+        def received_monitor():
+            actuator.follow_hardware(self.clock.value)
+            return actuator.state is not None
+
+        self.assertTrue(wait_for(received_monitor))
+        self.assertEqual(actuator.state, RelayState(True, True, True, True))
+        actuator.keep(self.clock.value)
+        self.assertIsNone(actuator.state)
+        self.assertEqual(actuator._request, old_request + 2)
+        stale.update(request=old_request + 1, hardware=True, input_disabled=False)
+        actuator._accept_report(json.dumps(stale).encode(), self.clock.value)
+        self.assertIsNone(actuator.state)
+        self.assertIs(actuator.process, process)
+
+    def test_hardware_monitor_can_start_with_hardware_command(self):
+        actuator = self.make()
+        actuator.follow_hardware(self.clock.value)
+
+        def received():
+            actuator.follow_hardware(self.clock.value)
+            return actuator.state is not None
+
+        self.assertTrue(wait_for(received))
+        self.assertEqual(actuator.state, RelayState(True, True, True, True))
+
     def test_spawn_reports_applied_state_and_heartbeats(self) -> None:
         actuator = self.make()
         self.start_and_wait(actuator)

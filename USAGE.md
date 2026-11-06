@@ -89,6 +89,10 @@ Linux 入口分别由 `service/application.py` 和 `session/agent.py` 装配。�
 平台的支持等级。Linux 设备匹配留在 `hardware/profile.py`，纯安装方向矩阵运算在
 `mounting.py`。其他平台不可继承 Linux 的已验证等级。`state_codec.py` 继续严格解析现有
 Linux 状态 v2；新的内部传感器信息不扩展该线协议。
+系统服务与 C relay 使用内部协议 v3，必须从同一个构建安装。字节 `1` 请求软件接管，
+`0` 将已有接管改为物理开关转发，两者续接原有三秒租约；退出物理平板后的显示交接
+由 relay 独立限制为两秒。命令变化递增 32 位 `request`，服务只接受匹配的执行回执。
+共用输入接口的 `follow_hardware()` 表达同一操作，不依赖 Linux 传输。
 
 显示事务必须显式注入 `DisplayJournal`，不能自行选择用户目录。设置与日志的纯格式校验
 分别在 `service/settings_schema.py` 和 `session/journal_schema.py`，现有 Linux 文件适配器

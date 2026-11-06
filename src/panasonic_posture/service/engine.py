@@ -46,6 +46,7 @@ from ..model import (
 )
 from ..contracts import (
     ALL_ERROR_CODES,
+    HARDWARE_HANDOFF_SECONDS,
     LEASE_SECONDS,
     MODES,
     SLOW_TICK_WARN_SECONDS,
@@ -144,6 +145,8 @@ class Engine:
         self._release_task: _ReleaseTask | None = None
         self._retry_requested = False
         self._last_release_key: tuple[int, Target] | None = None
+        self._following_hardware = False
+        self._handoff_until: float | None = None
 
         support_tier = str(
             device.support_tier or "compatible"
@@ -677,8 +680,12 @@ class Engine:
             self._ensure_release(generation, target)
             return
         try:
+            if self._follow_hardware(now, lease, generation, target, prepared):
+                return
             if needs_input_control and hardware_off and prepared:
                 self._actuator.keep(now)
+                self._following_hardware = False
+                self._handoff_until = None
                 self._last_release_key = None
                 state = self._actuator.state
                 # ``keep`` may spawn the relay and can block for a moment: only
@@ -700,6 +707,7 @@ class Engine:
                 and self.agent_error_code is None
                 and self._actuator.running
                 and self._actuator.state is not None
+                and not self._following_hardware
             ):
                 # Keep software ownership while switching between two software
                 # tablet orientations; a failed preparation still revokes it.
@@ -729,7 +737,56 @@ class Engine:
             self._last_release_key = None
             self._ensure_release(generation, target)
 
+    def _follow_hardware(
+        self, now: float, lease: bool, generation: int, target: Target, prepared: bool
+    ) -> bool:
+        observation = self._hardware_observation
+        healthy = (
+            lease and self.supported and self.agent_error_code is None
+            and self._controller.error_code is None
+            and self._sensor.info.error is None
+            and bool(getattr(self._controller.policy, "fresh", False))
+            and observation.status == HardwareStatus.OK and observation.raw is not None
+        )
+        if not healthy:
+            if self._following_hardware:
+                self._ensure_release(generation, target)
+                return True
+            return False
+        if observation.raw is True and target.mode == "hardware":
+            # Retain an existing software bridge. Starting one after native
+            # tablet ON could grab a switch already paired by the desktop and
+            # hide its OFF from that desktop's input-device suspension state.
+            if not (self._following_hardware or self._actuator.running):
+                return False
+            self._following_hardware = True
+            self._handoff_until = None
+        elif self._following_hardware and observation.raw is False:
+            if self._handoff_until is None:
+                self._handoff_until = now + HARDWARE_HANDOFF_SECONDS
+            waiting = (
+                target.mode == "unavailable"
+                and bool(getattr(self._controller.policy, "posture_pending", False))
+            )
+            if now >= self._handoff_until or not (
+                waiting or (target.disable_internal_input and not prepared)
+            ):
+                return False
+        else:
+            return False
+        self._actuator.follow_hardware(now)
+        self._last_release_key = None
+        state = self._actuator.state
+        if state is not None and state.error:
+            raise ActuatorError(ErrorCode.RELAY_INPUT, state.error)
+        if (target.mode == "hardware" and state is not None and state.satisfies(target)
+                and self._prepared(self._lease_active(self._monotonic()), generation)):
+            self._controller.acknowledge(generation, True)
+        return True
+
     def _ensure_release(self, generation: int, target: Target) -> None:
+        self._following_hardware = False
+        self._handoff_until = None
         key = (generation, target)
         if self._release_task is None and self._last_release_key != key:
             self._last_release_key = key
@@ -749,6 +806,8 @@ class Engine:
         self._submit_release(self._controller.generation, retry=True)
 
     def _submit_release(self, generation: int, *, retry: bool = False) -> None:
+        self._following_hardware = False
+        self._handoff_until = None
         try:
             future = self._executor.submit(
                 self._actuator.retry if retry else self._actuator.release
@@ -764,6 +823,8 @@ class Engine:
 
     def _wait_for_release(self) -> None:
         """Join an in-flight worker release before a synchronous lifecycle call."""
+        self._following_hardware = False
+        self._handoff_until = None
 
         task = self._release_task
         if task is None:

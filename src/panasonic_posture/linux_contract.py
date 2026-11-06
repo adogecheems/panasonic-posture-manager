@@ -18,7 +18,7 @@ def session_name(uid: int) -> str:
 
 POLKIT_ACTION = NAME + ".configure"
 DBUS_ERROR = NAME + ".Error"
-RELAY_PROTOCOL = 2
+RELAY_PROTOCOL = 3
 PROFILE_VERSION = 1
 SENSOR_SOURCES = ("starting", "iio", "sysfs")
 
