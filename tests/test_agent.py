@@ -1003,12 +1003,44 @@ class HardwareHandoffTests(unittest.TestCase):
         state.posture_pending = True
         return state
 
+    def test_native_reset_is_corrected_during_wait_before_ready(self):
+        from test_display import Harness as DisplayHarness
+
+        desktop = DisplayHarness(transform=2, locked=False)
+        h = Harness(self.waiting(), display=desktop.display)
+        h.tick(0.0)
+        desktop.mutter.transform = 0
+        h.tick(0.2)
+        self.assertEqual(desktop.mutter.transform, 2)
+        self.assertTrue(desktop.settings.value)
+        self.assertTrue(all(not update[1] for update in h.client.updates))
+        h.set_state(make_state(generation=2))
+        h.tick(0.3)
+        self.assertTrue(h.client.updates[-1][1])
+        self.assertEqual(desktop.mutter.transforms, [2])
+
+    def test_wait_rechecks_direction_without_extending_deadline(self):
+        h = Harness(self.waiting())
+        h.display.hold_orientation = mock.Mock()
+        h.tick(0.0)
+        h.tick(0.05)  # Completion must not spin an unbounded hold/read loop.
+        h.display.hold_orientation.assert_called_once()
+        h.tick(0.2)
+        self.assertEqual(h.display.hold_orientation.call_count, 2)
+        h.tick(1.9)
+        self.assertEqual(h.display.hold_orientation.call_count, 3)
+        self.assertTrue(all(not update[1] for update in h.client.updates))
+        h.tick(2.01)
+        h.tick(2.2)
+        self.assertEqual(h.display.hold_orientation.call_count, 3)
+        self.assertEqual([t.mode for t in h.display.applied], ["unavailable"])
+
     def test_wait_holds_without_ack_then_applies_stable_target(self):
         h = Harness(self.waiting())
         h.display.hold_orientation = mock.Mock()
         h.tick(0.0)
         h.tick(0.5)
-        h.display.hold_orientation.assert_called_once()
+        self.assertEqual(h.display.hold_orientation.call_count, 2)
         self.assertEqual(h.display.applied, [])
         self.assertFalse(h.client.updates[-1][1])
         h.set_state(make_state(generation=2))
@@ -1021,7 +1053,7 @@ class HardwareHandoffTests(unittest.TestCase):
         h.display.hold_orientation = mock.Mock()
         for now in (0.0, 1.0, 2.1, 3.0):
             h.tick(now)
-        h.display.hold_orientation.assert_called_once()
+        self.assertEqual(h.display.hold_orientation.call_count, 2)
         self.assertEqual([t.mode for t in h.display.applied], ["unavailable"])
 
     def test_lost_sensor_or_hardware_cancels_wait_in_same_generation(self):

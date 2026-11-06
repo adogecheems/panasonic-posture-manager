@@ -217,6 +217,23 @@ class PlasmaTransactionTests(unittest.TestCase):
     def display(self, command, **environ):
         return PlasmaDisplay(command, self.journal, lambda text: text, sleep=lambda _s: None, environ=environ)
 
+    def test_hold_corrects_native_reset_and_hardware_reentry_releases_it(self):
+        command = FakePlasmaCommand(transform=2, policy="in-tablet-mode")
+        display = self.display(command)
+        display.hold_orientation()
+        command.transform = 0
+        display.hold_orientation()
+        self.assertEqual(command.transform, 2)
+        display.apply(Target(mode="hardware"))
+        self.assertEqual(command.policy, "in-tablet-mode")
+        self.assertIsNone(self.journal.load()["written_transform"])
+        command.transform = 1
+        display.hold_orientation()
+        self.assertEqual(command.transform, 1)
+        display.restore()
+        self.assertEqual(command.transform, 1)
+        self.assertEqual(command.policy, "in-tablet-mode")
+
     def test_native_rotation_during_lock_is_corrected_before_success(self):
         command = FakePlasmaCommand(transform=2, policy="in-tablet-mode")
         display = self.display(command)

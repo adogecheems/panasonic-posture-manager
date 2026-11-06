@@ -118,6 +118,7 @@ class SessionRuntime:
         self._restore_retry_at = 0.0
         self._hold_key: tuple[str, int] | None = None
         self._hold_until = 0.0
+        self._hold_check_at = 0.0
 
         # lease/authorization failure mode
         self.failure_active = False
@@ -236,6 +237,7 @@ class SessionRuntime:
             self._probe_succeeded(result, now)
         elif task.kind == "hold":
             if not self.failure_active:
+                self._hold_check_at = now + contracts.TICK_SECONDS
                 self._submit("state", self.client.get_state)
         elif task.kind == "apply":
             if self.failure_active:
@@ -493,11 +495,13 @@ class SessionRuntime:
             if self._hold_key != key:
                 self._hold_key = key
                 self._hold_until = now + HARDWARE_SETTLE_SECONDS
-                self._display_needs_restore = True
-                self._submit("hold", self.display.hold_orientation,
-                             context=(state, generation, ""))
-                return False
+                self._hold_check_at = now
             if now < self._hold_until:
+                if now >= self._hold_check_at:
+                    self._display_needs_restore = True
+                    self._submit("hold", self.display.hold_orientation,
+                                 context=(state, generation, ""))
+                    return False
                 return True  # heartbeat remains not-ready during the hold
         else:
             self._hold_until = 0.0

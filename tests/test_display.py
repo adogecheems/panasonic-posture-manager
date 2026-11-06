@@ -245,6 +245,61 @@ class PurePlanTests(unittest.TestCase):
 
 
 class ApplyTransactionTests(unittest.TestCase):
+    def test_hold_corrects_native_reset_without_rewinding_pre_tablet_direction(self):
+        h = Harness(transform=0, locked=False)
+        h.display.apply(Target(mode="tent"))
+        h.display.apply(Target(mode="hardware"))
+        h.mutter.transform = 1  # Native tablet orientation is the new baseline.
+        h.display.hold_orientation()
+        h.mutter.transforms.clear()
+        h.mutter.transform = 0  # Desktop resets even with the lock enabled.
+        h.display.hold_orientation()
+        self.assertEqual(h.mutter.transforms, [1])
+        self.assertEqual(h.journal.document["original_transform"], 1)
+        self.assertEqual(h.journal.document["written_transform"], 1)
+        h.display.restore()
+        self.assertEqual(h.mutter.transform, 1)
+        self.assertFalse(h.settings.value)
+        self.assertIsNone(h.journal.document)
+        h.mutter.transform = 3
+        h.display.hold_orientation()
+        self.assertEqual(h.mutter.transforms, [1])  # A new hold captures 3.
+
+    def test_hold_corrects_rotation_that_finishes_during_lock(self):
+        h = Harness(transform=2, locked=False)
+        write_lock = h.display._write_lock
+
+        def native_reset(state, locked):
+            h.mutter.transform = 0
+            write_lock(state, locked)
+
+        with patch.object(h.display, "_write_lock", native_reset):
+            h.display.hold_orientation()
+        self.assertEqual(h.mutter.transforms, [2])
+        self.assertTrue(h.settings.value)
+
+    def test_hold_rejects_replacement_panel_and_releases_global_lock(self):
+        h = Harness(transform=2, locked=False)
+        h.display.hold_orientation()
+        h.mutter.monitor_spec = ("eDP-2", "AUO", "replacement", "2")
+        h.mutter.transform = 0
+        with self.assertRaises(DisplayError) as caught:
+            h.display.hold_orientation()
+        self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_IDENTITY)
+        self.assertEqual(h.mutter.transforms, [])
+        self.assertFalse(h.settings.value)
+
+    def test_failed_hold_correction_releases_lock_and_keeps_native_direction(self):
+        h = Harness(transform=2, locked=False, fail_apply=10)
+        h.display.hold_orientation()
+        h.mutter.transform = 0
+        with self.assertRaises(DisplayError) as caught:
+            h.display.hold_orientation()
+        self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_TRANSFORM)
+        self.assertEqual(h.mutter.transform, 0)
+        self.assertFalse(h.settings.value)
+        self.assertIsNone(h.journal.document)
+
     def test_native_rotation_during_lock_is_corrected_before_success(self):
         for mode, expected in (("tent", 2), ("stand", 0), ("laptop", 0), ("tablet", 0)):
             with self.subTest(mode=mode):

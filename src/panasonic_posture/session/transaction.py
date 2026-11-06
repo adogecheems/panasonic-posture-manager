@@ -68,6 +68,7 @@ class SoftwareDisplay:
         self._sleep = sleep
         self.journal = journal
         self.owned: dict | None = None
+        self._held_orientation: DisplayState | None = None
         self._recover()
 
     # -- backend contract -------------------------------------------------
@@ -116,6 +117,7 @@ class SoftwareDisplay:
                     ErrorCode.INTERNAL, "invalid-display-target"
                 ) from error
         mode = str(target.mode or "")
+        self._held_orientation = None
         if mode == HARDWARE_MODE:
             self._apply_hardware()
             return
@@ -142,15 +144,7 @@ class SoftwareDisplay:
                     ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
                 )
             state = current
-            if state.transform != transform:
-                # Until the write is verified, recovery must recognize both
-                # the last owned transform and the new write intent.
-                self.owned["pending_transform"] = transform
-                self._persist()
-                self._write_rotation(state, transform)
-                self.owned.pop("pending_transform")
-            self.owned["written_transform"] = transform
-            self._persist()
+            self._write_owned_rotation(state, transform)
             if mode == "tablet" and state.lock_supported:
                 # Release automatic rotation only after landscape is stable.
                 current = self._read_state()
@@ -189,15 +183,37 @@ class SoftwareDisplay:
             raise
 
     def hold_orientation(self) -> None:
-        """Temporarily lock the current direction without writing a rotation."""
-        state = self._read_transaction_state()
-        if not state.lock_supported:
-            raise DisplayError(ErrorCode.DISPLAY_LOCK, "orientation-lock-unavailable")
-        if not self.owned:
-            self.owned = self._journal_document(state)
-            self._persist()
+        """Keep the first hold's direction until apply or restore ends the hold."""
         try:
+            held = self._held_orientation
+            state = self._read_transaction_state() if held is None else self._read_state()
+            if held is not None and state.identity != held.identity:
+                raise DisplayError(
+                    ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
+                )
+            if not state.lock_supported:
+                raise DisplayError(ErrorCode.DISPLAY_LOCK, "orientation-lock-unavailable")
+            if not self.owned:
+                self.owned = self._journal_document(state)
+                self._persist()
+            if held is None:
+                held = self._held_orientation = state
+                # Hardware mode relinquished rotation. A correction must not
+                # restore an older software posture when this hold ends.
+                if self.owned.get("written_transform") is None:
+                    self.owned["original_transform"] = state.transform
+                    self._persist()
             self._write_owned_lock(state, True)
+            current = self._read_state()
+            if current.identity != held.identity:
+                raise DisplayError(
+                    ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
+                )
+            # A desktop mode transition may reset rotation despite its lock.
+            # Correct only within the runtime's bounded, healthy hold window.
+            if current.transform != held.transform:
+                self._validate(current, "hold", held.transform)
+                self._write_owned_rotation(current, held.transform)
         except (DisplayError, OSError, ValueError):
             self._rollback()
             raise
@@ -217,6 +233,7 @@ class SoftwareDisplay:
         hardware-to-software transition or session shutdown.
         """
 
+        self._held_orientation = None
         owned = self.owned
         if not owned:
             return
@@ -291,7 +308,17 @@ class SoftwareDisplay:
         self.journal.save(document)
         self.owned = document
 
-    # -- lock ownership ---------------------------------------------------
+    # -- rotation and lock ownership --------------------------------------
+
+    def _write_owned_rotation(self, state: DisplayState, transform: int) -> None:
+        if state.transform != transform:
+            # Recovery must recognize both sides until read-back succeeds.
+            self.owned["pending_transform"] = transform
+            self._persist()
+            self._write_rotation(state, transform)
+            self.owned.pop("pending_transform")
+        self.owned["written_transform"] = transform
+        self._persist()
 
     def _owns_lock(self, state: DisplayState) -> bool:
         return any(
