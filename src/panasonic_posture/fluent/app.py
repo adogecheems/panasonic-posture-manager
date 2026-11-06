@@ -397,7 +397,7 @@ def run(*, demo=False, language=None, scenario='laptop') -> int:
     app.setStyle('Fusion')
     app.setApplicationName('Panasonic Posture Manager')
     setTheme(Theme.AUTO)
-    setThemeColor('#7861d8')
+    setThemeColor('#0051f2')
     window = Window(demo=demo, language=language, scenario=scenario)
     window.show()
     return app.exec()
