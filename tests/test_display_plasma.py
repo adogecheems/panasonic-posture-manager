@@ -217,6 +217,25 @@ class PlasmaTransactionTests(unittest.TestCase):
     def display(self, command, **environ):
         return PlasmaDisplay(command, self.journal, lambda text: text, sleep=lambda _s: None, environ=environ)
 
+    def test_native_rotation_during_lock_is_corrected_before_success(self):
+        command = FakePlasmaCommand(transform=2, policy="in-tablet-mode")
+        display = self.display(command)
+        display.apply(Target(mode="hardware"))
+        set_policy = command.set_policy
+
+        def finish_native_rotation(output, policy):
+            command.transform = 0
+            set_policy(output, policy)
+
+        with patch.object(command, "set_policy", finish_native_rotation):
+            display.apply(Target(mode="tent"))
+
+        self.assertEqual(command.transform, 2)
+        self.assertEqual(command.policy, "never")
+        self.assertEqual(command.calls, [("policy", "eDP-1", "never"),
+                                        ("rotation", "eDP-1", 2)])
+        self.assertEqual(self.journal.load()["written_transform"], 2)
+
     def test_hardware_hold_and_crash_recovery_keep_native_direction(self):
         command = FakePlasmaCommand(transform=0, policy="always")
         display = self.display(command)

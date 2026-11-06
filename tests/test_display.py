@@ -5,6 +5,7 @@ D-Bus/GSettings/journal objects so no real GNOME session is required.
 """
 
 import unittest
+from unittest.mock import patch
 
 from gi.repository import Gio, GLib
 
@@ -244,6 +245,64 @@ class PurePlanTests(unittest.TestCase):
 
 
 class ApplyTransactionTests(unittest.TestCase):
+    def test_native_rotation_during_lock_is_corrected_before_success(self):
+        for mode, expected in (("tent", 2), ("stand", 0), ("laptop", 0), ("tablet", 0)):
+            with self.subTest(mode=mode):
+                h = Harness(transform=expected, locked=False)
+                h.display.apply(Target(mode="hardware"))
+                write_lock = h.display._write_lock
+
+                def finish_native_rotation(state, locked):
+                    if locked:
+                        h.mutter.transform = (expected + 2) % 4
+                    write_lock(state, locked)
+
+                with patch.object(h.display, "_write_lock", finish_native_rotation):
+                    h.display.apply(Target(mode=mode))
+
+                self.assertEqual(h.mutter.transform, expected)
+                self.assertEqual(h.mutter.transforms, [expected])
+                self.assertEqual(h.journal.document["written_transform"], expected)
+                self.assertEqual(h.settings.value, mode != "tablet")
+
+    def test_panel_replacement_during_lock_does_not_receive_rotation(self):
+        h = Harness(transform=2, locked=False)
+        write_lock = h.display._write_lock
+
+        def replace_panel(state, locked):
+            write_lock(state, locked)
+            h.mutter.monitor_spec = ("eDP-2", "AUO", "replacement", "2")
+
+        with patch.object(h.display, "_write_lock", replace_panel):
+            with self.assertRaises(DisplayError) as caught:
+                h.display.apply(Target(mode="tent"))
+
+        self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_IDENTITY)
+        self.assertEqual(h.mutter.transforms, [])
+        self.assertFalse(h.settings.value)
+        self.assertIsNone(h.journal.document)
+
+    def test_read_failure_after_lock_rolls_back_without_confirming_rotation(self):
+        h = Harness(transform=2, locked=False)
+        read_state = h.display._read_state
+        reads = 0
+
+        def fail_after_lock():
+            nonlocal reads
+            reads += 1
+            if reads == 2:
+                raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, "lost panel")
+            return read_state()
+
+        with patch.object(h.display, "_read_state", fail_after_lock):
+            with self.assertRaises(DisplayError) as caught:
+                h.display.apply(Target(mode="tent"))
+
+        self.assertEqual(caught.exception.code, ErrorCode.DISPLAY_UNAVAILABLE)
+        self.assertEqual(h.mutter.transforms, [])
+        self.assertFalse(h.settings.value)
+        self.assertIsNone(h.journal.document)
+
     def test_hardware_hold_and_restore_never_rewind_native_rotation(self):
         h = Harness(transform=0, locked=False)
         h.display.apply(Target(mode="tent"))

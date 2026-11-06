@@ -133,6 +133,15 @@ class SoftwareDisplay:
         try:
             if state.lock_supported:
                 self._write_owned_lock(state, True)
+            # Native tablet rotation can finish while the lock is being set.
+            # Even a seemingly redundant target must use a post-lock snapshot
+            # before claiming its direction as successfully applied.
+            current = self._read_state()
+            if current.identity != state.identity:
+                raise DisplayError(
+                    ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
+                )
+            state = current
             if state.transform != transform:
                 # Until the write is verified, recovery must recognize both
                 # the last owned transform and the new write intent.
