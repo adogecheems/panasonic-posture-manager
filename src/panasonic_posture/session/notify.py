@@ -5,8 +5,7 @@ posture prompt) and ``pending_prompt`` (its kind).  A temporary gap in
 confirmability hides the notification and rearms it after a stable return,
 while preserving failure retry state.  Failures are retried with a 1/2/4 second
 backoff.  After the last retry the epoch is marked as failed until a new prompt
-arrives or the caller
-explicitly resets the notifier with :meth:`Notifier.close`.
+arrives or the caller explicitly resets the notifier with :meth:`Notifier.close`.
 """
 
 from __future__ import annotations
@@ -65,8 +64,7 @@ class Notifier:
         #: Epoch whose notification was successfully displayed.
         self.shown_epoch: int | None = None
 
-        self._pending_epoch: int | None = None
-        self._pending_prompt: str | None = None
+        self._pending_key: tuple[int, str] | None = None
         self._shown_prompt: str | None = None
         self._retries = 0
         self._retry_at: float | None = None
@@ -101,35 +99,20 @@ class Notifier:
 
         now = self._clock() if now is None else now
         if epoch is None:
-            if self.notification and self.epoch is not None and self.prompt is not None:
-                self._interrupted_key = (self.epoch, self.prompt)
-                self.shown_epoch = None
-                self._shown_prompt = None
-            self._resume_since = None
-            self._close_notification()
+            self._interrupt()
             return
         epoch = int(epoch)
         prompt = prompt if prompt in protocol.PROMPTS else "tent"
         key = (epoch, prompt)
-        if key == self._interrupted_key:
-            # Require a continuous confirmable interval before redisplaying a
-            # prompt withdrawn by us; noisy samples must not flash notifications.
-            if self._resume_since is None:
-                self._resume_since = now
-            if now - self._resume_since < RESUME_DELAY_SECONDS:
-                return
-        self._interrupted_key = None
-        self._resume_since = None
+        if not self._resume_ready(key, now):
+            return
         if key == (self.shown_epoch, self._shown_prompt):
             return
         if key == self._failed_key:
             return
-        if (self._pending_epoch, self._pending_prompt) != key:
+        if self._pending_key != key:
             # A new prompt replaces whatever is on screen and resets backoff.
-            self._pending_epoch = epoch
-            self._pending_prompt = prompt
-            self._retries = 0
-            self._retry_at = None
+            self._reset_retry(key)
             if self.notification and (self.epoch, self.prompt) != key:
                 self._close_notification()
         if self._retry_at is not None:
@@ -141,20 +124,41 @@ class Notifier:
         """Close the prompt and forget every token/epoch so it can reappear."""
 
         self._close_notification()
-        self.epoch = None
-        self.prompt = None
         self.shown_epoch = None
         self._shown_prompt = None
-        self._pending_epoch = None
-        self._pending_prompt = None
-        self._retries = 0
-        self._retry_at = None
+        self._reset_retry()
         self._failed_key = None
         self._capabilities = None
         self._interrupted_key = None
         self._resume_since = None
 
     # -- internals --------------------------------------------------------
+
+    def _interrupt(self) -> None:
+        # Only rearm a delivered prompt. Failed delivery retains its retry budget.
+        if self.notification and self.epoch is not None and self.prompt is not None:
+            self._interrupted_key = (self.epoch, self.prompt)
+            self.shown_epoch = None
+            self._shown_prompt = None
+        self._resume_since = None
+        self._close_notification()
+
+    def _resume_ready(self, key: tuple[int, str], now: float) -> bool:
+        if key == self._interrupted_key:
+            # Require continuous confirmability before redisplaying a withdrawn
+            # prompt; a different prompt does not inherit this delay.
+            if self._resume_since is None:
+                self._resume_since = now
+            if now - self._resume_since < RESUME_DELAY_SECONDS:
+                return False
+        self._interrupted_key = None
+        self._resume_since = None
+        return True
+
+    def _reset_retry(self, key: tuple[int, str] | None = None) -> None:
+        self._pending_key = key
+        self._retries = 0
+        self._retry_at = None
 
     def _attempt(self, epoch: int, prompt: str, now: float) -> None:
         try:
@@ -168,10 +172,7 @@ class Notifier:
             if self._retries >= len(RETRY_DELAYS):
                 # Give up for this epoch: a new epoch or close() retries again.
                 self._failed_key = (epoch, prompt)
-                self._pending_epoch = None
-                self._pending_prompt = None
-                self._retries = 0
-                self._retry_at = None
+                self._reset_retry()
             else:
                 self._retry_at = now + RETRY_DELAYS[self._retries]
                 self._retries += 1
@@ -181,10 +182,7 @@ class Notifier:
         self.prompt = prompt
         self.shown_epoch = epoch
         self._shown_prompt = prompt
-        self._pending_epoch = None
-        self._pending_prompt = None
-        self._retries = 0
-        self._retry_at = None
+        self._reset_retry()
         self._failed_key = None
 
     def _notify(self, prompt: str) -> int:
