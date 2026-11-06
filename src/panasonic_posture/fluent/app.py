@@ -4,12 +4,12 @@ import sys
 import time
 
 from PyQt6.QtCore import Qt, QTimer, QRectF
-from PyQt6.QtGui import QIcon, QPainter
+from PyQt6.QtGui import QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QButtonGroup
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QButtonGroup, QStackedWidget
 from qfluentwidgets import (
-    FluentWindow, FluentIcon as Icon, NavigationItemPosition, CardWidget,
-    TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel, StrongBodyLabel,
+    FluentWidget, FluentIcon as Icon, CardWidget, SegmentedWidget,
+    TitleLabel, BodyLabel, CaptionLabel, StrongBodyLabel,
     PrimaryPushButton, PushButton, RadioButton, SwitchButton, ComboBox,
     ScrollArea, InfoBar, InfoBarPosition, MessageBox, Theme, setTheme,
     setThemeColor, isDarkTheme, qconfig,
@@ -32,15 +32,14 @@ class Illustration(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.pose = 'laptop'
-        self.setMinimumHeight(220)
-        self.setMaximumHeight(270)
+        self.setFixedHeight(210)
         qconfig.themeChanged.connect(self.update)
 
     def paintEvent(self, event):
         path = data_root() / 'assets' / f'{self.pose}.svg'
         dark = isDarkTheme()
         svg = path.read_text(encoding='utf-8').replace('currentColor', '#e8e7ef' if dark else '#383549')
-        svg = svg.replace('var(--app-bg, white)', '#28272f' if dark else '#ffffff')
+        svg = svg.replace('var(--app-bg, white)', self.window().backgroundColor.name())
         renderer = QSvgRenderer(svg.encode())
         painter = QPainter(self)
         width = min(self.width(), self.height() * 4 / 3)
@@ -48,7 +47,7 @@ class Illustration(QWidget):
 
 
 class Page(ScrollArea):
-    def __init__(self, name, title, subtitle, demo, _, parent=None):
+    def __init__(self, name, parent=None):
         super().__init__(parent)
         self.setObjectName(name)
         self.setWidgetResizable(True)
@@ -59,31 +58,21 @@ class Page(ScrollArea):
         content.setStyleSheet(f'#{name}Content {{background: transparent;}}')
         self.setWidget(content)
         self.box = QVBoxLayout(content)
-        self.box.setContentsMargins(28, 24, 28, 28)
-        self.box.setSpacing(16)
-        self.box.addWidget(TitleLabel(title))
-        description = BodyLabel(subtitle)
-        description.setWordWrap(True)
-        self.box.addWidget(description)
-        note = BodyLabel(_('Demo preview · Changes stay in this window.') if demo else
-                         _('Windows preview · The backend is not connected yet.'))
-        note.setWordWrap(True)
-        note.setStyleSheet('color: #8c72df; padding: 10px 12px; border: 1px solid #b8a4ee; border-radius: 8px;')
-        self.box.addWidget(note)
+        self.box.setContentsMargins(20, 16, 20, 16)
+        self.box.setSpacing(14)
 
     def card(self):
         card = CardWidget()
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
         self.box.addWidget(card)
         return card, layout
 
 
 class Home(Page):
-    def __init__(self, client: UIClient, demo, _, notify, choose_mode, parent=None):
-        super().__init__('posture', _('Current posture'),
-                         _('A comfortable view, in every position.'), demo, _, parent)
+    def __init__(self, client: UIClient, _, notify, parent=None):
+        super().__init__('posture', parent)
         self._, self.client = _, client
         self.model = PostureModel()
         self.labels = mode_labels(_)
@@ -92,7 +81,8 @@ class Home(Page):
         self.timer.setSingleShot(True)
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.show_slow)
-        card, box = self.card()
+        box = self.box
+        box.addStretch()
         self.illustration = Illustration()
         box.addWidget(self.illustration)
         self.heading = TitleLabel(self.labels['laptop'])
@@ -114,31 +104,6 @@ class Home(Page):
         buttons.addWidget(self.retry_button)
         buttons.addStretch()
         box.addLayout(buttons)
-        card, box = self.card()
-        row = QHBoxLayout()
-        for title, attr in ((_('Screen orientation'), 'rotation'), (_('Built-in keyboard and touchpad'), 'input_state')):
-            column = QVBoxLayout()
-            column.addWidget(CaptionLabel(title))
-            label = StrongBodyLabel(_('Unavailable'))
-            setattr(self, attr, label)
-            column.addWidget(label)
-            row.addLayout(column, 1)
-        box.addLayout(row)
-        choose = PushButton(Icon.SETTING, _('Choose mode'))
-        choose.clicked.connect(choose_mode)
-        box.addWidget(choose, alignment=Qt.AlignmentFlag.AlignLeft)
-        if demo:
-            card, box = self.card()
-            box.addWidget(StrongBodyLabel(_('Preview scenarios')))
-            scenarios = ComboBox()
-            for key, text in (
-                ('laptop', _('Laptop')), ('prompt', _('Tent confirmation')),
-                ('hardware', _('Physical tablet mode')), ('slow', _('Slow switching')),
-                ('error', _('Switch failure')), ('disconnected', _('Disconnected')),
-            ):
-                scenarios.addItem(text, userData=key)
-            scenarios.currentIndexChanged.connect(lambda index: client.scenario(scenarios.itemData(index)))
-            box.addWidget(scenarios)
         self.box.addStretch()
 
     def update_state(self, state):
@@ -155,14 +120,6 @@ class Home(Page):
         self.render_detail()
         self.confirm_button.setVisible(state['pending_notification'] is not None)
         self.retry_button.setVisible(bool(state['error_code']))
-        applied = (state.get('applied') or {}).get('mode')
-        if applied in ('tent', 'laptop', 'stand', 'tablet', 'hardware'):
-            self.rotation.setText(self._('Upside down') if applied == 'tent' else
-                                  self._('Automatic rotation') if applied in ('tablet', 'hardware') else self._('Landscape'))
-            self.input_state.setText(self._('Enabled') if applied == 'laptop' else self._('Disabled'))
-        else:
-            self.rotation.setText(self._('Unavailable'))
-            self.input_state.setText(self._('Unavailable'))
         self.sync_buttons()
 
     def render_detail(self):
@@ -193,8 +150,6 @@ class Home(Page):
         self.render_detail()
         self.confirm_button.hide()
         self.retry_button.hide()
-        self.rotation.setText(self._('Unavailable'))
-        self.input_state.setText(self._('Unavailable'))
 
     def sync_buttons(self):
         prompt = self.model.state and self.model.state['pending_prompt']
@@ -228,34 +183,14 @@ class ModeRadio(RadioButton):
 
 
 class Settings(Page):
-    def __init__(self, client: UIClient, demo, _, notify, parent=None):
-        super().__init__('settings', _('Settings'), _('Make each posture work for you.'), demo, _, parent)
+    def __init__(self, client: UIClient, _, notify, parent=None):
+        super().__init__('settings', parent)
         self._, self.client, self.notify = _, client, notify
         self.model = SettingsModel(client, self.render, lambda error: notify(False))
         self.calibration = ActionRunner(self.render_calibration, lambda error: notify(False), self.calibrated)
         self.switches, self.radios = {}, {}
         card, box = self.card()
-        box.addWidget(SubtitleLabel(_('Mode selection')))
-        self.group = QButtonGroup(self)
-        descriptions = {
-            'auto': _('Switch automatically to suit the current posture'),
-            'laptop': _('Best for typing and precise work'),
-            'tent': _('Turns the screen upside down and disables the built-in keyboard and touchpad'),
-            'stand': _('Keeps the screen upright and disables the built-in keyboard and touchpad'),
-            'tablet': _('Lets the screen rotate and disables the built-in keyboard and touchpad'),
-        }
-        for key, label in mode_labels(_).items():
-            radio = ModeRadio(label)
-            radio.setAccessibleName(label)
-            self.group.addButton(radio)
-            radio.clicked.connect(lambda checked, mode=key: self.model.queue('manual', mode))
-            self.radios[key] = radio
-            box.addWidget(radio)
-            caption = CaptionLabel(descriptions[key])
-            caption.setWordWrap(True)
-            box.addWidget(caption)
-        card, box = self.card()
-        box.addWidget(SubtitleLabel(_('Automatic mode')))
+        box.addWidget(StrongBodyLabel(_('Automatic mode')))
         for field, title, subtitle in (
             ('tent_enabled', _('Enable tent mode'), _('Allow automatic detection of tent mode')),
             ('tent_prompt', _('Tent mode notification'), _('Ask before switching to tent mode when the base is upright')),
@@ -277,7 +212,7 @@ class Settings(Page):
             row.addWidget(switch)
             box.addLayout(row)
         card, box = self.card()
-        box.addWidget(SubtitleLabel(_('Sensor calibration')))
+        box.addWidget(StrongBodyLabel(_('Sensor calibration')))
         self.calibration_hint = BodyLabel(_('Place the device in laptop form on a flat desk, then calibrate.'))
         self.calibration_hint.setWordWrap(True)
         box.addWidget(self.calibration_hint)
@@ -290,6 +225,39 @@ class Settings(Page):
         row.addWidget(self.reset_button)
         row.addStretch()
         box.addLayout(row)
+        card, box = self.card()
+        box.addWidget(StrongBodyLabel(_('Mode selection')))
+        self.group = QButtonGroup(self)
+        descriptions = {
+            'auto': _('Switch automatically to suit the current posture'),
+            'laptop': _('Best for typing and precise work'),
+            'tent': _('Turns the screen upside down and disables the built-in keyboard and touchpad'),
+            'stand': _('Keeps the screen upright and disables the built-in keyboard and touchpad'),
+            'tablet': _('Lets the screen rotate and disables the built-in keyboard and touchpad'),
+        }
+        for key, label in mode_labels(_).items():
+            radio = ModeRadio(label)
+            radio.setAccessibleName(label)
+            self.group.addButton(radio)
+            radio.clicked.connect(lambda checked, mode=key: self.model.queue('manual', mode))
+            self.radios[key] = radio
+            box.addWidget(radio)
+            caption = CaptionLabel(descriptions[key])
+            caption.setWordWrap(True)
+            box.addWidget(caption)
+        card, box = self.card()
+        box.addWidget(StrongBodyLabel(_('About')))
+        box.addWidget(BodyLabel(_('Version') + ' ' + __version__))
+        box.addWidget(CaptionLabel(_('Author') + ' · adogecheems'))
+        appearance = ComboBox()
+        for text in (_('System'), _('Light'), _('Dark')):
+            appearance.addItem(text)
+        appearance.setAccessibleName(_('Appearance'))
+        appearance.currentIndexChanged.connect(lambda index: setTheme((Theme.AUTO, Theme.LIGHT, Theme.DARK)[index]))
+        box.addWidget(appearance)
+        notice = CaptionLabel(_("Let's note is a trademark of Panasonic Corporation. The author does not claim any rights to the trademark and is not associated with it."))
+        notice.setWordWrap(True)
+        box.addWidget(notice)
         self.box.addStretch()
         self.unavailable()
 
@@ -341,39 +309,67 @@ class Settings(Page):
             widget.setEnabled(False)
 
 
-class Window(FluentWindow):
-    def __init__(self, *, demo=False, language=None, client: UIClient | None = None):
+class Window(FluentWidget):
+    def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None):
         super().__init__()
         _ = translator(language)
         self._ = _
         self.setWindowTitle(_('Panasonic 2-in-1 Tablet Posture Management Tool'))
-        self.setWindowIcon(QIcon(str(data_root() / 'assets/work.mmoe.panasonic.PostureManager.png')))
-        self.resize(1000, 820)
-        self.setMinimumSize(760, 620)
-        self.navigationInterface.setExpandWidth(190)
-        self.navigationInterface.setMinimumExpandWidth(800)
+        self.setMicaEffectEnabled(False)
+        self.setCustomBackgroundColor('#fafafa', '#242424')
+        self.resize(500, 660)
+        self.setMinimumSize(420, 560)
+        self.titleBar.setFixedHeight(48)
+        self.titleBar.iconLabel.setFixedSize(72, 42)
+        self.titleBar.iconLabel.setAccessibleName("Let's note")
+        self.titleBar.titleLabel.setMinimumWidth(0)
+        self.update_mark()
+        qconfig.themeChangedFinished.connect(self.update_mark)
         self.client = client if client is not None else DemoClient(QTimer.singleShot) if demo else UnavailableClient()
-        self.home = Home(self.client, demo, _, self.notify, lambda: self.switchTo(self.settings), self)
-        self.settings = Settings(self.client, demo, _, self.notify, self)
-        self.about = Page('about', _('About'), _('Panasonic 2-in-1 Tablet Posture Management Tool'), demo, _, self)
-        card, box = self.about.card()
-        box.addWidget(SubtitleLabel(_('Version') + ' ' + __version__))
-        box.addWidget(BodyLabel(_('Author') + ' · adogecheems'))
-        notice = BodyLabel(_("Let's note is a trademark of Panasonic Corporation. The author does not claim any rights to the trademark and is not associated with it."))
-        notice.setWordWrap(True)
-        box.addWidget(notice)
-        card, box = self.about.card()
-        box.addWidget(StrongBodyLabel(_('Appearance')))
-        appearance = ComboBox()
-        for text in (_('System'), _('Light'), _('Dark')):
-            appearance.addItem(text)
-        appearance.currentIndexChanged.connect(lambda index: setTheme((Theme.AUTO, Theme.LIGHT, Theme.DARK)[index]))
-        box.addWidget(appearance)
-        self.about.box.addStretch()
-        self.addSubInterface(self.home, Icon.HOME, _('Current posture'))
-        self.addSubInterface(self.settings, Icon.SETTING, _('Settings'))
-        self.addSubInterface(self.about, Icon.INFO, _('About'), position=NavigationItemPosition.BOTTOM)
+        if demo and client is None:
+            self.client.scenario(scenario)
+        self.home = Home(self.client, _, self.notify, self)
+        self.settings = Settings(self.client, _, self.notify, self)
+        self.stackedWidget = QStackedWidget(self)
+        self.stackedWidget.addWidget(self.home)
+        self.stackedWidget.addWidget(self.settings)
+        self.navigation = SegmentedWidget(self)
+        self.navigation.addItem('posture', _('Current posture'), lambda: self.switchTo(self.home), Icon.HOME)
+        self.navigation.addItem('settings', _('Settings'), lambda: self.switchTo(self.settings), Icon.SETTING)
+        self.navigation.setCurrentItem('posture')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 48, 0, 8)
+        layout.setSpacing(4)
+        layout.addWidget(self.stackedWidget, 1)
+        footer = QHBoxLayout()
+        footer.setContentsMargins(20, 0, 20, 0)
+        footer.addWidget(self.navigation)
+        layout.addLayout(footer)
+        if demo:
+            note = CaptionLabel(_('Demo preview · Changes stay in this window.'))
+            note.setWordWrap(True)
+            note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(note)
         self.client.start(self.update_state, self.unavailable)
+
+    def update_mark(self):
+        name = 'lets-note-window-icon-dark.png' if isDarkTheme() else 'lets-note-window-icon.png'
+        path = data_root() / 'assets' / name
+        self.setWindowIcon(QIcon(str(path)))
+        self.titleBar.iconLabel.setPixmap(QPixmap(str(path)).scaled(
+            72, 42, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Keep the full accessible/OS title; elide only the narrow header text.
+        label = self.titleBar.titleLabel
+        label.setMaximumWidth(max(60, self.width() - 248))
+        label.setText(label.fontMetrics().elidedText(self.windowTitle(), Qt.TextElideMode.ElideRight,
+                                                    label.maximumWidth()))
+
+    def switchTo(self, page):
+        self.stackedWidget.setCurrentWidget(page)
+        self.navigation.setCurrentItem(page.objectName())
 
     def update_state(self, state):
         self.home.update_state(state)
@@ -396,12 +392,12 @@ class Window(FluentWindow):
         super().closeEvent(event)
 
 
-def run(*, demo=False, language=None) -> int:
+def run(*, demo=False, language=None, scenario='laptop') -> int:
     app = QApplication([sys.argv[0]])
     app.setStyle('Fusion')
     app.setApplicationName('Panasonic Posture Manager')
     setTheme(Theme.AUTO)
     setThemeColor('#7861d8')
-    window = Window(demo=demo, language=language)
+    window = Window(demo=demo, language=language, scenario=scenario)
     window.show()
     return app.exec()

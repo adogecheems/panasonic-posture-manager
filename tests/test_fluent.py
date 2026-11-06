@@ -71,6 +71,12 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--demo', result.stdout)
 
+    def test_scenario_requires_explicit_demo(self):
+        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
+                                 '--scenario', 'hardware'], text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('--scenario requires --demo', result.stderr)
+
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
@@ -168,7 +174,7 @@ assert not window.home.timer.isActive()
         self.run_ui('''
 from qfluentwidgets import setTheme, Theme
 translated = Window(demo=True, language='zh_CN')
-translated.resize(760, 620)
+translated.resize(500, 660)
 translated.show()
 setTheme(Theme.DARK)
 QTest.qWait(100)
@@ -177,6 +183,30 @@ assert translated.home.horizontalScrollBar().maximum() == 0
 translated.switchTo(translated.settings)
 QTest.qWait(100)
 assert translated.settings.horizontalScrollBar().maximum() == 0
-assert translated.grab().width() == 760
+assert translated.grab().width() == 500
 translated.close()
+''')
+
+    def test_compact_shell_logo_and_two_page_navigation(self):
+        self.run_ui('''
+from qfluentwidgets import setTheme, Theme
+from PyQt6.QtGui import QIcon
+from panasonic_posture.fluent.resources import data_root
+assert (window.width(), window.height()) == (500, 660)
+assert window.stackedWidget.count() == 2
+assert not hasattr(window, 'navigationInterface')
+assert window.stackedWidget.currentWidget() is window.home
+window.navigation.items['settings'].click()
+assert window.stackedWidget.currentWidget() is window.settings
+assert window.navigation.currentRouteKey() == 'settings'
+for theme, filename in ((Theme.LIGHT, 'lets-note-window-icon.png'),
+                        (Theme.DARK, 'lets-note-window-icon-dark.png')):
+    setTheme(theme)
+    QTest.qWait(50)
+    expected = QIcon(str(data_root() / 'assets' / filename)).pixmap(72, 42).toImage()
+    assert window.windowIcon().pixmap(72, 42).toImage() == expected
+    assert window.titleBar.iconLabel.pixmap().width() == 72
+    assert window.titleBar.iconLabel.pixmap().height() > 20
+window.switchTo(window.home)
+assert window.home.verticalScrollBar().maximum() == 0
 ''')
