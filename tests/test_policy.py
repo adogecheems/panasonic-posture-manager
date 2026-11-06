@@ -607,6 +607,34 @@ class PostureClassificationTests(PolicyTestCase):
         self.hold(175.0)
         self.assertEqual(self.policy.mode, MODE_STAND)
 
+    def test_repeated_sample_cannot_finish_stability_window(self):
+        self.hold(0.0)
+        self.step(80.0)
+        self.step(80.0)
+        reading = sample(80.0, stamp=self.now)
+        for offset in (0.5, 1.0, 1.5):
+            self.policy.update(self.now + offset, reading, False)
+            self.assertFalse(self.policy.stable)
+            self.assertIsNone(self.policy.pending_notification)
+        self.now += 1.5
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+
+    def test_repeated_sample_cannot_finish_prompt_entry_window(self):
+        self.hold(0.0)
+        # Fresh observations establish stability, but not the full entry time.
+        for _ in range(7):
+            self.step(80.0)
+        self.assertTrue(self.policy.stable)
+        self.assertIsNone(self.policy.pending_notification)
+        reading = sample(80.0, stamp=self.now)
+        for offset in (0.5, 1.0, 1.5):
+            self.policy.update(self.now + offset, reading, False)
+            self.assertIsNone(self.policy.pending_notification)
+        self.now += 1.5
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
+
     def test_slow_sensor_cadence_can_enter_stand(self):
         policy = Policy()
         stamp = 0.0

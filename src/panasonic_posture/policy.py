@@ -434,7 +434,9 @@ class Policy:
         self.stable = bool(
             weather
             and self.stable_since is not None
-            and now - self.stable_since >= self.config.stable_seconds
+            and self.last_stamp is not None
+            # Polling a cached reading is not new evidence of a stable pose.
+            and self.last_stamp - self.stable_since >= self.config.stable_seconds
         )
 
         if hardware is True:
@@ -576,10 +578,11 @@ class Policy:
         if self.stable and desired is not None and desired != self.mode:
             if self.pending != desired:
                 self.pending = desired
-                self.pending_since = now
+                self.pending_since = self.last_stamp
             elif (
                 self.pending_since is not None
-                and now - self.pending_since >= self.config.enter_seconds
+                and self.last_stamp is not None
+                and self.last_stamp - self.pending_since >= self.config.enter_seconds
             ):
                 self._set_mode(desired, now)
                 self._clear_timers()

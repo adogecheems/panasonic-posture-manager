@@ -175,6 +175,32 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual(self.bus.methods().count("Notify"), 3)
         self.assertEqual(self.notifier.epoch, 7)
 
+    def test_cached_samples_do_not_publish_a_premature_tent_notification(self):
+        controller = Controller()
+
+        def update(now, pitch, stamp):
+            angle = math.radians(pitch)
+            controller.update(now, SensorReading(
+                vector=(0.0, -9.8 * math.sin(angle), -9.8 * math.cos(angle)),
+                stamp=stamp, source=SensorSource.IIO,
+            ), hardware=False)
+            self.notifier.sync(controller.pending_notification, now=now)
+
+        for tick in range(21):
+            update(tick * 0.1, 0, tick * 0.1)
+        update(2.1, 80, 2.1)
+        update(2.2, 80, 2.2)
+        for tick in range(23, 41):
+            update(tick * 0.1, 80, 2.2)
+        self.assertNotIn("Notify", self.bus.methods())
+        # The next real observation still shows movement, not a stable tent.
+        update(4.1, 100, 4.1)
+        self.assertNotIn("Notify", self.bus.methods())
+        for tick in range(42, 66):
+            update(tick * 0.1, 100, tick * 0.1)
+        self.assertEqual(self.bus.methods().count("Notify"), 1)
+        self.assertEqual(self.notifier.epoch, controller.pending_notification)
+
     def test_notification_payload_carries_tent_action(self):
         self.notifier.sync(7, now=self.clock())
         method, parameters = self.bus.calls[-1]
