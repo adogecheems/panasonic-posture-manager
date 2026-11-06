@@ -7,6 +7,7 @@ from .illustration import draw_pixbuf
 from .posture import PosturePage
 from .settings import SettingsPage
 from .service import PostureService
+from ..frontend.ports import UIClient
 
 APPLICATION_ID = 'work.mmoe.panasonic.PostureManager'
 NAVIGATION_CSS = b'''
@@ -20,7 +21,7 @@ viewswitcherbar.posture-navigation viewswitcher button.toggle:hover:not(:checked
 
 class Application(Adw.Application):
     def __init__(self, application_id: str = APPLICATION_ID,
-                 service_factory: Callable[[], PostureService] = PostureService) -> None:
+                 service_factory: Callable[[], UIClient] = PostureService) -> None:
         super().__init__(application_id=application_id, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self._service_factory = service_factory
         self.window = None

@@ -1,8 +1,12 @@
 """Current posture, delayed feedback and asynchronous confirmation actions."""
 from typing import Callable
 import logging
+import math
+import time
 from gi.repository import Adw, Gtk, GLib
-from .service import PostureService
+from ..frontend.ports import UIClient
+from ..frontend.state import PostureModel, Detail, displayed_pose
+from ..frontend.actions import ActionRunner
 from .common import DATA_ROOT, _
 from .errors import describe_error
 from ..session.errors import error_text
@@ -11,31 +15,17 @@ from .illustration import posture_pixbuf, draw_pixbuf
 POSE_NAMES = {'laptop': _('Laptop'), 'tent': _('Tent'), 'stand': _('Stand'), 'tablet': _('Tablet')}
 
 
-def displayed_pose(state: dict) -> str:
-    applied = (state.get('applied') or {}).get('mode')
-    if applied == 'hardware':
-        return 'tablet'
-    if applied in POSE_NAMES:
-        return applied
-    manual = state.get('manual')
-    if not state.get('error_code') and manual in POSE_NAMES and (state.get('target') or {}).get('mode') == manual:
-        return manual
-    return state.get('pose') if state.get('pose') in POSE_NAMES else 'unknown'
-
-
 class PosturePage:
-    def __init__(self, service: PostureService, toast: Callable[[str], None] = lambda message: None) -> None:
+    def __init__(self, service: UIClient, toast: Callable[[str], None] = lambda message: None) -> None:
         self._service = service
         self._latest_state = None
         self._pose = 'laptop'
         self._pixbuf = None
-        self._busy_button = None
         self._epoch = None
         self._prompt = None
-        self._transition = None
         self._timer = 0
-        self._slow = False
-        self._connection = 0
+        self._model = PostureModel()
+        self._actions = ActionRunner(self._sync_buttons, self._action_failed, service.refresh)
         self.widget = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14,
                               valign=Gtk.Align.CENTER, margin_top=24, margin_bottom=24,
                               margin_start=24, margin_end=24)
@@ -62,15 +52,14 @@ class PosturePage:
 
     def update(self, state: dict) -> None:
         self._latest_state = state
-        mode = state['target']['mode']
-        pending = not state['error_code'] and state['session_connected'] and state['supported'] and mode != 'unavailable' and (state['applied'] or {}).get('mode') != mode
-        key = (state['instance'], state['generation'], mode)
-        if not pending or self._transition != key:
-            self._clear_transition()
-            if pending:
-                self._transition = key
-                self._timer = GLib.timeout_add(2000, self._show_slow)
-        pose = displayed_pose(state)
+        deadline = self._model.deadline
+        self._model.update(state, time.monotonic())
+        if deadline != self._model.deadline:
+            self._clear_timer()
+            if self._model.deadline is not None:
+                delay = max(1, math.ceil((self._model.deadline - time.monotonic()) * 1000))
+                self._timer = GLib.timeout_add(delay, self._show_slow)
+        pose = self._model.pose
         if pose != 'unknown' and pose != self._pose:
             self._pose = pose
             self.refresh_theme()
@@ -88,42 +77,43 @@ class PosturePage:
         if state is None:
             return
         text = ''
-        if state['error_code']:
+        if self._model.detail == Detail.ERROR:
             text = f"{_('Mode change failed')}: {error_text(state['error_code'])}"
-        elif not state['session_connected']:
+        elif self._model.detail == Detail.SESSION:
             text = _('Waiting for the desktop to get ready…')
-        elif not state['supported']:
+        elif self._model.detail == Detail.UNSUPPORTED:
             text = _('This model does not support automatic mode changes.')
-        elif state['target']['mode'] == 'unavailable':
-            if state['hardware'] is None:
-                text = _('The tablet switch is unavailable. Restart the background service if this continues.')
-            elif state['sensor_error'] or state['sensor_source'] == 'starting':
-                text = _('No posture data is available. Keep the device still; switching will resume automatically.')
-        elif self._slow:
+        elif self._model.detail == Detail.SWITCH:
+            text = _('The tablet switch is unavailable. Restart the background service if this continues.')
+        elif self._model.detail == Detail.SENSOR:
+            text = _('No posture data is available. Keep the device still; switching will resume automatically.')
+        elif self._model.detail == Detail.SLOW:
             text = _('Switching is taking longer than usual. Please wait or choose another mode in Settings.')
-        elif state['support_tier'] == 'compatible':
+        elif self._model.detail == Detail.COMPATIBLE:
             text = _('Compatibility mode: this model is supported but has not been individually validated.')
         self.detail.set_label(text)
         self.detail.set_visible(bool(text))
 
     def _show_slow(self):
         self._timer = 0
-        self._slow = True
+        self._model.advance(time.monotonic())
         self._render_detail()
         return GLib.SOURCE_REMOVE
 
-    def _clear_transition(self):
-        self._transition = None
-        self._slow = False
+    @property
+    def _slow(self):
+        return self._model.slow
+
+    def _clear_timer(self):
         if self._timer:
             GLib.source_remove(self._timer)
             self._timer = 0
 
     def set_unavailable(self) -> None:
-        self._connection += 1
+        self._actions.disconnect()
+        self._model.disconnect()
         self._latest_state = None
-        self._busy_button = None
-        self._clear_transition()
+        self._clear_timer()
         self.detail.set_label(_('Background service unavailable'))
         self.detail.set_visible(True)
         self.confirm_button.set_visible(False)
@@ -145,36 +135,18 @@ class PosturePage:
 
     def _confirm(self, button):
         if self._epoch is not None:
-            self._run_action(lambda: self._service.call('ConfirmStand' if self._prompt == 'stand' else 'ConfirmTent', GLib.Variant('(u)', (self._epoch,))), button)
+            self._actions.run('confirm', lambda: self._service.confirm_prompt(self._prompt, self._epoch))
 
     def _retry(self, button):
         if self._latest_state:
-            self._run_action(lambda: self._service.retry(self._latest_state['manual']), button)
+            self._actions.run('retry', lambda: self._service.retry(self._latest_state['manual']))
 
-    def _run_action(self, action, button):
-        if self._busy_button:
-            return
-        self._busy_button = button
-        connection = self._connection
-        self._sync_buttons()
-
-        def finished(result):
-            if connection != self._connection:
-                return
-            try:
-                result.result()
-                self._service.refresh()
-            except Exception as error:
-                self.detail.set_label(describe_error(error))
-                self.detail.set_visible(True)
-            finally:
-                self._busy_button = None
-                self._sync_buttons()
-
-        action().add_done_callback(finished)
+    def _action_failed(self, error):
+        self.detail.set_label(describe_error(error))
+        self.detail.set_visible(True)
 
     def _sync_buttons(self):
         self.confirm_button.set_label(_('Enter stand mode') if self._prompt == 'stand' else _('Enter tent mode'))
-        self.retry_button.set_label(_('Retrying…') if self._busy_button is self.retry_button else _('Retry'))
-        self.confirm_button.set_sensitive(self._busy_button is None)
-        self.retry_button.set_sensitive(self._busy_button is None)
+        self.retry_button.set_label(_('Retrying…') if self._actions.busy == 'retry' else _('Retry'))
+        self.confirm_button.set_sensitive(self._actions.busy is None)
+        self.retry_button.set_sensitive(self._actions.busy is None)

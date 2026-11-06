@@ -6,6 +6,7 @@ from concurrent.futures import Future
 from gi.repository import Gio, GLib
 from ..linux_contract import NAME as BUS_NAME, PATH as OBJECT_PATH, IFACE as INTERFACE
 from ..state_codec import parse_state_snapshot
+from ..frontend.ports import Preference
 from .errors import ServiceUnavailable, unknown_method
 
 LOG = logging.getLogger(__name__)
@@ -113,13 +114,33 @@ class PostureService:
         proxy.call(method, parameters, Gio.DBusCallFlags.NONE, timeout_ms, None, finished)
         return future
 
+    def set_mode(self, mode: str) -> Future:
+        return self.call('SetMode', GLib.Variant('(s)', (mode,)))
+
+    def set_preference(self, field: Preference, enabled: bool) -> Future:
+        methods = {'tent_enabled': 'SetTentEnabled', 'tent_prompt': 'SetTentPrompt',
+                   'stand_prompt': 'SetStandPrompt'}
+        return self.call(methods[field], GLib.Variant('(b)', (enabled,)))
+
+    def confirm_prompt(self, prompt: str | None, epoch: int) -> Future:
+        if prompt not in (None, 'tent', 'stand'):
+            raise ValueError('unknown prompt')
+        return self.call('ConfirmStand' if prompt == 'stand' else 'ConfirmTent',
+                         GLib.Variant('(u)', (epoch,)))
+
+    def calibrate(self) -> Future:
+        return self.call('CalibrateSensor')
+
+    def reset_calibration(self) -> Future:
+        return self.call('ResetSensorCalibration')
+
     def retry(self, fallback_mode: str | None = None) -> Future:
         future = Future()
 
         def finished(result):
             error = result.exception()
             if error and fallback_mode and unknown_method(error):
-                self.call('SetMode', GLib.Variant('(s)', (fallback_mode,))).add_done_callback(complete)
+                self.set_mode(fallback_mode).add_done_callback(complete)
             else:
                 complete(result)
 

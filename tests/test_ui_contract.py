@@ -29,7 +29,7 @@ def state(**values):
     return result
 
 
-class FakeService:
+class FakeService(PostureService):
     def __init__(self):
         self.calls = []
         self.refreshes = 0
@@ -54,6 +54,24 @@ class FakeService:
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_operation_adapter_encodes_existing_bus_contract(self):
+        service = PostureService()
+        fake = FakeService()
+        service.call = fake.call
+        service.set_mode('stand')
+        service.set_preference('tent_enabled', False)
+        service.set_preference('tent_prompt', True)
+        service.set_preference('stand_prompt', False)
+        service.confirm_prompt('tent', 7)
+        service.confirm_prompt('stand', 8)
+        service.calibrate()
+        service.reset_calibration()
+        self.assertEqual([call[:2] for call in fake.calls], [
+            ('SetMode', ('stand',)), ('SetTentEnabled', (False,)),
+            ('SetTentPrompt', (True,)), ('SetStandPrompt', (False,)),
+            ('ConfirmTent', (7,)), ('ConfirmStand', (8,)),
+            ('CalibrateSensor', None), ('ResetSensorCalibration', None)])
+
     def test_error_mapping_shared_and_details_hidden(self):
         self.assertEqual(set(ERROR_MESSAGES), set(ALL_ERROR_CODES))
         for code in ALL_ERROR_CODES:

@@ -1,8 +1,9 @@
 """Settings widgets with serial, coalesced asynchronous writes."""
 from typing import Callable
-from gi.repository import Adw, Gdk, Gtk, GLib
+from gi.repository import Adw, Gdk, Gtk
 from .. import __version__
-from .service import PostureService
+from ..frontend.ports import UIClient
+from ..frontend.actions import SettingsModel, ActionRunner
 from .common import _
 from .errors import describe_error
 
@@ -21,29 +22,28 @@ NEXT_KEYS = {Gdk.KEY_Down, Gdk.KEY_Right, Gdk.KEY_KP_Down, Gdk.KEY_KP_Right}
 
 
 class SettingsPage:
-    def __init__(self, service: PostureService, toast: Callable[[str], None] = lambda message: None) -> None:
+    def __init__(self, service: UIClient, toast: Callable[[str], None] = lambda message: None) -> None:
         self._service, self._toast = service, toast
         self._syncing = False
         self._latest_state = None
-        self._pending = {}
-        self._active = set()
-        self._connection = 0
-        self._calibrating = False
+        self._model = SettingsModel(service, self._refresh_widgets, self._write_failed)
+        self._calibration = ActionRunner(self._calibration_state, self._calibration_failed,
+                                         self._calibration_succeeded)
         self.radios = {}
         self.widget = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(title=_('Automatic mode'))
         self.widget.add(group)
         self.switches = {}
-        for field, method, title, subtitle in (
-            ('tent_enabled', 'SetTentEnabled', _('Enable tent mode'), _('Allow automatic detection of tent mode')),
-            ('tent_prompt', 'SetTentPrompt', _('Tent mode notification'), _('Ask before switching to tent mode when the base is upright')),
-            ('stand_prompt', 'SetStandPrompt', _('Stand mode notification'), _('Ask before switching to stand mode when the base is folded back')),
+        for field, title, subtitle in (
+            ('tent_enabled', _('Enable tent mode'), _('Allow automatic detection of tent mode')),
+            ('tent_prompt', _('Tent mode notification'), _('Ask before switching to tent mode when the base is upright')),
+            ('stand_prompt', _('Stand mode notification'), _('Ask before switching to stand mode when the base is folded back')),
         ):
             switch = Adw.SwitchRow(title=title, subtitle=subtitle)
             switch.update_property([Gtk.AccessibleProperty.LABEL], [title])
             group.add(switch)
             self.switches[field] = switch
-            switch.connect('notify::active', lambda row, pspec, f=field, m=method: self._switch_changed(row, f, m))
+            switch.connect('notify::active', lambda row, pspec, f=field: self._switch_changed(row, f))
         sensor = Adw.PreferencesGroup(title=_('Sensor'))
         self.widget.add(sensor)
         self.calibration_row = Adw.ActionRow(title=_('Sensor calibration'), subtitle=_('Place the device in laptop form on a flat desk, then calibrate.'))
@@ -93,28 +93,25 @@ class SettingsPage:
 
     def update(self, state: dict) -> None:
         self._latest_state = state
+        self._model.update(state)
         self._syncing = True
         try:
             for field, switch in self.switches.items():
-                switch.set_active(self._pending.get(field, state[field]))
-                switch.set_sensitive(state['supported'])
-            tent_enabled = self.switches['tent_enabled'].get_active()
-            self.switches['tent_prompt'].set_sensitive(state['supported'] and tent_enabled)
-            mode = self._pending.get('manual', state['manual'])
+                switch.set_active(self._model.value(field))
+                switch.set_sensitive(self._model.preference_enabled(field))
+            mode = self._model.value('manual')
             if mode in self.radios:
                 self.radios[mode].set_active(True)
             for key, button in self.radios.items():
-                button.set_sensitive(state['hardware'] is not True and state['supported'] and (key != 'tent' or tent_enabled))
+                button.set_sensitive(self._model.mode_enabled(key))
             self._calibration_state()
         finally:
             self._syncing = False
 
     def set_unavailable(self) -> None:
-        self._connection += 1
+        self._model.disconnect()
+        self._calibration.disconnect()
         self._latest_state = None
-        self._pending.clear()
-        self._active.clear()
-        self._calibrating = False
         for widget in (*self.radios.values(), *self.switches.values(), self.calibrate_button, self.reset_button):
             widget.set_sensitive(False)
 
@@ -129,39 +126,22 @@ class SettingsPage:
 
     def _mode_changed(self, button, mode):
         if not self._syncing and button.get_active() and button.get_sensitive():
-            self._queue('manual', 'SetMode', mode, '(s)')
+            self._model.queue('manual', mode)
 
-    def _switch_changed(self, row, field, method):
+    def _switch_changed(self, row, field):
         if not self._syncing and row.get_sensitive():
-            self._queue(field, method, row.get_active(), '(b)')
+            self._model.queue(field, row.get_active())
 
-    def _queue(self, field, method, value, signature):
-        self._pending[field] = value
-        if field not in self._active:
-            self._active.add(field)
-            self._write(field, method, signature)
+    @property
+    def _calibrating(self):
+        return self._calibration.busy is not None
 
-    def _write(self, field, method, signature):
-        requested = self._pending[field]
-        connection = self._connection
+    def _refresh_widgets(self):
+        if self._latest_state is not None:
+            self.update(self._latest_state)
 
-        def finished(result):
-            if connection != self._connection:
-                return
-            error = result.exception()
-            # A failure from an older selection must not discard a newer one.
-            if self._pending.get(field) != requested:
-                self._write(field, method, signature)
-                return
-            self._pending.pop(field, None)
-            self._active.discard(field)
-            if error:
-                self._toast(f"{_('Unable to change settings')}: {describe_error(error)}")
-                if self._latest_state:
-                    self.update(self._latest_state)
-            self._service.refresh()
-
-        self._service.call(method, GLib.Variant(signature, (requested,))).add_done_callback(finished)
+    def _write_failed(self, error):
+        self._toast(f"{_('Unable to change settings')}: {describe_error(error)}")
 
     def _calibration_state(self):
         state = self._latest_state
@@ -187,29 +167,24 @@ class SettingsPage:
         dialog.set_response_appearance('calibrate', Adw.ResponseAppearance.SUGGESTED)
         dialog.set_default_response('calibrate')
         dialog.set_close_response('cancel')
-        connection = self._connection
-        dialog.connect('response', lambda d, response: self._calibrate(False) if response == 'calibrate' and connection == self._connection else None)
+        connection = self._model.connection
+        dialog.connect('response', lambda d, response: self._calibrate(False) if response == 'calibrate' and connection == self._model.connection else None)
         dialog.present()
 
     def _calibrate(self, reset=False):
         if self._calibrating or self._latest_state is None:
             return
-        self._calibrating = True
-        connection = self._connection
-        self._calibration_state()
-        (self.reset_button if reset else self.calibrate_button).set_label(_('Resetting…') if reset else _('Calibrating…'))
+        self._calibration_reset = reset
+        action = self._service.reset_calibration if reset else self._service.calibrate
+        self._calibration.run('reset' if reset else 'calibrate', action)
+        if self._calibrating:
+            (self.reset_button if reset else self.calibrate_button).set_label(_('Resetting…') if reset else _('Calibrating…'))
 
-        def finished(result):
-            if connection != self._connection:
-                return
-            error = result.exception()
-            if error:
-                prefix = _('Unable to reset sensor calibration') if reset else _('Unable to calibrate sensor')
-                self._toast(f'{prefix}: {describe_error(error)}')
-            else:
-                self._toast(_('Sensor direction reset.') if reset else _('Sensor direction calibrated.'))
-            self._calibrating = False
-            self._calibration_state()
-            self._service.refresh()
+    def _calibration_failed(self, error):
+        prefix = _('Unable to reset sensor calibration') if self._calibration_reset else _('Unable to calibrate sensor')
+        self._toast(f'{prefix}: {describe_error(error)}')
+        self._service.refresh()
 
-        self._service.call('ResetSensorCalibration' if reset else 'CalibrateSensor').add_done_callback(finished)
+    def _calibration_succeeded(self):
+        self._toast(_('Sensor direction reset.') if self._calibration_reset else _('Sensor direction calibrated.'))
+        self._service.refresh()
