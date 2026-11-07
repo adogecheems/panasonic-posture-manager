@@ -1,59 +1,39 @@
 # AGENTS.md — Agent 执行手册
 
-适用于在本仓库中工作的 AI coding agent。用户本轮明确指令优先，其次是本文件、
-`README.md` 和代码中的历史注释。上层运行环境的限制更严格时，从其限制。
-当前行为以代码和测试为准。发现文档与实现不符时，同步修正文档。
+本手册适用于在本仓库工作的 AI 助手。先遵守运行环境的限制，再依次遵守用户本轮指令、本手册、README 和代码中的历史注释。用代码和测试核对当前行为，有出入时修正文档。
+
+按任务查阅：[代码与测试](#4-定位代码与测试) · [哪些操作需要授权](#7-授权边界) · [验证命令](#8-验证) · [提交规则](#11-git-与提交) · [设计变更记录](#13-设计变更记录)。
 
 ## 1. 工作流程
 
-1. 用 `git status --short --untracked-files=all` 和目标文件的 `git diff` 确认已有改动归属。
-2. 用 `rg` 定位入口、符号和测试。编辑前追踪「入口 → 决策 → 副作用 → 状态回执 → 测试」，
-   明确决策模块、执行进程、兼容契约和可验证的结果。纯文档任务核对对应的代码、测试、命令和链接。
-3. 改变设计前读[设计变更记录](#13-设计变更记录)。先运行最近的测试建立基线，区分既有失败与本轮问题。
-4. 先复现问题或解释失败机制，再修复根因。复用现有事务和抽象，只改任务所需文件。
-   行为变更先写能复现问题的测试，覆盖正常、失败和有安全意义的边界。
-5. 先跑目标检查，再按[验证要求](#8-验证)扩大范围。检查差异和生成物，按[提交规则](#11-git-与提交)交付。
+1. 开始前运行 `git status --short --untracked-files=all`，查看目标文件的 `git diff`。默认已有改动属于用户。
+2. 用 `rg` 找入口和测试。弄清谁做决定、哪个进程执行、怎样确认成功，以及哪些调用方依赖现有行为。文档任务核对代码、测试、命令和链接。
+3. 先跑相关测试，记下已有失败。改变设计前，查阅第 13 节的历史决定。
+4. 先复现问题或说明原因，再修根因。行为变更先写回归测试，覆盖正常、失败和安全边界。只改必要文件，复用现有事务。
+5. 先跑目标测试，再按第 8 节扩大检查范围。检查差异和生成物，按第 11 节单独提交。
 
 ## 2. 项目和文档范围
 
-- 用户可见行为、机型和桌面支持范围写入 [README.md](README.md)。安装、构建、发布和运维写入 [USAGE.md](USAGE.md)。
-  用户文档保留这两页。不要恢复旧的 `docs/`、`CHANGELOG` 或独立硬件验收文档。
-- 机型支持等级核对 `data/profiles/` 和运行时 probe。其他 360° 翻转本按硬件能力判断兼容性。
-  支持 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland；`fluent/` 仅为 Windows 界面预览，不代表 Windows 硬件支持。
-- 使用 Python 3.11+、C11 relay、PyGObject／GTK 4／libadwaita。Python 包的运行时依赖列表保持为空，PyGObject 由发行版提供。
+- [README](README.md) 面向使用者，说明功能、机型和桌面支持。[USAGE](USAGE.md) 说明安装、构建、发布和运维。用户文档只保留这两页，不恢复旧的 `docs/`、`CHANGELOG` 或独立硬件验收文档。
+- 对照 `data/profiles/` 和运行时探针确认机型支持等级。其他 360° 翻转本按硬件能力判断。桌面支持限于 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland。`fluent/` 是 Windows 界面预览。
+- 使用 Python 3.11+、C11 relay 和 GTK 4/libadwaita。PyGObject 由发行版提供，Python 包的运行时依赖列表保持为空。
 
 ## 3. 运行边界与状态回执
 
-- **界面共用层**位于 `frontend/`，保持标准库依赖。页面通过 `frontend/ports.py` 的
-  操作接口访问服务；传输参数、状态校验和平台错误处理留在客户端边界。共用展示与交互
-  规则由 `frontend/state.py`、`frontend/actions.py` 管理，时间与主循环调度由前端注入。
-  Future 完成和状态回调必须回到界面所属主循环，断线时使旧连接结果失效。
+- **系统服务**以 root 身份持有系统 D-Bus 名。`service/daemon.py` 验证并分发调用、发布状态。`policy.py` 判断姿态，`controller.py` 生成目标和代次（generation），`service/engine.py` 管理租约并安排执行。用户显式开启触摸唤醒后，服务可管理唯一固定 USB 触摸屏的唤醒属性。恢复前核对设备实例和所有权。
+- **C relay** 由 `service/actuator.py` 管理。只有它能打开 `/dev/input` 和 `/dev/uinput`、抓取内置键盘和触控板。stdout 只写 JSON 行，日志写 stderr。软件接管时可只读观察唯一直接触摸屏的接触开始。经当前已认证会话确认后，独立虚拟设备在时限内发送专用唤醒键。禁止抓取触摸屏、记录坐标或读取键盘内容。
+- **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
+- **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 预览默认显示后台不可用，指定 `--demo` 才使用内存数据。预览不操作真实设备或桌面。
+- **探针**只读 sysfs 和机型配置，禁止打开输入设备或写入内核。
 
-- **共用逻辑**包括姿态策略、服务引擎、会话运行时和显示事务。平台实现通过
-  `service/ports.py` 和 `session/ports.py` 接入。Linux 的采样时钟、设备、设置、
-  D-Bus 和桌面组件由 `service/application.py` 与 `session/agent.py` 装配。共用层使用
-  `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`／`DeviceInfo` 和输入完成判定；
-  Linux 配置与传输分类留在平台边界。显示事务必须显式注入恢复日志。
-- **root 系统服务**拥有系统 D-Bus 名。`service/daemon.py` 验证、分发方法调用并发布状态，
-  `service/engine.py` 编排领域状态、租约和执行事务。传感器和硬件观察结果经 `policy.py` 决策，
-  由 `controller.py` 生成 `Target` 和 generation。Linux 系统服务可按显式设置管理唯一固定 USB 触摸屏的唤醒属性，恢复时须核对设备实例和所有权。
-- **C relay** 由 `service/actuator.py` 管理，是唯一可打开 `/dev/input`、`/dev/uinput`
-  和抓取内置键盘、触控板的组件。stdout 专用于 JSON 行协议，日志写 stderr。
-  软件输入接管有效时可只读观察唯一触摸屏的接触开始，由已认证的当前会话确认后
-  通过独立虚拟设备发送有界的专用唤醒键；不抓取触摸屏、不记录坐标或读取键盘内容。
-- **用户会话适配器**先取得系统总线上的 per-uid 名，再操作显示。同一用户只运行一个实例。
-  `session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。
-  Linux 客户端用 `GetState` 读取快照，用 `SessionUpdate` 或登录／熄屏时的 `SessionUpdateUnattended` 上报该 generation 的准备状态并维护租约。
-  系统服务综合会话与 relay 的执行结果，
-  经 `GetState`／`StateChanged` 发布确认状态。
-- **Linux UI** 只通过 D-Bus 发起操作并渲染已校验的状态快照。Windows Fluent 预览默认
-  使用不可用客户端，显式 `--demo` 才使用内存演示客户端；两者均不操作真实设备或桌面。**只读探针**仅查看 sysfs 和 profile，
-  禁止打开输入设备或写入内核。
+**接入平台。** 姿态策略、服务引擎、会话运行时和显示事务可共用。实现 `service/ports.py` 和 `session/ports.py` 中的接口。共用层使用 `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`、`DeviceInfo` 和输入完成判定。Linux 在 `service/application.py` 和 `session/agent.py` 接入时钟、设备、设置、D-Bus 和桌面组件。平台负责配置和通信错误分类。显示事务必须显式传入恢复日志。
+
+**接入界面。** `frontend/` 只依赖标准库。页面通过 `frontend/ports.py` 操作服务，客户端负责传输参数、状态校验和平台错误。`frontend/state.py` 和 `frontend/actions.py` 管理展示和交互。前端提供时钟与调度，在界面主循环处理状态和 Future 完成回调。断线时使旧连接的结果失效。
 
 ## 4. 定位代码与测试
 
 Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/test_*.py`。
-按改动选择相关行，再跟踪实际调用方。
+先按下表找入口和测试，再追踪实际调用方。
 
 | 改动 | 先读 | 目标验证 |
 | --- | --- | --- |
@@ -66,7 +46,8 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | relay、物理开关、输入抓取 | `backend/`、`service/actuator.py`、`protocol.py` | `make check-c`、`test_actuator`、`test_sysfs`；涉及会话时加 `make check-dbus` |
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
-| UI 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
+| 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
+| GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
 ## 5. 兼容契约与联动检查
@@ -206,7 +187,7 @@ make WERROR=1 check
 
 ## 13. 设计变更记录
 
-以下记录是本仓库的设计决策历史。规则：
+历史记录按日期排列，可能提到已替换的实现。查找现行规则先看第 3 至 6 节，追溯原因再按功能名查本节。
 
 - 改变产品行为、系统架构、权限边界、协议/状态/持久化 schema、默认策略、UI 交互
   模型、兼容范围或发布语义时，必须在同一改动中追加记录。
