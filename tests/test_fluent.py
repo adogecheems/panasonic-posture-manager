@@ -114,10 +114,29 @@ window = Window(demo=True, language='en')
 window.show()
 QTest.qWait(100)
 '''
-        result = subprocess.run([sys.executable, '-c', prelude + body + '\nwindow.close()\n'],
+        cleanup = '''
+from PyQt6.QtCore import QCoreApplication, QEvent
+from PyQt6 import sip
+if not sip.isdeleted(window):
+    window.close()
+QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+assert sip.isdeleted(window), 'Closed windows must be destroyed before interpreter shutdown'
+'''
+        result = subprocess.run([sys.executable, '-c', prelude + body + cleanup],
                                 env=env, text=True, capture_output=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn('Traceback', result.stderr)
+
+    def test_event_loop_destroys_closed_window(self):
+        self.run_ui('''
+from PyQt6.QtCore import QTimer
+from PyQt6 import sip
+app.setQuitOnLastWindowClosed(True)
+QTimer.singleShot(0, window.close)
+assert app.exec() == 0
+assert sip.isdeleted(window)
+assert window.client._stopped
+''')
 
     def test_mode_settings_and_calibration(self):
         self.run_ui('''

@@ -25,6 +25,9 @@ class Window(FluentWidget):
         super().__init__()
         _ = translator(language)
         self._ = _
+        # Destroy the Qt object tree while the event loop can still process
+        # deferred deletion, before PyQt's interpreter-exit wrapper cleanup.
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setWindowTitle(_('Panasonic 2-in-1 Tablet Posture Management Tool'))
         self.setMicaEffectEnabled(False)
         self.setCustomBackgroundColor(WINDOW_LIGHT, WINDOW_DARK)
