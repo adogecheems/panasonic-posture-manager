@@ -1,12 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" role="img" aria-label="折叠平板线条示意图" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-<path d="M21.00,126.12 L228.32,170.88 L299.00,117.87 L91.68,73.11 Z" stroke-width="1.8" fill="var(--app-bg, white)"/>
-<path d="M21.00,120.58 L228.32,165.35 L299.00,112.34 L91.68,67.58 Z" stroke-width="1.8" fill="var(--app-bg, white)"/>
-<path d="M91.68,67.58 L91.68,73.11" stroke-width="1.2" fill="none"/>
-<path d="M299.00,112.34 L299.00,117.87" stroke-width="1.2" fill="none"/>
-<path d="M21.00,116.89 L228.32,161.66 L299.00,108.65 L91.68,63.88 Z" stroke-width="1.8" fill="var(--app-bg, white)"/>
-<path d="M21.00,114.13 L228.32,158.89 L299.00,105.88 L91.68,61.12 Z" stroke-width="1.8" fill="var(--app-bg, white)"/>
-<path d="M35.29,111.66 L225.34,152.69 L284.71,108.16 L94.66,67.13 Z" stroke-width="1.05" fill="none"/>
-<path d="M189.92,84.87 L195.10,85.99" stroke-width="1.25" fill="none"/>
-<path d="M41.73,118.60 L69.38,124.57" stroke-width="3.1" fill="none"/>
-<path d="M179.95,148.44 L207.59,154.41" stroke-width="3.1" fill="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" role="img" aria-label="折叠平板姿态示意图"
+     fill="var(--app-bg, white)" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M50 178.1 L50 187.1 Q50 190.3 56.8 189.2 L196.2 165.8 Q207 164 213.3 155 L261.7 85 Q264 81.7 264 79.9 L264 70.9 Z"/>
+  <path d="M100.7 103 Q107 94 117.8 92.2 L257.2 68.8 Q268 67 261.7 76 L213.3 146 Q207 155 196.2 156.8 L56.8 180.2 Q46 182 52.3 173 Z"/>
+  <path d="M105.8 105 Q109.2 100.1 115.1 99.1 L249.8 76.5 Q255.7 75.5 252.3 80.5 L209.3 142.5 Q205.9 147.4 199.9 148.4 L65.3 171 Q59.3 172 62.8 167.1 Z" fill="currentColor" fill-opacity="0.88" stroke="none"/>
+  <path d="M183.2 84.6 L186.4 84.1" stroke-width="1.8"/>
+  <path d="M161.9 162.6 L174.8 160.4" transform="translate(0 5)" stroke="#0068cc" stroke-width="2.4"/>
 </svg>
