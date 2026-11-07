@@ -6,3 +6,4 @@ src/panasonic_posture/ui/errors.py
 src/panasonic_posture/ui/posture.py
 src/panasonic_posture/ui/settings.py
 src/panasonic_posture/fluent/app.py
+src/panasonic_posture/fluent/pages.py
