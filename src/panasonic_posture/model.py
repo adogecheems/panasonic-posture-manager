@@ -180,8 +180,6 @@ class StateSnapshot:
     model: str = ""
     vendor: str = ""
     touch_wake: int | None = None
-    suspend_touch_wake: bool = False
-    suspend_touch_wake_available: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -193,8 +191,6 @@ class StateSnapshot:
             "hardware_status": str(self.hardware_status),
             "manual": str(self.manual),
             "tent_enabled": self.tent_enabled,
-            "suspend_touch_wake": self.suspend_touch_wake,
-            "suspend_touch_wake_available": self.suspend_touch_wake_available,
             "tent_prompt": self.tent_prompt,
             "stand_prompt": self.stand_prompt,
             "target": self.target.to_dict(),

@@ -42,11 +42,15 @@ class SettingsLoadTests(unittest.TestCase):
             self.store().load(), Settings(tent_prompt=True, stand_prompt=True)
         )
 
-    def test_suspend_wake_is_opt_in_and_requires_boolean(self):
-        self.store().save(Settings(suspend_touch_wake=True))
-        self.assertTrue(self.store().load().suspend_touch_wake)
-        with self.assertRaises(ValueError):
-            self.store()._parse(dict(version=1, tent_prompt=True, suspend_touch_wake=1))
+    def test_retired_suspend_wake_preference_is_ignored_and_removed_on_save(self):
+        self.path.write_text(
+            '{"version": 1, "tent_prompt": true, "suspend_touch_wake": true}',
+            encoding="utf-8",
+        )
+        settings = self.store().load()
+        self.assertEqual(settings, Settings())
+        self.store().save(settings)
+        self.assertNotIn("suspend_touch_wake", json.loads(self.path.read_text()))
 
     def test_round_trip_tent_enabled(self) -> None:
         self.store().save(Settings(tent_enabled=False))
@@ -67,7 +71,6 @@ class SettingsLoadTests(unittest.TestCase):
             {
                 "version": 1,
                 "tent_enabled": True,
-                "suspend_touch_wake": False,
                 "tent_prompt": False,
                 "stand_prompt": False,
                 "sensor_calibration": None,

@@ -118,8 +118,7 @@ class PostureService:
         return self.call('SetMode', GLib.Variant('(s)', (mode,)))
 
     def set_preference(self, field: Preference, enabled: bool) -> Future:
-        methods = {'suspend_touch_wake': 'SetSuspendTouchWake',
-                   'tent_enabled': 'SetTentEnabled', 'tent_prompt': 'SetTentPrompt',
+        methods = {'tent_enabled': 'SetTentEnabled', 'tent_prompt': 'SetTentPrompt',
                    'stand_prompt': 'SetStandPrompt'}
         return self.call(methods[field], GLib.Variant('(b)', (enabled,)))
 

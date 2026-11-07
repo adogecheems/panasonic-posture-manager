@@ -327,8 +327,6 @@ class Daemon:
                 self.application.engine.set_mode(str(arguments[0]))
             elif method == "Retry":
                 self.application.engine.retry()
-            elif method == "SetSuspendTouchWake":
-                self.application.engine.set_suspend_touch_wake(bool(arguments[0]))
             elif method == "SetTentEnabled":
                 self.application.engine.set_tent_enabled(bool(arguments[0]))
             elif method == "SetTentPrompt":

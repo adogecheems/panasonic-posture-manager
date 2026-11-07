@@ -81,6 +81,12 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn('unavailable', describe_error(ServiceUnavailable()))
         self.assertEqual(describe_error(Exception('AccessDenied: PRIVATE')), error_text('access-denied'))
 
+    def test_removed_suspend_wake_fields_do_not_reappear_in_state(self):
+        decoded = parse_state(json.dumps(state(
+            suspend_touch_wake=True, suspend_touch_wake_available=True)))
+        self.assertNotIn('suspend_touch_wake', decoded)
+        self.assertNotIn('suspend_touch_wake_available', decoded)
+
     def test_parse_state_strict_and_compatible_defaults(self):
         raw = state()
         for field in ('tent_enabled', 'posture_pending', 'touch_wake'):
@@ -413,10 +419,8 @@ assert not toasts
 service.calls[1][2].set_exception(Exception('internal-error'))
 assert settings.radios['auto'].get_active()
 assert len(toasts) == 1
-assert not settings.switches['suspend_touch_wake'].get_sensitive()
-assert 'No supported' in settings.switches['suspend_touch_wake'].get_subtitle()
-settings.update(state(suspend_touch_wake_available=True))
-for field, method in [('suspend_touch_wake','SetSuspendTouchWake'),('tent_enabled','SetTentEnabled'),('tent_prompt','SetTentPrompt'),('stand_prompt','SetStandPrompt')]:
+assert 'suspend_touch_wake' not in settings.switches
+for field, method in [('tent_enabled','SetTentEnabled'),('tent_prompt','SetTentPrompt'),('stand_prompt','SetStandPrompt')]:
     initial = settings.switches[field].get_active()
     settings.switches[field].set_active(not initial)
     settings.switches[field].set_active(initial)

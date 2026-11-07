@@ -43,7 +43,6 @@ DBUS_XML = """<node>
     <method name="GetState"><arg type="s" direction="out"/></method>
     <method name="SetMode"><arg type="s" direction="in"/></method>
     <method name="Retry"/>
-    <method name="SetSuspendTouchWake"><arg type="b" direction="in"/></method>
     <method name="SetTentEnabled"><arg type="b" direction="in"/></method>
     <method name="SetTentPrompt"><arg type="b" direction="in"/></method>
     <method name="SetStandPrompt"><arg type="b" direction="in"/></method>

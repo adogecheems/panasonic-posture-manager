@@ -55,6 +55,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn('<method name="Retry"/>', protocol.DBUS_XML)
 
     def test_dbus_xml_exposes_stand_prompt_methods(self):
+        self.assertNotIn('name="SetSuspendTouchWake"', protocol.DBUS_XML)
         self.assertIn('<method name="SetStandPrompt">', protocol.DBUS_XML)
         self.assertIn('<method name="ConfirmStand">', protocol.DBUS_XML)
 

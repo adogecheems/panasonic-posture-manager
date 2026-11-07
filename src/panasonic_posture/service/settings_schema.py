@@ -12,9 +12,6 @@ def parse_settings(data: object) -> Settings:
     version = data.get("version")
     if version != SETTINGS_VERSION:
         raise ValueError(f"unsupported settings version {version!r}")
-    suspend_touch_wake = data.get("suspend_touch_wake", False)
-    if not isinstance(suspend_touch_wake, bool):
-        raise ValueError("suspend_touch_wake must be a boolean")
     tent_enabled = data.get("tent_enabled", True)
     if not isinstance(tent_enabled, bool):
         raise ValueError("tent_enabled must be a boolean")
@@ -31,7 +28,6 @@ def parse_settings(data: object) -> Settings:
     except ValueError as error:
         raise ValueError(f"invalid sensor_calibration: {error}") from error
     return Settings(
-        suspend_touch_wake=suspend_touch_wake,
         tent_enabled=tent_enabled,
         tent_prompt=tent_prompt,
         stand_prompt=stand_prompt,
@@ -44,7 +40,6 @@ def encode_settings(settings: Settings) -> dict:
         raise TypeError("settings must be a Settings instance")
     return {
         "version": SETTINGS_VERSION,
-        "suspend_touch_wake": settings.suspend_touch_wake,
         "tent_enabled": bool(settings.tent_enabled),
         "tent_prompt": bool(settings.tent_prompt),
         "stand_prompt": bool(settings.stand_prompt),

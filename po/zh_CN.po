@@ -286,18 +286,6 @@ msgstr "操作未能完成"
 msgid "Windows preview · The backend is not connected yet."
 msgstr "Windows 界面预览 · 后台服务尚未接入。"
 
-msgid "Wake from suspend by touch"
-msgstr "通过触摸唤醒挂起的电脑"
-
-msgid "Allow the built-in touchscreen to wake this computer when supported by the hardware."
-msgstr "在硬件支持时，允许轻触内置屏幕唤醒电脑。"
-
-msgid "Screen and sleep"
-msgstr "屏幕与睡眠"
-
-msgid "No supported built-in USB touchscreen is available."
-msgstr "当前没有可用于唤醒的内置 USB 触摸屏。"
-
 msgid "Return to automatic"
 msgstr "返回自动"
 

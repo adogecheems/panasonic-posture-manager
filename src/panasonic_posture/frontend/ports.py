@@ -2,8 +2,8 @@
 from concurrent.futures import Future
 from typing import Callable, Literal, Protocol
 
-Preference = Literal['tent_enabled', 'tent_prompt', 'stand_prompt', 'suspend_touch_wake']
-PREFERENCES = frozenset({'tent_enabled', 'tent_prompt', 'stand_prompt', 'suspend_touch_wake'})
+Preference = Literal['tent_enabled', 'tent_prompt', 'stand_prompt']
+PREFERENCES = frozenset({'tent_enabled', 'tent_prompt', 'stand_prompt'})
 
 
 class UIClient(Protocol):

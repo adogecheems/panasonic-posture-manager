@@ -23,9 +23,6 @@ Restart=on-failure
 RestartSec=2
 StateDirectory=panasonic-posture-manager
 StateDirectoryMode=0700
-RuntimeDirectory=panasonic-posture-manager
-RuntimeDirectoryMode=0700
-RuntimeDirectoryPreserve=restart
 Environment=PYTHONDONTWRITEBYTECODE=1
 # Bound the long-running root service's footprint; normal operation uses only
 # a few tens of MiB, the cgroup limit only catches pathological behaviour.

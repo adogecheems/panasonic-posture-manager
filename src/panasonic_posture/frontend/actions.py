@@ -79,8 +79,6 @@ class SettingsModel:
 
     def preference_enabled(self, field: Preference) -> bool:
         return bool(self.state and self.state['supported']
-                    and (field != 'suspend_touch_wake' or self.value(field)
-                         or self.state.get('suspend_touch_wake_available', False))
                     and (field != 'tent_prompt' or self.value('tent_enabled')))
 
     def mode_enabled(self, mode: str) -> bool:

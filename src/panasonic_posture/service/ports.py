@@ -101,13 +101,6 @@ class Settings:
     tent_prompt: bool = True
     stand_prompt: bool = False
     sensor_calibration: tuple[float, ...] | None = None
-    suspend_touch_wake: bool = False
-
-
-class TouchWakePolicy(Protocol):
-    def sync(self, enabled: bool) -> bool: ...
-
-    def release(self) -> None: ...
 
 
 class SettingsBackend(Protocol):

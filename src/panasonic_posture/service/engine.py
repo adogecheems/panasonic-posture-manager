@@ -59,7 +59,7 @@ from ..policy import geometry
 from ..tasks import thread_executor
 from .hardware_monitor import HardwareMonitor, HardwareObservation
 from .ports import (
-    ActuatorError, InputActuator, SensorBackend, Settings, SettingsBackend, SessionOwner, TouchWakePolicy,
+    ActuatorError, InputActuator, SensorBackend, Settings, SettingsBackend, SessionOwner,
 )
 
 LOG = logging.getLogger(__name__)
@@ -103,7 +103,6 @@ class Engine:
         actuator: InputActuator,
         presentation: Any,
         settings: SettingsBackend | None,
-        touch_wake_policy: TouchWakePolicy | None = None,
         device: DeviceInfo,
         hardware_query: Callable[[], tuple[bool | None, Any]] | None = None,
         hardware_monitor: HardwareMonitor | None = None,
@@ -120,10 +119,6 @@ class Engine:
         self._sensor = sensor
         self._actuator = actuator
         self._presentation = presentation
-        self._touch_wake_policy = touch_wake_policy
-        self.suspend_touch_wake = False
-        self.suspend_touch_wake_available = False
-        self._next_touch_scan = 0.0
         self._settings = settings
         self._device = device
         if hardware_monitor is None:
@@ -198,7 +193,6 @@ class Engine:
         except Exception:  # noqa: BLE001 - a broken store must not stop the service
             self._log.exception("cannot load settings")
             return
-        self.suspend_touch_wake = getattr(settings, "suspend_touch_wake", False) is True
         tent_enabled = getattr(settings, "tent_enabled", None)
         if isinstance(tent_enabled, bool):
             self._controller.tent_enabled = tent_enabled
@@ -223,11 +217,6 @@ class Engine:
 
     def shutdown(self) -> None:
         """Release software control on shutdown (bounded by the actuator)."""
-        if self._touch_wake_policy is not None:
-            try:
-                self._touch_wake_policy.release()
-            except (OSError, ValueError) as error:
-                self._log.warning("cannot restore touchscreen wake: %s", error)
         self._retry_requested = False
         self._wait_for_release()
         try:
@@ -302,35 +291,6 @@ class Engine:
             "backend retry requested (generation %s)",
             getattr(self._controller, "generation", 0),
         )
-        return True
-
-    def _sync_suspend_touch(self, now: float) -> None:
-        if self._touch_wake_policy is None or not self._manage_actuator:
-            return
-        self._next_touch_scan = now + 5.0
-        try:
-            self.suspend_touch_wake_available = self._touch_wake_policy.sync(self.suspend_touch_wake)
-        except (OSError, ValueError) as error:
-            self.suspend_touch_wake_available = False
-            self._log.warning("cannot reconcile touchscreen wake: %s", error)
-
-    def set_suspend_touch_wake(self, enabled: bool) -> bool:
-        if enabled == self.suspend_touch_wake:
-            return False
-        if self._touch_wake_policy is None or not self._manage_actuator:
-            raise ServiceError(ErrorCode.UNSUPPORTED_MODEL)
-        try:
-            available = self._touch_wake_policy.sync(enabled)
-            if enabled and not available:
-                raise ServiceError(ErrorCode.CONFIG_WRITE, "touchscreen-wake-unavailable")
-            self._save_settings(self._make_settings(suspend_touch_wake=enabled))
-        except (OSError, ValueError, ServiceError) as error:
-            self._sync_suspend_touch(self._monotonic())
-            if isinstance(error, ServiceError):
-                raise
-            raise ServiceError(ErrorCode.CONFIG_WRITE, str(error)) from error
-        self.suspend_touch_wake = enabled
-        self.suspend_touch_wake_available = available
         return True
 
     def set_tent_prompt(self, enabled: bool) -> bool:
@@ -412,7 +372,6 @@ class Engine:
             "tent_prompt": bool(getattr(self._controller, "tent_prompt", True)),
             "stand_prompt": bool(getattr(self._controller, "stand_prompt", False)),
             "sensor_calibration": self._sensor_calibration,
-            "suspend_touch_wake": self.suspend_touch_wake,
         }
         values.update(changes)
         return Settings(**values)
@@ -540,7 +499,6 @@ class Engine:
 
     def sleep_event(self, suspended: bool) -> None:
         """PrepareForSleep: drop the lease, release the relay, invalidate anchors."""
-        self._sync_suspend_touch(self._monotonic())
         self.suspended = bool(suspended)
         self._pending_wake = None
         self._retry_requested = False
@@ -629,8 +587,6 @@ class Engine:
             self._log.warning("slow service tick: %.0f ms", elapsed * 1000.0)
 
     def _run_tick(self, now: float) -> None:
-        if not self.suspended and now >= self._next_touch_scan:
-            self._sync_suspend_touch(now)
         raw_reading = self._read_sensor()
         # Capture the clock after taking the sensor snapshot.  The acquisition
         # thread may publish a sample between these two operations; using a
@@ -1017,8 +973,6 @@ class Engine:
         if not isinstance(applied, Target):
             applied = None
         return StateSnapshot(
-            suspend_touch_wake=self.suspend_touch_wake,
-            suspend_touch_wake_available=self.suspend_touch_wake_available,
             instance=self._instance,
             generation=int(getattr(self._controller, "generation", 0)),
             pose=self._pose,

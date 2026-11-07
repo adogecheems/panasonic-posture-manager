@@ -364,33 +364,7 @@ class EngineTestCase(unittest.TestCase):
         )
 
 
-class WakePreferenceTests(EngineTestCase):
-    def test_preference_rolls_back_hardware_when_save_fails(self):
-        wake = mock.Mock()
-        wake.sync.return_value = True
-        engine = self.make(touch_wake_policy=wake)
-        self.settings.fail = True
-        with self.assertRaises(ServiceError):
-            engine.set_suspend_touch_wake(True)
-        self.assertEqual(wake.sync.call_args_list, [mock.call(True), mock.call(False)])
-        self.assertFalse(engine.suspend_touch_wake)
-
-    def test_setting_survives_updates_and_disconnect_allows_disabling(self):
-        wake = mock.Mock()
-        wake.sync.return_value = True
-        engine = self.make(touch_wake_policy=wake)
-        self.assertTrue(engine.set_suspend_touch_wake(True))
-        engine.set_tent_prompt(False)
-        self.assertTrue(self.settings.value.suspend_touch_wake)
-        wake.sync.return_value = False
-        self.tick(engine)
-        self.assertFalse(engine.state.suspend_touch_wake_available)
-        self.assertTrue(engine.state.suspend_touch_wake)
-        self.assertTrue(engine.set_suspend_touch_wake(False))
-        self.assertFalse(self.settings.value.suspend_touch_wake)
-        with self.assertRaises(ServiceError):
-            engine.set_suspend_touch_wake(True)
-
+class SessionContextTests(EngineTestCase):
     def test_only_live_owner_can_continue_context_on_screen_on(self):
         engine = self.make()
         owner = SessionOwner("linux-uid", "1000")
