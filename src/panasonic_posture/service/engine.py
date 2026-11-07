@@ -172,7 +172,6 @@ class Engine:
         self.agent_ready: int | None = None
         self.agent_error_code: str | None = None
         self.agent_error_detail: str | None = None
-        self._unattended = False
         self.agent_seen: float = float("-inf")
         self.suspended = False
         self._pending_wake: tuple[int, int, SessionOwner] | None = None
@@ -419,11 +418,7 @@ class Engine:
         return Settings(**values)
 
     def _reset_after_calibration(self) -> None:
-        reset_policy = getattr(
-            getattr(self._controller, "policy", None), "reset_after_suspend", None
-        )
-        if callable(reset_policy):
-            reset_policy(adopt_first_pose=False)
+        self._controller.reset_after_calibration()
         self._bump_generation()
         self._tick_error_code = None
         self._tick_error_detail = None
@@ -512,10 +507,10 @@ class Engine:
             # Another authenticated user's adapter must wait for the current
             # lease to expire before taking over (fast user switch).
             raise ServiceError(ErrorCode.ACCESS_DENIED, "session-lease-busy")
-        if (self._unattended and not unattended and owner == self.session_owner
-                and self._lease_active(now)):
-            self._controller.policy.adopt_next_stable_pose()
-        self._unattended = unattended
+        self._controller.set_session_context(
+            unattended,
+            continuing=owner == self.session_owner and self._lease_active(now),
+        )
         self.session_owner = owner
         self.agent_seen = now
         if ready:
@@ -548,7 +543,6 @@ class Engine:
         self._sync_suspend_touch(self._monotonic())
         self.suspended = bool(suspended)
         self._pending_wake = None
-        self._unattended = False
         self._retry_requested = False
         self._log.info("PrepareForSleep: suspended=%s", self.suspended)
         self._wait_for_release()
@@ -647,7 +641,8 @@ class Engine:
         reading = self._apply_sensor_calibration(raw_reading)
         hardware = self._read_hardware(now)
 
-        self._controller.unattended = self._unattended and self._lease_active(now)
+        if not self._lease_active(now):
+            self._controller.set_session_context(False)
         generation, target = self._controller.update(boot_now, reading, hardware)
         if not self.supported:
             target = Target(mode="unavailable")
@@ -656,7 +651,7 @@ class Engine:
                 "target changed %s -> %s (policy=%s generation=%s sensor=%s)",
                 self._target.mode,
                 target.mode,
-                getattr(self._controller.policy, "mode", "?"),
+                self._controller.policy_mode,
                 generation,
                 reading.source,
             )
@@ -715,7 +710,7 @@ class Engine:
 
     def _sync_prefer_shared(self, hardware: bool | None, target: Target) -> None:
         """Hint that the desktop may also need the sensor during tablet use."""
-        policy_mode = str(getattr(self._controller.policy, "mode", ""))
+        policy_mode = str(self._controller.policy_mode)
         desired = bool(
             hardware is True
             or target.disable_internal_input
@@ -723,7 +718,7 @@ class Engine:
             # Keep the shared source while rebuilding posture evidence after
             # hardware release. Reopening IIO here interrupts that evidence
             # and can contend with the desktop's still-active sensor buffer.
-            or getattr(self._controller.policy, "posture_pending", False)
+            or self._controller.posture_pending
         )
         if desired == self._prefer_shared:
             return
@@ -830,7 +825,7 @@ class Engine:
             lease and self.supported and self.agent_error_code is None
             and self._controller.error_code is None
             and self._sensor.info.error is None
-            and bool(getattr(self._controller.policy, "fresh", False))
+            and bool(self._controller.sensor_fresh)
             and observation.status == HardwareStatus.OK and observation.raw is not None
         )
         if not healthy:
@@ -851,7 +846,7 @@ class Engine:
                 self._handoff_until = now + HARDWARE_HANDOFF_SECONDS
             waiting = (
                 target.mode == "unavailable"
-                and bool(getattr(self._controller.policy, "posture_pending", False))
+                and bool(self._controller.posture_pending)
             )
             if now >= self._handoff_until or not (
                 waiting or (target.disable_internal_input and not prepared)
@@ -961,8 +956,8 @@ class Engine:
         )
         if hardware is True:
             candidate = Pose.TABLET
-        elif hardware is False and fresh and getattr(self._controller.policy, "stable", False):
-            mode = getattr(self._controller.policy, "mode", "D")
+        elif hardware is False and fresh and self._controller.sensor_stable:
+            mode = self._controller.policy_mode
             candidate = MODE_TO_POSE.get(str(mode), Pose.UNKNOWN)
         try:
             return Pose(
@@ -1059,7 +1054,7 @@ class Engine:
                 self.supported and lease and not error_code
                 and sensor_info.ready and not sensor_info.error
                 and target.mode == "unavailable"
-                and getattr(self._controller.policy, "posture_pending", False)
+                and self._controller.posture_pending
             ),
             sensor_calibrated=self._sensor_calibration is not None,
             profile=self._device.id,

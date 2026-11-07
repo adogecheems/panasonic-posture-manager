@@ -54,7 +54,7 @@ class Controller:
         self.tent_enabled = True
         self.tent_prompt = True
         self.stand_prompt = False
-        self.unattended = False
+        self._unattended = False
         self.target = Target()
         self.generation = 0
         self.applied: Target | None = None
@@ -63,6 +63,22 @@ class Controller:
         self.hardware: bool | None = None
 
     # -- derived state -------------------------------------------------------
+
+    @property
+    def policy_mode(self) -> str:
+        return self.policy.mode
+
+    @property
+    def sensor_fresh(self) -> bool:
+        return self.policy.fresh
+
+    @property
+    def sensor_stable(self) -> bool:
+        return self.policy.stable
+
+    @property
+    def posture_pending(self) -> bool:
+        return self.policy.posture_pending
 
     @property
     def pending_notification(self) -> int | None:
@@ -93,6 +109,20 @@ class Controller:
         return prompt
 
     # -- public actions ------------------------------------------------------
+
+    def set_session_context(self, unattended: bool, *, continuing: bool = False) -> None:
+        """Accept host-validated context and settle once on the same session's wake.
+
+        Lease loss and a different owner clear context without adopting a new
+        baseline. Only the host can establish session continuity.
+        """
+        if self._unattended and not unattended and continuing:
+            self.policy.adopt_next_stable_pose()
+        self._unattended = unattended
+
+    def reset_after_calibration(self) -> None:
+        """Discard old geometry while retaining normal confirmation rules."""
+        self.policy.reset_after_suspend(adopt_first_pose=False)
 
     def set_manual(self, mode: Mode | str) -> None:
         """Select a manual mode; raises ``ValueError`` with a stable code.
@@ -159,6 +189,7 @@ class Controller:
         the target until fresh evidence is available.
         """
 
+        self._unattended = False
         self.policy.reset_after_suspend()
         self.manual = Mode.AUTO
         self.hardware = None
@@ -188,7 +219,7 @@ class Controller:
             # switch must never leave the device in tent mode.
             self.manual = Mode.AUTO
         self.hardware = hardware
-        prompt_from_laptop = not self.unattended and self.manual in (Mode.AUTO, Mode.LAPTOP)
+        prompt_from_laptop = not self._unattended and self.manual in (Mode.AUTO, Mode.LAPTOP)
         self.policy.update(
             now,
             reading,

@@ -105,13 +105,13 @@ class StartupBaselineTests(ControllerTestCase):
             self.reset_controller()
             self.controller.stand_prompt = True
             self.hold(0.0)
-            self.controller.unattended = True
+            self.controller.set_session_context(True)
             self.step(pitch)
             self.assertEqual(self.controller.target.mode, 'laptop')
             self.hold(pitch)
             self.assertEqual(self.controller.target.mode, mode)
             self.assertIsNone(self.controller.applied)
-            self.controller.unattended = False
+            self.controller.set_session_context(False, continuing=True)
             self.hold(0.0, seconds=4)
             self.hold(pitch)
             self.assertEqual(self.controller.pending_prompt, mode)
@@ -122,6 +122,44 @@ class StartupBaselineTests(ControllerTestCase):
         self.assertEqual(target.mode, "tent")
         self.assertIsNone(self.controller.pending_prompt)
         self.assertIsNone(self.controller.pending_notification)
+
+
+class SessionContextTests(ControllerTestCase):
+    def test_screen_on_settles_once_and_then_restores_normal_prompts(self):
+        self.controller.set_session_context(True)
+        self.controller.set_session_context(False, continuing=True)
+        self.hold(80.0)
+        self.assertEqual(self.controller.target.mode, 'tent')
+        self.assertIsNone(self.controller.pending_prompt)
+        self.hold(0.0)
+        self.hold(80.0)
+        self.assertEqual(self.controller.pending_prompt, 'tent')
+
+    def test_context_loss_and_new_owner_keep_normal_confirmation(self):
+        self.controller.set_session_context(True)
+        self.controller.set_session_context(False)
+        self.hold(80.0)
+        self.assertEqual(self.controller.pending_prompt, 'tent')
+
+    def test_repeated_screen_on_does_not_rearm_baseline(self):
+        self.controller.set_session_context(True)
+        self.controller.set_session_context(False, continuing=True)
+        self.hold(0.0)
+        self.controller.set_session_context(False, continuing=True)
+        self.hold(80.0)
+        self.assertEqual(self.controller.pending_prompt, 'tent')
+
+    def test_suspend_discards_previous_session_context(self):
+        self.controller.set_session_context(True)
+        self.controller.reset_after_suspend()
+        self.hold(0.0)
+        self.hold(80.0)
+        self.assertEqual(self.controller.pending_prompt, 'tent')
+
+    def test_calibration_does_not_adopt_a_new_pose(self):
+        self.controller.reset_after_calibration()
+        self.hold(80.0)
+        self.assertEqual(self.controller.pending_prompt, 'tent')
 
 
 class ManualModeTests(ControllerTestCase):
