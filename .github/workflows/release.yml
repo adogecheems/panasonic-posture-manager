@@ -50,7 +50,8 @@ jobs:
               pacman -Syu --noconfirm --needed \
                 dbus desktop-file-utils gcc gettext git gtk4 iio-sensor-proxy \
                 libadwaita libarchive libxml2 make polkit python python-build \
-                python-gobject python-installer python-setuptools python-wheel systemd
+                python-cairo python-gobject python-installer python-setuptools \
+                python-wheel systemd
 
               useradd -m builder
               rm -rf /tmp/ppm-arch

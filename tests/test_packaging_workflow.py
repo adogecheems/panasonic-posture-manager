@@ -261,6 +261,15 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('rpm_files=$(rpm -qlp "$package")', rpm)
         self.assertNotIn('rpm -qlp "$package" | grep', rpm)
 
+    def test_arch_job_installs_python_cairo_for_ui_checks(self) -> None:
+        arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
+        install = arch.split("pacman -Syu --noconfirm --needed", 1)[1].split(
+            "useradd -m builder", 1
+        )[0]
+        for dependency in ("python-cairo", "python-gobject"):
+            with self.subTest(dependency=dependency):
+                self.assertIn(dependency, install)
+
     def test_release_waits_for_all_packages_and_writes_assets(self) -> None:
         release = self.workflow.split("  release:", 1)[1].split("  aur:", 1)[0]
         for dependency in ("package-arch", "package-deb", "package-rpm"):
