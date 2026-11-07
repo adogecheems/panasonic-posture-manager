@@ -11,10 +11,20 @@ class SuspendTouchTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.base = Path(temp.name)
-        self.root_hub = self.base / "usb-root"
+        self.controller = self.base / "controller"
+        self.controller.mkdir()
+        for name, value in (("vendor", "0x8086"), ("device", "0x9ded"), ("class", "0x0c0330")):
+            (self.controller / name).write_text(value)
+        (self.controller / "power").mkdir()
+        self.controller_wake = self.controller / "power/wakeup"
+        self.controller_wake.write_text("enabled\n")
+        self.root_hub = self.controller / "usb-root"
         self.root_hub.mkdir()
-        for name, value in (("idVendor", "1d6b"), ("idProduct", "0002"), ("devpath", "0")):
+        for name, value in (("idVendor", "1d6b"), ("idProduct", "0002"), ("devpath", "0"), ("busnum", "1"), ("devnum", "1")):
             (self.root_hub / name).write_text(value)
+        (self.root_hub / "power").mkdir()
+        self.hub_wake = self.root_hub / "power/wakeup"
+        self.hub_wake.write_text("enabled\n")
         self.inputs = self.base / "input"
         self.claim = self.base / "runtime" / "touch-owner"
         self.inputs.mkdir()
@@ -49,6 +59,43 @@ class SuspendTouchTests(unittest.TestCase):
         self.assertEqual(node.read_text().strip(), "enabled")
         SuspendTouchWake(self.inputs, self.claim, self.base).sync(False)
         self.assertEqual(node.read_text().strip(), "disabled")
+
+    def test_disabled_upstream_prevents_arming_without_modifying_shared_nodes(self):
+        node = self.panel()
+        for blocked in (self.hub_wake, self.controller_wake):
+            with self.subTest(blocked=blocked):
+                blocked.write_text("disabled\n")
+                self.assertFalse(self.wake.sync(True))
+                self.assertEqual(node.read_text().strip(), "disabled")
+                self.assertEqual(blocked.read_text().strip(), "disabled")
+                blocked.write_text("enabled\n")
+
+    def test_upstream_revocation_releases_only_our_panel_setting(self):
+        node = self.panel()
+        self.assertTrue(self.wake.sync(True))
+        self.hub_wake.write_text("disabled\n")
+        self.assertFalse(self.wake.sync(True))
+        self.assertEqual(node.read_text().strip(), "disabled")
+        self.assertEqual(self.hub_wake.read_text().strip(), "disabled")
+
+    def test_missing_upstream_wakeup_is_not_reported_as_supported(self):
+        node = self.panel()
+        self.hub_wake.unlink()
+        self.assertFalse(self.wake.sync(True))
+        self.assertEqual(node.read_text().strip(), "disabled")
+
+    def test_legacy_single_panel_claim_keeps_original_restore_value(self):
+        import json
+        from panasonic_posture.service.suspend_touch import _usb_identity
+        node = self.panel()
+        self.claim.parent.mkdir()
+        self.claim.write_text(json.dumps([str(node), node.stat().st_ino, _usb_identity(node)]))
+        node.write_text("enabled\n")
+        self.wake.sync(True)
+        self.wake.release()
+        self.assertEqual(node.read_text().strip(), "disabled")
+        self.assertEqual(self.hub_wake.read_text().strip(), "enabled")
+        self.assertEqual(self.controller_wake.read_text().strip(), "enabled")
 
     def test_native_enabled_is_preserved(self):
         node = self.panel(initial="enabled")

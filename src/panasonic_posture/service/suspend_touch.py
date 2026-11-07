@@ -60,6 +60,25 @@ def _usb_identity(wakeup: Path) -> list[str]:
             for name in ("busnum", "devnum", "idVendor", "idProduct")]
 
 
+def _wakeup_path(inputs: Path) -> tuple[Path, ...]:
+    panel = _panel_wakeup(inputs)
+    if panel is None:
+        return ()
+    nodes = []
+    for device in (panel.parent.parent, *panel.parent.parent.parents):
+        if (device / "idVendor").is_file() and (device / "idProduct").is_file():
+            nodes.append(device / "power/wakeup")
+            if (device / "devpath").read_text().strip() == "0":
+                controller = device.parent
+                # The root hub is shared. Only its actual PCI USB controller
+                # belongs to this path, never a neighbouring bus or device.
+                if int((controller / "class").read_text(), 16) >> 8 != 0x0c03:
+                    return ()
+                nodes.append(controller / "power/wakeup")
+                return tuple(nodes)
+    return ()
+
+
 class SuspendTouchWake:
     """A boot-local claim allows service restarts to undo only our own write."""
 
@@ -99,7 +118,13 @@ class SuspendTouchWake:
     def sync(self, enabled: bool) -> bool:
         self.active = True
         try:
-            candidate = _panel_wakeup(self.inputs)
+            path = _wakeup_path(self.inputs)
+            # Enabling a shared hub can cause unsolicited system resumes.
+            # The platform owns shared upstream switches. Require its wake
+            # policy to be ready before arming this panel.
+            candidate = path[0] if path and all(
+                node.read_text().strip() == "enabled" for node in path[1:]
+            ) else None
         except (OSError, ValueError):
             candidate = None  # incomplete discovery cannot authorize a wake source
         self._restore(candidate if enabled else None)

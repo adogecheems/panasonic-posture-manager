@@ -154,4 +154,4 @@ Linux 由 `service/application.py` 和 `session/agent.py` 组装这些组件。�
 - **输入协议**　系统服务和 C relay 必须来自同一构建。relay v4 用 `1` 接管输入，`0` 转发物理开关，两者均续接三秒租约。服务按 32 位 `request` 序号匹配回执。从物理平板展开时，桌面的平板信号最多再保留两秒。
 - **登录与亮屏**　会话从 logind 识别登录界面，从 Mutter 的 `PowerSaveMode` 或显示器的 DRM `dpms` 读取熄屏状态。此时通过 `SessionUpdateUnattended` 报告准备状态，旧服务回退到普通心跳。亮屏后，以下一次稳定姿态为准，再恢复日常提示。
 - **触摸亮屏**　软件接管期间，relay 只观察唯一直接触摸屏的接触开始。会话用 `SessionWake` 提交当前代次和两秒内有效的 `touch_wake` 令牌。服务核对身份、租约和已应用模式后，relay 再检查触摸是否有效，每次接触最多发一次 `KEY_WAKEUP`。唤醒不会续租。
-- **从挂起唤醒**　`SetSuspendTouchWake` 使用已有配置权限。系统服务只管理唯一固定 USB 触摸屏的 `power/wakeup`，每五秒及挂起、恢复时核对设备。关闭选项或正常停止时，按 `/run/panasonic-posture-manager/` 中的设备实例记录恢复自己改过的设置。
+- **从挂起唤醒**　`SetSuspendTouchWake` 使用已有配置权限。系统服务先只读核对唯一固定 USB 触摸屏到根集线器及 PCI USB 控制器的唤醒路径；上游节点须已启用唤醒，否则报告不可用。服务只管理触摸屏自身的 `power/wakeup`，每五秒及挂起、恢复时核对设备。关闭选项或上游条件失效时，按 `/run/panasonic-posture-manager/` 中的设备实例记录恢复自己改过的设置。根集线器为共享节点，本机试验中开启后出现未触摸即自动恢复，程序因此不自动打开该节点。
