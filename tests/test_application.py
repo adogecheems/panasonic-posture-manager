@@ -104,6 +104,7 @@ class ApplicationTests(unittest.TestCase):
             sensor=self.sensor,
             switch=self.switch,
             actuator=self.actuator,
+            touch_wake_policy=mock.Mock(),
         )
 
     def test_composition_wires_engine_and_monitor(self) -> None:
@@ -149,6 +150,7 @@ class ApplicationTests(unittest.TestCase):
             sensor=self.sensor,
             switch=self.switch,
             actuator=self.actuator,
+            touch_wake_policy=mock.Mock(),
             presentation=FakePresentation(),
             access=mock.Mock(),
         )

@@ -34,6 +34,7 @@ from .journal import default_path
 from .lockstate import query_locked
 from .notify import NOTIFY_DEST, NOTIFY_IFACE, NOTIFY_PATH, Notifier
 from .runtime import SessionRuntime
+from .screen_context import desktop_context
 
 log = logging.getLogger(__name__)
 
@@ -339,7 +340,9 @@ class Agent:
         if self._build is not None:
             self._build(self)
         else:
-            client = self._client or SystemClient(self.system_bus)
+            client = self._client or SystemClient(
+                self.system_bus, screen_context=desktop_context(self.system_bus, self.session_bus)
+            )
             display = create_display(
                 self.session_bus,
                 self._journal_path or default_path(),

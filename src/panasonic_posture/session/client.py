@@ -8,6 +8,8 @@ embedded in the D-Bus error message, so callers never have to parse
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import logging
 
 from gi.repository import Gio, GLib
@@ -47,7 +49,9 @@ class SystemClient:
     system bus being available.
     """
 
-    def __init__(self, connection=None, timeout_ms: int = DEFAULT_TIMEOUT_MS):
+    def __init__(self, connection=None, timeout_ms: int = DEFAULT_TIMEOUT_MS,
+                 *, screen_context: Callable[[], bool] | None = None):
+        self._screen_context = screen_context
         self._connection = connection
         self.timeout_ms = int(timeout_ms)
 
@@ -98,18 +102,16 @@ class SystemClient:
     ) -> None:
         """Publish the adapter result/lease heartbeat (``(u b s s)``)."""
 
-        self._call(
-            "SessionUpdate",
-            GLib.Variant(
-                "(ubss)",
-                (
-                    int(generation),
-                    bool(ready),
-                    str(error_code or ""),
-                    str(error_detail or ""),
-                ),
-            ),
-        )
+        parameters = GLib.Variant("(ubss)", (int(generation), bool(ready),
+                                              str(error_code or ""), str(error_detail or "")))
+        if self._screen_context is not None and self._screen_context():
+            try:
+                self._call("SessionUpdateUnattended", parameters)
+                return
+            except ServiceError as error:
+                if error.name != "org.freedesktop.DBus.Error.UnknownMethod":
+                    raise
+        self._call("SessionUpdate", parameters)
 
     def confirm_tent(self, epoch: int) -> None:
         self._call("ConfirmTent", GLib.Variant("(u)", (int(epoch),)))

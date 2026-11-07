@@ -54,6 +54,7 @@ class Controller:
         self.tent_enabled = True
         self.tent_prompt = True
         self.stand_prompt = False
+        self.unattended = False
         self.target = Target()
         self.generation = 0
         self.applied: Target | None = None
@@ -187,7 +188,7 @@ class Controller:
             # switch must never leave the device in tent mode.
             self.manual = Mode.AUTO
         self.hardware = hardware
-        prompt_from_laptop = self.manual in (Mode.AUTO, Mode.LAPTOP)
+        prompt_from_laptop = not self.unattended and self.manual in (Mode.AUTO, Mode.LAPTOP)
         self.policy.update(
             now,
             reading,

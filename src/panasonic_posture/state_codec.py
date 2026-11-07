@@ -74,6 +74,8 @@ def parse_state_snapshot(text: str) -> StateSnapshot:
         hardware=optional_boolean("hardware"),
         hardware_status=HardwareStatus(data.get("hardware_status", "absent")),
         manual=Mode(data.get("manual", "auto")),
+        suspend_touch_wake=boolean("suspend_touch_wake", False),
+        suspend_touch_wake_available=boolean("suspend_touch_wake_available", False),
         tent_enabled=boolean("tent_enabled", True),
         tent_prompt=boolean("tent_prompt", True),
         stand_prompt=boolean("stand_prompt", False),

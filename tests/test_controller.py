@@ -100,6 +100,22 @@ class StartupBaselineTests(ControllerTestCase):
     def setUp(self):
         self.reset_controller()
 
+    def test_greeter_or_blank_desktop_allows_stable_transition_only(self):
+        for pitch, mode in ((80, 'tent'), (175, 'stand')):
+            self.reset_controller()
+            self.controller.stand_prompt = True
+            self.hold(0.0)
+            self.controller.unattended = True
+            self.step(pitch)
+            self.assertEqual(self.controller.target.mode, 'laptop')
+            self.hold(pitch)
+            self.assertEqual(self.controller.target.mode, mode)
+            self.assertIsNone(self.controller.applied)
+            self.controller.unattended = False
+            self.hold(0.0, seconds=4)
+            self.hold(pitch)
+            self.assertEqual(self.controller.pending_prompt, mode)
+
     def test_restart_while_already_in_tent_needs_no_confirmation(self):
         _, target = self.hold(80.0)
         self.assertEqual(self.controller.policy.mode, MODE_TENT)

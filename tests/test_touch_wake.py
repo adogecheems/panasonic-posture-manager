@@ -284,4 +284,4 @@ class TouchAccessTests(unittest.TestCase):
         heartbeat = self.call(daemon, "SessionUpdate", GLib.Variant("(ubss)", (7, True, "", "")))
         self.assertIsNotNone(heartbeat.value)
         daemon.application.engine.session_update.assert_called_once_with(
-            7, True, "", "", SessionOwner("linux-uid", "1000"))
+            7, True, "", "", SessionOwner("linux-uid", "1000"), unattended=False)

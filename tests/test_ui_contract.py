@@ -393,7 +393,10 @@ assert not toasts
 service.calls[1][2].set_exception(Exception('internal-error'))
 assert settings.radios['auto'].get_active()
 assert len(toasts) == 1
-for field, method in [('tent_enabled','SetTentEnabled'),('tent_prompt','SetTentPrompt'),('stand_prompt','SetStandPrompt')]:
+assert not settings.switches['suspend_touch_wake'].get_sensitive()
+assert 'No supported' in settings.switches['suspend_touch_wake'].get_subtitle()
+settings.update(state(suspend_touch_wake_available=True))
+for field, method in [('suspend_touch_wake','SetSuspendTouchWake'),('tent_enabled','SetTentEnabled'),('tent_prompt','SetTentPrompt'),('stand_prompt','SetStandPrompt')]:
     initial = settings.switches[field].get_active()
     settings.switches[field].set_active(not initial)
     settings.switches[field].set_active(initial)

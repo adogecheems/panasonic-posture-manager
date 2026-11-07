@@ -206,6 +206,7 @@ def main() -> int:
                 connected = state()["session_connected"] is True
                 if not connected:
                     time.sleep(0.05)
+            call("SessionUpdateUnattended", GLib.Variant("(ubss)", (generation, True, "", "")))
             assert connected, "session lease did not connect"
             generation = state()["generation"]
 

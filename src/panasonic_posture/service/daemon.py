@@ -102,7 +102,8 @@ class Daemon:
     # -- GLib callbacks --------------------------------------------------
 
     def _tick(self) -> bool:
-        self.application.engine.tick(time.monotonic())
+        if self._name_acquired_ok:
+            self.application.engine.tick(time.monotonic())
         return True
 
     def _schedule_tick(self) -> None:
@@ -147,9 +148,18 @@ class Daemon:
         except GLib.Error as error:
             LOG.warning("cannot emit StateChanged: %s", error)
 
-    def _name_acquired(self, _connection: Any, name: str) -> None:
+    def _name_acquired(self, connection: Any, name: str) -> None:
         self._name_acquired_ok = True
         LOG.info("owning %s", name)
+        try:
+            if not self.development:
+                self._subscribe_sleep(connection)
+            self.application.start()
+            self._tick()
+        except Exception:
+            LOG.exception("cannot start the posture service")
+            self._exit_code = 1
+            self.loop.quit()
 
     def _name_lost(self, connection: Any, name: str) -> None:
         duplicate = False
@@ -192,10 +202,6 @@ class Daemon:
             self.registration = connection.register_object(
                 PATH, info, self._method, None, None
             )
-            if not self.development:
-                self._subscribe_sleep(connection)
-            self.application.start()
-            self._tick()
         except Exception:  # noqa: BLE001 - half-initialised service must not linger
             LOG.exception("bus acquisition failed; stopping")
             self._exit_code = 1
@@ -256,12 +262,15 @@ class Daemon:
         parameters: GLib.Variant,
         invocation: Any,
     ) -> None:
+        if not self._name_acquired_ok:
+            invocation.return_dbus_error(DBUS_ERROR, error_message(ErrorCode.INTERNAL, "service-starting"))
+            return
         # The development bus has no production identity checks.
         if method == "GetState" or self.development:
             self._dispatch_method(sender, method, parameters, invocation)
             return
         access = self.application.access
-        if method == "SessionUpdate":
+        if method in ("SessionUpdate", "SessionUpdateUnattended"):
             lane, authorize = "session", access.verify_session_adapter
         elif method == "SessionWake":
             lane, authorize = "wake", self._wake_access.verify_session_adapter
@@ -318,6 +327,8 @@ class Daemon:
                 self.application.engine.set_mode(str(arguments[0]))
             elif method == "Retry":
                 self.application.engine.retry()
+            elif method == "SetSuspendTouchWake":
+                self.application.engine.set_suspend_touch_wake(bool(arguments[0]))
             elif method == "SetTentEnabled":
                 self.application.engine.set_tent_enabled(bool(arguments[0]))
             elif method == "SetTentPrompt":
@@ -332,11 +343,12 @@ class Daemon:
                 self.application.engine.confirm_tent(int(arguments[0]))
             elif method == "ConfirmStand":
                 self.application.engine.confirm_stand(int(arguments[0]))
-            elif method == "SessionUpdate":
+            elif method in ("SessionUpdate", "SessionUpdateUnattended"):
                 generation, ready, error_code, error_detail = arguments
                 self.application.engine.session_update(
                     int(generation), bool(ready), str(error_code), str(error_detail),
-                    SessionOwner("linux-uid", str(uid))
+                    SessionOwner("linux-uid", str(uid)),
+                    unattended=method == "SessionUpdateUnattended",
                 )
             elif method == "SessionWake":
                 self.application.engine.session_wake(

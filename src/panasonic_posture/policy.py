@@ -359,7 +359,11 @@ class Policy:
         _, _, flat = self._classify()
         return in_stand_zone(flat)
 
-    def reset_after_suspend(self) -> None:
+    def adopt_next_stable_pose(self) -> None:
+        """After the display wakes, settle once even if samples arrive late."""
+        self._source.startup_pending = True
+
+    def reset_after_suspend(self, *, adopt_first_pose: bool = True) -> None:
         """Forget everything because the machine was suspended.
 
         ``CLOCK_BOOTTIME`` keeps running across suspend while the device pose
@@ -371,10 +375,12 @@ class Policy:
         self.epoch += 1
         self.mode = MODE_DISABLED
         self.hardware = None
-        # A wake-up is not a cold service start.  Do not arm the startup
-        # baseline again; without fresh transition evidence the laptop origin
-        # keeps the normal confirmation prompt.
-        self._source = _SourceState(origin=_Origin.LAPTOP, startup_pending=False)
+        # Sleep invalidates the previous transition origin. Calibration also
+        # clears samples, but still requires the normal laptop confirmation.
+        self._source = _SourceState(
+            origin=_Origin.UNKNOWN if adopt_first_pose else _Origin.LAPTOP,
+            startup_pending=adopt_first_pose,
+        )
         self._reset_all()
 
     def update(

@@ -383,6 +383,8 @@ class PostureClassificationTests(PolicyTestCase):
         self.hold(180.0, hardware=True)
         self.step(175.0)
         self.policy.reset_after_suspend()
+        self.assertFalse(self.policy.posture_pending)
+        self.hold(0.0)
         self.hold(80.0)
         self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
 
@@ -815,6 +817,8 @@ class TentReentryTests(PolicyTestCase):
         self.confirm_tent()
         self.leave_tent()
         self.policy.reset_after_suspend()
+        self.assertFalse(self.policy.posture_pending)
+        self.hold(0.0)
         self.hold(80.0)
         self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
 
@@ -1073,12 +1077,33 @@ class SuspendResetTests(PolicyTestCase):
         self.policy.reset_after_suspend()
         self.assertEqual(self.policy.epoch, epoch + 1)
         self.assertFalse(self.policy.confirm(epoch))
-        # A fresh, fully rebuilt prompt is confirmable again.
+        # A settled laptop followed by a new transition can still prompt.
+        self.hold(0.0)
         self.hold(80.0)
         self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
         self.assertGreater(self.policy.epoch, epoch)
         self.assertTrue(self.policy.confirm(self.policy.epoch))
         self.assertEqual(self.policy.mode, MODE_TENT)
+
+    def test_resume_adopts_current_stable_pose_without_confirmation(self):
+        for pitch, expected in ((0.0, MODE_LAPTOP), (80.0, MODE_TENT), (175.0, MODE_STAND)):
+            with self.subTest(pitch=pitch):
+                self.policy.reset_after_suspend()
+                self.hold(pitch, tent_prompt=True, stand_prompt=True)
+                self.assertEqual(self.policy.mode, expected)
+                self.assertIsNone(self.policy.pending_prompt)
+
+    def test_screen_on_waits_for_late_samples_then_restores_normal_prompts(self):
+        self.hold(0.0)
+        self.policy.adopt_next_stable_pose()
+        self.now += 10
+        self.policy.update(self.now, SensorReading(), False)
+        self.assertEqual(self.policy.mode, MODE_DISABLED)
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT)
+        self.hold(0.0)
+        self.hold(80.0)
+        self.assertEqual(self.policy.mode, MODE_TENT_PROMPT)
 
     def test_reset_prevents_stale_mode_rebuild(self):
         self.hold(175.0)

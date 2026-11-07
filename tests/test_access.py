@@ -494,7 +494,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         }
         daemon._authorization_pending = {"request": 0, "session": 0, "wake": 0}
         daemon._exit_code = 0
-        daemon._name_acquired_ok = False
+        daemon._name_acquired_ok = True
         daemon.connection = None
         daemon.registration = None
         access = mock.Mock()
@@ -596,7 +596,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         )
         self.assertIsNotNone(heartbeat.value)
         daemon.application.engine.session_update.assert_called_once_with(
-            7, True, "", "", SessionOwner("linux-uid", "1000")
+            7, True, "", "", SessionOwner("linux-uid", "1000"), unattended=False
         )
 
         with mock.patch.object(GLib, "idle_add") as idle:
@@ -645,9 +645,19 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         )
         daemon.application.access.verify_session_adapter.assert_called_once_with(":1.42")
         daemon.application.engine.session_update.assert_called_once_with(
-            7, True, "", "", SessionOwner("linux-uid", "1000")
+            7, True, "", "", SessionOwner("linux-uid", "1000"), unattended=False
         )
         self.assertIsNone(invocation.error)
+
+    def test_unattended_update_requires_verified_adapter(self):
+        params = GLib.Variant("(ubss)", (7, True, "", ""))
+        denied = self.make_daemon(verify_error=AccessDenied("not active"))
+        self.assertIsNotNone(self.call(denied, "SessionUpdateUnattended", params).error)
+        denied.application.engine.session_update.assert_not_called()
+        allowed = self.make_daemon()
+        self.assertIsNone(self.call(allowed, "SessionUpdateUnattended", params).error)
+        allowed.application.engine.session_update.assert_called_once_with(
+            7, True, "", "", SessionOwner("linux-uid", "1000"), unattended=True)
 
     def test_session_update_auth_failure_maps_access_denied(self) -> None:
         daemon = self.make_daemon(verify_error=AccessDenied("not active"))
@@ -682,6 +692,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
 
     def test_duplicate_name_before_acquisition_is_clean_exit(self) -> None:
         daemon = self.make_daemon()
+        daemon._name_acquired_ok = False
         daemon.loop = mock.Mock()
         bus = FakeBus()
         bus.set("NameHasOwner", GLib.Variant("(b)", (True,)))
@@ -695,6 +706,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
 
     def test_unavailable_bus_before_acquisition_is_failure_exit(self) -> None:
         daemon = self.make_daemon()
+        daemon._name_acquired_ok = False
         daemon.loop = mock.Mock()
         daemon._name_lost(None, NAME)
         daemon.loop.quit.assert_called_once()
@@ -704,6 +716,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         for reply in (GLib.Variant("(b)", (False,)), gerror("bus disconnected")):
             with self.subTest(reply=reply):
                 daemon = self.make_daemon()
+                daemon._name_acquired_ok = False
                 daemon.loop = mock.Mock()
                 bus = FakeBus()
                 bus.set("NameHasOwner", reply)
@@ -713,6 +726,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
 
     def test_duplicate_name_does_not_clear_an_initialization_failure(self) -> None:
         daemon = self.make_daemon()
+        daemon._name_acquired_ok = False
         daemon.loop = mock.Mock()
         daemon._exit_code = 1
         bus = FakeBus()
@@ -735,7 +749,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         daemon.loop.quit.assert_called_once()
         daemon.application.start.assert_not_called()
 
-    def test_bus_acquired_success_starts_engine_and_registers_object(self) -> None:
+    def test_only_name_owner_starts_engine_after_registering_object(self) -> None:
         daemon = self.make_daemon(development=True)
         daemon.loop = mock.Mock()
         daemon.connection = None
@@ -747,6 +761,8 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         daemon.application.access.attach.assert_called_once_with(connection)
         daemon._wake_access.attach.assert_called_once_with(connection)
         self.assertEqual(daemon.registration, 42)
+        daemon.application.start.assert_not_called()
+        daemon._name_acquired(connection, NAME)
         daemon.application.start.assert_called_once()
         daemon._tick.assert_called_once()
         self.assertEqual(daemon._exit_code, 0)
@@ -758,7 +774,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         )
         daemon.application.access.verify_session_adapter.assert_not_called()
         daemon.application.engine.session_update.assert_called_once_with(
-            7, True, "", "", SessionOwner("linux-uid", "0")
+            7, True, "", "", SessionOwner("linux-uid", "0"), unattended=False
         )
         self.assertIsNone(invocation.error)
 

@@ -25,6 +25,7 @@ from .access import AccessControl
 from .actuator import Actuator
 from .engine import Engine
 from .sensor import SensorManager, linux_sample_clock
+from .suspend_touch import SuspendTouchWake
 from .settings import DEFAULT_SETTINGS_PATH, SettingsStore
 
 LOG = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ class ServiceApplication:
         sensor: Any | None = None,
         switch: Any | None = None,
         actuator: Any | None = None,
+        touch_wake_policy: SuspendTouchWake | None = None,
     ) -> "ServiceApplication":
         """Build a complete application, allowing each edge to be replaced.
 
@@ -89,12 +91,15 @@ class ServiceApplication:
         resolved_actuator = (
             actuator if actuator is not None else Actuator(resolved_profile)
         )
+        if touch_wake_policy is None and not development:
+            touch_wake_policy = SuspendTouchWake()
         engine = Engine(
             controller=resolved_controller,
             sensor=resolved_sensor,
             actuator=resolved_actuator,
             presentation=resolved_presentation,
             settings=resolved_settings,
+            touch_wake_policy=touch_wake_policy,
             device=DeviceInfo(
                 id=str(getattr(resolved_profile, "id", "generic") or "generic"),
                 product=str(getattr(resolved_profile, "product", "") or ""),

@@ -71,7 +71,7 @@ class FakeController:
     """Mirror of the real Controller interface owned by the core-domain task."""
 
     def __init__(self) -> None:
-        self.policy = SimpleNamespace(mode="D", stable=False)
+        self.policy = SimpleNamespace(mode="D", stable=False, adopt_next_stable_pose=mock.Mock())
         self.manual = Mode.AUTO
         self.tent_enabled = True
         self.tent_prompt = True
@@ -344,6 +344,62 @@ class EngineTestCase(unittest.TestCase):
             detail,
             SessionOwner("linux-uid", str(uid)),
         )
+
+
+class WakePreferenceTests(EngineTestCase):
+    def test_preference_rolls_back_hardware_when_save_fails(self):
+        wake = mock.Mock()
+        wake.sync.return_value = True
+        engine = self.make(touch_wake_policy=wake)
+        self.settings.fail = True
+        with self.assertRaises(ServiceError):
+            engine.set_suspend_touch_wake(True)
+        self.assertEqual(wake.sync.call_args_list, [mock.call(True), mock.call(False)])
+        self.assertFalse(engine.suspend_touch_wake)
+
+    def test_setting_survives_updates_and_disconnect_allows_disabling(self):
+        wake = mock.Mock()
+        wake.sync.return_value = True
+        engine = self.make(touch_wake_policy=wake)
+        self.assertTrue(engine.set_suspend_touch_wake(True))
+        engine.set_tent_prompt(False)
+        self.assertTrue(self.settings.value.suspend_touch_wake)
+        wake.sync.return_value = False
+        self.tick(engine)
+        self.assertFalse(engine.state.suspend_touch_wake_available)
+        self.assertTrue(engine.state.suspend_touch_wake)
+        self.assertTrue(engine.set_suspend_touch_wake(False))
+        self.assertFalse(self.settings.value.suspend_touch_wake)
+        with self.assertRaises(ServiceError):
+            engine.set_suspend_touch_wake(True)
+
+    def test_only_live_owner_can_arm_a_new_baseline_on_screen_on(self):
+        engine = self.make()
+        owner = SessionOwner("linux-uid", "1000")
+        gen = self.controller.generation
+        engine.session_update(gen, True, "", "", owner, unattended=True)
+        engine.session_update(gen - 1, True, "", "", owner)
+        self.controller.policy.adopt_next_stable_pose.assert_not_called()
+        engine.session_update(gen, True, "", "", owner)
+        engine.session_update(gen, True, "", "", owner)
+        self.controller.policy.adopt_next_stable_pose.assert_called_once()
+        engine.session_update(gen, True, "", "", owner, unattended=True)
+        self.mono.value += 4
+        engine.session_update(gen, True, "", "", SessionOwner("linux-uid", "1001"))
+        self.controller.policy.adopt_next_stable_pose.assert_called_once()
+
+    def test_prompt_bypass_requires_current_generation_and_live_lease(self):
+        engine = self.make()
+        owner = SessionOwner("linux-uid", "1000")
+        generation = self.controller.generation
+        self.assertFalse(engine.session_update(generation-1, True, "", "", owner, unattended=True))
+        self.tick(engine)
+        self.assertFalse(self.controller.unattended)
+        self.assertTrue(engine.session_update(generation, True, "", "", owner, unattended=True))
+        self.tick(engine)
+        self.assertTrue(self.controller.unattended)
+        self.tick(engine, self.mono.value + 4)
+        self.assertFalse(self.controller.unattended)
 
 
 class StateSnapshotTests(EngineTestCase):

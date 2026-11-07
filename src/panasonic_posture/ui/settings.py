@@ -10,6 +10,7 @@ from .errors import describe_error
 AUTHOR_NAME = 'adogecheems'
 APP_VERSION = __version__
 GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
+WAKE_DESCRIPTION = _('Allow the built-in touchscreen to wake this computer when supported by the hardware.')
 MODES = (
     ('auto', _('Automatic'), _('Switch automatically to suit the current posture')),
     ('laptop', _('Laptop'), _('Best for typing and precise work')),
@@ -33,15 +34,18 @@ class SettingsPage:
         self.widget = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(title=_('Automatic mode'))
         self.widget.add(group)
+        power = Adw.PreferencesGroup(title=_('Screen and sleep'))
+        self.widget.add(power)
         self.switches = {}
-        for field, title, subtitle in (
-            ('tent_enabled', _('Enable tent mode'), _('Allow automatic detection of tent mode')),
-            ('tent_prompt', _('Tent mode notification'), _('Ask before switching to tent mode when the base is upright')),
-            ('stand_prompt', _('Stand mode notification'), _('Ask before switching to stand mode when the base is folded back')),
+        for section, field, title, subtitle in (
+            (power, 'suspend_touch_wake', _('Wake from suspend by touch'), WAKE_DESCRIPTION),
+            (group, 'tent_enabled', _('Enable tent mode'), _('Allow automatic detection of tent mode')),
+            (group, 'tent_prompt', _('Tent mode notification'), _('Ask before switching to tent mode when the base is upright')),
+            (group, 'stand_prompt', _('Stand mode notification'), _('Ask before switching to stand mode when the base is folded back')),
         ):
             switch = Adw.SwitchRow(title=title, subtitle=subtitle)
             switch.update_property([Gtk.AccessibleProperty.LABEL], [title])
-            group.add(switch)
+            section.add(switch)
             self.switches[field] = switch
             switch.connect('notify::active', lambda row, pspec, f=field: self._switch_changed(row, f))
         sensor = Adw.PreferencesGroup(title=_('Sensor'))
@@ -99,6 +103,10 @@ class SettingsPage:
             for field, switch in self.switches.items():
                 switch.set_active(self._model.value(field))
                 switch.set_sensitive(self._model.preference_enabled(field))
+            self.switches['suspend_touch_wake'].set_subtitle(
+                WAKE_DESCRIPTION if state['suspend_touch_wake_available'] else
+                _('No supported built-in USB touchscreen is available.')
+            )
             mode = self._model.value('manual')
             if mode in self.radios:
                 self.radios[mode].set_active(True)
