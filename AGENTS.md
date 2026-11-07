@@ -14,7 +14,7 @@
 
 ## 2. 项目和文档范围
 
-- [README](README.md) 面向使用者，说明功能、机型和桌面支持。[USAGE](USAGE.md) 说明安装、构建、发布和运维。用户文档只保留这两页，不恢复旧的 `docs/`、`CHANGELOG` 或独立硬件验收文档。
+- [README](README.md) 面向使用者，说明功能、机型和桌面支持。[维护指南](MAINTENANCE.md) 说明安装、构建、发布和运维。用户文档只保留这两页，不恢复旧的 `docs/`、`CHANGELOG` 或独立硬件验收文档。
 - 对照 `data/profiles/` 和运行时探针确认机型支持等级。其他 360° 翻转本按硬件能力判断。桌面支持限于 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland。`fluent/` 是 Windows 界面预览。
 - 使用 Python 3.11+、C11 relay 和 GTK 4/libadwaita。PyGObject 由发行版提供，Python 包的运行时依赖列表保持为空。
 
@@ -139,7 +139,7 @@ make WERROR=1 check
 - D-Bus 集成测试使用临时会话总线，也会启动传感器探测。使用普通用户，在未映射真实传感器的隔离环境中运行。
 - UI 测试可能因缺少 PyGObject 或 `gtk4-broadwayd` 等依赖而跳过。涉及 UI 时说明跳过项和残余风险。
 - Arch 包验收用 `make check-package PACKAGE=/path/to/package.pkg.tar.zst`。
-  静态检查加 `PACKAGE_NO_INSTALL=1`。完整检查只在隔离 pacman 根目录中安装，详见 [USAGE.md](USAGE.md#构建和验收)。
+  静态检查加 `PACKAGE_NO_INSTALL=1`。完整检查只在隔离 pacman 根目录中安装，详见 [MAINTENANCE.md](MAINTENANCE.md#构建和验收)。
 - 修复失败根因，禁止吞异常、跳过测试、放宽断言、缩短超时或删除分支来让检查通过。
   无法执行时记录命令、错误和未覆盖范围。未做真机验证时明确说明。
 
@@ -720,3 +720,7 @@ make WERROR=1 check
 - 动机：尊重用户本次忽略提示的选择，同时保留程序收起通知后的稳定重现能力。
 - 影响：沿用锁屏和会话恢复的通知重置、失败退避与确认条件，迟到关闭事件忽略，状态与协议不变。
 - 同步：会话通知和事件订阅、通知/会话/UI 回归测试、README。
+
+### 2026-11-07 - 安装维护指南改名
+
+安装、排查、打包和发布共用的指南从 `USAGE.md` 改名为 `MAINTENANCE.md`，让文件名体现维护用途。此路径取代此前的根目录旧名。README 链接、AUR 注释和发布文件检查同步改名，用户文档仍为两页。

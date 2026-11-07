@@ -65,7 +65,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             f'{self.project_version}\\n"',
             read("po/zh_CN.po"),
         )
-        usage = read("USAGE.md")
+        usage = read("MAINTENANCE.md")
         self.assertIn("panasonic-posture-manager", usage)
         self.assertIn("panasonic-posture-manager-bin", usage)
 
@@ -76,7 +76,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             "packaging/aur/PKGBUILD",
             "packaging/aur/.SRCINFO",
             "packaging/aur/panasonic-posture-manager.install",
-            "USAGE.md",
+            "MAINTENANCE.md",
         ):
             with self.subTest(relative=relative):
                 self.assertTrue((ROOT / relative).is_file(), relative)
