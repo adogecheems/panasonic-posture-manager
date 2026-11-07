@@ -513,27 +513,29 @@ bus.unregister_object(registration)
 page.close()
 ''')
 
-    def test_illustrations_all_themes_cache_and_fallback(self):
+    def test_four_illustrations_all_themes_cache_and_missing_assets(self):
         self.run_ui('''
 from panasonic_posture.ui.illustration import POSES, posture_pixbuf, _CACHE, CACHE_LIMIT
 from panasonic_posture.ui.common import DATA_ROOT
 from pathlib import Path
 import tempfile
-import shutil
+import unittest
+from unittest.mock import patch
+assert POSES == {'laptop', 'stand', 'tent', 'tablet'}
+assert not (DATA_ROOT / 'assets/unknown.svg').exists()
 for pose in POSES:
     for dark in (False, True):
         for hc in (False, True):
             pixbuf = posture_pixbuf(DATA_ROOT, pose, dark, hc)
             assert (pixbuf.get_width(), pixbuf.get_height()) == (640, 480)
 assert len(_CACHE) <= CACHE_LIMIT
-assert posture_pixbuf(DATA_ROOT, '../bad') is posture_pixbuf(DATA_ROOT, 'unknown')
+assert posture_pixbuf(DATA_ROOT, '../bad') is None
+assert posture_pixbuf(DATA_ROOT, 'unknown') is None
 with tempfile.TemporaryDirectory() as directory:
-    root = Path(directory)
-    (root / 'assets').mkdir()
-    shutil.copy(DATA_ROOT / 'assets/unknown.svg', root / 'assets/unknown.svg')
-    import unittest
-    with unittest.TestCase().assertLogs('panasonic_posture.ui.illustration', level='ERROR'):
-        assert posture_pixbuf(root, 'tent').get_width() == 640
+    with patch('panasonic_posture.ui.posture.DATA_ROOT', Path(directory)):
+        with unittest.TestCase().assertLogs('panasonic_posture.ui.posture', level='ERROR'):
+            page.refresh_theme()
+        assert page._pixbuf is None
 page.close()
 ''')
 
