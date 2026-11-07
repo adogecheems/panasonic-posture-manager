@@ -255,7 +255,7 @@ assert abs(mark.deviceIndependentSize().width() - 72) < 0.1
         self.run_ui('''
 from qfluentwidgets import SegmentedWidget, SwitchSettingCard, SettingCardGroup
 from PyQt6.QtGui import QFont, QPalette
-assert type(window.navigation) is SegmentedWidget
+assert isinstance(window.navigation, SegmentedWidget)
 assert window.navigation.width() <= window.width() * 0.7
 assert abs(window.navigation.geometry().center().x() - window.width() / 2) <= 2
 assert len(window.settings.findChildren(SwitchSettingCard)) == 3
@@ -269,4 +269,34 @@ QTest.qWait(150)
 for card, controls in window.settings.cards:
     if not card.contentLabel.isHidden():
         assert card.contentLabel.height() >= card.contentLabel.heightForWidth(card.contentLabel.width())
+''')
+
+    def test_grouped_rows_and_navigation_insets(self):
+        self.run_ui('''
+from PyQt6.QtCore import QPoint
+window.switchTo(window.settings)
+QTest.qWait(200)
+first, middle, last = window.settings.switch_cards.values()
+assert first.geometry().bottom() + 1 == middle.y()
+assert middle.geometry().bottom() + 1 == last.y()
+for card in (first, middle, last):
+    switch = card.switchButton
+    assert switch.rect().contains(switch.indicator.geometry())
+nav = window.navigation
+left, right = nav.items.values()
+assert left.width() == right.width()
+assert left.height() >= 40
+assert left.x() == nav.width() - right.geometry().right() - 1 >= 4
+assert left.y() == nav.height() - left.geometry().bottom() - 1 >= 4
+# Check the rendered arc in the corner of a group, and the straight join below.
+origin = first.mapTo(window, QPoint())
+x, y = origin.x(), origin.y()
+image = window.grab().toImage()
+background = image.pixelColor(x - 2, y + 8)
+assert image.pixelColor(x + 3, y + 3) == background
+assert image.pixelColor(x + 3, y + first.height() - 3) != background
+assert window.settings.scroll_edge.isVisible()
+bar = window.settings.verticalScrollBar()
+bar.setValue(bar.maximum())
+assert not window.settings.scroll_edge.isVisible()
 ''')

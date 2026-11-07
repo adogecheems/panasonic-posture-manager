@@ -4,9 +4,9 @@ import sys
 import time
 
 from PyQt6.QtCore import Qt, QTimer, QRectF
-from PyQt6.QtGui import QIcon, QPainter, QPixmap, QFont
+from PyQt6.QtGui import QIcon, QPainter, QPixmap, QFont, QColor, QRadialGradient
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QButtonGroup, QStackedWidget, QScroller, QScrollerProperties
+from PyQt6.QtWidgets import QApplication, QWidget, QFrame, QVBoxLayout, QHBoxLayout, QButtonGroup, QStackedWidget, QScroller, QScrollerProperties
 from qfluentwidgets import (
     FluentWidget, FluentIcon as Icon, SegmentedWidget, SettingCardGroup, SwitchSettingCard, SettingCard,
     TitleLabel, BodyLabel, CaptionLabel,
@@ -22,6 +22,9 @@ from ..frontend.state import PostureModel, Detail
 from .demo import DemoClient, UnavailableClient
 from .resources import data_root, translator
 
+WINDOW_LIGHT = '#f6f7f9'
+WINDOW_DARK = '#22252b'
+
 
 def mode_labels(_):
     return {'auto': _('Automatic'), 'laptop': _('Laptop'), 'tent': _('Tent'),
@@ -32,18 +35,24 @@ class Illustration(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.pose = 'laptop'
-        self.setFixedHeight(210)
+        self.setFixedHeight(216)
         qconfig.themeChanged.connect(self.update)
 
     def paintEvent(self, event):
         path = data_root() / 'assets' / f'{self.pose}.svg'
         dark = isDarkTheme()
-        svg = path.read_text(encoding='utf-8').replace('currentColor', '#e8e7ef' if dark else '#383549')
-        svg = svg.replace('var(--app-bg, white)', self.window().backgroundColor.name())
+        svg = path.read_text(encoding='utf-8').replace('currentColor', '#d6dfee' if dark else '#40516e')
+        svg = svg.replace('var(--app-bg, white)', '#2b3445' if dark else '#eff4fc')
         renderer = QSvgRenderer(svg.encode())
         painter = QPainter(self)
         width = min(self.width(), self.height() * 4 / 3)
-        renderer.render(painter, QRectF((self.width() - width) / 2, 0, width, width * 3 / 4))
+        bounds = QRectF(0, 0, width, width * 3 / 4)
+        bounds.moveCenter(QRectF(self.rect()).center())
+        glow = QRadialGradient(bounds.center(), bounds.height() / 2)
+        glow.setColorAt(0, QColor(83, 135, 235, 38 if dark else 24))
+        glow.setColorAt(1, Qt.GlobalColor.transparent)
+        painter.fillRect(bounds, glow)
+        renderer.render(painter, bounds)
 
 
 class Page(ScrollArea):
@@ -84,6 +93,7 @@ class Home(Page):
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.show_slow)
         box = self.box
+        box.setSpacing(6)
         box.addStretch()
         self.illustration = Illustration()
         box.addWidget(self.illustration)
@@ -184,6 +194,72 @@ class ModeRadio(RadioButton):
         super().keyPressEvent(event)
 
 
+# SettingCard paints a fixed 6 px outline on every row. Let Qt draw the
+# grouped surfaces from the stylesheet, retaining the Fluent controls inside.
+class SettingRow(SettingCard):
+    def paintEvent(self, event):
+        QFrame.paintEvent(self, event)
+
+
+class SwitchRow(SwitchSettingCard):
+    def paintEvent(self, event):
+        QFrame.paintEvent(self, event)
+
+
+def row_style(surface, line, primary, secondary):
+    return f"""
+        SettingCard {{ background: {surface}; border: 1px solid {line}; border-top: none; }}
+        SettingCard[first="true"] {{
+            border-top: 1px solid {line};
+            border-top-left-radius: 18px; border-top-right-radius: 18px;
+        }}
+        SettingCard[last="true"] {{ border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; }}
+        QLabel#settingTitle {{ color: {primary}; font-size: 14px; font-weight: 400; }}
+        QLabel#contentLabel {{ color: {secondary}; font-size: 12px; }}
+    """
+
+
+class PageSwitcher(SegmentedWidget):
+    # Delegate the selected surface to the native item's isSelected stylesheet.
+    # The stock parent's painter always draws a second, 5 px selection outline.
+    def paintEvent(self, event):
+        QWidget.paintEvent(self, event)
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.hBoxLayout.setContentsMargins(4, 4, 4, 4)
+        self.hBoxLayout.setSpacing(2)
+        setCustomStyleSheet(self,
+            'PageSwitcher { background: #e9ecf1; border: none; border-radius: 24px; }',
+            'PageSwitcher { background: #30343c; border: none; border-radius: 24px; }')
+
+    def fit_items(self):
+        for item in self.items.values():
+            item.setFixedHeight(40)
+            setCustomStyleSheet(item,
+                self.item_style('#556071', '#e0e5ed', '#ffffff', '#174baa', '#c7d8f7'),
+                self.item_style('#bec7d4', '#393e48', '#414b5e', '#dde9ff', '#566c91'))
+        width = max(104, *(item.sizeHint().width() for item in self.items.values()))
+        for item in self.items.values():
+            item.setFixedWidth(width)
+        self.setFixedSize(self.sizeHint())
+
+    @staticmethod
+    def item_style(text, hover, selected, accent, pressed):
+        return f"""
+            SegmentedItem[isSelected] {{
+                color: {text}; border: 1px solid transparent; border-radius: 20px; margin: 0;
+                padding-top: 0; padding-bottom: 0; font-size: 13px; font-weight: 400;
+            }}
+            SegmentedItem[isSelected=false]:hover {{ background: {hover}; }}
+            SegmentedItem[isSelected=true], SegmentedItem[isSelected=true]:hover {{
+                color: {accent}; background: {selected};
+            }}
+            SegmentedItem[isSelected]:pressed {{ background: {pressed}; }}
+            SegmentedItem[isSelected]:focus {{ border-color: {accent}; }}
+        """
+
+
 class Settings(Page):
     def __init__(self, client: UIClient, _, notify, parent=None):
         super().__init__('settings', parent)
@@ -193,6 +269,8 @@ class Settings(Page):
         self.switches, self.radios = {}, {}
         self.cards = []
         self.groups = []
+        self.box.setContentsMargins(24, 18, 24, 20)
+        self.box.setSpacing(22)
         group = self.add_group(_('Automatic mode'))
         self.switch_cards = {}
         for field, title, subtitle in (
@@ -200,17 +278,18 @@ class Settings(Page):
             ('tent_prompt', _('Tent mode notification'), _('Ask before switching to tent mode when the base is upright')),
             ('stand_prompt', _('Stand mode notification'), _('Ask before switching to stand mode when the base is folded back')),
         ):
-            card = SwitchSettingCard(QIcon(), title, subtitle)
+            card = SwitchRow(QIcon(), title, subtitle)
             switch = card.switchButton
             switch.label.hide()
-            switch.setFixedWidth(42)
+            switch.hBox.setContentsMargins(0, 0, 0, 0)
+            switch.setFixedWidth(switch.indicator.width())
             switch.setAccessibleName(title)
             card.checkedChanged.connect(lambda enabled, f=field: self.model.queue(f, enabled))
             self.switch_cards[field] = card
             self.switches[field] = switch
             self.add_card(group, card, (switch,))
         group = self.add_group(_('Sensor'))
-        self.sensor_card = SettingCard(QIcon(), _('Sensor calibration'),
+        self.sensor_card = SettingRow(QIcon(), _('Sensor calibration'),
                                       _('Place the device in laptop form on a flat desk, then calibrate.'))
         self.calibration_hint = self.sensor_card.contentLabel
         self.calibrate_button = PushButton(_('Calibrate'))
@@ -218,6 +297,7 @@ class Settings(Page):
         self.reset_button = PushButton(_('Reset'))
         self.reset_button.clicked.connect(lambda: self.calibration.run('reset', self.client.reset_calibration))
         self.sensor_card.hBoxLayout.addWidget(self.reset_button)
+        self.sensor_card.hBoxLayout.addSpacing(6)
         self.sensor_card.hBoxLayout.addWidget(self.calibrate_button)
         self.sensor_card.hBoxLayout.addSpacing(16)
         self.add_card(group, self.sensor_card, (self.reset_button, self.calibrate_button))
@@ -231,7 +311,7 @@ class Settings(Page):
             'tablet': _('Lets the screen rotate and disables the built-in keyboard and touchpad'),
         }
         for key, label in mode_labels(_).items():
-            card = SettingCard(QIcon(), label, descriptions[key])
+            card = SettingRow(QIcon(), label, descriptions[key])
             radio = ModeRadio()
             radio.setAccessibleName(label)
             self.group.addButton(radio)
@@ -241,25 +321,38 @@ class Settings(Page):
             card.hBoxLayout.setContentsMargins(16, 0, 0, 0)
             self.add_card(group, card, (radio,))
         group = self.add_group(_('About'))
-        self.add_card(group, SettingCard(QIcon(), _('Version'), __version__))
-        self.add_card(group, SettingCard(QIcon(), _('Author'), 'adogecheems'))
+        self.add_card(group, SettingRow(QIcon(), _('Version'), __version__))
+        self.add_card(group, SettingRow(QIcon(), _('Author'), 'adogecheems'))
         appearance = ComboBox()
         for text in (_('System'), _('Light'), _('Dark')):
             appearance.addItem(text)
         appearance.setAccessibleName(_('Appearance'))
         appearance.currentIndexChanged.connect(lambda index: setTheme((Theme.AUTO, Theme.LIGHT, Theme.DARK)[index]))
-        card = SettingCard(QIcon(), _('Appearance'))
+        card = SettingRow(QIcon(), _('Appearance'))
         card.hBoxLayout.addWidget(appearance)
         card.hBoxLayout.addSpacing(16)
         self.add_card(group, card, (appearance,))
         notice = CaptionLabel(_("Let's note is a trademark of Panasonic Corporation. The author does not claim any rights to the trademark and is not associated with it."))
         notice.setWordWrap(True)
+        for group in self.groups:
+            rows = group.findChildren(SettingCard, options=Qt.FindChildOption.FindDirectChildrenOnly)
+            rows[0].setProperty('first', True)
+            rows[-1].setProperty('last', True)
         self.box.addWidget(notice)
         self.box.addStretch()
+        self.scroll_edge = QFrame(self.viewport())
+        self.scroll_edge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.tint_scroll_edge()
+        qconfig.themeChangedFinished.connect(self.tint_scroll_edge)
+        bar = self.verticalScrollBar()
+        bar.valueChanged.connect(self.update_scroll_edge)
+        bar.rangeChanged.connect(self.update_scroll_edge)
         self.unavailable()
 
     def add_group(self, title):
         group = SettingCardGroup(title)
+        group.cardLayout.setSpacing(0)
+        group.titleLabel.setContentsMargins(4, 0, 0, 0)
         setFont(group.titleLabel, 13, QFont.Weight.Medium)
         setCustomStyleSheet(group, 'SettingCardGroup > QLabel {color: #5e5a65;}',
                            'SettingCardGroup > QLabel {color: #b5b1bb;}')
@@ -276,24 +369,33 @@ class Settings(Page):
         card.titleLabel.setObjectName('settingTitle')
         card.titleLabel.setWordWrap(True)
         card.contentLabel.setWordWrap(True)
-        setFont(card.titleLabel, 13)
-        setFont(card.contentLabel, 12)
+        card.vBoxLayout.setSpacing(3)
         setCustomStyleSheet(card,
-            'SettingCard QLabel#settingTitle {color: #3d3846; font-weight: 400;} '
-            'SettingCard QLabel#contentLabel {color: #77727f;}',
-            'SettingCard QLabel#settingTitle {color: #deddda; font-weight: 400;} '
-            'SettingCard QLabel#contentLabel {color: #aaa6b0;}')
+            row_style('#ffffff', '#e1e5eb', '#384454', '#626d7d'),
+            row_style('#2b3038', '#393f49', '#dce2e9', '#aeb8c7'))
         self.cards.append((card, controls))
         group.addSettingCard(card)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self.scroll_edge.setGeometry(0, self.viewport().height() - 14, self.viewport().width(), 14)
         QTimer.singleShot(0, self.fit_cards)
+
+    def tint_scroll_edge(self):
+        color = WINDOW_DARK if isDarkTheme() else WINDOW_LIGHT
+        self.scroll_edge.setStyleSheet(
+            'border: none; background: qlineargradient(x1:0, y1:0, x2:0, y2:1, '
+            f'stop:0 transparent, stop:1 {color});')
+
+    def update_scroll_edge(self):
+        bar = self.verticalScrollBar()
+        self.scroll_edge.setVisible(bar.value() < bar.maximum())
 
     def fit_cards(self):
         for card, controls in self.cards:
             reserve = sum(control.sizeHint().width() for control in controls if not control.isHidden())
-            width = max(100, card.width() - reserve - 48)
+            gap = 6 if card is self.sensor_card else 0
+            width = max(100, card.width() - reserve - 48 - gap)
             card.titleLabel.setFixedWidth(width)
             card.contentLabel.setFixedWidth(width)
             height = card.titleLabel.heightForWidth(width)
@@ -301,8 +403,8 @@ class Settings(Page):
             if not card.contentLabel.isHidden():
                 content_height = card.contentLabel.heightForWidth(width)
                 card.contentLabel.setFixedHeight(content_height)
-                height += content_height
-            card.setFixedHeight(max(56, height + 24))
+                height += content_height + card.vBoxLayout.spacing()
+            card.setFixedHeight(max(56, height + 26))
         for group in self.groups:
             group.adjustSize()
 
@@ -362,7 +464,7 @@ class Window(FluentWidget):
         self._ = _
         self.setWindowTitle(_('Panasonic 2-in-1 Tablet Posture Management Tool'))
         self.setMicaEffectEnabled(False)
-        self.setCustomBackgroundColor('#fafafa', '#242424')
+        self.setCustomBackgroundColor(WINDOW_LIGHT, WINDOW_DARK)
         self.resize(500, 660)
         self.setMinimumSize(420, 560)
         self.titleBar.setFixedHeight(48)
@@ -379,19 +481,14 @@ class Window(FluentWidget):
         self.stackedWidget = QStackedWidget(self)
         self.stackedWidget.addWidget(self.home)
         self.stackedWidget.addWidget(self.settings)
-        self.navigation = SegmentedWidget(self)
+        self.navigation = PageSwitcher(self)
         self.navigation.addItem('posture', _('Current posture'), lambda: self.switchTo(self.home), Icon.HOME)
         self.navigation.addItem('settings', _('Settings'), lambda: self.switchTo(self.settings), Icon.SETTING)
+        self.navigation.fit_items()
         self.navigation.setCurrentItem('posture')
-        self.navigation.setFixedWidth(280)
-        setCustomStyleSheet(self.navigation,
-            'SegmentedWidget {border-radius: 5px;} '
-            'SegmentedItem {border-radius: 5px; color: #3d3846; font-weight: 400; min-height: 34px;}',
-            'SegmentedWidget {border-radius: 5px;} '
-            'SegmentedItem {border-radius: 5px; color: #deddda; font-weight: 400; min-height: 34px;}')
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 48, 0, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(0, 48, 0, 12)
+        layout.setSpacing(8)
         layout.addWidget(self.stackedWidget, 1)
         footer = QHBoxLayout()
         footer.setContentsMargins(20, 0, 20, 0)
@@ -406,10 +503,15 @@ class Window(FluentWidget):
             layout.addWidget(note)
         for label in self.findChildren((BodyLabel, CaptionLabel, TitleLabel)):
             caption = isinstance(label, CaptionLabel)
-            label.setTextColor('#77727f' if caption else '#3d3846',
-                               '#aaa6b0' if caption else '#deddda')
+            label.setTextColor('#646e7c' if caption else '#384454',
+                               '#aeb8c7' if caption else '#dce2e9')
             setFont(label, 12 if caption else 24 if isinstance(label, TitleLabel) else 13,
                     QFont.Weight.Medium if isinstance(label, TitleLabel) else QFont.Weight.Normal)
+        for button in (self.home.confirm_button, self.home.retry_button, self.settings.calibrate_button,
+                       self.settings.reset_button, self.settings.findChild(ComboBox)):
+            selector = type(button).__name__
+            style = f'{selector} {{ border-radius: 12px; }}'
+            setCustomStyleSheet(button, style, style)
         setFont(self.titleBar.titleLabel, 12)
         setCustomStyleSheet(self.titleBar, 'QLabel {color: #3d3846; font-weight: 400;}',
                            'QLabel {color: #deddda; font-weight: 400;}')
