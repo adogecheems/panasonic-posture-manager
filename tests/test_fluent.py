@@ -185,6 +185,11 @@ translated.switchTo(translated.settings)
 QTest.qWait(100)
 assert translated.settings.horizontalScrollBar().maximum() == 0
 assert translated.grab().width() == 500
+translated.resize(420, 560)
+QTest.qWait(150)
+for card, controls in translated.settings.cards:
+    if not card.contentLabel.isHidden():
+        assert card.contentLabel.height() >= card.contentLabel.heightForWidth(card.contentLabel.width())
 translated.close()
 ''')
 
@@ -207,9 +212,9 @@ for theme, filename in ((Theme.LIGHT, 'lets-note-window-icon.png'),
     expected = QIcon(str(data_root() / 'assets' / filename)).pixmap(72, 42).toImage()
     assert window.windowIcon().pixmap(72, 42).toImage() == expected
     mark = window.titleBar.iconLabel.pixmap()
-    assert mark.width() >= 88 * window.devicePixelRatioF()
-    assert abs(mark.deviceIndependentSize().width() - 88) < 0.1
-    assert mark.deviceIndependentSize().height() > 40
+    assert mark.width() >= 72 * window.devicePixelRatioF()
+    assert abs(mark.deviceIndependentSize().width() - 72) < 0.1
+    assert mark.deviceIndependentSize().height() > 35
 window.switchTo(window.home)
 assert window.home.verticalScrollBar().maximum() == 0
 ''')
@@ -242,6 +247,26 @@ assert window.client.state['tent_enabled'] is False
                 self.run_ui('''
 mark = window.titleBar.iconLabel.pixmap()
 assert mark.devicePixelRatio() == window.devicePixelRatioF()
-assert mark.width() >= round(88 * window.devicePixelRatioF())
-assert abs(mark.deviceIndependentSize().width() - 88) < 0.1
+assert mark.width() >= round(72 * window.devicePixelRatioF())
+assert abs(mark.deviceIndependentSize().width() - 72) < 0.1
 ''', scale=scale)
+
+    def test_native_controls_and_compact_navigation(self):
+        self.run_ui('''
+from qfluentwidgets import SegmentedWidget, SwitchSettingCard, SettingCardGroup
+from PyQt6.QtGui import QFont, QPalette
+assert type(window.navigation) is SegmentedWidget
+assert window.navigation.width() <= window.width() * 0.7
+assert abs(window.navigation.geometry().center().x() - window.width() / 2) <= 2
+assert len(window.settings.findChildren(SwitchSettingCard)) == 3
+assert len(window.settings.findChildren(SettingCardGroup)) == 4
+for card in window.settings.findChildren(SwitchSettingCard):
+    assert card.titleLabel.font().weight() == QFont.Weight.Normal
+    assert card.titleLabel.palette().color(QPalette.ColorRole.WindowText).name() != '#000000'
+window.switchTo(window.settings)
+window.resize(420, 560)
+QTest.qWait(150)
+for card, controls in window.settings.cards:
+    if not card.contentLabel.isHidden():
+        assert card.contentLabel.height() >= card.contentLabel.heightForWidth(card.contentLabel.width())
+''')

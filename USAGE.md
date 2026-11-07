@@ -154,7 +154,9 @@ set PYTHONPATH=src
 
 演示客户端只生成内存快照，模式请求与延迟完成使用不同状态；代次改变、断线或退出会
 丢弃旧的完成回调。窗口采用与 Linux 相近的两页底部导航，设置按自动模式、传感器、
-模式选择、关于排列；主页仅显示姿态与必要反馈，演示说明收在底部。
+模式选择、关于排列；主页仅显示姿态与必要反馈，演示说明收在底部。设置页使用
+Fluent 的 `SettingCardGroup`、`SwitchSettingCard` 和 `SettingCard`，底部使用原生
+`SegmentedWidget`，不自绘选中背景；只调整文字层级、窄窗口换行与一致的边框圆角。
 演示场景通过启动参数选择，例如 `preview.cmd --scenario prompt`；可选值为 `laptop`、
 `prompt`、`hardware`、`slow`、`error`、`disconnected`。模块入口的 `--scenario` 必须与
 `--demo` 一起使用。
