@@ -137,8 +137,6 @@ class Controller:
             raise ValueError(ErrorCode.INVALID_MODE) from None
         if self.hardware is True and normalized != Mode.AUTO:
             raise ValueError(ErrorCode.HARDWARE_PRIORITY)
-        if normalized == Mode.TENT and not self.tent_enabled:
-            raise ValueError(ErrorCode.INVALID_MODE)
         self.manual = normalized
 
     def confirm_tent(self, epoch: int) -> bool:
@@ -213,10 +211,6 @@ class Controller:
             raise ValueError("hardware must be True, False or None")
         if hardware is True and self.hardware is not True:
             # The physical switch has priority over every manual selection.
-            self.manual = Mode.AUTO
-        if not self.tent_enabled and self.manual == Mode.TENT:
-            # Disabling tent mode also rescinds a manual selection; the same
-            # switch must never leave the device in tent mode.
             self.manual = Mode.AUTO
         self.hardware = hardware
         prompt_from_laptop = not self._unattended and self.manual in (Mode.AUTO, Mode.LAPTOP)

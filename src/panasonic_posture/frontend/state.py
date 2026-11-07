@@ -64,6 +64,12 @@ class PostureModel:
         self.slow = False
 
     @property
+    def can_return_auto(self) -> bool:
+        return bool(self.state and self.state['supported']
+                    and self.state['manual'] in POSES
+                    and self.state['hardware'] is not True)
+
+    @property
     def detail(self) -> Detail:
         state = self.state
         if state is None:

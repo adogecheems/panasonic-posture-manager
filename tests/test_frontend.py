@@ -71,6 +71,21 @@ from panasonic_posture.frontend import ports, state, actions
         self.assertIsNone(model.deadline)
         self.assertEqual(model.detail, Detail.DISCONNECTED)
 
+    def test_return_auto_requires_supported_connected_manual_state(self):
+        model = PostureModel()
+        self.assertFalse(model.can_return_auto)
+        for values, expected in (({'manual': 'tent'}, True),
+                                 ({'manual': 'auto'}, False),
+                                 ({'hardware': True}, False),
+                                 ({'supported': False}, False)):
+            model.update(state(**values), 0)
+            self.assertEqual(model.can_return_auto, expected)
+        model.disconnect()
+        self.assertFalse(model.can_return_auto)
+        settings = SettingsModel(Client(), lambda: None, lambda error: None)
+        settings.update(state(tent_enabled=False, hardware=False))
+        self.assertTrue(settings.mode_enabled('tent'))
+
     def test_display_and_detail_priority(self):
         model = PostureModel()
         model.update(state(applied={'mode': 'hardware'}), 0)

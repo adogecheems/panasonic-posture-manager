@@ -64,8 +64,8 @@ msgstr "无法修改设置"
 msgid "Automatic mode"
 msgstr "自动模式"
 
-msgid "Allow automatic detection of tent mode"
-msgstr "允许自动识别帐篷模式"
+msgid "You can still select tent mode manually when this is off."
+msgstr "关闭后仍可手动选择帐篷模式。"
 
 msgid "Tent mode notification"
 msgstr "帐篷模式提示"
@@ -297,3 +297,9 @@ msgstr "屏幕与睡眠"
 
 msgid "No supported built-in USB touchscreen is available."
 msgstr "当前没有可用于唤醒的内置 USB 触摸屏。"
+
+msgid "Return to automatic"
+msgstr "返回自动"
+
+msgid "Detect tent mode automatically"
+msgstr "自动识别帐篷模式"

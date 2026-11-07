@@ -72,6 +72,7 @@ class Notifier:
         self._capabilities: list[str] | None = None
         self._interrupted_key: tuple[int, str] | None = None
         self._resume_since: float | None = None
+        self._dismissed_key: tuple[int, str] | None = None
 
     # -- public API -------------------------------------------------------
 
@@ -104,6 +105,8 @@ class Notifier:
         epoch = int(epoch)
         prompt = prompt if prompt in protocol.PROMPTS else "tent"
         key = (epoch, prompt)
+        if key == self._dismissed_key:
+            return
         if not self._resume_ready(key, now):
             return
         if key == (self.shown_epoch, self._shown_prompt):
@@ -129,14 +132,27 @@ class Notifier:
         self._reset_retry()
         self._failed_key = None
         self._capabilities = None
+        self._dismissed_key = None
         self._interrupted_key = None
         self._resume_since = None
+
+    def notification_closed(self, identifier: int, reason: int) -> None:
+        """Remember explicit dismissal without changing the service prompt."""
+        if not self.notification or identifier != self.notification:
+            return
+        self.notification = 0
+        if reason == 2:
+            self._dismissed_key = (self.epoch, self.prompt)
+            self.epoch = None
+            self.prompt = None
+            self._interrupted_key = None
+            self._resume_since = None
 
     # -- internals --------------------------------------------------------
 
     def _interrupt(self) -> None:
         # Only rearm a delivered prompt. Failed delivery retains its retry budget.
-        if self.notification and self.epoch is not None and self.prompt is not None:
+        if self.epoch is not None and self.prompt is not None:
             self._interrupted_key = (self.epoch, self.prompt)
             self.shown_epoch = None
             self._shown_prompt = None

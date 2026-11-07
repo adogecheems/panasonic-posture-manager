@@ -27,12 +27,14 @@ class DemoTests(unittest.TestCase):
         self.drain()
         self.assertEqual(self.states[-1]['applied']['mode'], 'tent')
 
-    def test_hardware_and_disabled_tent_reject_requests(self):
+    def test_hardware_rejects_and_manual_tent_ignores_automatic_preference(self):
         self.client.scenario('hardware')
         self.assertIsNotNone(self.client.set_mode('laptop').exception())
         self.client.scenario('laptop')
         self.client.set_preference('tent_enabled', False)
-        self.assertIsNotNone(self.client.set_mode('tent').exception())
+        self.assertIsNone(self.client.set_mode('tent').exception())
+        self.client.set_preference('tent_enabled', False)
+        self.assertEqual(self.states[-1]['manual'], 'tent')
 
     def test_stale_completion_and_stop_do_not_publish(self):
         self.client.set_mode('tent')
@@ -127,6 +129,19 @@ assert sip.isdeleted(window), 'Closed windows must be destroyed before interpret
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn('Traceback', result.stderr)
 
+    def test_return_to_automatic(self):
+        self.run_ui('''
+window.client.set_mode('tent')
+QTest.qWait(50)
+home = window.home
+assert home.auto_button.isVisible()
+home.auto_button.click()
+assert window.client.state['manual'] == 'auto'
+assert not home.auto_button.isVisible()
+window.client.scenario('disconnected')
+assert not home.auto_button.isVisible()
+''')
+
     def test_event_loop_destroys_closed_window(self):
         self.run_ui('''
 from PyQt6.QtCore import QTimer
@@ -144,7 +159,9 @@ window.settings.radios['tent'].click()
 QTest.qWait(450)
 assert window.home.heading.text() == 'Tent'
 window.settings.switches['tent_enabled'].setChecked(False)
-assert not window.settings.radios['tent'].isEnabled()
+assert window.settings.radios['tent'].isEnabled()
+assert window.client.state['manual'] == 'tent'
+assert window.home.auto_button.isVisibleTo(window.home)
 window.settings.calibration.run('calibrate', window.client.calibrate)
 assert window.settings.reset_button.isVisibleTo(window.settings)
 ''')

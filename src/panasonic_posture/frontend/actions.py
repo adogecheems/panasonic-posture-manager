@@ -85,8 +85,7 @@ class SettingsModel:
 
     def mode_enabled(self, mode: str) -> bool:
         return bool(self.state and self.state['supported']
-                    and self.state['hardware'] is not True
-                    and (mode != 'tent' or self.value('tent_enabled')))
+                    and self.state['hardware'] is not True)
 
     def queue(self, field: str, value: str | bool) -> None:
         if field != 'manual' and field not in PREFERENCES:

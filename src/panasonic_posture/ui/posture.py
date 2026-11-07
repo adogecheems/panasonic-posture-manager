@@ -43,7 +43,9 @@ class PosturePage:
         self.confirm_button.connect('clicked', self._confirm)
         self.retry_button = Gtk.Button(label=_('Retry'), visible=False, halign=Gtk.Align.CENTER)
         self.retry_button.connect('clicked', self._retry)
-        for child in (self.drawing, self.heading, self.detail, self.confirm_button, self.retry_button):
+        self.auto_button = Gtk.Button(label=_('Return to automatic'), visible=False, halign=Gtk.Align.CENTER)
+        self.auto_button.connect('clicked', self._return_auto)
+        for child in (self.drawing, self.heading, self.detail, self.confirm_button, self.retry_button, self.auto_button):
             self.widget.append(child)
         self._style = Adw.StyleManager.get_default()
         self._style_handlers = [self._style.connect(signal, lambda *args: self.refresh_theme())
@@ -69,6 +71,7 @@ class PosturePage:
         self._prompt = state['pending_prompt']
         self.confirm_button.set_visible(self._epoch is not None)
         self.retry_button.set_visible(bool(state['error_code']) and state['supported'])
+        self.auto_button.set_visible(self._model.can_return_auto)
         self._render_detail()
         self._sync_buttons()
 
@@ -118,6 +121,7 @@ class PosturePage:
         self.detail.set_visible(True)
         self.confirm_button.set_visible(False)
         self.retry_button.set_visible(False)
+        self.auto_button.set_visible(False)
 
     def close(self) -> None:
         self.set_unavailable()
@@ -141,6 +145,10 @@ class PosturePage:
         if self._latest_state:
             self._actions.run('retry', lambda: self._service.retry(self._latest_state['manual']))
 
+    def _return_auto(self, button):
+        if self._model.can_return_auto:
+            self._actions.run('auto', lambda: self._service.set_mode('auto'))
+
     def _action_failed(self, error):
         self.detail.set_label(describe_error(error))
         self.detail.set_visible(True)
@@ -150,3 +158,4 @@ class PosturePage:
         self.retry_button.set_label(_('Retrying…') if self._actions.busy == 'retry' else _('Retry'))
         self.confirm_button.set_sensitive(self._actions.busy is None)
         self.retry_button.set_sensitive(self._actions.busy is None)
+        self.auto_button.set_sensitive(self._actions.busy is None)

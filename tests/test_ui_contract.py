@@ -361,6 +361,26 @@ assert page._timer == 0
 page.close()
 ''')
 
+    def test_return_to_automatic_and_disconnect(self):
+        self.run_ui('''
+assert not page.auto_button.get_visible()
+page.update(state(manual='tent', target={'mode':'tent'}))
+assert page.auto_button.get_visible()
+page.auto_button.emit('clicked')
+assert service.calls[-1][:2] == ('SetMode', ('auto',))
+assert not page.auto_button.get_sensitive()
+page.auto_button.emit('clicked')
+assert len(service.calls) == 1
+service.calls[-1][2].set_exception(Exception('internal-error'))
+assert page.auto_button.get_sensitive()
+page.update(state(manual='auto'))
+assert not page.auto_button.get_visible()
+page.update(state(manual='stand'))
+page.set_unavailable()
+assert not page.auto_button.get_visible()
+page.close()
+''')
+
     def test_confirmation_dedup_and_current_prompt(self):
         self.run_ui('''
 page.update(state(pending_notification=8, pending_prompt='tent'))
@@ -420,7 +440,7 @@ assert not service.calls
 settings.update(state(hardware=True))
 assert not any(b.get_sensitive() for b in settings.radios.values())
 settings.update(state(tent_enabled=False))
-assert not settings.radios['tent'].get_sensitive()
+assert settings.radios['tent'].get_sensitive()
 assert not settings.switches['tent_prompt'].get_sensitive()
 settings.set_unavailable()
 assert not any(b.get_sensitive() for b in settings.radios.values())

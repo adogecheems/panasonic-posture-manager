@@ -54,12 +54,16 @@ class Home(Page):
         self.confirm_button.clicked.connect(self.confirm)
         self.retry_button = PushButton(Icon.SYNC, _('Retry'))
         self.retry_button.clicked.connect(self.retry)
+        self.auto_button = PushButton(_('Return to automatic'))
+        self.auto_button.clicked.connect(self.return_auto)
+        self.auto_button.hide()
         self.confirm_button.hide()
         self.retry_button.hide()
         buttons = QHBoxLayout()
         buttons.addStretch()
         buttons.addWidget(self.confirm_button)
         buttons.addWidget(self.retry_button)
+        buttons.addWidget(self.auto_button)
         buttons.addStretch()
         box.addLayout(buttons)
         self.box.addStretch()
@@ -78,6 +82,7 @@ class Home(Page):
         self.render_detail()
         self.confirm_button.setVisible(state['pending_notification'] is not None)
         self.retry_button.setVisible(bool(state['error_code']))
+        self.auto_button.setVisible(self.model.can_return_auto)
         self.sync_buttons()
 
     def render_detail(self):
@@ -108,17 +113,23 @@ class Home(Page):
         self.render_detail()
         self.confirm_button.hide()
         self.retry_button.hide()
+        self.auto_button.hide()
 
     def sync_buttons(self):
         prompt = self.model.state and self.model.state['pending_prompt']
         self.confirm_button.setText(self._('Enter stand mode') if prompt == 'stand' else self._('Enter tent mode'))
         self.confirm_button.setEnabled(self.actions.busy is None)
         self.retry_button.setEnabled(self.actions.busy is None)
+        self.auto_button.setEnabled(self.actions.busy is None)
 
     def confirm(self):
         state = self.model.state
         if state and state['pending_notification'] is not None:
             self.actions.run('confirm', lambda: self.client.confirm_prompt(state['pending_prompt'], state['pending_notification']))
+
+    def return_auto(self):
+        if self.model.can_return_auto:
+            self.actions.run('auto', lambda: self.client.set_mode('auto'))
 
     def retry(self):
         if self.model.state:
@@ -139,7 +150,7 @@ class Settings(Page):
         group = self.add_group(_('Automatic mode'))
         self.switch_cards = {}
         for field, title, subtitle in (
-            ('tent_enabled', _('Enable tent mode'), _('Allow automatic detection of tent mode')),
+            ('tent_enabled', _('Detect tent mode automatically'), _('You can still select tent mode manually when this is off.')),
             ('tent_prompt', _('Tent mode notification'), _('Ask before switching to tent mode when the base is upright')),
             ('stand_prompt', _('Stand mode notification'), _('Ask before switching to stand mode when the base is folded back')),
         ):

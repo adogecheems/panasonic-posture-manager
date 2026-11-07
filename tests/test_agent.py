@@ -768,6 +768,22 @@ class NotificationActionTests(unittest.TestCase):
             None, None, None, None, None, GLib.Variant("(us)", (notification, name))
         )
 
+    def test_notification_closed_signal_is_subscribed_and_forwarded(self):
+        bus = mock.Mock()
+        bus.signal_subscribe.side_effect = [11, 12]
+        agent = self.harness.agent
+        agent._session_bus = bus
+        agent.notifier = mock.Mock()
+        agent._subscribe_actions()
+        subscriptions = bus.signal_subscribe.call_args_list
+        self.assertEqual(subscriptions[1].args[2], 'NotificationClosed')
+        callback = subscriptions[1].args[-1]
+        callback(None, None, None, None, None, GLib.Variant('(uu)', (42, 2)))
+        agent.notifier.notification_closed.assert_called_once_with(42, 2)
+        agent._cleanup()
+        bus.signal_unsubscribe.assert_any_call(11)
+        bus.signal_unsubscribe.assert_any_call(12)
+
     def test_matching_click_confirms_epoch_then_closes(self):
         self.action(42, "tent")
         self.assertEqual(self.harness.client.confirmations, [7])

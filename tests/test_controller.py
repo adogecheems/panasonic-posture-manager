@@ -481,20 +481,24 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertIsNone(self.controller.pending_notification)
         self.assertEqual(target.mode, "laptop")
 
-    def test_disabling_tent_mode_rescinds_manual_tent(self):
+    def test_disabling_automatic_tent_preserves_manual_tent(self):
         self.controller.set_manual(Mode.TENT)
         self.hold(80.0)
         self.assertEqual(self.controller.target.mode, "tent")
         self.controller.tent_enabled = False
         _, target = self.hold(80.0)
-        self.assertEqual(self.controller.manual, Mode.AUTO)
-        self.assertEqual(target.mode, "laptop")
+        self.assertEqual(self.controller.manual, Mode.TENT)
+        self.assertEqual(target.mode, "tent")
 
-    def test_manual_tent_is_rejected_while_tent_mode_is_disabled(self):
+    def test_manual_tent_is_allowed_while_automatic_tent_is_disabled(self):
         self.controller.tent_enabled = False
-        with self.assertRaises(ValueError) as caught:
-            self.controller.set_manual(Mode.TENT)
-        self.assertEqual(str(caught.exception), ErrorCode.INVALID_MODE)
+        self.controller.set_manual(Mode.TENT)
+        _, target = self.hold(80.0)
+        self.assertEqual(target.mode, "tent")
+        self.assertIsNone(self.controller.pending_prompt)
+        self.controller.set_manual(Mode.AUTO)
+        _, target = self.hold(80.0)
+        self.assertEqual(target.mode, "laptop")
 
     def test_manual_tent_enters_tent_without_prompt(self):
         self.controller.set_manual(Mode.TENT)

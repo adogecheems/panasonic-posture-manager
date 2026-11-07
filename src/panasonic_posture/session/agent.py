@@ -114,6 +114,7 @@ class Agent:
         self.owner = None
         self._timer = None
         self._action_subscription = None
+        self._closed_subscription = None
         self._signal_sources: list = []
         self._acquired = False
         self._name_lost = False
@@ -367,6 +368,10 @@ class Agent:
                 Gio.DBusSignalFlags.NONE,
                 self._on_action,
             )
+            self._closed_subscription = self.session_bus.signal_subscribe(
+                NOTIFY_DEST, NOTIFY_IFACE, "NotificationClosed", NOTIFY_PATH,
+                None, Gio.DBusSignalFlags.NONE, self._on_notification_closed,
+            )
         except (AttributeError, GLib.Error) as error:
             log.warning(
                 "cannot subscribe to notification actions: %s", describe_error(error)
@@ -414,6 +419,11 @@ class Agent:
         except Exception:
             log.exception("notification action failed")
 
+    def _on_notification_closed(self, _bus, _sender, _path, _iface, _signal, parameters) -> None:
+        if self.notifier is not None:
+            identifier, reason = parameters.unpack()
+            self.notifier.notification_closed(identifier, reason)
+
     # -- shutdown ---------------------------------------------------------
 
     def _cleanup(self) -> None:
@@ -430,6 +440,12 @@ class Agent:
             except (AttributeError, GLib.Error):
                 pass
             self._action_subscription = None
+        if self._closed_subscription is not None and self._session_bus is not None:
+            try:
+                self._session_bus.signal_unsubscribe(self._closed_subscription)
+            except (AttributeError, GLib.Error):
+                pass
+            self._closed_subscription = None
         if self.runtime is not None:
             self.runtime.close()
         if self.owner is not None:

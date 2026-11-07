@@ -81,6 +81,44 @@ class NotifierTests(unittest.TestCase):
         self.assertIn("Notify", self.bus.methods())
         self.assertEqual(self.bus.methods()[-1], "Notify")
 
+    def test_dismissal_suppresses_same_prompt_after_posture_interruption(self):
+        self.notifier.sync(7)
+        self.notifier.notification_closed(self.notifier.notification, 2)
+        self.notifier.sync(None)
+        self.notifier.sync(7)
+        self.clock.advance(2)
+        self.notifier.sync(7)
+        self.assertEqual(self.bus.methods().count('Notify'), 1)
+        self.notifier.sync(8)
+        self.assertEqual(self.bus.methods().count('Notify'), 2)
+
+    def test_stale_close_does_not_dismiss_replacement(self):
+        self.notifier.sync(7)
+        old = self.notifier.notification
+        self.notifier.sync(8)
+        current = self.notifier.notification
+        self.notifier.notification_closed(old, 2)
+        self.assertEqual(self.notifier.notification, current)
+        self.notifier.sync(None)
+        self.notifier.sync(8)
+        self.clock.advance(2)
+        self.notifier.sync(8)
+        self.assertEqual(self.bus.methods().count('Notify'), 3)
+
+    def test_expiry_and_programmatic_close_allow_posture_reappearance(self):
+        for reason in (1, 3):
+            with self.subTest(reason=reason):
+                self.notifier.close()
+                self.notifier.sync(7)
+                identifier = self.notifier.notification
+                self.notifier.notification_closed(identifier, reason)
+                self.notifier.sync(None)
+                before = self.bus.methods().count('Notify')
+                self.notifier.sync(7)
+                self.clock.advance(2)
+                self.notifier.sync(7)
+                self.assertEqual(self.bus.methods().count('Notify'), before + 1)
+
     def test_shown_epoch_is_not_notified_twice(self):
         self.notifier.sync(7, now=self.clock())
         self.clock.advance(10)

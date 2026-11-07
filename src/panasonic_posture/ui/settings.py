@@ -39,7 +39,7 @@ class SettingsPage:
         self.switches = {}
         for section, field, title, subtitle in (
             (power, 'suspend_touch_wake', _('Wake from suspend by touch'), WAKE_DESCRIPTION),
-            (group, 'tent_enabled', _('Enable tent mode'), _('Allow automatic detection of tent mode')),
+            (group, 'tent_enabled', _('Detect tent mode automatically'), _('You can still select tent mode manually when this is off.')),
             (group, 'tent_prompt', _('Tent mode notification'), _('Ask before switching to tent mode when the base is upright')),
             (group, 'stand_prompt', _('Stand mode notification'), _('Ask before switching to stand mode when the base is folded back')),
         ):

@@ -106,7 +106,7 @@ class DemoClient:
             return result('unavailable')
         if mode not in ('auto', 'laptop', 'tent', 'stand', 'tablet'):
             return result('invalid-mode')
-        if self.state['hardware'] or (mode == 'tent' and not self.state['tent_enabled']):
+        if self.state['hardware']:
             return result('not-allowed')
         self.state['generation'] += 1
         generation = self.state['generation']
@@ -129,7 +129,8 @@ class DemoClient:
         if field not in PREFERENCES or type(enabled) is not bool:
             return result('invalid-preference')
         self.state[field] = enabled
-        if field == 'tent_enabled' and not enabled and self.state['target']['mode'] == 'tent':
+        if (field == 'tent_enabled' and not enabled and self.state['manual'] == 'auto'
+                and self.state['target']['mode'] == 'tent'):
             self.set_mode('auto')
         self.refresh()
         return result()
