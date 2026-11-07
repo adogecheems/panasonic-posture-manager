@@ -300,3 +300,28 @@ bar = window.settings.verticalScrollBar()
 bar.setValue(bar.maximum())
 assert not window.settings.scroll_edge.isVisible()
 ''')
+
+    def test_navigation_contour_and_text_tones_in_both_themes(self):
+        self.run_ui('''
+from qfluentwidgets import Theme, setTheme
+from PyQt6.QtCore import QPoint
+window.switchTo(window.settings)
+card = window.settings.sensor_card
+for theme in (Theme.LIGHT, Theme.DARK):
+    setTheme(theme)
+    QTest.qWait(100)
+    image = window.grab().toImage()
+    # Sample the composited edge, including the background outside the curve.
+    for widget, sample in ((window.navigation, QPoint(10, 1)),
+                           (window.navigation.currentItem(), QPoint(8, 2))):
+        origin = widget.mapTo(window, QPoint())
+        middle = QPoint(widget.width() // 2, sample.y())
+        assert image.pixelColor(origin + sample) == image.pixelColor(origin + middle)
+        assert image.pixelColor(origin) != image.pixelColor(origin + middle)
+    primary = card.titleLabel.palette().windowText().color()
+    secondary = card.contentLabel.palette().windowText().color()
+    assert primary != secondary
+    assert window.settings.calibrate_button.palette().buttonText().color() == primary
+    assert window.titleBar.titleLabel.palette().windowText().color() == secondary
+    assert window.settings.groups[0].titleLabel.palette().windowText().color() == secondary
+''')

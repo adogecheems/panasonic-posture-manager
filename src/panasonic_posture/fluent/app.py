@@ -24,6 +24,8 @@ from .resources import data_root, translator
 
 WINDOW_LIGHT = '#f6f7f9'
 WINDOW_DARK = '#22252b'
+TEXT_LIGHT, TEXT_DARK = '#45494e', '#dcdee1'
+MUTED_LIGHT, MUTED_DARK = '#656a70', '#b4b8be'
 
 
 def mode_labels(_):
@@ -211,9 +213,9 @@ def row_style(surface, line, primary, secondary):
         SettingCard {{ background: {surface}; border: 1px solid {line}; border-top: none; }}
         SettingCard[first="true"] {{
             border-top: 1px solid {line};
-            border-top-left-radius: 18px; border-top-right-radius: 18px;
+            border-top-left-radius: 16px; border-top-right-radius: 16px;
         }}
-        SettingCard[last="true"] {{ border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; }}
+        SettingCard[last="true"] {{ border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }}
         QLabel#settingTitle {{ color: {primary}; font-size: 14px; font-weight: 400; }}
         QLabel#contentLabel {{ color: {secondary}; font-size: 12px; }}
     """
@@ -230,15 +232,15 @@ class PageSwitcher(SegmentedWidget):
         self.hBoxLayout.setContentsMargins(4, 4, 4, 4)
         self.hBoxLayout.setSpacing(2)
         setCustomStyleSheet(self,
-            'PageSwitcher { background: #e9ecf1; border: none; border-radius: 24px; }',
-            'PageSwitcher { background: #30343c; border: none; border-radius: 24px; }')
+            'PageSwitcher { background: #e9ecf1; border: none; border-radius: 14px; }',
+            'PageSwitcher { background: #30343c; border: none; border-radius: 14px; }')
 
     def fit_items(self):
         for item in self.items.values():
             item.setFixedHeight(40)
             setCustomStyleSheet(item,
-                self.item_style('#556071', '#e0e5ed', '#ffffff', '#174baa', '#c7d8f7'),
-                self.item_style('#bec7d4', '#393e48', '#414b5e', '#dde9ff', '#566c91'))
+                self.item_style(MUTED_LIGHT, '#e0e5ed', '#ffffff', '#305b98', '#c7d8f7'),
+                self.item_style(MUTED_DARK, '#393e48', '#414b5e', '#d3e2f8', '#566c91'))
         width = max(104, *(item.sizeHint().width() for item in self.items.values()))
         for item in self.items.values():
             item.setFixedWidth(width)
@@ -248,7 +250,7 @@ class PageSwitcher(SegmentedWidget):
     def item_style(text, hover, selected, accent, pressed):
         return f"""
             SegmentedItem[isSelected] {{
-                color: {text}; border: 1px solid transparent; border-radius: 20px; margin: 0;
+                color: {text}; border: 1px solid transparent; border-radius: 10px; margin: 0;
                 padding-top: 0; padding-bottom: 0; font-size: 13px; font-weight: 400;
             }}
             SegmentedItem[isSelected=false]:hover {{ background: {hover}; }}
@@ -354,8 +356,8 @@ class Settings(Page):
         group.cardLayout.setSpacing(0)
         group.titleLabel.setContentsMargins(4, 0, 0, 0)
         setFont(group.titleLabel, 13, QFont.Weight.Medium)
-        setCustomStyleSheet(group, 'SettingCardGroup > QLabel {color: #5e5a65;}',
-                           'SettingCardGroup > QLabel {color: #b5b1bb;}')
+        setCustomStyleSheet(group, f'SettingCardGroup > QLabel {{color: {MUTED_LIGHT};}}',
+                           f'SettingCardGroup > QLabel {{color: {MUTED_DARK};}}')
         self.groups.append(group)
         self.box.addWidget(group)
         return group
@@ -371,8 +373,8 @@ class Settings(Page):
         card.contentLabel.setWordWrap(True)
         card.vBoxLayout.setSpacing(3)
         setCustomStyleSheet(card,
-            row_style('#ffffff', '#e1e5eb', '#384454', '#626d7d'),
-            row_style('#2b3038', '#393f49', '#dce2e9', '#aeb8c7'))
+            row_style('#ffffff', '#e1e5eb', TEXT_LIGHT, MUTED_LIGHT),
+            row_style('#2b3038', '#393f49', TEXT_DARK, MUTED_DARK))
         self.cards.append((card, controls))
         group.addSettingCard(card)
 
@@ -503,18 +505,20 @@ class Window(FluentWidget):
             layout.addWidget(note)
         for label in self.findChildren((BodyLabel, CaptionLabel, TitleLabel)):
             caption = isinstance(label, CaptionLabel)
-            label.setTextColor('#646e7c' if caption else '#384454',
-                               '#aeb8c7' if caption else '#dce2e9')
+            label.setTextColor(MUTED_LIGHT if caption else TEXT_LIGHT,
+                               MUTED_DARK if caption else TEXT_DARK)
             setFont(label, 12 if caption else 24 if isinstance(label, TitleLabel) else 13,
                     QFont.Weight.Medium if isinstance(label, TitleLabel) else QFont.Weight.Normal)
         for button in (self.home.confirm_button, self.home.retry_button, self.settings.calibrate_button,
                        self.settings.reset_button, self.settings.findChild(ComboBox)):
             selector = type(button).__name__
-            style = f'{selector} {{ border-radius: 12px; }}'
-            setCustomStyleSheet(button, style, style)
+            style = f'{selector} {{ border-radius: 10px; }}'
+            if isinstance(button, PrimaryPushButton):
+                setCustomStyleSheet(button, style, style)
+            else:
+                setCustomStyleSheet(button, style + f'{selector}:enabled {{color: {TEXT_LIGHT};}}',
+                                   style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
         setFont(self.titleBar.titleLabel, 12)
-        setCustomStyleSheet(self.titleBar, 'QLabel {color: #3d3846; font-weight: 400;}',
-                           'QLabel {color: #deddda; font-weight: 400;}')
         self.client.start(self.update_state, self.unavailable)
 
     def update_mark(self):
