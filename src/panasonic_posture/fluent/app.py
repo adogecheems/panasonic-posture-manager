@@ -4,15 +4,15 @@ import sys
 import time
 
 from PyQt6.QtCore import Qt, QTimer, QRectF
-from PyQt6.QtGui import QIcon, QPainter, QPixmap
+from PyQt6.QtGui import QIcon, QPainter, QPixmap, QColor
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QButtonGroup, QStackedWidget
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QButtonGroup, QStackedWidget, QScroller, QScrollerProperties
 from qfluentwidgets import (
     FluentWidget, FluentIcon as Icon, CardWidget, SegmentedWidget,
     TitleLabel, BodyLabel, CaptionLabel, StrongBodyLabel,
     PrimaryPushButton, PushButton, RadioButton, SwitchButton, ComboBox,
     ScrollArea, InfoBar, InfoBarPosition, MessageBox, Theme, setTheme,
-    setThemeColor, isDarkTheme, qconfig,
+    setThemeColor, isDarkTheme, qconfig, setCustomStyleSheet, themeColor,
 )
 
 from .. import __version__
@@ -26,6 +26,34 @@ from .resources import data_root, translator
 def mode_labels(_):
     return {'auto': _('Automatic'), 'laptop': _('Laptop'), 'tent': _('Tent'),
             'stand': _('Stand'), 'tablet': _('Tablet')}
+
+
+class RoundedNavigation(SegmentedWidget):
+    """Retain Fluent selection animation with the larger shared corner radius."""
+
+    def paintEvent(self, event):
+        if not self.currentItem():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        dark = isDarkTheme()
+        painter.setPen(QColor(255, 255, 255, 14) if dark else QColor(0, 0, 0, 19))
+        painter.setBrush(QColor(255, 255, 255, 15 if dark else 179))
+        item = self.currentItem()
+        x = int(self.slideAni.value())
+        painter.drawRoundedRect(item.rect().adjusted(1, 1, -1, -1).translated(x, 0), 12, 12)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(themeColor())
+        painter.drawRoundedRect(QRectF(x + item.width() / 2 - 8, self.height() - 3.5, 16, 3), 1.5, 1.5)
+
+
+def round_controls(widget):
+    style = '''
+    PushButton, PrimaryPushButton, ComboBox { border-radius: 10px; min-height: 32px; }
+    SegmentedItem { border-radius: 12px; min-height: 40px; }
+    '''
+    # Use the library hook so overrides survive light/dark theme changes.
+    setCustomStyleSheet(widget, style, style)
 
 
 class Illustration(QWidget):
@@ -51,6 +79,15 @@ class Page(ScrollArea):
         super().__init__(parent)
         self.setObjectName(name)
         self.setWidgetResizable(True)
+        # Register only touch dragging. Mouse clicks and the wheel retain their
+        # normal behavior; the recognizer cancels a tap when it becomes a drag.
+        QScroller.grabGesture(self.viewport(), QScroller.ScrollerGestureType.TouchGesture)
+        properties = QScroller.scroller(self.viewport()).scrollerProperties()
+        properties.setScrollMetric(QScrollerProperties.ScrollMetric.HorizontalOvershootPolicy,
+                                   QScrollerProperties.OvershootPolicy.OvershootAlwaysOff)
+        properties.setScrollMetric(QScrollerProperties.ScrollMetric.VerticalOvershootPolicy,
+                                   QScrollerProperties.OvershootPolicy.OvershootAlwaysOff)
+        QScroller.scroller(self.viewport()).setScrollerProperties(properties)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setStyleSheet('QScrollArea {background: transparent; border: none;}')
         content = QWidget()
@@ -63,6 +100,7 @@ class Page(ScrollArea):
 
     def card(self):
         card = CardWidget()
+        card.setBorderRadius(14)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
@@ -319,8 +357,8 @@ class Window(FluentWidget):
         self.setCustomBackgroundColor('#fafafa', '#242424')
         self.resize(500, 660)
         self.setMinimumSize(420, 560)
-        self.titleBar.setFixedHeight(48)
-        self.titleBar.iconLabel.setFixedSize(72, 42)
+        self.titleBar.setFixedHeight(56)
+        self.titleBar.iconLabel.setFixedSize(88, 52)
         self.titleBar.iconLabel.setAccessibleName("Let's note")
         self.titleBar.titleLabel.setMinimumWidth(0)
         self.update_mark()
@@ -333,12 +371,12 @@ class Window(FluentWidget):
         self.stackedWidget = QStackedWidget(self)
         self.stackedWidget.addWidget(self.home)
         self.stackedWidget.addWidget(self.settings)
-        self.navigation = SegmentedWidget(self)
+        self.navigation = RoundedNavigation(self)
         self.navigation.addItem('posture', _('Current posture'), lambda: self.switchTo(self.home), Icon.HOME)
         self.navigation.addItem('settings', _('Settings'), lambda: self.switchTo(self.settings), Icon.SETTING)
         self.navigation.setCurrentItem('posture')
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 48, 0, 8)
+        layout.setContentsMargins(0, 56, 0, 8)
         layout.setSpacing(4)
         layout.addWidget(self.stackedWidget, 1)
         footer = QHBoxLayout()
@@ -350,20 +388,25 @@ class Window(FluentWidget):
             note.setWordWrap(True)
             note.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(note)
+        for control in self.findChildren((PushButton, ComboBox, SegmentedWidget)):
+            round_controls(control)
         self.client.start(self.update_state, self.unavailable)
 
     def update_mark(self):
         name = 'lets-note-window-icon-dark.png' if isDarkTheme() else 'lets-note-window-icon.png'
         path = data_root() / 'assets' / name
         self.setWindowIcon(QIcon(str(path)))
-        self.titleBar.iconLabel.setPixmap(QPixmap(str(path)).scaled(
-            72, 42, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        mark = QPixmap(str(path))
+        # Keep every source pixel. Qt samples the original at the destination
+        # screen's scale instead of enlarging an already downsampled 1x image.
+        mark.setDevicePixelRatio(mark.width() / 88)
+        self.titleBar.iconLabel.setPixmap(mark)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         # Keep the full accessible/OS title; elide only the narrow header text.
         label = self.titleBar.titleLabel
-        label.setMaximumWidth(max(60, self.width() - 248))
+        label.setMaximumWidth(max(60, self.width() - 264))
         label.setText(label.fontMetrics().elidedText(self.windowTitle(), Qt.TextElideMode.ElideRight,
                                                     label.maximumWidth()))
 

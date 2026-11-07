@@ -93,8 +93,9 @@ class DemoTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent preview dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
-    def run_ui(self, body):
-        env = dict(os.environ, QT_QPA_PLATFORM='offscreen', LANGUAGE='en', LANG='C.UTF-8')
+    def run_ui(self, body, scale='1'):
+        env = dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_SCALE_FACTOR=scale,
+                   LANGUAGE='en', LANG='C.UTF-8')
         root = Path(__file__).resolve().parents[1]
         env['PYTHONPATH'] = str(root / 'src')
         prelude = '''
@@ -205,8 +206,42 @@ for theme, filename in ((Theme.LIGHT, 'lets-note-window-icon.png'),
     QTest.qWait(50)
     expected = QIcon(str(data_root() / 'assets' / filename)).pixmap(72, 42).toImage()
     assert window.windowIcon().pixmap(72, 42).toImage() == expected
-    assert window.titleBar.iconLabel.pixmap().width() == 72
-    assert window.titleBar.iconLabel.pixmap().height() > 20
+    mark = window.titleBar.iconLabel.pixmap()
+    assert mark.width() >= 88 * window.devicePixelRatioF()
+    assert abs(mark.deviceIndependentSize().width() - 88) < 0.1
+    assert mark.deviceIndependentSize().height() > 40
 window.switchTo(window.home)
 assert window.home.verticalScrollBar().maximum() == 0
 ''')
+
+    def test_touch_drag_scrolls_without_changing_mode(self):
+        self.run_ui('''
+from PyQt6.QtWidgets import QScroller
+from PyQt6.QtCore import QPointF, Qt
+window.switchTo(window.settings)
+QTest.qWait(100)
+scroller = QScroller.scroller(window.settings.viewport())
+assert QScroller.grabbedGesture(window.settings.viewport()) != 0
+scroller.handleInput(QScroller.Input.InputPress, QPointF(200, 300), 0)
+scroller.handleInput(QScroller.Input.InputMove, QPointF(200, 280), 40)
+scroller.handleInput(QScroller.Input.InputMove, QPointF(200, 100), 140)
+scroller.handleInput(QScroller.Input.InputRelease, QPointF(200, 100), 160)
+QTest.qWait(200)
+assert window.settings.verticalScrollBar().value() > 0
+assert window.client.state['manual'] == 'auto'
+assert window.client.state['tent_enabled'] is True
+scroller.stop()
+window.settings.verticalScrollBar().setValue(0)
+QTest.mouseClick(window.settings.switches['tent_enabled'].indicator, Qt.MouseButton.LeftButton)
+assert window.client.state['tent_enabled'] is False
+''')
+
+    def test_logo_retains_resolution_on_scaled_screens(self):
+        for scale in ('1.5', '2'):
+            with self.subTest(scale=scale):
+                self.run_ui('''
+mark = window.titleBar.iconLabel.pixmap()
+assert mark.devicePixelRatio() == window.devicePixelRatioF()
+assert mark.width() >= round(88 * window.devicePixelRatioF())
+assert abs(mark.deviceIndependentSize().width() - 88) < 0.1
+''', scale=scale)
