@@ -161,6 +161,17 @@ python packaging\windows\build-driver.py --compiler build\tools\zig-x86_64-windo
 
 构建器启用 C11、警告视为错误和栈保护，检查输出为 AMD64 native PE32+。输出 `build/windows-driver/posture-filter-unsigned.sys` 未签名，不能作为可安装成品。它不会注册服务、配置输入过滤器、安装驱动或更改启动安全配置。
 
+`windows/actuator.py` 实现服务端输入执行接口，只有 LocalSystem 可尝试打开固定的控制设备。它逐项核对二进制回执的长度、版本、序号、随机标识、就绪位和三秒租约；发送时间作为时限基准，迟到回执不能延长确认状态。忙状态等待后续空闲，已过期的续租不能当作重新接管；协议错误、关闭失败及释放失败沿用共用引擎的撤销和恢复路径。普通软件后台不加载此端口，当前仍未接入实际内核输入。
+
+可在上述构建命令末尾添加 `--control-fixture`，同时生成只含纯 C 控制逻辑的非特权 DLL，然后运行跨语言检查：
+
+```bat
+set PYTHONPATH=src
+python tests\windows_actuator_smoke.py --control-library build\windows-driver\posture-control-fixture.dll
+```
+
+此检查不安装或加载内核驱动、不打开输入设备、不改变启动安全配置。2026-11-09 的本机检查通过 Python/C ABI、获取/续租/过期、忙状态及释放，并通过共用 Engine 核对：输入驱动就绪不足以确认模式，仍须匹配代次的已认证显示回执；会话租约失效后撤销输入。这是控制逻辑和组件联测，不能替代真实输入接管与故障释放验收。
+
 ### Windows 原生显示与物理开关开发验证
 
 `windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。当前仅识别已核对的 INT33D3 路径，其他开关及系统服务会话中的读取一致性尚未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。

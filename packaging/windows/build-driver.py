@@ -13,7 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def build(compiler: Path, sdk: Path, wdk: Path, output: Path) -> Path:
+def build(compiler: Path, sdk: Path, wdk: Path, output: Path, *, control_fixture=False) -> Path:
     compiler, sdk, wdk, output = [path.resolve() for path in (compiler, sdk, wdk, output)]
     includes = [wdk / 'c/Include/10.0.26100.0/km', wdk / 'c/Include/10.0.26100.0/km/crt',
                 wdk / 'c/Include/wdf/kmdf/1.31', sdk / 'c/Include/10.0.26100.0/shared',
@@ -53,6 +53,14 @@ def build(compiler: Path, sdk: Path, wdk: Path, output: Path) -> Path:
             struct.unpack_from('<H', data, pe+24)[0] != 0x20b or
             struct.unpack_from('<H', data, pe+24+68)[0] != 1):
         raise ValueError('linker output is not an AMD64 native PE32+ image')
+    if control_fixture:
+        # An unprivileged DLL of pure control.c only: no WDF, driver entry,
+        # handles, device installation or input access. Exercises the Python
+        # actuator against the actual C ABI and watchdog decisions.
+        subprocess.run([str(compiler), 'lld-link', '/dll', '/noentry', '/machine:x64',
+            '/nodefaultlib', '/nxcompat', '/dynamicbase', '/export:posture_release',
+            '/export:posture_blocked', '/export:posture_command',
+            '/out:' + str(output / 'posture-control-fixture.dll'), str(objects[1])], check=True)
     return image
 
 
@@ -62,10 +70,11 @@ def main():
     parser.add_argument('--sdk', type=Path, required=True, help='extracted Microsoft.Windows.SDK.CPP package')
     parser.add_argument('--wdk', type=Path, required=True, help='extracted Microsoft.Windows.WDK.x64 package')
     parser.add_argument('--output', type=Path, default=ROOT / 'build/windows-driver')
+    parser.add_argument('--control-fixture', action='store_true', help='also build a pure C user-mode DLL for ABI tests')
     options = parser.parse_args()
     if sys.platform != 'win32':
         parser.error('run this explicit development build on Windows')
-    print(build(options.compiler, options.sdk, options.wdk, options.output))
+    print(build(options.compiler, options.sdk, options.wdk, options.output, control_fixture=options.control_fixture))
 
 
 if __name__ == '__main__':

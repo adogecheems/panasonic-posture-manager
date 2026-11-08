@@ -49,7 +49,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
-| Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_engine`；授权虚拟机内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture |
+| Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -799,3 +799,10 @@ make WERROR=1 check
 - 变更：Windows 软件客户端直接持有实际解释器进程并指定当前包位置，取代通过虚拟环境转发启动器间接启动后台的做法。动机是进程退出回执必须同时证明设置锁和管道已释放，不能只等待启动器退出。
 - 证据：CFQV8-1L / Windows 10 Pro 19045 真机完成四种姿态的 y/z 采样及折叠开关核对、内屏倒转与正常/强制退出恢复。厂商 Synaptics 驱动安装后由用户确认基本触控板操作正常。自研驱动仅完成编译链接，没有加载；用户选择不改变启动安全配置，不提升 Windows 支持等级。
 - 同步：Windows 显示、开关、客户端、驱动及构建器，单元/原生显示 fixture、Windows CI、README 和 MAINTENANCE。Linux 状态 v2、租约及持久化 schema 均不改变。
+
+### 2026-11-09 - 核对 Windows 内核控制回执与输入租约
+
+- 变更：新增只在 LocalSystem 下打开固定控制设备的输入执行端口。按 Windows 控制 v1 逐项校验二进制回执，发送前的单调时钟限制回执有效期；没有匹配回执不能确认输入接管，过期续租必须失败，协议或关闭异常走既有恢复错误路径。
+- 动机：将已编译的内核控制逻辑接入共用 InputActuator 契约，避免只因 IOCTL 写入成功就发布已应用状态，或由迟到回执延长内核租约。
+- 约束：不改变驱动 v1、Linux relay/D-Bus、已有会话鉴权和服务职责。普通预览不打开控制设备。纯 C DLL 联测不加载内核驱动、不读写输入内容，不能替代真机输入验收；保持用户要求的测试签名关闭状态。
+- 同步：Windows 输入端口及回归测试、显式构建器的控制 DLL fixture、共用引擎与 C ABI 联测、Windows CI 和维护指南。
