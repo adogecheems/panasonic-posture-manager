@@ -135,6 +135,32 @@ set PYTHONPATH=src
 
 探针最多读取 100 份样本，间隔限制为 10～1000 毫秒；只可在明确授权的 Windows 测试环境中运行。便携包中可用 `runtime\python.exe -m panasonic_posture.windows.probe --samples 5` 执行同一检查。
 
+持续采样检查使用同一系统 WinRT API，无须添加 Python 依赖：
+
+```bat
+.venv-windows\Scripts\python -m panasonic_posture.windows.sensor --seconds 10
+```
+
+此命令输出逐行 JSON，时间换算至 Python 单调时钟，单位为 m/s²，`mount_verified=false` 表示仍沿用传感器原始轴向，不能当作机型姿态校验。它逐次枚举 Standard 加速度计，只接受唯一且与默认传感器标识一致的设备，不设置 ReportInterval 或 ReadingTransform。WinRT 在刚打开时可能先返回很久以前的缓存；旧帧不会发布，启动最多等待 20 秒，新鲜样本间隔不能超过两秒。重复时间戳不更新样本时间。断线后间隔两秒重试，保持原设备身份和最后的原始时间戳；更换设备必须重新建立并验证安装方向。
+
+`windows.sensor.WindowsSensor` 实现共用 SensorBackend 的只读接口，构造时要求显式传入安装方向矩阵。它校验采样与接收时间、墙钟和单调时钟的相对变化，遇到时钟跳变重新连接并建立时间基准；错误或过期时立即返回无效读数。它尚未接入普通软件后台，也不改变设备支持等级。传感器接口与固定坐标系见 [Microsoft Accelerometer 文档](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.accelerometer)。
+
+2026-11-08，同一 Windows 10 虚拟机的普通用户下，持续采样约 3.4 秒取得 23 个不同时间戳的样本，退出时回收读取子进程。测试覆盖启动旧缓存、缓存不续期、设备更换、断线重试、时钟跳变与退出清理；不代表传感器安装方向或整机姿态已验收。
+
+### 独立 Windows 硬件主机开发边界
+
+`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine；当前没有注册系统服务、安装输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。真正输入执行端口、可信物理开关和显示会话适配器未装配前，不得发布硬件支持或已应用模式。
+
+`backend/windows/driver.c` 是尚未完成 WDK 编译和硬件验证的 KMDF 输入过滤驱动草稿，不进入便携包、默认构建或安装流程。`control.c` 及其独立 C 测试描述租约和空闲接管边界；这些测试不能替代驱动编译、设备匹配和失效释放的真机验证。
+
+硬件通道独立于软件预览的私有标准管道，使用 `windows-hardware` JSON v1 信封和本地主机命名管道。服务端要求 LocalSystem，端点所有者也是 LocalSystem，拒绝远程客户端；交互用户只获读写权限，明确排除与 FILE_APPEND_DATA 共用数值的 FILE_CREATE_PIPE_INSTANCE。首实例独占端点名称，最多四个连接，每条消息至多 64 KiB，连接请求五秒超时。客户端核对端点所有者，不自动重放请求；服务实例和每连接递增请求序号用于拒绝旧请求。
+
+身份来自管道模拟令牌与实际客户端进程令牌，必须匹配 SID、登录 LUID 和会话 ID，并核对 PID、进程创建时间、当前本地控制台以及未锁定的活跃会话。界面可以提交模式和偏好选择；只有由可信主机预先登记的确切会话进程才能提交显示回执，不能通过 RPC 自行注册 PID。身份检查放在独立有界后台队列，主循环继续推进引擎；一秒内未获得新的会话确认即失去资格，慢查询结果不能延长有效期。失联、退出、锁屏或用户切换通过共用 `Engine.revoke_session` 撤销对应所有者并走原有释放事务。它不改变 Linux 鉴权、租约时长或 D-Bus 方法。
+
+接口依据：[Microsoft 命名管道权限](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights)、[WTS 会话状态](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/ns-wtsapi32-wtsinfoex_level1_w)。
+
+隔离通信检查为 `tests/windows_hardware_smoke.py`：仅在已获授权的 Windows 测试虚拟机中分别以 LocalSystem 和普通交互用户运行 server/client，显式传入同一临时 `--directory`。该 fixture 使用不支持硬件的共用引擎和空输入端口，不打开输入设备。2026-11-08 的原生检查已通过端点所有者、控制台令牌、拒绝不支持模式、拒绝未登记回执、拒绝客户端创建服务端实例及拒绝用户自建冒充端点六项检查，普通客户端未提权。模拟状态和此通信证据均不代表输入驱动验收。
+
 ### Windows 便携预览包
 
 在 Windows 的独立构建环境中，使用与预览依赖兼容的 64 位 Python 3.11+：

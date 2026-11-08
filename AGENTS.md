@@ -25,6 +25,7 @@
 - **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
+- **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
 
 **接入平台。** 姿态策略、服务引擎、会话运行时和显示事务可共用。实现 `service/ports.py` 和 `session/ports.py` 中的接口。共用层使用 `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`、`DeviceInfo` 和输入完成判定。Linux 在 `service/application.py` 和 `session/agent.py` 接入时钟、设备、设置、D-Bus 和桌面组件。平台负责配置和通信错误分类。显示事务必须显式传入恢复日志。
 
@@ -48,6 +49,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
+| Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_engine`；授权虚拟机内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -773,3 +775,19 @@ make WERROR=1 check
 - 构建：在虚拟机中发现完整复制 Python/Qt 再压缩会产生大量重复磁盘写入，改为从原文件流式生成 ZIP 并同步计算校验。保持原文件集合、许可检查和清单格式，失败保留已有制品；测试核对流式包与物化目录逐文件一致，并拒绝无界内存读取。
 - 已验证：Windows 10 LTSC 2021 x64（19044）、Python 3.14.10、普通用户非提权运行；后台/探针/共用前端/Fluent/组装共 63 项测试通过。只读加速度计取得 5 份不同时间戳的读数，静止模长约 9.68～9.76 m/s²。输入接管、物理开关、原生显示旋转和真实触摸交互未验收；虚拟机结果不能作为整机支持证据。
 - 便携包证据：完成实际构建与解压，自带 `python.exe`/`pythonw.exe` 的中文资源、模拟事务与后台退出检查通过，原生 Windows 绘制的主页和设置页检查通过。此证据取代上一条记录中该环境的原生构建/解压启动待验证状态，不取代真实硬件适配的边界。
+
+### 2026-11-08 - Windows 持续采样与独立硬件主机边界
+
+- 变更：新增不修改传感器配置的持续 WinRT 读取端口，要求显式安装方向矩阵，唯一设备校验、原始时间戳去重、采样时钟映射、过期失效及有界重试。启动旧缓存不发布，在原有启动时限内等待新帧。诊断命令明确标记安装方向未验证，不自动接入普通软件后台。
+- 变更：经用户明确授权开发新的 Windows 权限边界，新增独立硬件主机请求分发、本地 LocalSystem 所有的有界命名管道、Windows 令牌与控制台身份校验。UI 不能伪造会话回执，只有可信主机预登记的确切进程身份可以提交；客户端 ACE 明确排除创建管道实例权限。鉴权异步且有界，过期鉴权不续期；共用引擎增加按已认证所有者撤销会话的内部入口。
+- 动机：把真实采样证据与模拟结果分开，为硬件接入准备可核对的时钟、身份与进程边界，防止缓存续期、歧义设备、伪造完成回执、PID 重用和冒充服务端。
+- 约束：普通软件后台仍仅保存偏好，不取得特权、不接入真实输入和显示；当前未注册 Windows 服务或安装驱动，不提升机型支持等级。Linux 的鉴权、租约时长、D-Bus、relay 和状态 v2 均不改变。驱动安装另行确认；用户另行授权仅在测试虚拟机安装 C++/SDK/WDK 开发工具。
+- 同步：Windows 采样、硬件分发、管道和身份模块，共用引擎，Windows 回归测试、无设备 SYSTEM/普通用户原生通信 fixture、Windows CI、README 与 MAINTENANCE。
+- 证据：虚拟机普通用户持续采样约 3.4 秒取得 23 个不同时间戳样本；原生权限通信六项检查通过。物理开关、输入过滤、方向控制及整机故障恢复仍需相应适配与硬件证据，不能用此 fixture 冒充真机验收。
+
+### 2026-11-09 - 检测 Windows 软件后台停止响应
+
+- 变更：软件客户端空闲一个请求超时周期后发送只读状态请求，复用原有请求超时、断线失效和重连流程；已有请求或持续收到状态时不额外探测。
+- 动机：后台进程与管道仍存活但事件循环停止响应时，旧逻辑没有待处理请求便无法发现故障，界面会持续保留旧快照。
+- 影响：只读探测不执行模式或偏好写入，超时不重放操作。普通后台、模拟后台和硬件权限边界不变，Linux 协议和 Windows 消息格式不变。
+- 同步：Windows 软件客户端、真实子进程隔离回归测试和 README。测试覆盖健康空闲、停止响应、探测数量上限、超时失效与重连，不代表真实硬件验收。

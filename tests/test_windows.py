@@ -255,6 +255,45 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(len(self.states), before)
         self.assertIsNone(self.client.process)
 
+    def test_idle_backend_that_stops_responding_is_disconnected_and_reconnected(self):
+        self.until(lambda: bool(self.states))
+        instance = self.states[-1]['instance']
+        # Keep the child and pipes alive but withhold responses from the UI.
+        # This models a stalled backend without suspending a host process.
+        self.client.inbox = queue.Queue()
+        self.client.outbox = queue.Queue()
+        now = [self.client.clock()]
+        self.client.clock = lambda: now[0]
+        now[0] += self.client.timeout
+        self.client.poll()
+        self.assertTrue(self.client.pending, 'idle connections need a liveness probe')
+        request = decode(self.client.outbox.get_nowait())
+        self.assertEqual((request['method'], request['params']), ('get_state', {}))
+        probe = self.client.pending[request['id']][0]
+        self.client.poll()
+        self.assertEqual(len(self.client.pending), 1)
+        self.assertTrue(self.client.outbox.empty())
+        self.assertIsNotNone(self.client.process)
+        now[0] += self.client.timeout + .1
+        self.client.poll()
+        self.assertIsNone(self.client.process)
+        self.assertTrue(self.unavailable)
+        self.assertIsNotNone(probe.exception())
+        now[0] += 1
+        self.until(lambda: self.states[-1]['instance'] != instance)
+        self.assertFalse(self.states[-1]['stand_prompt'])
+
+    def test_healthy_idle_backend_answers_probe_without_reconnecting(self):
+        self.until(lambda: bool(self.states))
+        instance = self.states[-1]['instance']
+        now = [self.client.clock() + self.client.timeout]
+        self.client.clock = lambda: now[0]
+        self.client.poll()
+        self.assertTrue(self.client.pending)
+        self.until(lambda: not self.client.pending)
+        self.assertEqual(self.states[-1]['instance'], instance)
+        self.assertFalse(self.unavailable)
+
 
 if __name__ == '__main__':
     unittest.main()

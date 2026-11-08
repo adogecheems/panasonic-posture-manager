@@ -62,6 +62,7 @@ class ProcessClient:
         self.worker_stop = threading.Event()
         self.workers = []
         self.started_at = self.clock()
+        self.last_received_at = self.started_at
         executable = Path(sys.executable)
         if os.name == 'nt' and executable.name.lower() == 'pythonw.exe':
             # The child needs real standard streams, even when the GUI parent
@@ -193,6 +194,7 @@ class ProcessClient:
                         future.set_exception(RuntimeError(error)) if error else future.set_result(None)
                 else:
                     raise ProtocolError('unknown message')
+                self.last_received_at = self.clock()
             now = self.clock()
             if self.instance is None and now - self.started_at > self.timeout:
                 raise BackendUnavailable('startup timeout')
@@ -200,6 +202,12 @@ class ProcessClient:
                 raise BackendUnavailable('request timeout')
             if self.process is not None and self.process.poll() is not None:
                 raise BackendUnavailable('backend exited')
+            if (self.instance is not None and not self.pending and
+                    now - self.last_received_at >= self.timeout):
+                # An open pipe does not prove that the backend loop is alive.
+                # Reuse a read-only request and its normal timeout/reconnect
+                # path; no preference or mode operation is replayed.
+                self.refresh()
         except (OSError, ValueError, BackendUnavailable):
             self._lost()
 

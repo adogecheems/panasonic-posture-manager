@@ -56,6 +56,9 @@ check-c:
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror backend/tests/input_test.c \
 		backend/uinput.c $(LDFLAGS) -o build/input-test
 	./build/input-test
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror backend/windows/control.c \
+		backend/windows/tests/control_test.c -o build/windows-control-test
+	./build/windows-control-test
 
 check-compile:
 	PYTHONPATH=src $(PYTHON) -m compileall -q src

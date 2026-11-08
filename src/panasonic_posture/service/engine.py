@@ -497,6 +497,27 @@ class Engine:
                 self.agent_error_detail = None
         return True
 
+    def revoke_session(self, owner: SessionOwner) -> None:
+        """Invalidate a disconnected authenticated owner without renewing it.
+
+        Platform hosts call this after a peer dies, locks or leaves the active
+        console. Input cleanup uses the ordinary tick/release transaction.
+        A UI connection or an old owner's disconnect cannot revoke another
+        adapter's lease.
+        """
+        if not isinstance(owner, SessionOwner):
+            raise TypeError("an authenticated SessionOwner is required")
+        if self.session_owner != owner:
+            return
+        self.session_owner = None
+        self.agent_seen = float("-inf")
+        self.agent_ready = None
+        self.agent_error_code = None
+        self.agent_error_detail = None
+        self._controller.applied = None
+        self._pending_wake = None
+        self.tick()
+
     def sleep_event(self, suspended: bool) -> None:
         """PrepareForSleep: drop the lease, release the relay, invalidate anchors."""
         self.suspended = bool(suspended)
