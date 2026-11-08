@@ -78,7 +78,7 @@ class SettingsModel:
         return self.pending.get(field, self.state[field] if self.state else None)
 
     def preference_enabled(self, field: Preference) -> bool:
-        return bool(self.state and self.state['supported']
+        return bool(self.state and self.state.get('preferences_available', self.state['supported'])
                     and (field != 'tent_prompt' or self.value('tent_enabled')))
 
     def mode_enabled(self, mode: str) -> bool:

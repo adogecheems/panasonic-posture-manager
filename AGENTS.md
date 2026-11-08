@@ -23,7 +23,7 @@
 - **系统服务**以 root 身份持有系统 D-Bus 名。`service/daemon.py` 验证并分发调用、发布状态。`policy.py` 判断姿态，`controller.py` 生成目标和代次（generation），`service/engine.py` 管理租约并安排执行。恢复前核对设备实例和所有权。
 - **C relay** 由 `service/actuator.py` 管理。只有它能打开 `/dev/input` 和 `/dev/uinput`、抓取内置键盘和触控板。stdout 只写 JSON 行，日志写 stderr。软件接管时可只读观察唯一直接触摸屏的接触开始。经当前已认证会话确认后，独立虚拟设备在时限内发送专用唤醒键。禁止抓取触摸屏、记录坐标或读取键盘内容。
 - **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
-- **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 预览默认显示后台不可用，指定 `--demo` 才使用内存数据。预览不操作真实设备或桌面。
+- **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
 - **探针**只读 sysfs 和机型配置，禁止打开输入设备或写入内核。
 
 **接入平台。** 姿态策略、服务引擎、会话运行时和显示事务可共用。实现 `service/ports.py` 和 `session/ports.py` 中的接口。共用层使用 `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`、`DeviceInfo` 和输入完成判定。Linux 在 `service/application.py` 和 `session/agent.py` 接入时钟、设备、设置、D-Bus 和桌面组件。平台负责配置和通信错误分类。显示事务必须显式传入恢复日志。
@@ -47,6 +47,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
+| Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -754,3 +755,11 @@ make WERROR=1 check
 - 动机：收紧插画和标题的距离，避免说明换行后留下多余空白，让切页更连贯。
 - 影响：页面切换立即生效，动画只影响绘制，操作不等待动画结束。
 - 同步：Fluent 窗口与两页布局、README、窗口缩放及连续切页测试。
+
+### 2026-11-08 - Windows 硬件接入前的软件后台与便携构建
+
+- 变更：取代“增加 Windows Fluent 界面预览”中仅有内存客户端、默认后台未接入的规则。Windows 默认使用随界面运行的非特权子进程，以继承的私有管道传递有界 JSON v1 消息；普通模式只保存偏好，未适配设备不发布已应用结果。新增独立后台模拟，复用真实策略、引擎、会话运行时和显示事务，输入/显示端口只操作模拟对象。
+- 动机：在没有目标设备时完成进程边界、严格快照校验、持久化、断线与失败恢复、UI 接入和可重现的 Windows 便携构建，为硬件适配保留明确边界。
+- 约束：不注册系统服务、不触碰真实设备或桌面、不提升 Windows 支持等级。当前用户私有子进程不是未来特权服务的鉴权实现。每个设置文件单实例；旧连接请求失效且不重放写入。普通和模拟设置分离，只保存偏好和校准，不持久化手动模式及执行回执。`--demo` 仍为不落盘的旧演示。
+- 兼容：提取共用 `SettingsStore` 和快照字段校验，Linux 原模块继续兼容导出，Linux 传感器来源限制保持不变。Linux D-Bus、relay、鉴权、租约、状态 v2、设置 v1 不变。Windows 快照额外声明 `preferences_available` 和 `simulation`，只开放偏好不开放设备操作。
+- 同步：`windows/`、共用存储与校验、Fluent/共用前端、中文目录、Windows 构建与工作流、后台/打包/Qt 回归测试、README 和 MAINTENANCE。Windows 原生构建与解压启动须在 Windows 环境另行执行，本机模拟与离屏测试不替代真机验收。

@@ -39,6 +39,14 @@ class Client:
 
 
 class FrontendTests(unittest.TestCase):
+    def test_preference_capability_does_not_enable_device_controls(self):
+        model = SettingsModel(Client(), lambda: None, lambda error: None)
+        model.update(state(supported=False, support_tier='unsupported', preferences_available=True))
+        self.assertTrue(model.preference_enabled('tent_enabled'))
+        self.assertFalse(model.mode_enabled('tent'))
+        model.update(state(supported=False, support_tier='unsupported'))
+        self.assertFalse(model.preference_enabled('tent_enabled'))
+
     def test_import_without_gui_or_linux(self):
         result = subprocess.run([sys.executable, '-S', '-c', '''
 import sys

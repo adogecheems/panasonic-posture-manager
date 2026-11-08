@@ -87,18 +87,53 @@ py -3 -m venv .venv-windows
 packaging\windows\preview.cmd --language zh_CN
 ```
 
-脚本会加上 `--demo`，可在窗口中体验模式切换和校准。设置只保存在内存中。预览没有 Windows 设备后端或安装包，尚未在 Windows 真机上验收。
+`preview.cmd` 加上 `--demo`，用于原有的内存演示。关闭窗口后设置清空。实际设备控制尚未接入，尚未在 Windows 真机上验收。
 
 - **语言**　`--language en` 切换为英文，省略该参数则跟随环境语言。
 - **场景**　例如 `packaging\windows\preview.cmd --scenario prompt` 打开确认提示。还可选择 `laptop`（笔记本）、`hardware`（物理平板）、`slow`（切换缓慢）、`error`（故障）或 `disconnected`（断线）。
 - **资源**　默认从 `data/assets/` 加载，可用 `PANASONIC_POSTURE_DATA_DIR` 指定数据目录。源码预览优先使用 `locale/` 中已编译的翻译，也可直接读取 `po/zh_CN.po`。
 
-要查看未连接后台服务时的界面，直接运行模块。只有演示模式接受 `--scenario`。
+要连接独立软件后台，运行以下命令；在 Windows 直接启动模块也会使用软件后台。
 
 ```bat
-set PYTHONPATH=src
-.venv-windows\Scripts\python -m panasonic_posture.fluent --language zh_CN
+packaging\windows\run.cmd --language zh_CN
 ```
+
+普通启动允许保存自动模式偏好，设备控制和校准保持禁用。后台是当前用户的子进程，不注册 Windows 系统服务、不要求管理员权限；未来的特权硬件控制须另行设计，不能直接加入此用户进程。
+
+需要验证完整软件事务时显式打开后台模拟模式：
+
+```bat
+packaging\windows\run.cmd --simulate-backend --language zh_CN
+packaging\windows\run.cmd --simulate-backend --scenario prompt
+```
+
+后台模拟通过共用姿态策略、服务引擎、会话运行时和显示事务执行，输入和显示端口仅修改模拟状态。`slow` 暂缓显示回执，`error` 注入显示失败，`hardware` 模拟物理开关优先；`disconnected` 仅供原有 `--demo` 使用。模拟结果不代表真实设备已应用。
+
+普通设置存于 `%LOCALAPPDATA%\PanasonicPostureManager\settings.json`，模拟设置为同目录下的 `simulation.json`；`--settings` 可指定独立测试文件。只保存偏好与校准矩阵，不保存手动模式、已应用结果或旧会话。沿用设置 v1、原子替换和 `.corrupt-<timestamp>` 损坏隔离。每个设置文件只允许一个后台实例。
+
+界面通过子进程继承的私有标准管道通信，无网络监听或共享管道名。消息限制为 64 KiB，最多 32 个未完成请求，默认五秒超时。状态与完成回调在界面线程处理。断线立即使旧请求失效，重连采用有上限的退避，不重放写入；关闭窗口会回收后台。此通信能力只授予父进程，不替代未来系统服务的会话鉴权。管道继承与句柄关闭依据 [Python 子进程文档](https://docs.python.org/3.11/library/subprocess.html)。
+
+在非 Windows 开发环境中，必须显式指定测试设置路径；默认不启动软件后台：
+
+```sh
+PYTHONPATH=src .venv-windows/bin/python -m panasonic_posture.fluent --simulate-backend --settings /tmp/posture-preview/simulation.json --language zh_CN
+```
+
+### Windows 便携预览包
+
+在 Windows 的独立构建环境中，使用与预览依赖兼容的 64 位 Python 3.11+：
+
+```bat
+python -m pip install --target build\windows-dependencies -r packaging\windows\requirements-ui.txt
+python packaging\windows\build.py --dependencies build\windows-dependencies
+```
+
+构建器从当前 Python 基础安装复制运行时，从独立依赖目录复制 Qt/Fluent 和随包许可，加入源码、插画、翻译、项目许可及维护说明。`runtime/python._pth` 隔离用户站点、注册表和 `PYTHONPATH`；参见 [Python Windows 搜索路径说明](https://docs.python.org/3.11/using/windows.html#finding-modules)。不会复制基础安装的第三方包、测试数据或配置。
+
+输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Panasonic Posture Manager.cmd`，或用 `Simulation.cmd` 启动后台模拟。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`，Python 许可为 `runtime/LICENSE.txt`。更新时解压到新目录，用户设置继续位于 LocalAppData。
+
+`.github/workflows/windows-preview.yml` 在 Windows 上运行 Python 3.11/3.13 的后台、界面和翻译测试，构建 ZIP，再用解压包自带的 Python 验证 Qt、中文资源、模式事务和后台退出。流程仅保存构建制品，不发布 Release、不改版本或 AUR。提交这份流程不代表远端构建已执行；当前 Linux 开发环境只能验证组装逻辑和界面，Windows 执行结果需单独核对。
 
 ## 构建和验收
 
@@ -136,7 +171,7 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 2. 推送版本标签。工作流从标签对应的提交构建 Arch、Deb 和 RPM 包，生成 `SHA256SUMS`，上传至 GitHub Release，再更新两个 AUR 包。
 3. 重建已有版本时，手动运行工作流，选择要构建的提交，并在 `tag` 填写要更新的发布标签。同名附件会被替换。AUR 源码包仍从原标签构建，二进制包使用新上传的 Arch 包。
 
-若将来分发 Windows 预览安装包，还需核对并附上 PyQt6 和 Fluent Widgets 的上游许可声明。
+Windows 便携包必须包含 Python、PyQt6、Qt、Fluent Widgets 及其传递依赖的许可。构建时拒绝缺少许可元数据的依赖目录。
 
 ## 平台适配
 

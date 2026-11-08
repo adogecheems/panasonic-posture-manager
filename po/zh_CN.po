@@ -291,3 +291,12 @@ msgstr "返回自动"
 
 msgid "Detect tent mode automatically"
 msgstr "自动识别帐篷模式"
+
+msgid "Simulation · Preferences are saved separately."
+msgstr "模拟模式 · 偏好设置单独保存。"
+
+msgid "Settings saved"
+msgstr "设置已保存"
+
+msgid "The background service is ready. Device control is not available yet."
+msgstr "后台已就绪，设备控制功能尚未接入。"

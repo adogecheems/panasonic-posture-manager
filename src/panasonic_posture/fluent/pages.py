@@ -97,6 +97,10 @@ class Home(Page):
             Detail.COMPATIBLE: _('Compatibility mode: this model is supported but has not been individually validated.'),
         }
         self.detail.setText(messages[self.model.detail])
+        if self.model.state and self.model.state.get('sensor_source') == 'windows-unavailable':
+            self.detail.setText(_('The background service is ready. Device control is not available yet.'))
+        elif self.model.state and self.model.state.get('simulation') and self.model.detail == Detail.COMPATIBLE:
+            self.detail.setText('')
         self.detail.setVisible(bool(self.detail.text()))
 
     def show_slow(self):

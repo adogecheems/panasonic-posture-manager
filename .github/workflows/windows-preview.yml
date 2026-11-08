@@ -1,0 +1,63 @@
+name: Windows software preview
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'packaging/windows/**'
+      - 'data/assets/**'
+      - 'po/**'
+      - '.github/workflows/windows-preview.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        python: ['3.11', '3.13']
+    env:
+      PYTHONPATH: src
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Install existing preview dependencies
+        run: python -m pip install -r packaging/windows/requirements-ui.txt
+      - name: Check software backend, frontend and Qt widgets
+        run: |
+          python -m unittest discover -s tests -p test_windows.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_frontend.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_fluent.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_windows_packaging.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/check_i18n.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Stage third-party packages with licenses
+        run: python -m pip install --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
+      - name: Build portable preview
+        run: python packaging/windows/build.py --dependencies build/windows-dependencies
+      - name: Verify extracted bundle with its own Python
+        run: |
+          Expand-Archive dist/windows/panasonic-posture-windows-preview.zip -DestinationPath build/unpacked
+          Remove-Item Env:PYTHONPATH
+          $env:POSTURE_BUNDLE = (Resolve-Path build/unpacked/PanasonicPostureManager).Path
+          python tests/windows_bundle_smoke.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-software-preview-python-${{ matrix.python }}
+          path: dist/windows/*
+          if-no-files-found: error

@@ -182,13 +182,68 @@ window.client.scenario('laptop')
 assert window.settings.radios['laptop'].isEnabled()
 ''')
 
-    def test_normal_start_has_no_simulated_connection(self):
+    def test_unavailable_client_has_no_simulated_connection(self):
         self.run_ui('''
-normal = Window(language='en')
+normal = Window(language='en', client=UnavailableClient())
 assert isinstance(normal.client, UnavailableClient)
 assert not normal.settings.radios['tent'].isEnabled()
 assert 'not connected' in normal.home.detail.text().lower()
 normal.close()
+''')
+
+    def test_private_backend_persists_preferences_and_disables_device_controls(self):
+        self.run_ui('''
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import time
+with TemporaryDirectory() as directory:
+    path = Path(directory) / 'settings.json'
+    connected = Window(language='zh_CN', backend=True, settings_path=path)
+    connected.show()
+    deadline = time.monotonic() + 8
+    while connected.settings.model.state is None and time.monotonic() < deadline:
+        QTest.qWait(25)
+    assert connected.settings.model.state is not None
+    assert connected.settings.switches['tent_enabled'].isEnabled()
+    assert not connected.settings.radios['tent'].isEnabled()
+    assert not connected.settings.calibrate_button.isEnabled()
+    connected.settings.switches['tent_enabled'].setChecked(False)
+    deadline = time.monotonic() + 8
+    while connected.settings.model.value('tent_enabled') is not False and time.monotonic() < deadline:
+        QTest.qWait(25)
+    while connected.settings.model.active and time.monotonic() < deadline:
+        QTest.qWait(25)
+    assert path.is_file()
+    assert not connected.settings.model.state['tent_enabled']
+    assert connected.settings.model.state['applied'] is None
+    process = connected.client.process
+    connected.close()
+    assert process.poll() is not None
+''')
+
+    def test_default_start_uses_platform_safe_client(self):
+        self.run_ui('''
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+from panasonic_posture.windows.client import ProcessClient
+import os, time
+with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=directory):
+    normal = Window(language='en')
+    normal.show()
+    if sys.platform == 'win32':
+        assert isinstance(normal.client, ProcessClient)
+        deadline = time.monotonic() + 8
+        while normal.settings.model.state is None and time.monotonic() < deadline:
+            QTest.qWait(25)
+        assert normal.settings.model.state is not None
+        assert not normal.settings.model.state['supported']
+        assert normal.settings.switches['tent_enabled'].isEnabled()
+    else:
+        assert isinstance(normal.client, UnavailableClient)
+        assert normal.settings.model.state is None
+    assert not normal.settings.radios['tent'].isEnabled()
+    normal.close()
 ''')
 
     def test_keyboard_browsing_and_late_confirmation(self):

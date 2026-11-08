@@ -12,6 +12,7 @@ from qfluentwidgets import (
 
 from ..frontend.ports import UIClient
 from .demo import DemoClient, UnavailableClient
+from ..windows.client import ProcessClient, settings_path as default_settings_path
 from .pages import Home, Settings
 from .resources import data_root, translator
 from .widgets import (
@@ -21,7 +22,8 @@ from .widgets import (
 
 
 class Window(FluentWidget):
-    def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None):
+    def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None,
+                 backend=False, simulate_backend=False, settings_path=None):
         super().__init__()
         _ = translator(language)
         self._ = _
@@ -39,7 +41,17 @@ class Window(FluentWidget):
         self.titleBar.titleLabel.setMinimumWidth(0)
         self.update_mark()
         qconfig.themeChangedFinished.connect(self.update_mark)
-        self.client = client if client is not None else DemoClient(QTimer.singleShot) if demo else UnavailableClient()
+        self.simulating = demo or simulate_backend
+        self.memory_demo = demo
+        if client is not None:
+            self.client = client
+        elif demo:
+            self.client = DemoClient(QTimer.singleShot)
+        elif backend or simulate_backend or sys.platform == 'win32':
+            path = settings_path if settings_path is not None else default_settings_path(simulate=simulate_backend)
+            self.client = ProcessClient(path, simulate=simulate_backend, scenario=scenario)
+        else:
+            self.client = UnavailableClient()
         if demo and client is None:
             self.client.scenario(scenario)
         self.home = Home(self.client, _, self.notify, self)
@@ -71,8 +83,9 @@ class Window(FluentWidget):
         footer.addWidget(self.navigation)
         footer.addStretch()
         layout.addLayout(footer)
-        if demo:
-            note = CaptionLabel(_('Demo preview · Changes stay in this window.'))
+        if demo or simulate_backend:
+            note = CaptionLabel(_('Demo preview · Changes stay in this window.') if demo else
+                                _('Simulation · Preferences are saved separately.'))
             note.setWordWrap(True)
             note.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(note)
@@ -93,6 +106,10 @@ class Window(FluentWidget):
                                    style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
         setFont(self.titleBar.titleLabel, 12)
         self.client.start(self.update_state, self.unavailable)
+        self.backend_timer = QTimer(self)
+        if isinstance(self.client, ProcessClient):
+            self.backend_timer.timeout.connect(self.client.poll)
+            self.backend_timer.start(50)
 
     def update_mark(self):
         name = 'lets-note-window-icon-dark.png' if isDarkTheme() else 'lets-note-window-icon.png'
@@ -134,22 +151,29 @@ class Window(FluentWidget):
     def notify(self, success):
         _ = self._
         method = InfoBar.success if success else InfoBar.error
-        method(_('Preview updated') if success else _('Unable to complete the operation'),
-               _('Demo preview · Changes stay in this window.') if success else _('Please try again.'),
-               duration=3500, position=InfoBarPosition.TOP, parent=self)
+        if success:
+            title = _('Preview updated') if self.simulating else _('Settings saved')
+            detail = (_('Demo preview · Changes stay in this window.') if self.memory_demo else
+                      _('Simulation · Preferences are saved separately.') if self.simulating else '')
+        else:
+            title, detail = _('Unable to complete the operation'), _('Please try again.')
+        method(title, detail, duration=3500, position=InfoBarPosition.TOP, parent=self)
 
     def closeEvent(self, event):
+        self.backend_timer.stop()
         self.unavailable()
         self.client.stop()
         super().closeEvent(event)
 
 
-def run(*, demo=False, language=None, scenario='laptop') -> int:
+def run(*, demo=False, language=None, scenario='laptop', backend=False,
+        simulate_backend=False, settings_path=None) -> int:
     app = QApplication([sys.argv[0]])
     app.setStyle('Fusion')
     app.setApplicationName('Panasonic Posture Manager')
     setTheme(Theme.AUTO)
     setThemeColor('#0051f2')
-    window = Window(demo=demo, language=language, scenario=scenario)
+    window = Window(demo=demo, language=language, scenario=scenario, backend=backend,
+                    simulate_backend=simulate_backend, settings_path=settings_path)
     window.show()
     return app.exec()
