@@ -307,6 +307,32 @@ for card, controls in window.settings.cards:
         assert card.contentLabel.height() >= card.contentLabel.heightForWidth(card.contentLabel.width())
 ''')
 
+    def test_wrapped_setting_compacts_when_window_widens(self):
+        self.run_ui('''
+window.switchTo(window.settings)
+window.resize(420, 560)
+QTest.qWait(200)
+card = window.settings.sensor_card
+wrapped = card.contentLabel.height()
+window.resize(800, 660)
+QTest.qWait(150)
+assert card.contentLabel.height() < wrapped
+assert card.contentLabel.height() >= card.contentLabel.fontMetrics().height()
+''')
+
+    def test_rapid_navigation_keeps_last_page_interactive(self):
+        self.run_ui('''
+window.navigation.items['settings'].click()
+QTest.qWait(25)
+window.navigation.items['posture'].click()
+window.navigation.items['settings'].click()
+assert window.stackedWidget.currentWidget() is window.settings
+window.settings.radios['stand'].click()
+QTest.qWait(450)
+assert window.navigation.currentRouteKey() == 'settings'
+assert window.home.heading.text() == 'Stand'
+''')
+
     def test_grouped_rows_and_navigation_insets(self):
         self.run_ui('''
 from PyQt6.QtCore import QPoint

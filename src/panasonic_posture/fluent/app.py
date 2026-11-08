@@ -1,9 +1,9 @@
 """Assemble and run the Fluent preview without device or service access."""
 import sys
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation
 from PyQt6.QtGui import QIcon, QPixmap, QFont
-from PyQt6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QStackedWidget
+from PyQt6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QStackedWidget, QGraphicsOpacityEffect
 from qfluentwidgets import (
     FluentWidget, FluentIcon as Icon, TitleLabel, BodyLabel, CaptionLabel,
     PrimaryPushButton, ComboBox, InfoBar, InfoBarPosition, Theme, setTheme,
@@ -47,6 +47,15 @@ class Window(FluentWidget):
         self.stackedWidget = QStackedWidget(self)
         self.stackedWidget.addWidget(self.home)
         self.stackedWidget.addWidget(self.settings)
+        self.page_opacity = QGraphicsOpacityEffect(self.stackedWidget)
+        self.stackedWidget.setGraphicsEffect(self.page_opacity)
+        self.page_opacity.setEnabled(False)
+        self.page_fade = QPropertyAnimation(self.page_opacity, b'opacity', self)
+        self.page_fade.setDuration(150)
+        self.page_fade.setStartValue(0.65)
+        self.page_fade.setEndValue(1.0)
+        self.page_fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.page_fade.finished.connect(lambda: self.page_opacity.setEnabled(False))
         self.navigation = PageSwitcher(self)
         self.navigation.addItem('posture', _('Current posture'), lambda: self.switchTo(self.home), Icon.HOME)
         self.navigation.addItem('settings', _('Settings'), lambda: self.switchTo(self.settings), Icon.SETTING)
@@ -104,8 +113,15 @@ class Window(FluentWidget):
                                                     label.maximumWidth()))
 
     def switchTo(self, page):
+        if page is self.stackedWidget.currentWidget():
+            return
+        self.page_fade.stop()
         self.stackedWidget.setCurrentWidget(page)
         self.navigation.setCurrentItem(page.objectName())
+        motion = QApplication.styleHints().accessibility().motionPreference()
+        self.page_opacity.setEnabled(motion != Qt.MotionPreference.ReducedMotion)
+        if self.page_opacity.isEnabled():
+            self.page_fade.start()
 
     def update_state(self, state):
         self.home.update_state(state)

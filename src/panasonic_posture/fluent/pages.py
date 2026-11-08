@@ -39,7 +39,7 @@ class Home(Page):
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.show_slow)
         box = self.box
-        box.setSpacing(6)
+        box.setSpacing(4)
         box.addStretch()
         self.illustration = Illustration()
         box.addWidget(self.illustration)
@@ -145,8 +145,8 @@ class Settings(Page):
         self.switches, self.radios = {}, {}
         self.cards = []
         self.groups = []
-        self.box.setContentsMargins(24, 18, 24, 20)
-        self.box.setSpacing(22)
+        self.box.setContentsMargins(24, 16, 24, 20)
+        self.box.setSpacing(18)
         group = self.add_group(_('Automatic mode'))
         self.switch_cards = {}
         for field, title, subtitle in (
@@ -274,13 +274,16 @@ class Settings(Page):
             width = max(100, card.width() - reserve - 48 - gap)
             card.titleLabel.setFixedWidth(width)
             card.contentLabel.setFixedWidth(width)
+            # QLabel includes its previous minimum height when measuring wrapped text.
+            card.titleLabel.setMinimumHeight(0)
             height = card.titleLabel.heightForWidth(width)
             card.titleLabel.setFixedHeight(height)
             if not card.contentLabel.isHidden():
+                card.contentLabel.setMinimumHeight(0)
                 content_height = card.contentLabel.heightForWidth(width)
                 card.contentLabel.setFixedHeight(content_height)
                 height += content_height + card.vBoxLayout.spacing()
-            card.setFixedHeight(max(56, height + 26))
+            card.setFixedHeight(max(52, height + 20))
         for group in self.groups:
             group.adjustSize()
 

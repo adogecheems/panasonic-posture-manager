@@ -22,7 +22,7 @@ class Illustration(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.pose = 'laptop'
-        self.setFixedHeight(216)
+        self.setFixedHeight(200)
         qconfig.themeChanged.connect(self.update)
 
     def paintEvent(self, event):
