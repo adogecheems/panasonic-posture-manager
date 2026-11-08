@@ -98,6 +98,10 @@ class FluentWidgetTests(unittest.TestCase):
     def run_ui(self, body, scale='1'):
         env = dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_SCALE_FACTOR=scale,
                    LANGUAGE='en', LANG='C.UTF-8')
+        if sys.platform == 'win32':
+            # The generic offscreen plugin does not discover Windows fonts.
+            # Use the same installed fonts as the native Windows renderer.
+            env.setdefault('QT_QPA_FONTDIR', str(Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'Fonts'))
         root = Path(__file__).resolve().parents[1]
         env['PYTHONPATH'] = str(root / 'src')
         prelude = '''
@@ -108,10 +112,12 @@ class Block:
             raise AssertionError(name)
 sys.meta_path.insert(0, Block())
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtTest import QTest
 from panasonic_posture.fluent.app import Window
 from panasonic_posture.fluent.demo import DemoClient, UnavailableClient
 app = QApplication([])
+assert QFontDatabase.families(), 'GUI verification requires installed system fonts'
 window = Window(demo=True, language='en')
 window.show()
 QTest.qWait(100)

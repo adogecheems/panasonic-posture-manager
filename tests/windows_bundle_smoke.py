@@ -17,9 +17,11 @@ def main():
 import sys, time
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtTest import QTest
 from panasonic_posture.fluent.app import Window
 app = QApplication([])
+assert QFontDatabase.families(), 'Bundle verification requires installed system fonts'
 window = Window(backend=True, simulate_backend=True, language='zh_CN', settings_path=Path(sys.argv[1]))
 window.show()
 deadline = time.monotonic() + 10
@@ -37,6 +39,8 @@ window.close()
 assert process.poll() is not None
 '''
         env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
+        if os.name == 'nt':
+            env.setdefault('QT_QPA_FONTDIR', str(Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'Fonts'))
         env.pop('PYTHONPATH', None)
         for executable in ('python.exe', 'pythonw.exe'):
             result = subprocess.run([str(root / 'runtime' / executable), '-I', '-c', code,

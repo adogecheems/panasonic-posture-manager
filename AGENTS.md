@@ -24,7 +24,7 @@
 - **C relay** 由 `service/actuator.py` 管理。只有它能打开 `/dev/input` 和 `/dev/uinput`、抓取内置键盘和触控板。stdout 只写 JSON 行，日志写 stderr。软件接管时可只读观察唯一直接触摸屏的接触开始。经当前已认证会话确认后，独立虚拟设备在时限内发送专用唤醒键。禁止抓取触摸屏、记录坐标或读取键盘内容。
 - **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
-- **探针**只读 sysfs 和机型配置，禁止打开输入设备或写入内核。
+- **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
 
 **接入平台。** 姿态策略、服务引擎、会话运行时和显示事务可共用。实现 `service/ports.py` 和 `session/ports.py` 中的接口。共用层使用 `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`、`DeviceInfo` 和输入完成判定。Linux 在 `service/application.py` 和 `session/agent.py` 接入时钟、设备、设置、D-Bus 和桌面组件。平台负责配置和通信错误分类。显示事务必须显式传入恢复日志。
 
@@ -47,7 +47,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
+| Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -763,3 +763,13 @@ make WERROR=1 check
 - 约束：不注册系统服务、不触碰真实设备或桌面、不提升 Windows 支持等级。当前用户私有子进程不是未来特权服务的鉴权实现。每个设置文件单实例；旧连接请求失效且不重放写入。普通和模拟设置分离，只保存偏好和校准，不持久化手动模式及执行回执。`--demo` 仍为不落盘的旧演示。
 - 兼容：提取共用 `SettingsStore` 和快照字段校验，Linux 原模块继续兼容导出，Linux 传感器来源限制保持不变。Linux D-Bus、relay、鉴权、租约、状态 v2、设置 v1 不变。Windows 快照额外声明 `preferences_available` 和 `simulation`，只开放偏好不开放设备操作。
 - 同步：`windows/`、共用存储与校验、Fluent/共用前端、中文目录、Windows 构建与工作流、后台/打包/Qt 回归测试、README 和 MAINTENANCE。Windows 原生构建与解压启动须在 Windows 环境另行执行，本机模拟与离屏测试不替代真机验收。
+
+### 2026-11-08 - Windows 虚拟机验证与加速度计只读诊断
+
+- 变更：增加显式运行的 `windows.probe`，通过系统自带 PowerShell 的 WinRT 投影读取默认加速度计，保留设备标识和采样时间，校验有限数值并将 g 换算为 m/s²。诊断不改采样配置，不操作输入、触摸坐标或桌面，不接入自动模式执行。
+- 动机：利用用户提供的 Windows 测试虚拟机补齐原生验证，并为后续传感器适配提供可以核对的真实数据；修复中文版 Windows 下源码默认按 GBK 解码，以及离屏插件未发现系统字体导致的错误布局测量。
+- 约束：样本为诊断记录，时间尚未映射到引擎时钟，也未校验安装方向。仍保持 Windows 设备控制未接入和输入设备不可靠的边界，不提升机型支持等级。只读取用户本轮明确提供的直通传感器，不安装或修改宿主驱动，不抓取真实输入。
+- 同步：Windows 只读探针与解析/失败路径测试、源码 UTF-8 检查、Qt/解压包的系统字体配置、Windows Python 3.14 验证矩阵、README 和 MAINTENANCE。
+- 构建：在虚拟机中发现完整复制 Python/Qt 再压缩会产生大量重复磁盘写入，改为从原文件流式生成 ZIP 并同步计算校验。保持原文件集合、许可检查和清单格式，失败保留已有制品；测试核对流式包与物化目录逐文件一致，并拒绝无界内存读取。
+- 已验证：Windows 10 LTSC 2021 x64（19044）、Python 3.14.10、普通用户非提权运行；后台/探针/共用前端/Fluent/组装共 63 项测试通过。只读加速度计取得 5 份不同时间戳的读数，静止模长约 9.68～9.76 m/s²。输入接管、物理开关、原生显示旋转和真实触摸交互未验收；虚拟机结果不能作为整机支持证据。
+- 便携包证据：完成实际构建与解压，自带 `python.exe`/`pythonw.exe` 的中文资源、模拟事务与后台退出检查通过，原生 Windows 绘制的主页和设置页检查通过。此证据取代上一条记录中该环境的原生构建/解压启动待验证状态，不取代真实硬件适配的边界。

@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        python: ['3.11', '3.13']
+        python: ['3.11', '3.13', '3.14']
     env:
       PYTHONPATH: src
       QT_QPA_PLATFORM: offscreen
@@ -36,6 +36,8 @@ jobs:
       - name: Check software backend, frontend and Qt widgets
         run: |
           python -m unittest discover -s tests -p test_windows.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_windows_probe.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_frontend.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

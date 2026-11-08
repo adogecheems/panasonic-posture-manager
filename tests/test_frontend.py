@@ -186,7 +186,7 @@ from panasonic_posture.frontend import ports, state, actions
         from pathlib import Path
         root = Path(__file__).resolve().parents[1] / 'src/panasonic_posture/ui'
         for filename in ('posture.py', 'settings.py'):
-            tree = ast.parse((root / filename).read_text())
+            tree = ast.parse((root / filename).read_text(encoding='utf-8'))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                     self.assertNotIn(node.func.attr, ('call', 'Variant'), filename)

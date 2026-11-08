@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('windows_build', ROOT / 'packaging/windows/build.py')
@@ -27,7 +28,12 @@ class WindowsPackagingTests(unittest.TestCase):
                 (dependencies / name).mkdir(parents=True)
             (dependencies / 'Qt-1.dist-info/licenses/LICENSE').write_text('license', encoding='utf-8')
             (dependencies / 'qfluentwidgets/__init__.py').write_text('', encoding='utf-8')
-            archive = builder.build(root / 'output', runtime, dependencies)
+            # Runtime DLLs and the complete archive may be large. Building
+            # must hash and write bounded chunks instead of loading them whole.
+            with patch.object(Path, 'read_bytes', side_effect=AssertionError('unbounded build read')):
+                archive = builder.build(root / 'output', runtime, dependencies)
+            staged = root / 'staged'
+            builder.stage_application(staged, runtime, dependencies)
             with zipfile.ZipFile(archive) as bundle:
                 prefix = 'PanasonicPostureManager/'
                 names = set(bundle.namelist())
@@ -43,8 +49,19 @@ class WindowsPackagingTests(unittest.TestCase):
                 self.assertEqual(set(manifest), {name[len(prefix):] for name in names} - {'MANIFEST.json'})
                 for name, digest in manifest.items():
                     self.assertEqual(hashlib.sha256(bundle.read(prefix + name)).hexdigest(), digest)
+                staged_files = {path.relative_to(staged).as_posix(): path.read_bytes()
+                                for path in staged.rglob('*') if path.is_file()}
+                self.assertEqual({name[len(prefix):]: bundle.read(name) for name in names}, staged_files)
             self.assertEqual(archive.with_suffix('.zip.sha256').read_text().split()[0],
                              hashlib.sha256(archive.read_bytes()).hexdigest())
+            original = archive.read_bytes()
+            checksum = archive.with_suffix('.zip.sha256').read_bytes()
+            with patch.object(zipfile.ZipFile, 'open', side_effect=OSError('disk full')):
+                with self.assertRaisesRegex(OSError, 'disk full'):
+                    builder.build(root / 'output', runtime, dependencies)
+            self.assertEqual(archive.read_bytes(), original)
+            self.assertEqual(archive.with_suffix('.zip.sha256').read_bytes(), checksum)
+            self.assertFalse(list((root / 'output').glob('posture-windows-*')))
 
     def test_missing_runtime_and_missing_licenses_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

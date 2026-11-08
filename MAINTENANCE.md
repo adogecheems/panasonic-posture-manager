@@ -120,6 +120,21 @@ packaging\windows\run.cmd --simulate-backend --scenario prompt
 PYTHONPATH=src .venv-windows/bin/python -m panasonic_posture.fluent --simulate-backend --settings /tmp/posture-preview/simulation.json --language zh_CN
 ```
 
+### Windows 加速度计只读检查
+
+在 Windows 源码目录中，用已准备好的 Python 环境运行：
+
+```bat
+set PYTHONPATH=src
+.venv-windows\Scripts\python -m panasonic_posture.windows.probe --samples 5 --interval-ms 200
+```
+
+探针通过系统自带的 Windows PowerShell 读取 WinRT 默认加速度计，输出设备标识、原始 g 值、按标准重力 9.80665 换算的 m/s² 值，以及原始采样时间戳。它不修改采样间隔、不读取触摸坐标、不抓取输入、不旋转屏幕，也不改变后台支持状态。接口和单位参见 [Microsoft 加速度计说明](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/sensors)。
+
+`--interval-ms` 是诊断读取之间的等待时间，不保证设备以该频率产生新样本。报告中的 `distinct_timestamps` 可用于发现重复缓存；这些墙钟时间戳尚未转换到服务引擎的时钟，不能直接作为姿态策略样本。诊断不会验证传感器安装方向，也不代表已应用某种模式。无传感器、权限不足、输出损坏或读取超时会以非零状态退出，不用模拟数据补齐。
+
+探针最多读取 100 份样本，间隔限制为 10～1000 毫秒；只可在明确授权的 Windows 测试环境中运行。便携包中可用 `runtime\python.exe -m panasonic_posture.windows.probe --samples 5` 执行同一检查。
+
 ### Windows 便携预览包
 
 在 Windows 的独立构建环境中，使用与预览依赖兼容的 64 位 Python 3.11+：
@@ -129,11 +144,17 @@ python -m pip install --target build\windows-dependencies -r packaging\windows\r
 python packaging\windows\build.py --dependencies build\windows-dependencies
 ```
 
-构建器从当前 Python 基础安装复制运行时，从独立依赖目录复制 Qt/Fluent 和随包许可，加入源码、插画、翻译、项目许可及维护说明。`runtime/python._pth` 隔离用户站点、注册表和 `PYTHONPATH`；参见 [Python Windows 搜索路径说明](https://docs.python.org/3.11/using/windows.html#finding-modules)。不会复制基础安装的第三方包、测试数据或配置。
+构建器从当前 Python 基础安装和独立依赖目录读取运行时、Qt/Fluent 及随包许可，连同源码、插画、翻译和维护说明直接流式写入 ZIP，同时计算逐文件校验，减少临时磁盘写入与内存占用。完整归档生成后才替换已有包。`runtime/python._pth` 隔离用户站点、注册表和 `PYTHONPATH`；参见 [Python Windows 搜索路径说明](https://docs.python.org/3.11/using/windows.html#finding-modules)。基础安装的第三方包、测试数据或配置不进入归档。
 
 输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Panasonic Posture Manager.cmd`，或用 `Simulation.cmd` 启动后台模拟。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`，Python 许可为 `runtime/LICENSE.txt`。更新时解压到新目录，用户设置继续位于 LocalAppData。
 
-`.github/workflows/windows-preview.yml` 在 Windows 上运行 Python 3.11/3.13 的后台、界面和翻译测试，构建 ZIP，再用解压包自带的 Python 验证 Qt、中文资源、模式事务和后台退出。流程仅保存构建制品，不发布 Release、不改版本或 AUR。提交这份流程不代表远端构建已执行；当前 Linux 开发环境只能验证组装逻辑和界面，Windows 执行结果需单独核对。
+`.github/workflows/windows-preview.yml` 在 Windows 上运行 Python 3.11/3.13/3.14 的后台、界面、只读探针解析和翻译测试，构建 ZIP，再用解压包自带的 Python 验证 Qt、中文资源、模式事务和后台退出。流程仅保存构建制品，不发布 Release、不改版本或 AUR。提交这份流程不代表远端构建已执行。
+
+Windows 离屏验证使用已安装的系统字体：测试辅助函数将 `QT_QPA_FONTDIR` 指向 `%SystemRoot%\Fonts`，避免通用离屏插件找不到字体，导致文字、导航宽度与原生窗口不同。界面测试会检查字体确实已加载，保留布局与操作断言。源码检查明确按 UTF-8 读取文件，不依赖 Windows 系统区域编码。
+
+2026-11-08，在 Windows 10 Enterprise LTSC 2021（19044）x64 虚拟机、Python 3.14.10、普通用户非提权令牌下，后台 20 项、探针解析 5 项、共用前端 11 项、Fluent 25 项、打包组装 2 项测试通过。加速度计只读探针取得 5 份时间戳不同的真实读数，静止合模长约 9.68～9.76 m/s²。这份证据只覆盖该环境的软件和传感器读取；虚拟机中的输入直通不可靠，未验证键盘/触控板接管、物理开关、原生屏幕旋转或真实触控手感。
+
+同一虚拟机中还完成了便携包构建和解压验证：包内 `python.exe` 与 `pythonw.exe` 均能加载 Qt 和中文资源、完成模拟模式事务并回收后台；原生 Windows 平台渲染的主页和设置页也已检查。归档约 109 MiB，5490 个清单文件通过校验，77 个 Python 源文件与工作树一致。
 
 ## 构建和验收
 
