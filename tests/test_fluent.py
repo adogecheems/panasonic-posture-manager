@@ -363,11 +363,41 @@ bar.setValue(bar.maximum())
 assert not window.settings.scroll_edge.isVisible()
 ''')
 
+    def test_navigation_highlight_moves_and_reverses_from_current_position(self):
+        self.run_ui('''
+nav = window.navigation
+left, right = nav.items.values()
+window.switchTo(window.settings)
+nav.slideAni.setCurrentTime(nav.slideAni.duration() // 4)
+x = nav.slideAni.value()
+assert left.x() < x < right.x()
+# Sample the moving surface just inside its leading (left) edge.
+frame = nav.grab().toImage()
+assert frame.pixelColor(round(x) + 14, left.y() + 4) != frame.pixelColor(1, nav.height() // 2)
+window.switchTo(window.home)
+assert abs(nav.slideAni.value() - x) < 1
+nav.slideAni.setCurrentTime(nav.slideAni.duration())
+assert nav.slideAni.value() == left.x()
+assert window.stackedWidget.currentWidget() is window.home
+''')
+
+    def test_reduced_motion_positions_navigation_immediately(self):
+        self.run_ui('''
+from unittest.mock import patch
+from PyQt6.QtCore import Qt
+with patch.object(QApplication, 'styleHints') as hints:
+    hints.return_value.accessibility.return_value.motionPreference.return_value = Qt.MotionPreference.ReducedMotion
+    window.switchTo(window.settings)
+    assert window.navigation.slideAni.value() == window.navigation.currentItem().x()
+    assert not window.page_opacity.isEnabled()
+''')
+
     def test_navigation_contour_and_text_tones_in_both_themes(self):
         self.run_ui('''
 from qfluentwidgets import Theme, setTheme
 from PyQt6.QtCore import QPoint
 window.switchTo(window.settings)
+window.navigation.slideAni.setCurrentTime(window.navigation.slideAni.duration())
 card = window.settings.sensor_card
 for theme in (Theme.LIGHT, Theme.DARK):
     setTheme(theme)
