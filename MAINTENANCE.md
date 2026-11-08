@@ -151,7 +151,34 @@ set PYTHONPATH=src
 
 `windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine；当前没有注册系统服务、安装输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。真正输入执行端口、可信物理开关和显示会话适配器未装配前，不得发布硬件支持或已应用模式。
 
-`backend/windows/driver.c` 是尚未完成 WDK 编译和硬件验证的 KMDF 输入过滤驱动草稿，不进入便携包、默认构建或安装流程。`control.c` 及其独立 C 测试描述租约和空闲接管边界；这些测试不能替代驱动编译、设备匹配和失效释放的真机验证。
+`backend/windows/driver.c` 是已通过 WDK 编译和链接、尚未加载验证的 KMDF 输入过滤驱动草稿，不进入便携包、默认构建或安装流程。`control.c` 及其独立 C 测试描述租约和空闲接管边界。HID 鼠标类触控板还必须匹配预登记的 `TouchpadParentInstanceId`，其父设备须来自内部 ACPI；USB、蓝牙和 HID 键盘不因此被允许。编译和边界测试不能替代内核加载、设备匹配和失效释放的真机验证。
+
+开发构建使用本地解压的 Microsoft.Windows.SDK.CPP / Microsoft.Windows.WDK.x64 10.0.26100.6584、KMDF 1.31 和 Zig 0.17.1 的 Clang/lld-link，编译器与 Windows 工具包不随应用分发：
+
+```bat
+python packaging\windows\build-driver.py --compiler build\tools\zig-x86_64-windows-0.17.1\zig.exe --sdk build\tools\sdk --wdk build\tools\wdk
+```
+
+构建器启用 C11、警告视为错误和栈保护，检查输出为 AMD64 native PE32+。输出 `build/windows-driver/posture-filter-unsigned.sys` 未签名，不能作为可安装成品。它不会注册服务、配置输入过滤器、安装驱动或更改启动安全配置。
+
+### Windows 原生显示与物理开关开发验证
+
+`windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。当前仅识别已核对的 INT33D3 路径，其他开关及系统服务会话中的读取一致性尚未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
+
+`windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。当前仅在系统报告自动旋转已停用时允许固定方向；系统方向锁、软件平板自动旋转和硬件平板交接尚未接通，因此普通预览不启用此适配器。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能充当系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
+
+已授权的真机可显式运行以下检查，屏幕会短暂倒转。检查保留恢复日志，另启恢复进程，并验证写入进程被强制结束后的恢复；每次使用新的证据目录：
+
+```bat
+set PYTHONPATH=src
+python tests\windows_display_smoke.py --exercise-rotation --directory build\display-evidence-new
+```
+
+2026-11-09，CFQV8-1L、Windows 10 专业版 19045 x64 上取得笔记本、帐篷、支架和完全折叠的真实采样：笔记本 z 约 -9.8 m/s²，帐篷 y 约 -9.3 m/s²，支架 z 约 +9.9 m/s²；物理开关在折叠/展开时按 1→0→1 变化。此证据确认当前采样的 y/z 方向与策略一致，不代表完整安装矩阵、持续会话控制或整机验收。2880×1920 内屏的倒转、回读、正常恢复和写入进程被结束后的日志恢复通过，最终方向与原方向一致。
+
+同机从 `C:\util2\drivers\SynTP_d20194747` 安装了签名有效、硬件 ID 精确匹配的厂商驱动；安装后为 Synaptics HID TouchPad / Synaptics HID Device 19.5.26.18，用户确认移动、点击、滚动正常。自研输入过滤驱动没有加载；用户选择保留启动安全配置，测试签名仍关闭。这些证据不提升 Windows 机型支持等级。
+
+Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器。软件客户端直接持有实际解释器进程，并从当前源码/安装位置加载标准库后台，避免结束启动器后实际后台仍占用设置锁；重连仍不重放写入。
 
 硬件通道独立于软件预览的私有标准管道，使用 `windows-hardware` JSON v1 信封和本地主机命名管道。服务端要求 LocalSystem，端点所有者也是 LocalSystem，拒绝远程客户端；交互用户只获读写权限，明确排除与 FILE_APPEND_DATA 共用数值的 FILE_CREATE_PIPE_INSTANCE。首实例独占端点名称，最多四个连接，每条消息至多 64 KiB，连接请求五秒超时。客户端核对端点所有者，不自动重放请求；服务实例和每连接递增请求序号用于拒绝旧请求。
 

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
- * DEVELOPMENT DRAFT: not compiled or hardware-validated. Excluded from all
+ * DEVELOPMENT DRAFT: compiled with WDK, not kernel/hardware-validated. Excluded from all
  * packages and default builds. Do not install or register this filter.
  *
  * Opt-in KMDF filter for exactly configured internal keyboard/mouse-class
@@ -20,6 +20,7 @@
 #include <devpkey.h>
 #include <wdmguid.h>
 #include "control.h"
+#include "identity.h"
 
 #define IOCTL_POSTURE_CONTROL 0x0022e000u
 #define ROLE_KEYBOARD 0
@@ -41,7 +42,7 @@ static struct {
     WDFDEVICE Control;
     WDFSPINLOCK Lock;
     WDFTIMER Timer;
-    WDFSTRING KeyboardId, TouchpadId;
+    WDFSTRING KeyboardId, TouchpadId, TouchpadParentId;
     BOOLEAN Configured;
     DEVICE_CONTEXT *Devices[2];
     ULONG Counts[2], InFlight;
@@ -269,11 +270,13 @@ VOID PostureDeviceCleanup(WDFOBJECT object) {
 
 NTSTATUS PostureDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT init) {
     PDEVICE_OBJECT pdo = WdfFdoInitWdmGetPhysicalDevice(init);
-    WCHAR instance[512], class_name[64];
+    WCHAR instance[512], class_name[64], parent[512];
     GUID bus, device_class;
     ULONG required;
     DEVPROPTYPE type;
-    UNICODE_STRING id, wanted, class_string;
+    UNICODE_STRING id, wanted, class_string, acpi_prefix, parent_id;
+    enum posture_bus bus_type = POSTURE_BUS_OTHER;
+    int parent_matches = 0, parent_is_acpi = 0;
     int role = -1;
     NTSTATUS status;
     WDFDEVICE device;
@@ -295,10 +298,26 @@ NTSTATUS PostureDeviceAdd(WDFDRIVER driver, PWDFDEVICE_INIT init) {
     if (RtlEqualUnicodeString(&id, &wanted, TRUE)) role = ROLE_TOUCHPAD;
     if (role < 0) return STATUS_SUCCESS;
     status = IoGetDeviceProperty(pdo, DevicePropertyBusTypeGuid, sizeof bus, &bus, &required);
-    if (!NT_SUCCESS(status) || (!IsEqualGUID(&bus, &GUID_BUS_TYPE_INTERNAL) && !IsEqualGUID(&bus, &GUID_BUS_TYPE_I8042)))
-        return STATUS_SUCCESS;
+    if (!NT_SUCCESS(status) || required != sizeof bus) return STATUS_SUCCESS;
+    RtlInitUnicodeString(&acpi_prefix, L"ACPI\\");
+    if (IsEqualGUID(&bus, &GUID_BUS_TYPE_ACPI)) bus_type = POSTURE_BUS_ACPI;
+    else if (IsEqualGUID(&bus, &GUID_BUS_TYPE_INTERNAL)) bus_type = POSTURE_BUS_INTERNAL;
+    else if (IsEqualGUID(&bus, &GUID_BUS_TYPE_HID)) bus_type = POSTURE_BUS_HID;
+    if (role == ROLE_TOUCHPAD && bus_type == POSTURE_BUS_HID) {
+        status = IoGetDevicePropertyData(pdo, &DEVPKEY_Device_Parent, LOCALE_NEUTRAL, 0,
+                                        sizeof parent, parent, &required, &type);
+        if (!NT_SUCCESS(status) || type != DEVPROP_TYPE_STRING || required < sizeof(WCHAR) ||
+            required > sizeof parent || required % sizeof(WCHAR) || parent[required / sizeof(WCHAR) - 1] != L'\0')
+            return STATUS_SUCCESS;
+        RtlInitUnicodeString(&parent_id, parent);
+        WdfStringGetUnicodeString(Global.TouchpadParentId, &wanted);
+        parent_matches = wanted.Length > 0 && RtlEqualUnicodeString(&parent_id, &wanted, TRUE);
+        parent_is_acpi = RtlPrefixUnicodeString(&acpi_prefix, &parent_id, TRUE);
+    }
+    if (!posture_accept_bus(role, bus_type, RtlPrefixUnicodeString(&acpi_prefix, &id, TRUE),
+                            parent_matches, parent_is_acpi)) return STATUS_SUCCESS;
     status = IoGetDeviceProperty(pdo, DevicePropertyClassGuid, sizeof class_name, class_name, &required);
-    if (!NT_SUCCESS(status) || required < sizeof(WCHAR) || required > sizeof class_name ||
+    if (!NT_SUCCESS(status) || required < sizeof(WCHAR) || required > sizeof class_name || required % sizeof(WCHAR) ||
         class_name[required / sizeof(WCHAR) - 1] != L'\0') return STATUS_SUCCESS;
     RtlInitUnicodeString(&class_string, class_name);
     status = RtlGUIDFromString(&class_string, &device_class);
@@ -374,14 +393,19 @@ invalid:
 static void load_configuration(WDFDRIVER driver) {
     WDFKEY key;
     WDF_OBJECT_ATTRIBUTES attributes;
-    UNICODE_STRING keyboard = RTL_CONSTANT_STRING(L"KeyboardInstanceId");
-    UNICODE_STRING touchpad = RTL_CONSTANT_STRING(L"TouchpadInstanceId");
+    UNICODE_STRING keyboard, touchpad, parent;
     UNICODE_STRING left, right;
+    RtlInitUnicodeString(&keyboard, L"KeyboardInstanceId");
+    RtlInitUnicodeString(&touchpad, L"TouchpadInstanceId");
+    RtlInitUnicodeString(&parent, L"TouchpadParentInstanceId");
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
     attributes.ParentObject = driver;
     if (!NT_SUCCESS(WdfStringCreate(NULL, &attributes, &Global.KeyboardId)) ||
-        !NT_SUCCESS(WdfStringCreate(NULL, &attributes, &Global.TouchpadId))) return;
+        !NT_SUCCESS(WdfStringCreate(NULL, &attributes, &Global.TouchpadId)) ||
+        !NT_SUCCESS(WdfStringCreate(NULL, &attributes, &Global.TouchpadParentId))) return;
     if (!NT_SUCCESS(WdfDriverOpenParametersRegistryKey(driver, KEY_READ, WDF_NO_OBJECT_ATTRIBUTES, &key))) return;
+    /* An absent parent remains empty and cannot admit a HID collection. */
+    (void)WdfRegistryQueryString(key, &parent, Global.TouchpadParentId);
     if (NT_SUCCESS(WdfRegistryQueryString(key, &keyboard, Global.KeyboardId)) &&
         NT_SUCCESS(WdfRegistryQueryString(key, &touchpad, Global.TouchpadId))) {
         WdfStringGetUnicodeString(Global.KeyboardId, &left);
@@ -411,9 +435,10 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT object, PUNICODE_STRING registry) {
     WDF_FILEOBJECT_CONFIG files;
     WDF_IO_QUEUE_CONFIG queue;
     WDF_TIMER_CONFIG timer;
-    UNICODE_STRING name = RTL_CONSTANT_STRING(L"\\Device\\PanasonicPostureControl");
-    UNICODE_STRING sddl = RTL_CONSTANT_STRING(L"O:SYG:SYD:P(A;;GA;;;SY)");
+    UNICODE_STRING name, sddl;
     NTSTATUS status;
+    RtlInitUnicodeString(&name, L"\\Device\\PanasonicPostureControl");
+    RtlInitUnicodeString(&sddl, L"O:SYG:SYD:P(A;;GA;;;SY)");
     RtlZeroMemory(&Global, sizeof Global);
     WDF_DRIVER_CONFIG_INIT(&config, PostureDeviceAdd);
     config.EvtDriverUnload = PostureUnload;

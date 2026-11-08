@@ -64,11 +64,25 @@ class ProcessClient:
         self.started_at = self.clock()
         self.last_received_at = self.started_at
         executable = Path(sys.executable)
+        if os.name == 'nt':
+            # Windows venv executables are redirector processes. Terminating
+            # one does not synchronously terminate its real interpreter. Own
+            # the interpreter directly so wait() also proves file locks and
+            # pipe handles have been released before reconnect or shutdown.
+            executable = Path(getattr(sys, '_base_executable', None) or sys.executable)
         if os.name == 'nt' and executable.name.lower() == 'pythonw.exe':
             # The child needs real standard streams, even when the GUI parent
             # was launched without a console. CREATE_NO_WINDOW hides its host.
             executable = executable.with_name('python.exe')
         command = [str(executable), '-m', 'panasonic_posture.windows', '--stdio', '--settings', str(self.path)]
+        if os.name == 'nt' and executable != Path(sys.executable):
+            # The software backend has no third-party dependencies. Select
+            # this exact checkout/installed package even if it lives only in
+            # the parent's venv; all paths remain separate argv values.
+            bootstrap = ('import runpy,sys;sys.path.insert(0,sys.argv.pop(1));'
+                         'runpy.run_module("panasonic_posture.windows",run_name="__main__",alter_sys=True)')
+            command = [str(executable), '-c', bootstrap, str(Path(__file__).resolve().parents[2]),
+                       '--stdio', '--settings', str(self.path)]
         if self.simulate:
             command += ['--simulate', '--scenario', self.scenario]
         flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0

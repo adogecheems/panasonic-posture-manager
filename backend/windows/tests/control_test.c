@@ -2,8 +2,17 @@
 #include <assert.h>
 #include <stdio.h>
 #include "../control.h"
+#include "../identity.h"
 
 int main(void) {
+    assert(posture_accept_bus(0, POSTURE_BUS_ACPI, 1, 0, 0));
+    assert(posture_accept_bus(1, POSTURE_BUS_HID, 0, 1, 1));
+    assert(!posture_accept_bus(0, POSTURE_BUS_HID, 0, 1, 1));
+    assert(!posture_accept_bus(1, POSTURE_BUS_OTHER, 0, 1, 1));
+    assert(!posture_accept_bus(1, POSTURE_BUS_HID, 0, 0, 1));
+    assert(!posture_accept_bus(1, POSTURE_BUS_HID, 0, 1, 0));
+    assert(!posture_accept_bus(0, POSTURE_BUS_ACPI, 0, 1, 1));
+    assert(!posture_accept_bus(-1, POSTURE_BUS_ACPI, 1, 1, 1));
     struct posture_guard guard = {0};
     struct posture_connection connection = {0};
     struct posture_request request = {POSTURE_CONTROL_VERSION, sizeof request,

@@ -1,5 +1,6 @@
 """Windows software backend, private IPC and persistence without host devices."""
 import queue
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -210,6 +211,15 @@ class ProcessTests(unittest.TestCase):
         self.client.stop()
         self.assertIsNotNone(process.poll())
         self.assertTrue(Backend(self.path).snapshot()['stand_prompt'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows venv launchers create a second process')
+    def test_venv_backend_is_directly_owned_and_releases_lock_before_stop_returns(self):
+        self.until(lambda: bool(self.states))
+        base = Path(getattr(sys, '_base_executable', sys.executable)).with_name('python.exe')
+        self.assertEqual(Path(self.client.process.args[0]), base)
+        self.client.stop()
+        with InstanceLock(self.path):
+            pass
 
     def test_disconnect_fails_pending_and_reconnects_with_new_instance(self):
         self.until(lambda: bool(self.states))
