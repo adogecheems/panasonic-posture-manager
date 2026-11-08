@@ -9,13 +9,18 @@ def main(argv=None) -> int:
     parser.add_argument('--demo', action='store_true', help='enable in-memory interaction demo')
     parser.add_argument('--backend', action='store_true', help='start a private software backend (default on Windows)')
     parser.add_argument('--simulate-backend', action='store_true', help='simulate devices in the private backend')
+    parser.add_argument('--hardware-backend', action='store_true', help='connect to the separate authenticated hardware service')
     parser.add_argument('--settings', type=Path, help='explicit backend settings file')
     parser.add_argument('--language', choices=('en', 'zh_CN'), help='interface language')
     parser.add_argument('--scenario', choices=('laptop', 'prompt', 'hardware', 'slow', 'error', 'disconnected'),
                         help='initial simulation scenario (requires --demo or --simulate-backend)')
     options = parser.parse_args(argv)
-    if options.demo and (options.backend or options.simulate_backend or options.settings):
+    if options.demo and (options.backend or options.simulate_backend or options.hardware_backend or options.settings):
         parser.error('--demo cannot be combined with backend options')
+    if options.hardware_backend and (options.backend or options.simulate_backend or options.settings or options.scenario):
+        parser.error('--hardware-backend cannot be combined with software backend options')
+    if options.hardware_backend and sys.platform != 'win32':
+        parser.error('--hardware-backend requires Windows')
     if options.scenario and not (options.demo or options.simulate_backend):
         parser.error('--scenario requires --demo or --simulate-backend')
     if options.scenario == 'disconnected' and options.simulate_backend:
@@ -32,7 +37,8 @@ def main(argv=None) -> int:
             return 2
         raise
     return run(demo=options.demo, language=options.language, scenario=options.scenario or 'laptop',
-               backend=options.backend, simulate_backend=options.simulate_backend, settings_path=options.settings)
+               backend=options.backend, simulate_backend=options.simulate_backend, settings_path=options.settings,
+               hardware_backend=options.hardware_backend)
 
 
 if __name__ == '__main__':

@@ -149,7 +149,13 @@ set PYTHONPATH=src
 
 ### 独立 Windows 硬件主机开发边界
 
-`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine；当前没有注册系统服务、安装输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。真正输入执行端口、可信物理开关和显示会话适配器未装配前，不得发布硬件支持或已应用模式。
+`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine；当前没有注册常驻系统服务、安装自研输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。真正输入执行端口、可信物理开关和显示会话适配器未装配前，不得发布硬件支持或已应用模式。
+
+开发界面可用 `packaging\windows\run.cmd --hardware-backend` 显式连接 LocalSystem 所有的硬件端点，不能同时指定演示、软件后台、模拟场景或本地设置路径。它不安装或启动系统服务；目前缺少完整的服务安装与可信会话启动流程。服务不可用时只显示断线，不回退到软件或模拟后台。
+
+`windows/hardware_client.py` 在一个有界工作线程中通信，每半秒请求状态，界面主循环先接收已校验快照再完成对应 Future；断线先使状态失效，再拒绝未完成请求。过期结果、服务实例变化、无效原生能力声明都拒绝发布，重连不重放写入。UI 客户端不能提交显示回执。`windows/session_client.py` 供共用 SessionRuntime 的两个工作线程使用独立连接，防止显示/状态请求占用续租通道；所有连接绑定同一服务实例，实例变化使其他在途结果失效。回执仍由服务核对预登记的确切会话进程，客户端不能自行取得此资格。
+
+隔离联测覆盖界面到硬件消息契约，以及硬件客户端、共用会话运行时、Windows 显示事务、恢复日志和 Engine 的链路。系统 API 与输入端口使用 fake；测试确认显示提交后才发送就绪回执、显示失败不获取输入、会话资格被拒绝后释放输入并恢复方向。这些结果不代表安装后的真实会话或内核输入验收。
 
 `backend/windows/driver.c` 是已通过 WDK 编译和链接、尚未加载验证的 KMDF 输入过滤驱动草稿，不进入便携包、默认构建或安装流程。`control.c` 及其独立 C 测试描述租约和空闲接管边界。HID 鼠标类触控板还必须匹配预登记的 `TouchpadParentInstanceId`，其父设备须来自内部 ACPI；USB、蓝牙和 HID 键盘不因此被允许。编译和边界测试不能替代内核加载、设备匹配和失效释放的真机验证。
 
@@ -174,7 +180,7 @@ python tests\windows_actuator_smoke.py --control-library build\windows-driver\po
 
 ### Windows 原生显示与物理开关开发验证
 
-`windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。当前仅识别已核对的 INT33D3 路径，其他开关及系统服务会话中的读取一致性尚未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
+`windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。当前仅识别已核对的 INT33D3 路径；CFQV8 笔记本姿态的交互用户与 SYSTEM 读取一致，SYSTEM 会话中的折叠变化和其他开关仍未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
 
 `windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。当前仅在系统报告自动旋转已停用时允许固定方向；系统方向锁、软件平板自动旋转和硬件平板交接尚未接通，因此普通预览不启用此适配器。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能充当系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
 
@@ -198,6 +204,8 @@ Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器�
 接口依据：[Microsoft 命名管道权限](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights)、[WTS 会话状态](https://learn.microsoft.com/en-us/windows/win32/api/wtsapi32/ns-wtsapi32-wtsinfoex_level1_w)。
 
 隔离通信检查为 `tests/windows_hardware_smoke.py`：仅在已获授权的 Windows 测试虚拟机中分别以 LocalSystem 和普通交互用户运行 server/client，显式传入同一临时 `--directory`。该 fixture 使用不支持硬件的共用引擎和空输入端口，不打开输入设备。2026-11-08 的原生检查已通过端点所有者、控制台令牌、拒绝不支持模式、拒绝未登记回执、拒绝客户端创建服务端实例及拒绝用户自建冒充端点六项检查，普通客户端未提权。模拟状态和此通信证据均不代表输入驱动验收。
+
+2026-11-09，在上述 CFQV8 真机上，以受保护且校验过哈希的代码/运行时快照执行一次性 SYSTEM 任务：GPIO 笔记本状态与交互用户一致，WinRT 取得同一加速度计的五份新鲜样本，普通非提权客户端再次通过六项原生通信检查；快照没有发布支持或已应用模式。Session 0 无交互显示输出，显示查询返回不可用，未尝试显示写入。任务已结束并移除，没有保留提权助手或改变启动安全配置。
 
 ### Windows 便携预览包
 

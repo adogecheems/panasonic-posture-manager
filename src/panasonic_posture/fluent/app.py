@@ -13,6 +13,7 @@ from qfluentwidgets import (
 from ..frontend.ports import UIClient
 from .demo import DemoClient, UnavailableClient
 from ..windows.client import ProcessClient, settings_path as default_settings_path
+from ..windows.hardware_client import HardwareUIClient
 from .pages import Home, Settings
 from .resources import data_root, translator
 from .widgets import (
@@ -23,7 +24,9 @@ from .widgets import (
 
 class Window(FluentWidget):
     def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None,
-                 backend=False, simulate_backend=False, settings_path=None):
+                 backend=False, simulate_backend=False, settings_path=None, hardware_backend=False):
+        if hardware_backend and (demo or backend or simulate_backend or settings_path is not None):
+            raise ValueError('hardware backend cannot be combined with software backend options')
         super().__init__()
         _ = translator(language)
         self._ = _
@@ -47,6 +50,8 @@ class Window(FluentWidget):
             self.client = client
         elif demo:
             self.client = DemoClient(QTimer.singleShot)
+        elif hardware_backend:
+            self.client = HardwareUIClient()
         elif backend or simulate_backend or sys.platform == 'win32':
             path = settings_path if settings_path is not None else default_settings_path(simulate=simulate_backend)
             self.client = ProcessClient(path, simulate=simulate_backend, scenario=scenario)
@@ -107,7 +112,7 @@ class Window(FluentWidget):
         setFont(self.titleBar.titleLabel, 12)
         self.client.start(self.update_state, self.unavailable)
         self.backend_timer = QTimer(self)
-        if isinstance(self.client, ProcessClient):
+        if isinstance(self.client, (ProcessClient, HardwareUIClient)):
             self.backend_timer.timeout.connect(self.client.poll)
             self.backend_timer.start(50)
 
@@ -167,13 +172,13 @@ class Window(FluentWidget):
 
 
 def run(*, demo=False, language=None, scenario='laptop', backend=False,
-        simulate_backend=False, settings_path=None) -> int:
+        simulate_backend=False, settings_path=None, hardware_backend=False) -> int:
     app = QApplication([sys.argv[0]])
     app.setStyle('Fusion')
     app.setApplicationName('Panasonic Posture Manager')
     setTheme(Theme.AUTO)
     setThemeColor('#0051f2')
     window = Window(demo=demo, language=language, scenario=scenario, backend=backend,
-                    simulate_backend=simulate_backend, settings_path=settings_path)
+                    simulate_backend=simulate_backend, settings_path=settings_path, hardware_backend=hardware_backend)
     window.show()
     return app.exec()

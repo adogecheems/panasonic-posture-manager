@@ -24,6 +24,7 @@
 - **C relay** 由 `service/actuator.py` 管理。只有它能打开 `/dev/input` 和 `/dev/uinput`、抓取内置键盘和触控板。stdout 只写 JSON 行，日志写 stderr。软件接管时可只读观察唯一直接触摸屏的接触开始。经当前已认证会话确认后，独立虚拟设备在时限内发送专用唤醒键。禁止抓取触摸屏、记录坐标或读取键盘内容。
 - **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
+  `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
 - **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
 
@@ -50,6 +51,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
+| Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -806,3 +808,11 @@ make WERROR=1 check
 - 动机：将已编译的内核控制逻辑接入共用 InputActuator 契约，避免只因 IOCTL 写入成功就发布已应用状态，或由迟到回执延长内核租约。
 - 约束：不改变驱动 v1、Linux relay/D-Bus、已有会话鉴权和服务职责。普通预览不打开控制设备。纯 C DLL 联测不加载内核驱动、不读写输入内容，不能替代真机输入验收；保持用户要求的测试签名关闭状态。
 - 同步：Windows 输入端口及回归测试、显式构建器的控制 DLL fixture、共用引擎与 C ABI 联测、Windows CI 和维护指南。
+
+### 2026-11-09 - 显式连接 Windows 硬件界面与会话
+
+- 变更：新增独立硬件 UI 客户端和共用会话运行时的 Windows RPC 适配器。界面以 `--hardware-backend` 显式连接原生端点，默认仍用软件后台。UI 不能提交显示回执；会话的状态/显示与续租线程各用一条连接，绑定同一服务实例，拒绝迟到结果及跨实例回执。
+- 动机：使已有硬件通信边界能接入真实界面和共用显示事务，同时限制工作队列、确保回调在主循环完成，避免断线后重放写入或状态请求拖住续租。正常操作拒绝保留有效连接，权限拒绝和协议错误立即关闭。
+- 约束：不改变硬件 JSON v1、鉴权、预登记进程职责、租约、Linux D-Bus 或持久化 schema。原生能力不能由模拟快照取得；当前没有完整服务安装/会话启动流程，也没有加载自研驱动，不提升支持等级。保留用户要求的启动安全配置。
+- 证据：隔离测试联通 UI 消息契约及会话、显示日志、Engine，覆盖成功、显示失败和资格撤销。另在 CFQV8 真机一次性 SYSTEM 任务中核对笔记本开关、五份新鲜加速度计样本和六项普通客户端权限通信检查；任务已移除。没有将 fake 输入或 Session 0 无显示输出当作硬件控制验收。
+- 同步：硬件 UI/会话客户端、快照/操作回执校验、Fluent 显式入口、回归测试、Windows CI、README 和 MAINTENANCE。

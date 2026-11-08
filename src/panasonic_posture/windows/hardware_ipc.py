@@ -9,8 +9,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import json
 import time
+from typing import Protocol
 
-from ..contracts import ALL_ERROR_CODES
+from ..contracts import ALL_ERROR_CODES, ErrorCode
 from ..model import StateSnapshot
 from ..service.engine import Engine, ServiceError
 from ..snapshot_codec import parse_snapshot
@@ -27,6 +28,36 @@ PIPE_SDDL = 'O:SYG:SYD:P(A;;GA;;;SY)(A;;0x12019b;;;IU)'
 AUTH_SECONDS = 1.0
 MAX_CLIENTS = 4
 CLIENT_TIMEOUT = 5.0
+
+
+def validated_hardware_state(value: object) -> StateSnapshot:
+    if (not isinstance(value, dict) or not set(StateSnapshot().to_dict()) <= value.keys() or
+            type(value.get('version')) is not int):
+        raise ProtocolError('incomplete hardware state')
+    try:
+        state = parse_snapshot(json.dumps(value, allow_nan=False))
+    except (ValueError, TypeError, RecursionError) as error:
+        raise ProtocolError('invalid hardware state fields') from error
+    if (not state.instance or state.sensor_source not in ('starting', 'windows-unavailable', 'windows-winrt') or
+            state.supported != (state.support_tier != 'unsupported') or
+            state.supported and state.sensor_source != 'windows-winrt' or
+            not state.supported and state.applied is not None or state.backend == 'development'):
+        raise ProtocolError('inconsistent native hardware capabilities')
+    return state
+
+
+class HardwareOperationError(ServiceError):
+    """A validated operation failure with its authoritative state snapshot."""
+
+    def __init__(self, code: str, state: StateSnapshot) -> None:
+        super().__init__(code)
+        self.state = state
+
+
+class RPCConnection(Protocol):
+    def request(self, method: str, params: dict) -> dict: ...
+
+    def close(self) -> None: ...
 
 
 class NativePipes:
@@ -306,18 +337,24 @@ class HardwareConnection:
                         reply['error'] is not None and (not isinstance(reply['error'], str) or
                                                        reply['error'] not in ALL_ERROR_CODES)):
                     raise ProtocolError('invalid hardware response')
-                value = reply.get('state')
-                if (not isinstance(value, dict) or not set(StateSnapshot().to_dict()) <= value.keys() or
-                        type(value.get('version')) is not int):
-                    raise ProtocolError('incomplete hardware state')
-                state = parse_snapshot(json.dumps(value, allow_nan=False))
+                if (reply['error'] is not None and reply['accepted'] or
+                        reply['error'] is None and not reply['accepted'] and method != 'session_update'):
+                    raise ProtocolError('inconsistent hardware operation result')
+                state = validated_hardware_state(reply.get('state'))
                 if not state.instance or state.instance != reply.get('instance') or self.instance not in (None, state.instance):
                     raise ProtocolError('hardware instance changed')
                 self.instance = state.instance
                 if reply['error'] is not None:
-                    raise ServiceError(reply['error'])
+                    raise HardwareOperationError(reply['error'], state)
                 return reply
             raise TimeoutError('hardware request timed out')
+        except HardwareOperationError as error:
+            # A rejected setting/calibration is not a broken transport. Each
+            # later request is still authenticated by the server. A permission
+            # denial invalidates this connection immediately.
+            if error.code == ErrorCode.ACCESS_DENIED:
+                self.close()
+            raise
         except BaseException:
             self.close()
             raise

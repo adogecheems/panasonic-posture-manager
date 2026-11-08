@@ -79,6 +79,13 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn('--scenario requires --demo', result.stderr)
 
+    def test_native_hardware_cli_rejects_software_options_before_loading_qt(self):
+        for arguments in (['--demo'], ['--simulate-backend'], ['--settings', 'settings.json']):
+            result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
+                '--hardware-backend', *arguments], text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn('cannot be combined', result.stderr)
+
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
@@ -95,6 +102,60 @@ class DemoTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent preview dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def test_native_hardware_client_updates_widgets_via_the_wire_contract(self):
+        self.run_ui('''
+import time
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from PyQt6.QtTest import QTest
+from panasonic_posture.model import SensorInfo
+from panasonic_posture.windows.backend import Backend
+from panasonic_posture.windows.hardware_client import HardwareUIClient
+from panasonic_posture.windows.hardware_host import HardwareHost, ConsoleIdentity
+from panasonic_posture.windows.hardware_ipc import HardwareConnection
+window.close()
+with TemporaryDirectory() as directory:
+    backend = Backend(Path(directory)/'settings.json', simulate=True)
+    # Synthetic ports supply native-shaped snapshots for this widget test.
+    # No SYSTEM process, sensor, display or input device is used here.
+    backend.simulation.sensor.info = SensorInfo(ready=True, backend='windows-winrt')
+    peer = ConsoleIdentity('S-1-5-21-1000', 100, 1, 42, 100000)
+    host = HardwareHost(backend.simulation.engine, authorize=lambda value: value == peer)
+    class Pipes:
+        reply = None
+        def connect(self, name):
+            return 1
+        def write(self, handle, request):
+            self.reply = host.dispatch(peer, request)
+            backend.advance(time.monotonic())
+            self.reply['state'] = backend.simulation.engine.state.to_dict()
+            self.reply['error'] = None
+        def read(self, handle):
+            reply, self.reply = self.reply, None
+            return reply
+        def close(self, handle):
+            pass
+    client = HardwareUIClient(factory=lambda: HardwareConnection(pipes=Pipes()))
+    window = Window(hardware_backend=True, client=client, language='en')
+    window.show()
+    deadline = time.monotonic() + 8
+    while window.settings.model.state is None and time.monotonic() < deadline:
+        QTest.qWait(25)
+    assert window.settings.model.state is not None
+    assert window.settings.radios['tent'].isEnabled()
+    window.settings.radios['tent'].click()
+    deadline = time.monotonic() + 8
+    while (window.settings.model.state['applied'] or {}).get('mode') != 'tent' and time.monotonic() < deadline:
+        QTest.qWait(25)
+    assert window.settings.model.state['applied']['mode'] == 'tent'
+    assert window.home.heading.text() == 'Tent'
+    assert not window.settings.model.state['simulation']
+    window.close()
+    client._thread.join(timeout=3)
+    assert not client._thread.is_alive()
+    backend.close()
+''')
+
     def run_ui(self, body, scale='1'):
         env = dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_SCALE_FACTOR=scale,
                    LANGUAGE='en', LANG='C.UTF-8')
