@@ -1,9 +1,9 @@
 """Shared Fluent controls and their existing appearance and touch behavior."""
-from PyQt6.QtCore import Qt, QRectF, QEasingCurve, QAbstractAnimation
+from PyQt6.QtCore import Qt, QRectF
 from PyQt6.QtGui import QColor, QPainter, QRadialGradient
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QFrame, QVBoxLayout, QScroller, QScrollerProperties,
+    QWidget, QFrame, QVBoxLayout, QScroller, QScrollerProperties,
 )
 from qfluentwidgets import (
     RadioButton, ScrollArea, SegmentedWidget, SettingCard, SwitchSettingCard,
@@ -108,34 +108,13 @@ def row_style(surface, line, primary, secondary):
 
 
 class PageSwitcher(SegmentedWidget):
+    # Delegate the selected surface to the native item's isSelected stylesheet.
+    # The stock parent's painter always draws a second, 5 px selection outline.
     def paintEvent(self, event):
         QWidget.paintEvent(self, event)
-        item = self.currentItem()
-        if item is None:
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor('#414b5e' if isDarkTheme() else '#ffffff'))
-        bounds = QRectF(item.geometry())
-        bounds.moveLeft(self.slideAni.value())
-        painter.drawRoundedRect(bounds, 10, 10)
-
-    def setCurrentItem(self, routeKey):
-        if routeKey not in self.items or routeKey == self.currentRouteKey():
-            return
-        interrupted = self.slideAni.state() == QAbstractAnimation.State.Running
-        position = self.slideAni.value()
-        reduced = QApplication.styleHints().accessibility().motionPreference() == Qt.MotionPreference.ReducedMotion
-        self.slideAni.setDuration(0 if reduced else 160)
-        super().setCurrentItem(routeKey)
-        if interrupted and not reduced:
-            # Pivot starts from the previous button even if the surface is mid-flight.
-            self.slideAni.startAnimation(self.currentItem().x(), position)
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.slideAni.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.hBoxLayout.setContentsMargins(4, 4, 4, 4)
         self.hBoxLayout.setSpacing(2)
         setCustomStyleSheet(self,
@@ -146,15 +125,15 @@ class PageSwitcher(SegmentedWidget):
         for item in self.items.values():
             item.setFixedHeight(40)
             setCustomStyleSheet(item,
-                self.item_style(MUTED_LIGHT, '#e0e5ed', '#305b98', '#c7d8f7'),
-                self.item_style(MUTED_DARK, '#393e48', '#d3e2f8', '#566c91'))
+                self.item_style(MUTED_LIGHT, '#e0e5ed', '#ffffff', '#305b98', '#c7d8f7'),
+                self.item_style(MUTED_DARK, '#393e48', '#414b5e', '#d3e2f8', '#566c91'))
         width = max(104, *(item.sizeHint().width() for item in self.items.values()))
         for item in self.items.values():
             item.setFixedWidth(width)
         self.setFixedSize(self.sizeHint())
 
     @staticmethod
-    def item_style(text, hover, accent, pressed):
+    def item_style(text, hover, selected, accent, pressed):
         return f"""
             SegmentedItem[isSelected] {{
                 color: {text}; border: 1px solid transparent; border-radius: 10px; margin: 0;
@@ -162,7 +141,7 @@ class PageSwitcher(SegmentedWidget):
             }}
             SegmentedItem[isSelected=false]:hover {{ background: {hover}; }}
             SegmentedItem[isSelected=true], SegmentedItem[isSelected=true]:hover {{
-                color: {accent}; background: transparent;
+                color: {accent}; background: {selected};
             }}
             SegmentedItem[isSelected]:pressed {{ background: {pressed}; }}
             SegmentedItem[isSelected]:focus {{ border-color: {accent}; }}
