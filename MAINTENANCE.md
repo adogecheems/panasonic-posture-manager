@@ -149,6 +149,8 @@ set PYTHONPATH=src
 
 ### 独立 Windows 硬件主机开发边界
 
+这套特权主机及驱动链路保留为可选输入扩展。当前交付优先完成普通用户会话中的姿态与显示功能，允许暂不禁用内置键盘和触控板；不能因输入驱动或签名未就绪而阻塞其余用户态功能，也不能伪造输入完成回执来绕过现有引擎。
+
 `windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine；当前没有注册常驻系统服务、安装自研输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。真正输入执行端口、可信物理开关和显示会话适配器未装配前，不得发布硬件支持或已应用模式。
 
 开发界面可用 `packaging\windows\run.cmd --hardware-backend` 显式连接 LocalSystem 所有的硬件端点，不能同时指定演示、软件后台、模拟场景或本地设置路径。它不安装或启动系统服务；目前缺少完整的服务安装与可信会话启动流程。服务不可用时只显示断线，不回退到软件或模拟后台。
@@ -166,6 +168,8 @@ python packaging\windows\build-driver.py --compiler build\tools\zig-x86_64-windo
 ```
 
 构建器启用 C11、警告视为错误和栈保护，检查输出为 AMD64 native PE32+。输出 `build/windows-driver/posture-filter-unsigned.sys` 未签名，不能作为可安装成品。它不会注册服务、配置输入过滤器、安装驱动或更改启动安全配置。
+
+本机目前没有可用的代码签名证书，项目也尚无硬件开发者账号及 EV 签名资源。正式签名所需条件见 [Microsoft 驱动签名要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/code-signing-reqs)。正在准备本机测试签名安装路线：使用本地测试证书签署驱动及目录文件，检查测试签名环境并保留安装回退。此路线仍未实现安装执行，未在本机启用；测试签名需要管理员修改启动配置并重启，可能受 Secure Boot 阻止。仅导入证书或一次性禁用签名强制不能作为以后正常重启仍可加载驱动的保证；参见 [Microsoft 测试签名说明](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/the-testsigning-boot-configuration-option)。现有预览和构建命令不会修改这些配置。
 
 `windows/actuator.py` 实现服务端输入执行接口，只有 LocalSystem 可尝试打开固定的控制设备。它逐项核对二进制回执的长度、版本、序号、随机标识、就绪位和三秒租约；发送时间作为时限基准，迟到回执不能延长确认状态。忙状态等待后续空闲，已过期的续租不能当作重新接管；协议错误、关闭失败及释放失败沿用共用引擎的撤销和恢复路径。普通软件后台不加载此端口，当前仍未接入实际内核输入。
 
@@ -209,7 +213,7 @@ Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器�
 
 ### Windows 原生会话开发验证
 
-`windows/session_agent.py` 将原生会话观察、硬件客户端、共用 SessionRuntime 和 Windows 显示事务装配为独立的普通用户进程。它拒绝 SYSTEM、非交互和已提权令牌；必须先通过主机对确切进程身份的显示回执检查，才能创建显示后端或恢复日志事务。启动握手复用显示工作线程，不额外占用第三条 RPC 通道。普通 UI 不启动此进程，当前还没有安装后的可信启动器。
+`windows/session_agent.py` 将原生会话观察、硬件客户端、共用 SessionRuntime 和 Windows 显示事务装配为独立的普通用户进程。它拒绝 SYSTEM、非交互和已提权令牌；必须先通过主机对确切进程身份的显示回执检查，才能创建显示后端或恢复日志事务。启动握手复用显示工作线程，不额外占用第三条 RPC 通道。普通 UI 不启动此进程；可信启动组件已加入，完整服务装配、安装及 SYSTEM 联合验证仍未完成。
 
 开发入口为 `python -m panasonic_posture.windows.session_agent --journal <当前用户的恢复日志路径>`；必须由可信硬件主机预登记该确切进程，手动运行不能自行取得回执资格。缺少服务或未获登记时在显示后端构造之前退出，不能把命令能运行当作安装成功。
 
@@ -217,7 +221,13 @@ Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器�
 
 `windows/trusted_runtime.py` 为安装后的主机/会话启动提供文件检查：按句柄检查所有者和有效 DACL，拒绝普通用户写入、重解析点、空 DACL、未支持的权限条目及遍历失败；保留禁止删除共享的路径句柄。解释器搜索路径须精确限制为安装目录中的标准库、DLL 和应用，不允许 `import site` 或用户路径。此要求独立于可搬移的软件预览包，不能直接把现有预览 ZIP 提权运行。当前源码目录会被拒绝作为特权运行时。
 
-会话进程支持主机提供的 `--stop-event`，只打开并等待 SYSTEM 所有的随机事件，不取得设置事件的权限。信号到达时先执行共用运行时的显示恢复，再关闭事件句柄；名称冲突或普通用户冒充的事件会被拒绝。此停止入口与受保护文件检查已加入代码，完整的进程创建、系统服务安装与启动器仍未装配完毕。
+会话进程支持主机提供的 `--stop-event`，只打开并等待 SYSTEM 所有的随机事件，不取得设置事件的权限。信号到达时先执行共用运行时的显示恢复，再关闭事件句柄；名称冲突或普通用户冒充的事件会被拒绝。
+
+`windows/session_launch.py` 只供可信主机调用：读取活跃本地控制台的用户令牌，必要时只接受同一 SID、登录实例和会话的非提权关联令牌，使用该用户的环境和 LocalAppData 日志路径。只启动已固定并校验的解释器与会话模块，不继承主机句柄；以挂起状态创建进程，绑定关闭即终止子进程的 Job，核对真实 PID、创建时间、令牌和控制台资格。放行前再次核对资格和停止事件。没有提供 RPC 命令、可执行路径、PID 或令牌参数入口；主机不代替用户写恢复日志。接口依据：[CreateProcessAsUserW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw)、[用户环境](https://learn.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-createenvironmentblock)、[用户目录的令牌权限](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shgetknownfolderpath)。
+
+`windows/session_supervisor.py` 在主机循环中先登记确切进程，再安排工作线程放行；WTS、创建和资源清理占用一个有界工作槽，不阻塞引擎。控制台用户变化时先撤销旧角色、发出停止信号，等待最多五秒的显示恢复窗口，再清理旧进程，之后才能启动替代进程。过期创建结果、停止期间返回的进程和清理未完成的进程都不能被当作可用会话；主机停止须继续轮询到协调器确认关闭，不能只取消 Future 就报告清理成功。
+
+上述启动和协调检查目前采用 fake 系统边界，覆盖结构布局、标志、句柄、令牌、登记/放行顺序、切换与退出，不代表已完成真实 SYSTEM 创建用户进程或完整硬件服务验收。本机普通用户调用原生启动 API 会在控制台令牌查询及创建进程之前被拒绝。
 
 `windows/session_context.py` 用独立的单工作线程读取本进程会话，结合本地活跃控制台、锁屏状态，以及 `GUID_SESSION_DISPLAY_STATUS` 的系统电源回调。电源上下文与控制资格分开：读数超过一秒、未知或查询失败会使控制资格失效，已知的单纯熄屏则不使其失效。睡眠使旧查询失效，恢复时重新注册电源观察，取得当前值。回调只更新有锁的状态，不执行显示、输入或租约操作。依据：[会话显示电源状态](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids)、[注册后的初始电源回调](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powersettingregisternotification)。
 

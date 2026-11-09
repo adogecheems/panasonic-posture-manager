@@ -53,7 +53,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
 | Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
-| Windows 可信启动与停止边界 | `windows/{trusted_runtime,session_stop,hardware_ipc}.py`、`windows/security.py` | `test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_agent`、`test_windows_hardware`；普通软件预览包不能作为特权运行时 |
+| Windows 可信启动与停止边界 | `windows/{trusted_runtime,session_stop,session_launch,session_supervisor,hardware_ipc}.py`、`windows/security.py` | `test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_launch`、`test_windows_session_supervisor`、`test_windows_session_agent`、`test_windows_hardware`；普通软件预览包不能作为特权运行时 |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -843,3 +843,19 @@ make WERROR=1 check
 - 动机：Linux 将熄屏作为姿态策略上下文，不把它等同于显示失败；开发协作中的离席不应被错误扩展为产品安全策略。
 - 约束：不放宽现有管道鉴权、未锁定控制台要求或 ready/unattended 载荷校验，不改变任何 wire/schema 版本。Linux 的熄屏直接姿态切换与 Windows 原生通知/唤醒仍有适配缺口，不能以新保护路径代替它们。
 - 同步：原生会话上下文、会话装配与客户端、已知熄屏不撤销及资格失效仍撤销的线程链路回归测试、README 与 MAINTENANCE。
+
+### 2026-11-09 - 挂起创建并登记原生 Windows 会话进程
+
+- 变更：新增 LocalSystem 专用启动组件和单工作槽的主机协调器。按控制台用户令牌、已固定安装运行时和用户状态目录创建挂起进程，绑定关闭即终止的 Job，核对确切进程身份，再由主机循环登记后安排放行；放行前重查资格及停止信号。用户环境与句柄不从 SYSTEM 继承。
+- 动机：完成可信创建、身份登记、显示回执与正常退出之间的顺序，防止手动传入 PID、自行登记、跨用户创建、迟到结果、停止期间放行，以及旧资源尚未清理便运行替代进程。WTS 与清理不得阻塞控制循环。
+- 约束：不新增 RPC 方法或任意命令入口，不改变未锁定活跃本地控制台、三秒租约及现有 wire/schema。只接受同一 SID/登录实例/会话且非提权的令牌；不能取得则失败。正常停止先撤销并给五秒恢复窗口，清理确认前不发布关闭。完整服务安装与真实 SYSTEM 联合验证仍未完成。
+- 证据：隔离测试覆盖 Win64 结构与调用标志、令牌权限和关联检查、句柄清理、登记前后顺序、换人、过期结果、停止与放行并发及恢复窗口。普通用户实际调用原生启动 API 被拒绝；未在本机创建 SYSTEM 启动的会话进程、安装新服务或加载输入过滤驱动。
+- 签名路线：用户说明暂时没有正式证书资源，要求继续其他开发，并提出探索本机安装方案。后续准备公开支持的本地测试签名流程；此前暂不更改启动安全配置的约束仍保留，具体 BCD、Secure Boot、证书信任或重启操作须在可审阅方案就绪后明确确认，不能隐式执行。
+- 同步：会话启动与协调组件、回归测试、Windows CI、MAINTENANCE 与本手册。
+
+### 2026-11-09 - Windows 交付允许暂缓输入禁用
+
+- 变更：按用户新目标，Windows 继续以 Linux 类似完成度为目标，但内置输入禁用若难以实现可暂缓。优先完成普通用户会话中的真实姿态、显示、交互、常驻、自启动与恢复；特权输入主机、驱动和测试签名改为可选扩展，不再作为其余功能交付的前置。
+- 动机：用户明确调整范围，避免内核签名条件阻塞可独立完成的用户态功能。保留已开发的可选主机组件，不继续把它扩展为主线安装依赖。
+- 约束：必须如实声明输入控制能力与目标，不能用模拟成功或虚假的输入完成回执确认模式；Linux 默认行为和已有特权边界不变。未具备完整 Windows 功能及真机证据前不提升机型支持等级。
+- 同步：README、MAINTENANCE 与本手册；后续用户态装配、目标能力及界面说明须遵循此范围。
