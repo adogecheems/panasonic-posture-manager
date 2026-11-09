@@ -56,6 +56,7 @@ class ContextTests(unittest.TestCase):
         self.assertFalse(context.unattended())
         self.sources[-1].callback('display', 0)
         self.assertTrue(context.unattended())
+        self.assertTrue(context.control_available())
         self.sources[-1].callback('display', 2)
         self.assertFalse(context.unattended())
 

@@ -67,7 +67,15 @@ class SessionClientTests(unittest.TestCase):
         client.session_update(1, True)
         self.assertEqual(connection.calls[-1][1]['unattended'], True)
         self.assertEqual(connection.calls[-1][1]['ready'], False)
-        self.assertEqual(connection.calls[-1][1]['error_code'], 'display-unavailable')
+        self.assertIsNone(connection.calls[-1][1]['error_code'])
+
+    def test_lost_control_qualification_explicitly_revokes_input_preparation(self):
+        client, connection = self.client(unavailable=lambda: True)
+        client.session_update(1, True)
+        receipt = connection.calls[-1][1]
+        self.assertFalse(receipt['ready'])
+        self.assertEqual(receipt['error_code'], 'display-unavailable')
+        self.assertFalse(receipt['unattended'])
 
     def test_invalid_runtime_feedback_is_not_transmitted(self):
         client, connection = self.client()
@@ -363,16 +371,17 @@ class NativeSessionRuntimeTests(unittest.TestCase):
         self.assertEqual(self.api.current.transform, 0)
         self.assertIsNone(self.journal.load())
 
-    def test_agent_reuses_startup_worker_and_keeps_unattended_receipts_ordered(self):
+    def test_agent_reuses_workers_and_separates_screen_off_from_lost_qualification(self):
         lock = threading.RLock()
         dispatch = self.host.dispatch
         def serial_dispatch(peer, request):
             with lock:
                 return dispatch(peer, request)
         self.host.dispatch = serial_dispatch
-        context = SimpleNamespace(absent=False, poll=lambda: None, close=lambda: None)
-        context.unattended = lambda: context.absent
-        self.client.unattended = context.unattended
+        context = SimpleNamespace(absent=False, screen_off=False, poll=lambda: None, close=lambda: None)
+        context.unattended = lambda: context.absent or context.screen_off
+        context.control_available = lambda: not context.absent
+        self.client.unavailable = lambda: not context.control_available()
         self.engine.set_mode('tent')
         self.engine.tick()
         agent = WindowsSessionAgent(context_factory=lambda: context,
@@ -393,13 +402,20 @@ class NativeSessionRuntimeTests(unittest.TestCase):
             self.fail('native session assembly did not reach expected state')
         until(lambda: self.engine.state.applied is not None)
         self.assertEqual(len(self.client._channels), 1)
+        context.screen_off = True
+        beginning = self.now
+        until(lambda: self.now - beginning > .6)
+        self.assertEqual(self.engine.state.applied.mode, 'tent')
+        self.assertEqual(self.api.current.transform, 2)
+        self.assertTrue(self.input.running)
+        self.assertIsNone(agent._qualification_task)
         context.absent = True
         with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
             until(lambda: agent.runtime.failure_active and self.api.current.transform == 0)
         self.assertFalse(self.input.running)
         self.assertIsNone(self.engine.state.applied)
         self.assertEqual(len(self.client._channels), 2)
-        # Move beyond a lease period while still off. The independent lane
+        # Move beyond a lease period while qualification is unavailable. The independent lane
         # keeps the same authenticated context, without reporting ready.
         beginning = self.now
         until(lambda: self.now - beginning > 4)

@@ -3,21 +3,27 @@ from dataclasses import replace
 from concurrent.futures import Future
 import ctypes as C
 from types import SimpleNamespace
+from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from panasonic_posture.model import StateSnapshot, Target
 from panasonic_posture.session.failures import ServiceError, FailureKind
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.session_agent import WindowsSessionAgent
+from panasonic_posture.windows.session_agent import WindowsSessionAgent, main
 from panasonic_posture.windows.security import WindowsSecurity, AuthenticationError
 
 
 class Context:
     def __init__(self):
         self.absent = False
+        self.screen_off = False
         self.closed = False
     def unattended(self):
-        return self.absent
+        return self.absent or self.screen_off
+    def control_available(self):
+        return not self.absent
     def poll(self):
         pass
     def close(self):
@@ -92,7 +98,16 @@ class SessionAgentTests(unittest.TestCase):
         self.assertTrue(self.client.closed)
         self.assertTrue(self.context.closed)
 
-    def test_unattended_transition_reports_not_ready_and_restores_owned_direction(self):
+    def test_screen_off_is_context_and_does_not_reject_valid_display_control(self):
+        self.context.screen_off = True
+        self.assertTrue(self.context.unattended())
+        self.agent.start()
+        self.agent.tick(10.)
+        self.assertTrue(self.agent.runtime.ready)
+        self.assertEqual(self.display.current, 2)
+        self.assertTrue(self.client.feedback[-1][1])
+
+    def test_qualification_loss_reports_not_ready_and_restores_owned_direction(self):
         self.agent.start()
         self.agent.tick(10.)
         self.context.absent = True
@@ -132,7 +147,7 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(caught.exception.kind, FailureKind.REJECTED)
         self.assertFalse(self.created)
 
-    def test_late_unattended_heartbeat_finishes_before_resumed_ready_feedback(self):
+    def test_late_unavailable_heartbeat_finishes_before_resumed_ready_feedback(self):
         jobs = []
         class Worker:
             def submit(self, function):
@@ -178,6 +193,25 @@ class SessionAgentTests(unittest.TestCase):
 
 
 class NativeAgentTokenTests(unittest.TestCase):
+    def test_launcher_stop_event_exits_through_runtime_cleanup_before_closing_event(self):
+        events = []
+        signal = SimpleNamespace(signaled=False)
+        signal.is_set = lambda: signal.signaled
+        signal.close = lambda: events.append('event-close')
+        def tick(now):
+            events.append('tick')
+            signal.signaled = True
+        agent = SimpleNamespace(start=lambda: events.append('start'), tick=tick,
+                                close=lambda: events.append('restore'))
+        with tempfile.TemporaryDirectory() as directory:
+            with patch('panasonic_posture.windows.session_agent.WindowsSessionAgent', return_value=agent), \
+                 patch('panasonic_posture.windows.session_stop.NativeStopSignal.open', return_value=signal), \
+                 patch('panasonic_posture.windows.session_agent.sys.platform', 'win32'), \
+                 patch('panasonic_posture.windows.session_agent.time.sleep'):
+                result = main(['--journal', str(Path(directory) / 'display.json'), '--stop-event', 'fixture'])
+        self.assertEqual(result, 0)
+        self.assertEqual(events, ['start', 'tick', 'restore', 'event-close'])
+
     def security(self, *, sid='S-1-5-21-1000', session=1, elevation=0, length=4):
         api = object.__new__(WindowsSecurity)
         closed = []

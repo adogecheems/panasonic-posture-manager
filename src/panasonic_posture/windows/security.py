@@ -198,12 +198,15 @@ class WindowsSecurity:
                 self.wts.WTSFreeMemory(buffer)
 
     def require_system_pipe(self, handle: int) -> None:
+        self.require_system_object(handle, 'hardware pipe')
+
+    def require_system_object(self, handle: int, description: str) -> None:
         owner, descriptor = HANDLE(), HANDLE()
         error = self.advapi.GetSecurityInfo(handle, 6, 1, C.byref(owner), None, None, None, C.byref(descriptor))
         if error:
-            raise AuthenticationError(error, 'cannot verify hardware pipe owner')
+            raise AuthenticationError(error, f'cannot verify {description} owner')
         try:
             if self._sid(owner) != 'S-1-5-18':
-                raise AuthenticationError('hardware pipe is not owned by LocalSystem')
+                raise AuthenticationError(f'{description} is not owned by LocalSystem')
         finally:
             self.kernel.LocalFree(descriptor)

@@ -102,6 +102,39 @@ class HardwareHostTests(HostFixture):
 
 
 class SecurityTests(unittest.TestCase):
+    def test_agent_replacement_ignores_old_auth_results_without_spawning_extra_work(self):
+        jobs, peers = [], []
+        now = [10.]
+        class Executor:
+            def submit(self, function):
+                future = Future()
+                jobs.append((function, future))
+                return future
+        def check(peer):
+            peers.append(peer)
+            return True
+        replacement = ConsoleIdentity(AGENT.sid, 101, 2, 44, 100002)
+        guard = ConsoleGuard(check, AGENT, clock=lambda: now[0], executor=Executor())
+        self.addCleanup(guard.close)
+        guard.remember(AGENT, 10.)
+        guard.tick()
+        guard.set_agent(replacement)
+        for _ in range(20):
+            guard.tick()
+        self.assertEqual(len(jobs), 1)
+        self.assertFalse(guard.allow(AGENT))
+        function, future = jobs[0]
+        future.set_result(function())
+        guard.tick()
+        self.assertEqual(peers, [AGENT])
+        self.assertFalse(guard.allow(replacement))
+        self.assertEqual(len(jobs), 2)
+        function, future = jobs[1]
+        future.set_result(function())
+        guard.tick()
+        self.assertEqual(peers, [AGENT, replacement])
+        self.assertTrue(guard.allow(replacement))
+
     def test_requires_same_logon_unlocked_local_console(self):
         console = UI.sid, UI.logon_id, UI.session_id
         self.assertTrue(foreground_matches(UI, console, active=True, unlocked=True))
@@ -131,6 +164,62 @@ class SecurityTests(unittest.TestCase):
 
 
 class PipeTests(HostFixture):
+    def server(self):
+        resets, replies = [], []
+        handles = iter(range(4))
+        class Pipes:
+            def create(self, name, *, first): return next(handles)
+            def accept(self, handle): return False
+            def close(self, handle): pass
+            def reset(self, handle): resets.append(handle)
+            def write(self, handle, value): replies.append(value)
+        class Security:
+            def require_system(self): pass
+            def is_active(self, peer): return True
+        server = HardwareServer(self.engine, session_process=AGENT, security=Security(), pipes=Pipes(),
+                                executor=InlineExecutor(), guard_executor=InlineExecutor())
+        self.addCleanup(server.close)
+        return server, resets, replies
+
+    def test_trusted_registration_revokes_previous_owner_and_receipt_qualification(self):
+        server, resets, _ = self.server()
+        self.engine.revoke_session(self.engine.session_owner)
+        self.engine.session_update(self.engine.state.generation, True, None, None, AGENT.owner)
+        server.guard.remember(AGENT, server.clock())
+        replacement = ConsoleIdentity(AGENT.sid, AGENT.logon_id, AGENT.session_id, 44, 100002)
+        server.register_session_process(replacement)
+        self.assertIsNone(self.engine.session_owner)
+        self.assertIsNone(self.engine.state.applied)
+        self.assertEqual(server.host.session_process, replacement)
+        self.assertFalse(server.guard.allow(AGENT))
+        self.assertEqual(resets, [0, 1, 2, 3])
+        request = self.request('session_update', generation=self.engine.state.generation, ready=False,
+                               error_code=None, error_detail=None, unattended=False)
+        with self.assertRaisesRegex(Exception, 'access-denied'):
+            server.host.dispatch(AGENT, request)
+        server.guard.remember(replacement, server.clock())
+        self.assertTrue(server.host.dispatch(replacement, request)['accepted'])
+        server.register_session_process(None)
+        self.assertIsNone(self.engine.session_owner)
+        self.assertIsNone(server.host.session_process)
+
+    def test_registration_discards_pending_pipe_auth_before_it_can_dispatch(self):
+        server, resets, replies = self.server()
+        future = Future()
+        slot = server.slots[0]
+        slot.peer, slot.connected, slot.pending = AGENT, True, future
+        slot.request = self.request('set_mode', mode='tent')
+        replacement = ConsoleIdentity(AGENT.sid, AGENT.logon_id, AGENT.session_id, 44, 100002)
+        server.register_session_process(replacement)
+        self.assertTrue(slot.retired)
+        self.assertFalse(future.done())
+        self.assertEqual(len(resets), 3)
+        future.set_result((AGENT, server.clock()))
+        server.poll()
+        self.assertFalse(slot.retired)
+        self.assertFalse(replies)
+        self.assertEqual(resets[-1], 0)
+
     def test_stalled_auth_jobs_stay_bounded_while_engine_ticks_continue(self):
         now, jobs, ticks = [10.], [], []
         class Executor:

@@ -254,7 +254,15 @@ class WindowsSessionContext:
             return self._unattended_at(self.clock())
 
     def _unattended_at(self, now: float) -> bool:
-        return (self._closed or self._fatal or self._suspended or self._display is not True or
+        return self._unavailable_at(now) or self._display is False
+
+    def control_available(self) -> bool:
+        """A known off display is context, not lost session qualification."""
+        with self._lock:
+            return not self._unavailable_at(self.clock())
+
+    def _unavailable_at(self, now: float) -> bool:
+        return (self._closed or self._fatal or self._suspended or self._display is None or
                 getattr(self._power, 'error', None) is not None or
                 self._presence is None or not self._presence.attended or
                 not 0 <= now - self._checked <= PRESENCE_MAX_AGE)
@@ -262,7 +270,9 @@ class WindowsSessionContext:
     def snapshot(self) -> dict:
         """Copy coarse diagnostic flags, never identity strings or input data."""
         with self._lock:
-            return dict(unattended=self._unattended_at(self.clock()), display_on=self._display,
+            now = self.clock()
+            return dict(unattended=self._unattended_at(now), display_on=self._display,
+                        control_available=not self._unavailable_at(now),
                         suspended=self._suspended, error=self.error or getattr(self._power, 'error', None),
                         presence=asdict(self._presence) if self._presence is not None else None)
 

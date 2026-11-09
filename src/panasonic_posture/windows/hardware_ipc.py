@@ -157,7 +157,22 @@ class ConsoleGuard:
         self.owned_executor = executor is None
         self.entries = {}
         self.pending = None
+        self._epoch = 0
+        self._pending_epoch = -1
+        self._pending_agent = None
         self.next_check = 0.
+
+    def set_agent(self, peer: ConsoleIdentity | None) -> None:
+        if peer is not None and not isinstance(peer, ConsoleIdentity):
+            raise TypeError('a native process identity is required')
+        if peer == self.agent:
+            return
+        self.agent = peer
+        self._epoch += 1
+        self.entries.clear()
+        self.next_check = 0.
+        # Keep a running old check in its one slot. Its result is discarded,
+        # rather than creating more workers while WTS is still occupied.
 
     def remember(self, peer: ConsoleIdentity, checked_at: float, valid: bool = True) -> None:
         self.entries[peer] = checked_at, valid
@@ -172,16 +187,21 @@ class ConsoleGuard:
 
     def tick(self) -> None:
         if self.pending is not None and self.pending.done():
+            current = self._pending_epoch == self._epoch and self._pending_agent == self.agent
             try:
                 checked, valid = self.pending.result()
-                self.remember(self.agent, checked, valid)
+                if current:
+                    self.remember(self._pending_agent, checked, valid)
             except OSError:
-                self.entries.pop(self.agent, None)
+                if current:
+                    self.entries.pop(self._pending_agent, None)
             self.pending = None
         if self.agent is not None and self.pending is None and self.clock() >= self.next_check:
+            agent = self.agent
             def check():
                 checked = self.clock()
-                return checked, self.check(self.agent)
+                return checked, self.check(agent)
+            self._pending_agent, self._pending_epoch = agent, self._epoch
             self.pending = self.executor.submit(check)
             self.next_check = self.clock() + .5
 
@@ -225,6 +245,25 @@ class HardwareServer:
         except BaseException:
             self.close()
             raise
+
+    def register_session_process(self, peer: ConsoleIdentity | None) -> None:
+        """Host-only lifecycle operation, never a method on the RPC channel."""
+        if self.closed:
+            raise OSError('hardware server is closed')
+        if peer is not None and not isinstance(peer, ConsoleIdentity):
+            raise TypeError('a native process identity is required')
+        if peer == self.host.session_process:
+            return
+        old = self.host.session_process
+        if old is not None:
+            self.host.disconnected(old)
+        self.host.session_process = peer
+        self.guard.set_agent(peer)
+        # An authentication worker may still be holding a previous process's
+        # pipe. Retire it before registering the replacement; no old request
+        # may run after a trusted process switch.
+        for slot in self.slots:
+            self._reset(slot)
 
     def _reset(self, slot: Slot) -> None:
         if slot.peer is not None:

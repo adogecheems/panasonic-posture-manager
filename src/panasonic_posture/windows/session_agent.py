@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 
 class SessionContext(Protocol):
-    def unattended(self) -> bool: ...
+    def control_available(self) -> bool: ...
     def poll(self) -> None: ...
     def close(self) -> None: ...
 
@@ -36,68 +36,68 @@ class ClosableClient(SessionClient, Protocol):
     def close(self) -> None: ...
 
 
-class AttendedClient:
+class _QualifiedClient:
     def __init__(self, client: ClosableClient, context: SessionContext) -> None:
         self.client, self.context = client, context
 
     @staticmethod
     def _rejected() -> ServiceError:
-        return ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'native session is unattended', kind=FailureKind.REJECTED)
+        return ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'native session control is unavailable', kind=FailureKind.REJECTED)
 
     def get_state(self) -> StateSnapshot:
         state = self.client.get_state()
-        if self.context.unattended():
-            self.client.session_update(state.generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unattended')
+        if not self.context.control_available():
+            self.client.session_update(state.generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unavailable')
             raise self._rejected()
         return state
 
     def session_update(self, generation: int, ready: bool, error_code: str | None = None,
                        error_detail: str | None = None) -> None:
-        if self.context.unattended():
-            self.client.session_update(generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unattended')
+        if not self.context.control_available():
+            self.client.session_update(generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unavailable')
             raise self._rejected()
         self.client.session_update(generation, ready, error_code, error_detail)
-        if self.context.unattended():
+        if not self.context.control_available():
             raise self._rejected()
 
     def confirm_tent(self, epoch: int) -> None:
-        if self.context.unattended():
+        if not self.context.control_available():
             raise self._rejected()
         self.client.confirm_tent(epoch)
 
     def confirm_stand(self, epoch: int) -> None:
-        if self.context.unattended():
+        if not self.context.control_available():
             raise self._rejected()
         self.client.confirm_stand(epoch)
 
     def wake_screen(self, generation: int, serial: int) -> None:
-        if self.context.unattended():
+        if not self.context.control_available():
             raise self._rejected()
         self.client.wake_screen(generation, serial)
 
 
-class AttendedDisplay:
+class _QualifiedDisplay:
     def __init__(self, display: DisplayBackend, context: SessionContext) -> None:
         self.display, self.context = display, context
 
-    def _require_attended(self) -> None:
-        if self.context.unattended():
-            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'native session is unattended')
+    def _require_available(self) -> None:
+        if not self.context.control_available():
+            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'native session control is unavailable')
 
     def apply(self, target: Target) -> None:
         if target.mode == 'unavailable':
             self.display.apply(target)  # Existing ownership may still restore.
             return
-        self._require_attended()
+        self._require_available()
         self.display.apply(target)
-        if self.context.unattended():
+        if not self.context.control_available():
             self.display.restore()
             raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'session changed during display apply')
 
     def hold_orientation(self) -> None:
-        self._require_attended()
+        self._require_available()
         self.display.hold_orientation()
-        if self.context.unattended():
+        if not self.context.control_available():
             self.display.restore()
             raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'session changed during display hold')
 
@@ -115,7 +115,7 @@ class WindowsSessionAgent:
     def __init__(self, *, display_factory: Callable[[], DisplayBackend],
                  context_factory: Callable[[], SessionContext] = _native_context,
                  client_factory: Callable[[Callable[[], bool]], ClosableClient] = (
-                     lambda unattended: WindowsSessionClient(unattended=unattended)),
+                     lambda available: WindowsSessionClient(unavailable=lambda: not available())),
                  executor: Executor | None = None, lease_executor: Executor | None = None) -> None:
         self.display_factory, self.context_factory, self.client_factory = display_factory, context_factory, client_factory
         self.executor, self.lease_executor = executor, lease_executor
@@ -124,7 +124,7 @@ class WindowsSessionAgent:
         self.client: ClosableClient | None = None
         self._stack = ExitStack()
         self._started = self._closed = False
-        self._unattended_task: Future | None = None
+        self._qualification_task: Future | None = None
         self._heartbeat_at = float('-inf')
 
     def _prove_receipt_authority(self) -> None:
@@ -142,7 +142,7 @@ class WindowsSessionAgent:
         try:
             self.context = self.context_factory()
             self._stack.callback(self.context.close)
-            self.client = self.client_factory(self.context.unattended)
+            self.client = self.client_factory(self.context.control_available)
             self._stack.callback(self.client.close)
             if self.executor is None:
                 self.executor = thread_executor('windows-session-display')
@@ -154,36 +154,37 @@ class WindowsSessionAgent:
             self.executor.submit(self._prove_receipt_authority).result(timeout=20)
             display = self.display_factory()
             self._stack.callback(lambda: self.runtime.close() if self.runtime else display.restore())
-            self.runtime = SessionRuntime(AttendedClient(self.client, self.context),
-                AttendedDisplay(display, self.context), None,
-                screen_locked=self.context.unattended, executor=self.executor, lease_executor=self.lease_executor)
+            self.runtime = SessionRuntime(_QualifiedClient(self.client, self.context),
+                _QualifiedDisplay(display, self.context), None,
+                screen_locked=lambda: not self.context.control_available(),
+                executor=self.executor, lease_executor=self.lease_executor)
         except BaseException:
             self.close()
             raise
 
-    def _unattended_heartbeat(self) -> None:
+    def _qualification_heartbeat(self) -> None:
         state = self.client.get_state()
-        self.client.session_update(state.generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unattended')
+        self.client.session_update(state.generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unavailable')
 
     def tick(self, now: float) -> None:
         if not self._started or self._closed:
             return
         self.context.poll()
-        absent = self.context.unattended()
-        if self._unattended_task is not None:
-            if self._unattended_task.done():
+        unavailable = not self.context.control_available()
+        if self._qualification_task is not None:
+            if self._qualification_task.done():
                 try:
-                    self._unattended_task.result()
+                    self._qualification_task.result()
                 except (OSError, ValueError, ServiceError) as error:
-                    log.debug('unattended heartbeat rejected: %s', error)
-                self._unattended_task = None
-            elif not absent:
+                    log.debug('unavailable-session heartbeat rejected: %s', error)
+                self._qualification_task = None
+            elif not unavailable:
                 # A late not-ready renewal must complete before any new ready
                 # report. Otherwise it could revoke a resumed transaction.
                 return
-        if absent and self._unattended_task is None and now >= self._heartbeat_at:
+        if unavailable and self._qualification_task is None and now >= self._heartbeat_at:
             self._heartbeat_at = now + AGENT_HEARTBEAT_SECONDS
-            self._unattended_task = self.lease_executor.submit(self._unattended_heartbeat)
+            self._qualification_task = self.lease_executor.submit(self._qualification_heartbeat)
         self.runtime.tick(now)
 
     def close(self) -> None:
@@ -195,22 +196,31 @@ class WindowsSessionAgent:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--journal', type=Path, required=True, help='explicit per-user display recovery journal')
+    parser.add_argument('--stop-event', help='SYSTEM-owned stop signal from the trusted launcher')
     options = parser.parse_args(argv)
     if sys.platform != 'win32':
         parser.error('native session agent requires Windows')
     from ..session.journal import Journal
     from .display import WindowsDisplay
     from .instance import InstanceLock
+    from .session_stop import NativeStopSignal
     agent = WindowsSessionAgent(display_factory=lambda: WindowsDisplay(journal=Journal(options.journal)))
     try:
-        with InstanceLock(options.journal):
+        with ExitStack() as stack:
+            stop = NativeStopSignal.open(options.stop_event) if options.stop_event is not None else None
+            if stop is not None:
+                stack.callback(stop.close)
+                if stop.is_set():
+                    return 0
+            stack.enter_context(InstanceLock(options.journal))
             try:
                 agent.start()
-                while True:
+                while stop is None or not stop.is_set():
                     agent.tick(time.monotonic())
                     time.sleep(TICK_SECONDS)
             finally:
                 agent.close()
+        return 0
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError, ServiceError) as error:

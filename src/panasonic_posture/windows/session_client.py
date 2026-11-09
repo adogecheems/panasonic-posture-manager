@@ -26,8 +26,9 @@ class _Channel:
 
 class WindowsSessionClient:
     def __init__(self, *, factory: Callable[[], RPCConnection] = HardwareConnection,
-                 unattended: Callable[[], bool] = lambda: False) -> None:
-        self.factory, self.unattended = factory, unattended
+                 unattended: Callable[[], bool] = lambda: False,
+                 unavailable: Callable[[], bool] = lambda: False) -> None:
+        self.factory, self.unattended, self.unavailable = factory, unattended, unavailable
         self._local = threading.local()
         self._lock = threading.Lock()
         self._channels: list[_Channel] = []
@@ -128,15 +129,16 @@ class WindowsSessionClient:
                 ready and (error_code or error_detail)):
             raise ValueError('invalid session feedback')
         unattended = self.unattended()
-        if type(unattended) is not bool:
-            raise ValueError('invalid unattended context')
-        if unattended:
+        unavailable = self.unavailable()
+        if type(unattended) is not bool or type(unavailable) is not bool:
+            raise ValueError('invalid native session context')
+        if unavailable:
             # A plain not-ready heartbeat intentionally retains input during
             # software orientation changes. Lost native display qualification
             # must instead revoke that ownership while preserving context.
             error_code = ErrorCode.DISPLAY_UNAVAILABLE
-            error_detail = 'native-session-unattended'
-        self._request('session_update', dict(generation=generation, ready=ready and not unattended,
+            error_detail = 'native-session-unavailable'
+        self._request('session_update', dict(generation=generation, ready=ready and not unattended and not unavailable,
             error_code=error_code or None, error_detail=error_detail or None, unattended=unattended))
 
     def confirm_tent(self, epoch: int) -> None:
