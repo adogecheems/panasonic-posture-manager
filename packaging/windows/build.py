@@ -61,6 +61,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
         files['runtime/' + existing.name] = search_paths.encode('utf-8')
     files['launch.py'] = b'from panasonic_posture.fluent.__main__ import main\nraise SystemExit(main())\n'
     for name, arguments in (('Panasonic Posture Manager.cmd', ''),
+                             ('Native.cmd', '--native-backend'),
                              ('Simulation.cmd', '--simulate-backend')):
         files[name] = (
             '@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'

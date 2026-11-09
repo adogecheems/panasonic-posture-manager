@@ -290,7 +290,7 @@ python packaging\windows\build.py --dependencies build\windows-dependencies
 
 构建器从当前 Python 基础安装和独立依赖目录读取运行时、Qt/Fluent 及随包许可，连同源码、插画、翻译和维护说明直接流式写入 ZIP，同时计算逐文件校验，减少临时磁盘写入与内存占用。完整归档生成后才替换已有包。`runtime/python._pth` 隔离用户站点、注册表和 `PYTHONPATH`；参见 [Python Windows 搜索路径说明](https://docs.python.org/3.11/using/windows.html#finding-modules)。基础安装的第三方包、测试数据或配置不进入归档。
 
-输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Panasonic Posture Manager.cmd`，或用 `Simulation.cmd` 启动后台模拟。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`，Python 许可为 `runtime/LICENSE.txt`。更新时解压到新目录，用户设置继续位于 LocalAppData。
+输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Native.cmd` 使用真实传感器、物理开关和内屏事务；普通 `Panasonic Posture Manager.cmd` 保持不接触硬件的软件后台预览，`Simulation.cmd` 启动后台模拟。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`，Python 许可为 `runtime/LICENSE.txt`。更新时解压到新目录，用户设置继续位于 LocalAppData。
 
 `.github/workflows/windows-preview.yml` 在 Windows 上运行 Python 3.11/3.13/3.14 的后台、界面、只读探针解析和翻译测试，构建 ZIP，再用解压包自带的 Python 验证 Qt、中文资源、模式事务和后台退出。流程仅保存构建制品，不发布 Release、不改版本或 AUR。提交这份流程不代表远端构建已执行。
 

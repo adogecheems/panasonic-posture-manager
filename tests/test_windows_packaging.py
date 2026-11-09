@@ -41,9 +41,12 @@ class WindowsPackagingTests(unittest.TestCase):
                              'runtime/pythonw._pth', 'runtime/python311._pth',
                              'app/panasonic_posture/windows/client.py', 'data/assets/lets-note-window-icon.png',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
-                             'Panasonic Posture Manager.cmd', 'Simulation.cmd'):
+                             'Panasonic Posture Manager.cmd', 'Native.cmd', 'Simulation.cmd'):
                     self.assertIn(prefix + name, names)
                 self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in names))
+                native = bundle.read(prefix + 'Native.cmd').decode('utf-8')
+                self.assertIn('runtime\\pythonw.exe', native)
+                self.assertIn('--native-backend', native)
                 self.assertIn(b'../app', bundle.read(prefix + 'runtime/python._pth'))
                 manifest = json.loads(bundle.read(prefix + 'MANIFEST.json'))
                 self.assertEqual(set(manifest), {name[len(prefix):] for name in names} - {'MANIFEST.json'})
