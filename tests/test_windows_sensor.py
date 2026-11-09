@@ -85,11 +85,29 @@ class SourceTests(unittest.TestCase):
         self.assertNotIn('.ReportInterval=', STREAM_SCRIPT)
         self.assertNotIn('.ReadingTransform=', STREAM_SCRIPT)
 
+    def test_optional_direction_script_has_no_sensor_setting_writes_and_never_uses_a_shell(self):
+        import base64
+        process = SimpleNamespace(stdout=io.BytesIO(b''), poll=lambda: 0, wait=lambda timeout: 0)
+        for enabled in (False, True):
+            with patch('panasonic_posture.windows.sensor.sys.platform', 'win32'), \
+                 patch('panasonic_posture.windows.sensor._parent_start_time', return_value=123), \
+                 patch('panasonic_posture.windows.sensor.subprocess.Popen', return_value=process) as spawn:
+                process.stdout = io.BytesIO(b'')
+                source = PowerShellSource(include_orientation=enabled)
+                source.close()
+                arguments = spawn.call_args.args[0]
+                script = base64.b64decode(arguments[-1]).decode('utf-16-le')
+                self.assertEqual('SimpleOrientationSensor' in script, enabled)
+                self.assertNotIn('__ORIENTATION_', script)
+                self.assertNotRegex(script, r'\.(ReportInterval|ReadingTransform)\s*=')
+                self.assertNotIn('shell', spawn.call_args.kwargs)
+
     def test_process_frames_are_bounded_and_eof_is_a_failure(self):
         payload = json.dumps(frame()).encode() + b'\n'
         process = SimpleNamespace(stdout=io.BytesIO(payload), pid=123,
             poll=lambda: 0, wait=lambda timeout: 0)
         with patch('panasonic_posture.windows.sensor.sys.platform', 'win32'), \
+             patch('panasonic_posture.windows.sensor._parent_start_time', return_value=123), \
              patch('panasonic_posture.windows.sensor.subprocess.Popen', return_value=process) as spawn:
             source = PowerShellSource()
             try:
@@ -106,6 +124,7 @@ class SourceTests(unittest.TestCase):
         for payload in (b'x' * 65537, b'{"version":1,"version":1}\n'):
             process = SimpleNamespace(stdout=io.BytesIO(payload), poll=lambda: 0, wait=lambda timeout: 0)
             with patch('panasonic_posture.windows.sensor.sys.platform', 'win32'), \
+                 patch('panasonic_posture.windows.sensor._parent_start_time', return_value=123), \
                  patch('panasonic_posture.windows.sensor.subprocess.Popen', return_value=process):
                 source = PowerShellSource()
                 try:

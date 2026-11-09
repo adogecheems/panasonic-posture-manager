@@ -4,7 +4,7 @@ The caller must supply a verified mount rotation before using this as an
 engine SensorBackend. The diagnostic command uses identity axes explicitly;
 it never starts an engine or grants device-control capabilities.
 """
-from dataclasses import replace
+from dataclasses import asdict, replace
 from collections.abc import Callable, Sequence
 from datetime import datetime
 import argparse
@@ -23,6 +23,7 @@ from ..calibration import apply_calibration, parse_calibration_matrix
 from ..model import SensorInfo, SensorReading
 from .probe import parse_sample, SensorProbeError
 from .protocol import MAX_FRAME, decode
+from .orientation import OrientationTracker, OrientationReading, OrientationError
 
 SAMPLE_MAX_AGE = 2.0
 STARTUP_TIMEOUT = 20.0
@@ -32,6 +33,7 @@ IDENTITY = (1., 0., 0., 0., 1., 0., 0., 0., 1.)
 
 STREAM_SCRIPT = r'''
 $ErrorActionPreference='Stop'
+$ProgressPreference='SilentlyContinue'
 $OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new()
 $parent=[Diagnostics.Process]::GetProcessById(__PARENT_PID__)
 $null=$parent.Handle
@@ -46,6 +48,7 @@ $asTask=[System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
     $_.GetGenericArguments().Count -eq 1 -and $_.GetParameters().Count -eq 1 -and
     $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
 } | Select-Object -First 1
+__ORIENTATION_SETUP__
 $selector=[Windows.Devices.Sensors.Accelerometer]::GetDeviceSelector([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
 $sensor=[Windows.Devices.Sensors.Accelerometer]::GetDefault([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
 if ($null -eq $sensor) { throw 'Windows accelerometer is unavailable' }
@@ -57,6 +60,8 @@ while (-not $parent.HasExited) {
     if ($ids.Count -ne 1 -or $ids[0] -ne $sensor.DeviceId) { throw 'Accelerometer identity is ambiguous or changed' }
     $reading=$sensor.GetCurrentReading()
     if ($null -eq $reading) { throw 'Windows accelerometer returned no sample' }
+    $orientation=$null
+    __ORIENTATION_READ__
     [ordered]@{
         version=1
         device=$sensor.DeviceId
@@ -67,9 +72,48 @@ while (-not $parent.HasExited) {
         x=$reading.AccelerationX
         y=$reading.AccelerationY
         z=$reading.AccelerationZ
-    } | ConvertTo-Json -Compress
+        orientation=$orientation
+    } | ConvertTo-Json -Compress -Depth 4
     [Console]::Out.Flush()
     Start-Sleep -Milliseconds 100
+}
+'''
+
+ORIENTATION_SETUP = r'''
+$orientationSensor=$null
+$orientationTypeAvailable=$false
+try {
+    [Windows.Devices.Sensors.SimpleOrientationSensor,Windows.Devices.Sensors,ContentType=WindowsRuntime] | Out-Null
+    $orientationTypeAvailable=$true
+} catch {}
+'''
+
+ORIENTATION_READ = r'''
+if ($orientationTypeAvailable) {
+    try {
+        if ($null -eq $orientationSensor) {
+            $orientationSensor=[Windows.Devices.Sensors.SimpleOrientationSensor]::GetDefault()
+            $orientationSelector=[Windows.Devices.Sensors.SimpleOrientationSensor]::GetDeviceSelector()
+        }
+        if ($null -eq $orientationSensor) { throw 'Simple orientation is unavailable' }
+        $operation=[Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($orientationSelector)
+        $task=$asTask.MakeGenericMethod([Windows.Devices.Enumeration.DeviceInformationCollection]).Invoke($null,@($operation))
+        if (-not $task.Wait(2000)) { throw 'Simple orientation enumeration timed out' }
+        $orientationIds=@($task.Result | ForEach-Object { $_.Id })
+        if ($orientationIds.Count -ne 1 -or $orientationIds[0] -ne $orientationSensor.DeviceId) {
+            throw 'Simple orientation identity is ambiguous or changed'
+        }
+        $orientation=[ordered]@{
+            device=$orientationSensor.DeviceId
+            candidates=$orientationIds
+            value=[int]$orientationSensor.GetCurrentOrientation()
+            reading_transform=[int]$orientationSensor.ReadingTransform
+            observed_at=[DateTimeOffset]::UtcNow.ToString('o')
+        }
+    } catch {
+        $orientationSensor=$null
+        $orientation=[ordered]@{error='orientation-read-unavailable'}
+    }
 }
 '''
 
@@ -148,23 +192,31 @@ class SampleTracker:
         return self.latest
 
 
+def _parent_start_time() -> int:
+    import ctypes as C
+    kernel = C.WinDLL('kernel32', use_last_error=True, winmode=0x800)
+    kernel.GetProcessTimes.argtypes = [C.c_void_p, *([C.POINTER(C.c_uint64)] * 4)]
+    kernel.GetProcessTimes.restype = C.c_int32
+    times = [C.c_uint64() for _ in range(4)]
+    if not kernel.GetProcessTimes(C.c_void_p(-1), *(C.byref(value) for value in times)):
+        raise SensorError('cannot identify the sensor parent process')
+    return times[0].value
+
+
 class PowerShellSource:
     """Bounded stream from a fixed system executable; cancellation kills it."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, include_orientation: bool = False) -> None:
         if sys.platform != 'win32':
             raise SensorError('run WinRT acquisition inside Windows')
         # Pin the actual parent process instance. Even a forced backend exit
         # must stop the read-only WinRT helper; a reused PID is not that parent.
-        import ctypes as C
-        kernel = C.WinDLL('kernel32', use_last_error=True, winmode=0x800)
-        kernel.GetProcessTimes.argtypes = [C.c_void_p, *([C.POINTER(C.c_uint64)] * 4)]
-        kernel.GetProcessTimes.restype = C.c_int32
-        times = [C.c_uint64() for _ in range(4)]
-        if not kernel.GetProcessTimes(C.c_void_p(-1), *(C.byref(value) for value in times)):
-            raise SensorError('cannot identify the sensor parent process')
+        if type(include_orientation) is not bool:
+            raise ValueError('orientation acquisition must be explicitly enabled')
         program = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
-        script = STREAM_SCRIPT.replace('__PARENT_PID__', str(os.getpid())).replace('__PARENT_START__', str(times[0].value))
+        script = STREAM_SCRIPT.replace('__PARENT_PID__', str(os.getpid())).replace('__PARENT_START__', str(_parent_start_time()))
+        script = script.replace('__ORIENTATION_SETUP__', ORIENTATION_SETUP if include_orientation else '')
+        script = script.replace('__ORIENTATION_READ__', ORIENTATION_READ if include_orientation else '')
         encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
         self.frames = queue.Queue(maxsize=32)
         self.stopped = threading.Event()
@@ -217,11 +269,17 @@ class PowerShellSource:
 class WindowsSensor:
     """Threaded, read-only SensorBackend with bounded stale/startup retries."""
 
-    def __init__(self, *, mount_matrix: Sequence[float], source_factory: Callable = PowerShellSource,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, *, mount_matrix: Sequence[float], source_factory: Callable | None = None,
+                 clock: Callable[[], float] = time.monotonic, include_orientation: bool = False) -> None:
         self.mount_matrix = parse_calibration_matrix(mount_matrix)
         self.tracker = SampleTracker(mount_matrix=self.mount_matrix)
-        self.clock, self.source_factory = clock, source_factory
+        if type(include_orientation) is not bool:
+            raise ValueError('orientation acquisition must be explicitly enabled')
+        self.clock = clock
+        self.source_factory = source_factory if source_factory is not None else (
+            lambda: PowerShellSource(include_orientation=include_orientation))
+        self._include_orientation = include_orientation
+        self._orientation = OrientationTracker()
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
@@ -236,8 +294,28 @@ class WindowsSensor:
 
     def _publish(self, frame: dict, received: float, wall: float) -> None:
         with self._lock:
+            previous = self.tracker.latest.stamp
             self.tracker.accept(frame, received_at=received, wall_time=wall)
             self._error = None
+            if self._include_orientation and self.tracker.latest.stamp != previous:
+                try:
+                    value = frame.get('orientation')
+                    if not isinstance(value, dict):
+                        raise OrientationError('orientation-sensor-unavailable')
+                    observed = _timestamp(value.get('observed_at'))
+                    if (not -.05 <= _timestamp(frame.get('observed_at')) - observed <= SAMPLE_MAX_AGE or
+                            not -.05 <= wall - observed <= SAMPLE_MAX_AGE):
+                        raise OrientationError('orientation-observation-is-stale')
+                    anchor_mono, anchor_wall = self.tracker.anchor
+                    mapped = anchor_mono + observed - anchor_wall
+                    if not -.05 <= received - mapped <= SAMPLE_MAX_AGE:
+                        raise OrientationError('orientation-observation-clock-invalid')
+                    self._orientation.accept(value, stamp=min(received, mapped))
+                except (OrientationError, SensorError) as error:
+                    # Direction is optional; fixed modes use the valid gravity
+                    # frame. Never count its earlier measurement as the later
+                    # orientation snapshot time for dwell after slow WinRT work.
+                    self._orientation.reset(str(error))
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -252,6 +330,7 @@ class WindowsSensor:
                     # selected device for the entire manager lifetime.
                     self.tracker.info = replace(previous.info, ready=False)
                     self.tracker.last_timestamp = previous.last_timestamp
+                    self._orientation.reset()
                 source = self.source_factory()
                 started = self.clock()
                 while not self._stop.is_set():
@@ -283,7 +362,8 @@ class WindowsSensor:
                         with self._lock:
                             self._error = 'could not close the sensor source'
                             self._cleanup_error = error
-                        return
+            if self._cleanup_error is not None:
+                return
             self._stop.wait(RETRY_SECONDS)
 
     @property
@@ -316,14 +396,34 @@ class WindowsSensor:
         if self._cleanup_error is not None:
             raise SensorError('could not close the sensor source') from self._cleanup_error
 
+    def _orientation_valid(self, now: float) -> bool:
+        value = self._orientation.latest
+        return bool(self._include_orientation and self._error is None and not self._stop.is_set() and
+                    value is not None and 0 <= now - value.stamp <= SAMPLE_MAX_AGE)
+
+    def orientation(self) -> OrientationReading | None:
+        with self._lock:
+            return self._orientation.latest if self._orientation_valid(self.clock()) else None
+
+    @property
+    def orientation_info(self) -> SensorInfo:
+        with self._lock:
+            info = self._orientation.info
+            if self._orientation_valid(self.clock()):
+                return info
+            error = ('orientation-not-enabled' if not self._include_orientation else
+                     'closed' if self._stop.is_set() else self._error or info.error or 'orientation-data-stale')
+            return replace(info, ready=False, error=error)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--seconds', type=int, default=10, choices=range(1, 61), metavar='1..60')
+    parser.add_argument('--orientation', action='store_true', help='also observe the coarse system orientation without writing it')
     options = parser.parse_args(argv)
     if sys.platform != 'win32':
         parser.error('run this read-only monitor inside Windows')
-    sensor = WindowsSensor(mount_matrix=IDENTITY)
+    sensor = WindowsSensor(mount_matrix=IDENTITY, include_orientation=options.orientation)
     sensor.start()
     deadline = time.monotonic() + STARTUP_TIMEOUT
     count, last = 0, None
@@ -333,9 +433,14 @@ def main(argv: list[str] | None = None) -> int:
             if reading.valid and reading.stamp != last:
                 if count == 0:
                     deadline = time.monotonic() + options.seconds
-                print(json.dumps(dict(version=1, source='windows-winrt', device=sensor.info.device,
+                value = dict(version=1, source='windows-winrt', device=sensor.info.device,
                     mount_verified=False, stamp=reading.stamp, acceleration_m_s2=reading.vector,
-                    magnitude_m_s2=reading.magnitude), allow_nan=False), flush=True)
+                    magnitude_m_s2=reading.magnitude)
+                if options.orientation:
+                    direction = sensor.orientation()
+                    value.update(orientation=asdict(direction) if direction else None,
+                                 orientation_info=asdict(sensor.orientation_info))
+                print(json.dumps(value, allow_nan=False), flush=True)
                 count, last = count + 1, reading.stamp
             elif count and not sensor.info.ready:
                 raise SensorError(sensor.info.error or 'sensor unavailable')

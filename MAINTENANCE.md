@@ -163,11 +163,16 @@ set PYTHONPATH=src
 
 ```bat
 .venv-windows\Scripts\python -m panasonic_posture.windows.sensor --seconds 10
+.venv-windows\Scripts\python -m panasonic_posture.windows.sensor --orientation --seconds 10
 ```
 
 此命令输出逐行 JSON，时间换算至 Python 单调时钟，单位为 m/s²，`mount_verified=false` 表示仍沿用传感器原始轴向，不能当作机型姿态校验。它逐次枚举 Standard 加速度计，只接受唯一且与默认传感器标识一致的设备，不设置 ReportInterval 或 ReadingTransform。WinRT 在刚打开时可能先返回很久以前的缓存；旧帧不会发布，启动最多等待 20 秒，新鲜样本间隔不能超过两秒。重复时间戳不更新样本时间。断线后间隔两秒重试，保持原设备身份和最后的原始时间戳；更换设备必须重新建立并验证安装方向。
 
 `windows.sensor.WindowsSensor` 实现共用 SensorBackend 的只读接口，构造时要求显式传入安装方向矩阵。它校验采样与接收时间、墙钟和单调时钟的相对变化，遇到时钟跳变重新连接并建立时间基准；错误或过期时立即返回无效读数。它尚未接入普通软件后台，也不改变设备支持等级。传感器接口与固定坐标系见 [Microsoft Accelerometer 文档](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.accelerometer)。
+
+`--orientation` 显式附加系统 SimpleOrientationSensor 的四象限/朝上/朝下快照，默认采样路径保持不变。方向源同样要求唯一、身份固定且 ReadingTransform 为原始值 0；不修改该属性或采样配置。方向快照有独立的观察时间，使用已经校验的时钟基准换算到单调时钟，不能把较早的加速度测量时间冒充方向观察时间，也不把观察时间当成方向变更事件时间；只有加速度计出现不同的有效采样时间时才发布，缓存不能续期。方向失败只使方向端口失效，不破坏仍正常的重力姿态采样。接口语义见 [Microsoft 简单方向说明](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/use-the-orientation-sensor)。
+
+纯方向判定要求显式四象限映射和连续的新鲜样本达到稳定窗口，平放朝上/朝下保持当前方向，失效与断档清除候选；目前尚未接入软件平板显示执行或开放界面选项，不用原始 X 轴猜测方向映射。CFQV8 原生只读验证在约两秒取得 14 个不同观察时间的有效快照，当前平放为值 4（朝上）；四向旋转仍需实际摆放与显示配合验证。`tests/windows_sensor_parent_smoke.py --orientation --directory <新证据目录>` 已验证附加方向采集时，强制结束父进程仍会回收辅助进程。
 
 2026-11-08，同一 Windows 10 虚拟机的普通用户下，持续采样约 3.4 秒取得 23 个不同时间戳的样本，退出时回收读取子进程。测试覆盖启动旧缓存、缓存不续期、设备更换、断线重试、时钟跳变与退出清理；不代表传感器安装方向或整机姿态已验收。
 
