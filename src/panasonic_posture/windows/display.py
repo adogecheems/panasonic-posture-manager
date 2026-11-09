@@ -214,7 +214,32 @@ class WindowsDisplay(SoftwareDisplay):
             raise DisplayError(ErrorCode.DISPLAY_LOCK, 'system-rotation-lock-port-unavailable')
 
     def _apply_hardware(self):
-        raise DisplayError(ErrorCode.DISPLAY_LOCK, 'native-rotation-handoff-unavailable')
+        # Windows owns its physical slate/rotation policy. Relinquish our
+        # journalled direction without writing the GPIO state or a global lock.
+        super()._apply_hardware()
+
+    def hold_orientation(self):
+        # Notebook mode disables the OS rotator on this platform. During the
+        # shared bounded handoff window we can hold our own direction without
+        # claiming a global lock API. If the OS rotator is active, fail closed.
+        try:
+            current = self._read_transaction_state()
+            self._validate(current, 'laptop', current.transform)
+            held = self._held_orientation
+            if held is None:
+                held = self._held_orientation = current
+            if current.identity != held.identity:
+                raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
+            if not self.owned:
+                self.owned = self._journal_document(current)
+                self._persist()
+            if self.owned.get('written_transform') is None:
+                self.owned['original_transform'] = held.transform
+                self._persist()
+            self._write_owned_rotation(current, held.transform)
+        except (DisplayError, OSError, ValueError):
+            self._rollback()
+            raise
 
     def _write_rotation(self, state, transform):
         self.api.rotate(state.identity[0], state.transform, transform)

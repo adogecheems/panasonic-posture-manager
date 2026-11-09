@@ -86,6 +86,13 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn('cannot be combined', result.stderr)
 
+    def test_native_screen_cli_rejects_preview_options_before_loading_qt(self):
+        for arguments in (['--demo'], ['--backend'], ['--simulate-backend'], ['--hardware-backend']):
+            result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
+                '--native-backend', *arguments], text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn('cannot be combined', result.stderr)
+
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
@@ -98,10 +105,45 @@ class DemoTests(unittest.TestCase):
                 self.assertEqual(translator('zh_CN')('Laptop'), '笔记本')
                 self.assertEqual(translator('en')('Laptop'), 'Laptop')
 
+    def test_new_source_strings_survive_an_older_compiled_catalog(self):
+        import gettext
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        from panasonic_posture.fluent.resources import translator
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'po').mkdir()
+            (root / 'po/zh_CN.po').write_text('msgid "Stand"\nmsgstr "支架"\n', encoding='utf-8')
+            compiled = gettext.GNUTranslations()
+            compiled._catalog = {'Laptop': '笔记本'}
+            compiled.plural = lambda n: int(n != 1)
+            with patch.dict(os.environ, PANASONIC_POSTURE_DATA_DIR=str(root / 'data')):
+                with patch('gettext.translation', return_value=compiled):
+                    self.assertEqual(translator('zh_CN')('Laptop'), '笔记本')
+                    self.assertEqual(translator('zh_CN')('Stand'), '支架')
+
 
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent preview dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def test_native_screen_mode_descriptions_and_capabilities_are_truthful(self):
+        self.run_ui('''
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QLabel
+window.close()
+client = DemoClient(QTimer.singleShot)
+client.state.update(native_backend=True, input_control_available=False,
+                    available_modes=['auto', 'laptop', 'tent', 'stand'])
+window = Window(native_backend=True, client=client, language='en')
+window.show()
+QTest.qWait(50)
+assert window.settings.radios['tent'].isEnabled()
+assert not window.settings.radios['tablet'].isEnabled()
+assert window.settings.mode_cards['tent'].contentLabel.text() == 'Turns the screen upside down'
+assert window.settings.mode_cards['stand'].contentLabel.text() == 'Keeps the screen upright'
+assert any('Keyboard and touchpad stay enabled' in label.text() for label in window.findChildren(QLabel))
+''')
+
     def test_native_hardware_client_updates_widgets_via_the_wire_contract(self):
         self.run_ui('''
 import time

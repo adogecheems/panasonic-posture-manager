@@ -54,7 +54,7 @@ def decode(frame: bytes) -> dict:
     return value
 
 
-def validate_state(value: object) -> dict:
+def validate_state(value: object, *, native: bool = False) -> dict:
     if not isinstance(value, dict):
         raise ProtocolError('state must be an object')
     # These are complete snapshots, unlike the legacy Linux decoder's optional
@@ -68,7 +68,8 @@ def validate_state(value: object) -> dict:
         state = parse_snapshot(json.dumps(value, allow_nan=False))
     except (ValueError, TypeError, RecursionError) as error:
         raise ProtocolError('invalid state fields') from error
-    if not state.instance or state.sensor_source not in ('windows-unavailable', 'windows-simulation'):
+    sources = ('windows-winrt',) if native else ('windows-unavailable', 'windows-simulation')
+    if not state.instance or state.sensor_source not in sources:
         raise ProtocolError('invalid Windows state identity or source')
     if type(value.get('preferences_available')) is not bool:
         raise ProtocolError('invalid preference capability')
@@ -76,8 +77,23 @@ def validate_state(value: object) -> dict:
         raise ProtocolError('invalid simulation capability')
     if value['simulation'] != (state.sensor_source == 'windows-simulation'):
         raise ProtocolError('inconsistent simulation source')
-    if not value['simulation'] and (state.supported or state.applied is not None or state.hardware is not None):
+    if native:
+        if (value.get('native_backend') is not True or value['simulation'] is not False or
+                value.get('input_control_available') is not False or
+                value.get('available_modes') != ['auto', 'laptop', 'tent', 'stand'] or
+                state.support_tier != 'compatible' or
+                state.manual not in ('auto', 'laptop', 'tent', 'stand') or
+                state.target.mode not in ('unavailable', 'laptop', 'tent', 'stand', 'hardware') or
+                (state.applied is not None and state.applied.mode not in ('laptop', 'tent', 'stand', 'hardware')) or
+                state.target.disable_internal_input or
+                (state.applied is not None and state.applied.disable_internal_input)):
+            raise ProtocolError('invalid native screen capability')
+    elif value.get('native_backend', False) is not False:
+        raise ProtocolError('unexpected native backend')
+    if not native and not value['simulation'] and (state.supported or state.applied is not None or state.hardware is not None):
         raise ProtocolError('unadapted hardware must not claim execution')
     result = state.to_dict()
     result.update(preferences_available=value['preferences_available'], simulation=value['simulation'])
+    if native:
+        result.update(native_backend=True, input_control_available=False, available_modes=list(value['available_modes']))
     return result

@@ -83,6 +83,7 @@ class SettingsModel:
 
     def mode_enabled(self, mode: str) -> bool:
         return bool(self.state and self.state['supported']
+                    and mode in self.state.get('available_modes', ('auto', 'laptop', 'tent', 'stand', 'tablet'))
                     and self.state['hardware'] is not True)
 
     def queue(self, field: str, value: str | bool) -> None:

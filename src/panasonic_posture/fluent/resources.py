@@ -16,7 +16,7 @@ def translator(language: str | None = None):
     root = data_root().parent
     compiled = gettext.translation('panasonic-posture-manager', localedir=root / 'locale',
                                    languages=[language], fallback=True)
-    if isinstance(compiled, gettext.GNUTranslations) or not language.lower().startswith('zh'):
+    if not language.lower().startswith('zh'):
         return compiled.gettext
     # Source previews on Windows do not require the GNU msgfmt executable.
     # The project catalog contains singular entries only. Installed builds can
@@ -41,4 +41,9 @@ def translator(language: str | None = None):
                 key += ast.literal_eval(line)
             elif part == 'value':
                 value += ast.literal_eval(line)
-    return lambda text: messages.get(text, text)
+    def translate(text):
+        value = compiled.gettext(text)
+        # A source checkout can contain yesterday's generated .mo. Keep its
+        # entries but resolve newly added strings from the source catalog.
+        return messages.get(text, text) if value == text else value
+    return translate

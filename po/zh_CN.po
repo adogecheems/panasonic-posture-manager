@@ -300,3 +300,15 @@ msgstr "设置已保存"
 
 msgid "The background service is ready. Device control is not available yet."
 msgstr "后台已就绪，设备控制功能尚未接入。"
+
+msgid "Screen control only · Keyboard and touchpad stay enabled."
+msgstr "仅管理屏幕方向 · 键盘和触控板保持可用。"
+
+msgid "Turns the screen upside down"
+msgstr "将屏幕倒转"
+
+msgid "Keeps the screen upright"
+msgstr "保持屏幕正向"
+
+msgid "Automatic screen rotation is not available yet"
+msgstr "屏幕自动旋转尚未接入"

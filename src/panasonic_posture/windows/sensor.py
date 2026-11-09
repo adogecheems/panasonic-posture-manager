@@ -33,6 +33,9 @@ IDENTITY = (1., 0., 0., 0., 1., 0., 0., 0., 1.)
 STREAM_SCRIPT = r'''
 $ErrorActionPreference='Stop'
 $OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new()
+$parent=[Diagnostics.Process]::GetProcessById(__PARENT_PID__)
+$null=$parent.Handle
+if ($parent.StartTime.ToUniversalTime().ToFileTimeUtc() -ne __PARENT_START__) { throw 'Sensor parent identity changed' }
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 [Windows.Devices.Sensors.Accelerometer,Windows.Devices.Sensors,ContentType=WindowsRuntime] | Out-Null
 [Windows.Devices.Sensors.AccelerometerReadingType,Windows.Devices.Sensors,ContentType=WindowsRuntime] | Out-Null
@@ -46,7 +49,7 @@ $asTask=[System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
 $selector=[Windows.Devices.Sensors.Accelerometer]::GetDeviceSelector([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
 $sensor=[Windows.Devices.Sensors.Accelerometer]::GetDefault([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
 if ($null -eq $sensor) { throw 'Windows accelerometer is unavailable' }
-while ($true) {
+while (-not $parent.HasExited) {
     $operation=[Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($selector)
     $task=$asTask.MakeGenericMethod([Windows.Devices.Enumeration.DeviceInformationCollection]).Invoke($null,@($operation))
     if (-not $task.Wait(2000)) { throw 'Accelerometer enumeration timed out' }
@@ -151,8 +154,18 @@ class PowerShellSource:
     def __init__(self) -> None:
         if sys.platform != 'win32':
             raise SensorError('run WinRT acquisition inside Windows')
+        # Pin the actual parent process instance. Even a forced backend exit
+        # must stop the read-only WinRT helper; a reused PID is not that parent.
+        import ctypes as C
+        kernel = C.WinDLL('kernel32', use_last_error=True, winmode=0x800)
+        kernel.GetProcessTimes.argtypes = [C.c_void_p, *([C.POINTER(C.c_uint64)] * 4)]
+        kernel.GetProcessTimes.restype = C.c_int32
+        times = [C.c_uint64() for _ in range(4)]
+        if not kernel.GetProcessTimes(C.c_void_p(-1), *(C.byref(value) for value in times)):
+            raise SensorError('cannot identify the sensor parent process')
         program = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
-        encoded = base64.b64encode(STREAM_SCRIPT.encode('utf-16-le')).decode('ascii')
+        script = STREAM_SCRIPT.replace('__PARENT_PID__', str(os.getpid())).replace('__PARENT_START__', str(times[0].value))
+        encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
         self.frames = queue.Queue(maxsize=32)
         self.stopped = threading.Event()
         self.process = subprocess.Popen([str(program), '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],

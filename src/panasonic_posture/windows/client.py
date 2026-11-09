@@ -21,16 +21,22 @@ class BackendUnavailable(RuntimeError):
     pass
 
 
-def settings_path(*, simulate: bool = False) -> Path:
+def settings_path(*, simulate: bool = False, native: bool = False) -> Path:
+    if simulate and native:
+        raise ValueError('native and simulation settings are separate')
     root = os.environ.get('LOCALAPPDATA')
     if not root or not Path(root).is_absolute():
         raise BackendUnavailable('LOCALAPPDATA is not an absolute directory')
-    return Path(root) / 'PanasonicPostureManager' / ('simulation.json' if simulate else 'settings.json')
+    name = 'simulation.json' if simulate else 'native-settings.json' if native else 'settings.json'
+    return Path(root) / 'PanasonicPostureManager' / name
 
 
 class ProcessClient:
     def __init__(self, path: Path, *, simulate: bool = False, scenario: str = 'laptop',
-                 timeout: float = 5.0, clock: Callable[[], float] = time.monotonic) -> None:
+                 timeout: float = 5.0, clock: Callable[[], float] = time.monotonic, native: bool = False) -> None:
+        if native and simulate:
+            raise ValueError('native and simulation backends are mutually exclusive')
+        self.native = native
         self.path, self.simulate, self.scenario = Path(path), simulate, scenario
         self.timeout, self.clock = timeout, clock
         self.process = None
@@ -85,6 +91,8 @@ class ProcessClient:
                        '--stdio', '--settings', str(self.path)]
         if self.simulate:
             command += ['--simulate', '--scenario', self.scenario]
+        if self.native:
+            command += ['--native']
         flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         try:
             self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -141,9 +149,19 @@ class ProcessClient:
     def _dispose(self) -> None:
         if self.process is None:
             return
-        self.worker_stop.set()
         process, self.process = self.process, None
-        # Terminate the software-only process before closing streams; closing a
+        if self.native and process.poll() is None:
+            # Keep the writer alive long enough to deliver a normal shutdown.
+            # Waiting for process exit also waits for journal recovery/cleanup.
+            try:
+                self.serial += 1
+                self.outbox.put_nowait(encode(dict(version=VERSION, type='request', id=self.serial,
+                                                  method='shutdown', params={})))
+                process.wait(timeout=6.)
+            except (queue.Full, subprocess.TimeoutExpired):
+                pass  # A failed child leaves its durable recovery journal.
+        self.worker_stop.set()
+        # Terminate any remaining process before closing streams; closing a
         # pipe while another thread is blocked reading it can block the UI.
         if process.poll() is None:
             process.terminate()
@@ -159,9 +177,9 @@ class ProcessClient:
 
     def _lost(self) -> None:
         self.instance = None
-        self._dispose()
         # Invalidate UI connection-scoped callbacks before failing Futures.
         self._unavailable()
+        self._dispose()
         pending, self.pending = self.pending, {}
         for future, _ in pending.values():
             if not future.done():
@@ -189,7 +207,7 @@ class ProcessClient:
                     raise ProtocolError('missing instance')
                 kind = message.get('type')
                 if kind == 'state':
-                    state = validate_state(message.get('state'))
+                    state = validate_state(message.get('state'), native=self.native)
                     if instance != state['instance'] or self.instance not in (None, instance):
                         raise ProtocolError('stale instance')
                     first = self.instance is None

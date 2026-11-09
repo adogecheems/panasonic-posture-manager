@@ -24,6 +24,7 @@
 - **C relay** 由 `service/actuator.py` 管理。只有它能打开 `/dev/input` 和 `/dev/uinput`、抓取内置键盘和触控板。stdout 只写 JSON 行，日志写 stderr。软件接管时可只读观察唯一直接触摸屏的接触开始。经当前已认证会话确认后，独立虚拟设备在时限内发送专用唤醒键。禁止抓取触摸屏、记录坐标或读取键盘内容。
 - **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
+  显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。它不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置与每用户固定显示日志/控制器锁，不复用或放宽 LocalSystem 硬件管道。
   `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
 - **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
@@ -50,6 +51,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
+| Windows 用户态真实显示后台 | `windows/{screen_session,backend,client,display,session_context}.py`、`fluent/` | `test_windows_screen_session`、`test_windows_display`、`test_frontend`、`test_fluent`；真机脚本仍须相应授权，不能用隔离端口代替真机证据 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
 | Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
@@ -867,3 +869,13 @@ make WERROR=1 check
 - 动机：落实用户允许暂缓输入禁用的新范围，使真实显示功能不依赖内核驱动，同时避免用模拟成功绕过输入回执或误报键盘/触控板已停用。
 - 约束：不改变任何状态、设置、日志、D-Bus 或 relay 版本；没有新增用户可修改能力的设置或 RPC。默认 Linux 输入目标、物理开关优先、失效撤销及代次规则均不改变。当前尚未接入真实 Windows 用户态后台，界面开放前必须同步明确的能力提示。
 - 同步：控制器、共用引擎、Windows 无输入端口及成功/失败/租约/物理优先回归测试，MAINTENANCE 与本手册。
+
+### 2026-11-09 - Windows 普通用户真实显示链路
+
+- 变更：新增显式 `--native-backend` 与普通用户屏幕装配，复用共用控制器、Engine、SessionRuntime、设置及显示日志；内部显示回执经有界队列交回唯一引擎线程，不能从外部提交。只选择当前有 Windows y/z 姿态证据的 CFQV8-1L 与相应传感器型号，开放固定方向模式、自动姿态及校准，暂不开放软件平板自动旋转或输入禁用。
+- 动机：落实允许暂缓输入控制的交付范围，使其余功能能脱离内核签名推进；避免模式描述误报输入禁用、模拟数据混入真实入口，以及正常退出直接杀后台来不及恢复方向。
+- 约束：取代前文“真实用户态后台尚未接入”的阶段描述，不改变 Linux 默认输入目标、现有状态/存储版本、LocalSystem wire v1、鉴权和特权职责。私有 stdio 的原生快照增加明确能力及模式白名单，仅显式原生客户端接受；预览/模拟入口保持独立。每用户固定控制器锁防止更换设置路径绕过显示单实例。物理平板交接只撤销程序旋转所有权，不改物理状态或声称写入全局方向锁；短暂保持要求原生自动旋转已禁用。
+- 生命周期：正常关闭先停止读取并请求后台恢复，最多六秒后才终止无响应进程；恢复日志覆盖崩溃后重启。WinRT 辅助进程持有并核对父实例，父进程死亡后退出。锁屏及资格丢失撤销租约；已知熄屏且未锁定仍有资格，并复用共用策略的熄屏直接姿态切换。此内部状态不放宽独立硬件 RPC 的 ready/unattended 校验。
+- 界面：模式列表按已校验的能力收窄，输入保持可用的说明始终可见；源码预览若有旧的编译中文目录，缺失的新文案仍可从原始中文目录取得翻译，不手工修改生成的 `.mo`。
+- 证据：隔离测试覆盖实际共享显示事务/日志、子进程 stdio、回执与代次、失效恢复、正常退出及强制退出重连、不重放手动选择、能力校验和界面说明；真实 CFQV8 完成新链路的鲜活采样、GPIO 读取、锁屏拒绝、正常退出，以及杀死采样父进程后辅助进程退出。整链路真实旋转尝试因锁定而未执行，仍待解锁补验，不提升为完整真机支持。
+- 同步：Windows 用户态后台、通信、显示和采样，Fluent/共用前端、翻译、源码启动器、Windows CI、单元与显式真机脚本、README 与 MAINTENANCE。

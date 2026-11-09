@@ -86,7 +86,7 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertEqual(api.writes, [2, 2])
 
     def test_does_not_claim_auto_rotation_control_or_override_an_unlocked_desktop(self):
-        for mode, state in (('tent', 0), ('tablet', 1), ('hardware', 1)):
+        for mode, state in (('tent', 0), ('tablet', 1)):
             api, journal = Api(), MemoryJournal()
             api.current = panel(auto_rotation=state)
             display = WindowsDisplay(api=api, journal=journal)
@@ -94,6 +94,34 @@ class WindowsDisplayTests(unittest.TestCase):
                 display.apply(dict(mode=mode, tablet=True, rotation=None, disable_internal_input=True))
             self.assertFalse(api.writes)
             self.assertIsNone(journal.document)
+
+    def test_physical_handoff_relinquishes_rotation_without_changing_os_policy(self):
+        api, journal = Api(), MemoryJournal()
+        display = WindowsDisplay(api=api, journal=journal)
+        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+        api.current = replace(api.current, auto_rotation=0)
+        display.apply(dict(mode='hardware', tablet=True, rotation=None, disable_internal_input=False))
+        self.assertIsNone(journal.document)
+        self.assertIsNone(display.owned)
+        api.current = replace(api.current, transform=1)
+        display.restore()
+        self.assertEqual(api.current.transform, 1)
+        self.assertEqual(api.writes, [2])
+
+    def test_post_hardware_hold_only_owns_rotation_when_os_auto_rotation_is_disabled(self):
+        api, journal = Api(), MemoryJournal()
+        display = WindowsDisplay(api=api, journal=journal)
+        display.hold_orientation()
+        self.assertEqual(api.writes, [])
+        api.current = replace(api.current, transform=2)
+        display.hold_orientation()
+        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.writes, [0])
+        display.restore()
+        self.assertIsNone(journal.document)
+        api.current = replace(api.current, auto_rotation=0)
+        with self.assertRaises(DisplayError): display.hold_orientation()
+        self.assertIsNone(journal.document)
 
 
 class NativeRotationTests(unittest.TestCase):

@@ -15,21 +15,16 @@ import time
 from typing import Protocol
 
 from ..contracts import AGENT_HEARTBEAT_SECONDS, ErrorCode, TICK_SECONDS
-from ..model import StateSnapshot, Target
-from ..session.failures import DisplayError, FailureKind, ServiceError
+from ..model import StateSnapshot
+from ..session.failures import FailureKind, ServiceError
 from ..session.ports import DisplayBackend, SessionClient
 from ..session.runtime import SessionRuntime
 from ..tasks import thread_executor
 from .session_client import WindowsSessionClient
 from .session_context import WindowsSessionContext
+from .session_display import SessionContext, QualifiedDisplay as _QualifiedDisplay
 
 log = logging.getLogger(__name__)
-
-
-class SessionContext(Protocol):
-    def control_available(self) -> bool: ...
-    def poll(self) -> None: ...
-    def close(self) -> None: ...
 
 
 class ClosableClient(SessionClient, Protocol):
@@ -74,35 +69,6 @@ class _QualifiedClient:
         if not self.context.control_available():
             raise self._rejected()
         self.client.wake_screen(generation, serial)
-
-
-class _QualifiedDisplay:
-    def __init__(self, display: DisplayBackend, context: SessionContext) -> None:
-        self.display, self.context = display, context
-
-    def _require_available(self) -> None:
-        if not self.context.control_available():
-            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'native session control is unavailable')
-
-    def apply(self, target: Target) -> None:
-        if target.mode == 'unavailable':
-            self.display.apply(target)  # Existing ownership may still restore.
-            return
-        self._require_available()
-        self.display.apply(target)
-        if not self.context.control_available():
-            self.display.restore()
-            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'session changed during display apply')
-
-    def hold_orientation(self) -> None:
-        self._require_available()
-        self.display.hold_orientation()
-        if not self.context.control_available():
-            self.display.restore()
-            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'session changed during display hold')
-
-    def restore(self, normal: bool = False) -> None:
-        self.display.restore(normal=normal)
 
 
 def _native_context() -> WindowsSessionContext:

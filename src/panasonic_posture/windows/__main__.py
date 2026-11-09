@@ -1,4 +1,4 @@
-"""Run a private, unprivileged software backend over inherited binary pipes."""
+"""Run a private user backend over inherited binary pipes."""
 import argparse
 import logging
 import queue
@@ -28,6 +28,8 @@ def serve(source: BinaryIO, sink: BinaryIO, backend: Backend) -> int:
                 if not isinstance(value.get('method'), str) or not isinstance(value.get('params'), dict):
                     raise ProtocolError('invalid method')
                 inbox.put_nowait(value)
+                if value['method'] == 'shutdown' and value['params'] == {}:
+                    return  # Do not leave a daemon blocked on stdin at exit.
         except (OSError, ValueError, queue.Full):
             logging.exception('backend input closed or invalid')
         finally:
@@ -37,7 +39,8 @@ def serve(source: BinaryIO, sink: BinaryIO, backend: Backend) -> int:
         sink.write(encode(dict(value, version=VERSION, instance=backend.instance)))
         sink.flush()
 
-    threading.Thread(target=read, daemon=True, name='posture-backend-reader').start()
+    reader = threading.Thread(target=read, daemon=True, name='posture-backend-reader')
+    reader.start()
     previous = None
     try:
         while not stopped.is_set():
@@ -50,6 +53,8 @@ def serve(source: BinaryIO, sink: BinaryIO, backend: Backend) -> int:
                 request = inbox.get(timeout=.05)
             except queue.Empty:
                 continue
+            if request['method'] == 'shutdown' and request['params'] == {}:
+                break  # finally restores the display before the child exits.
             error = None
             try:
                 backend.call(request['method'], request['params'])
@@ -70,6 +75,7 @@ def serve(source: BinaryIO, sink: BinaryIO, backend: Backend) -> int:
     finally:
         stopped.set()
         backend.close()
+        reader.join(timeout=1.)
     return 0
 
 
@@ -79,15 +85,20 @@ def main(argv=None):
     parser.add_argument('--stdio', action='store_true', required=True)
     parser.add_argument('--settings', type=Path, required=True)
     parser.add_argument('--simulate', action='store_true')
+    parser.add_argument('--native', action='store_true', help='real user-session screen control; no input disabling')
     parser.add_argument('--scenario', choices=('laptop', 'prompt', 'hardware', 'slow', 'error'), default='laptop')
     options = parser.parse_args(argv)
+    if options.native and options.simulate:
+        parser.error('--native cannot be combined with --simulate')
+    if options.native and sys.platform != 'win32':
+        parser.error('--native requires Windows')
     if options.scenario != 'laptop' and not options.simulate:
         parser.error('--scenario requires --simulate')
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     try:
         with InstanceLock(options.settings):
             return serve(sys.stdin.buffer, sys.stdout.buffer,
-                         Backend(options.settings, simulate=options.simulate, scenario=options.scenario))
+                         Backend(options.settings, simulate=options.simulate, scenario=options.scenario, native=options.native))
     except OSError:
         logging.exception('cannot acquire private backend instance or settings directory')
         return 1

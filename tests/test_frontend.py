@@ -39,6 +39,13 @@ class Client:
 
 
 class FrontendTests(unittest.TestCase):
+    def test_platform_mode_capabilities_restrict_selection_without_changing_defaults(self):
+        model = SettingsModel(Client(), lambda: None, lambda error: None)
+        model.update(state())
+        self.assertTrue(model.mode_enabled('tablet'))
+        model.update(state(available_modes=['auto', 'laptop', 'tent', 'stand']))
+        self.assertTrue(model.mode_enabled('tent'))
+        self.assertFalse(model.mode_enabled('tablet'))
     def test_preference_capability_does_not_enable_device_controls(self):
         model = SettingsModel(Client(), lambda: None, lambda error: None)
         model.update(state(supported=False, support_tier='unsupported', preferences_available=True))

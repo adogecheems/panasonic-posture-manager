@@ -190,8 +190,11 @@ class Settings(Page):
             'stand': _('Keeps the screen upright and disables the built-in keyboard and touchpad'),
             'tablet': _('Lets the screen rotate and disables the built-in keyboard and touchpad'),
         }
+        self.mode_cards = {}
+        self.mode_descriptions = descriptions
         for key, label in mode_labels(_).items():
             card = SettingRow(QIcon(), label, descriptions[key])
+            self.mode_cards[key] = card
             radio = ModeRadio()
             radio.setAccessibleName(label)
             self.group.addButton(radio)
@@ -296,8 +299,16 @@ class Settings(Page):
         self.render()
 
     def render(self):
+        _ = self._
         if self.model.state is None:
             return
+        descriptions = dict(self.mode_descriptions)
+        if self.model.state.get('input_control_available') is False:
+            descriptions.update(tent=_('Turns the screen upside down'),
+                                stand=_('Keeps the screen upright'),
+                                tablet=_('Automatic screen rotation is not available yet'))
+        for key, card in self.mode_cards.items():
+            card.setContent(descriptions[key])
         for key, radio in self.radios.items():
             radio.setChecked(self.model.value('manual') == key)
             radio.setEnabled(self.model.mode_enabled(key))

@@ -1,4 +1,4 @@
-"""Assemble and run the Fluent preview without device or service access."""
+"""Assemble Fluent with explicitly selected preview, screen or service clients."""
 import sys
 
 from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation
@@ -24,9 +24,11 @@ from .widgets import (
 
 class Window(FluentWidget):
     def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None,
-                 backend=False, simulate_backend=False, settings_path=None, hardware_backend=False):
-        if hardware_backend and (demo or backend or simulate_backend or settings_path is not None):
+                 backend=False, simulate_backend=False, settings_path=None, hardware_backend=False, native_backend=False):
+        if hardware_backend and (demo or backend or simulate_backend or native_backend or settings_path is not None):
             raise ValueError('hardware backend cannot be combined with software backend options')
+        if native_backend and (demo or backend or simulate_backend):
+            raise ValueError('native backend cannot be combined with preview backend options')
         super().__init__()
         _ = translator(language)
         self._ = _
@@ -52,9 +54,9 @@ class Window(FluentWidget):
             self.client = DemoClient(QTimer.singleShot)
         elif hardware_backend:
             self.client = HardwareUIClient()
-        elif backend or simulate_backend or sys.platform == 'win32':
-            path = settings_path if settings_path is not None else default_settings_path(simulate=simulate_backend)
-            self.client = ProcessClient(path, simulate=simulate_backend, scenario=scenario)
+        elif backend or simulate_backend or native_backend or sys.platform == 'win32':
+            path = settings_path if settings_path is not None else default_settings_path(simulate=simulate_backend, native=native_backend)
+            self.client = ProcessClient(path, simulate=simulate_backend, scenario=scenario, native=native_backend)
         else:
             self.client = UnavailableClient()
         if demo and client is None:
@@ -91,6 +93,11 @@ class Window(FluentWidget):
         if demo or simulate_backend:
             note = CaptionLabel(_('Demo preview · Changes stay in this window.') if demo else
                                 _('Simulation · Preferences are saved separately.'))
+            note.setWordWrap(True)
+            note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(note)
+        if native_backend:
+            note = CaptionLabel(_('Screen control only · Keyboard and touchpad stay enabled.'))
             note.setWordWrap(True)
             note.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(note)
@@ -172,13 +179,14 @@ class Window(FluentWidget):
 
 
 def run(*, demo=False, language=None, scenario='laptop', backend=False,
-        simulate_backend=False, settings_path=None, hardware_backend=False) -> int:
+        simulate_backend=False, settings_path=None, hardware_backend=False, native_backend=False) -> int:
     app = QApplication([sys.argv[0]])
     app.setStyle('Fusion')
     app.setApplicationName('Panasonic Posture Manager')
     setTheme(Theme.AUTO)
     setThemeColor('#0051f2')
     window = Window(demo=demo, language=language, scenario=scenario, backend=backend,
-                    simulate_backend=simulate_backend, settings_path=settings_path, hardware_backend=hardware_backend)
+                    simulate_backend=simulate_backend, settings_path=settings_path, hardware_backend=hardware_backend,
+                    native_backend=native_backend)
     window.show()
     return app.exec()
