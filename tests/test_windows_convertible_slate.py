@@ -95,7 +95,7 @@ class SlateNotifierTests(unittest.TestCase):
         self.assertTrue(device.closed)
         self.assertTrue(device.state)
 
-    def test_journal_recovers_a_notification_left_by_an_abrupt_stop(self):
+    def test_journal_restart_in_the_target_posture_adopts_it_without_a_toggle(self):
         with tempfile.TemporaryDirectory() as directory:
             journal = SlateJournal(Path(directory) / 'slate.json')
             device = FakeSlateDevice(False)
@@ -105,19 +105,65 @@ class SlateNotifierTests(unittest.TestCase):
             self.assertTrue(journal.path.exists())
 
             second = SlateNotifier(device, journal)
+            self.assertTrue(device.state)
+            self.assertEqual(device.sets, [True])
+            self.assertTrue(journal.path.exists())
+            self.assertFalse(second.sync_mode('tent'))
+            self.assertTrue(device.state)
+            self.assertEqual(device.sets, [True])
+            self.assertIsNone(journal.load())
+            self.assertTrue(second.original)
+            second.close()
+            self.assertTrue(device.state)
+
+    def test_deferred_recovery_returns_to_the_baseline_for_a_different_posture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            device = FakeSlateDevice(False)
+            first = SlateNotifier(device, journal)
+            self.assertTrue(first.sync_mode('tent'))
+            self.assertTrue(journal.path.exists())
+
+            second = SlateNotifier(device, journal)
+            self.assertEqual(device.sets, [True])
+            self.assertTrue(second.sync_mode('laptop'))
+            self.assertFalse(device.state)
+            self.assertEqual(device.sets, [True, False])
+            self.assertIsNone(journal.load())
+            self.assertFalse(second.original)
+            second.close()
+            self.assertFalse(device.state)
+
+    def test_deferred_recovery_into_a_new_target_retains_the_lease(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            journal.save(False, True)
+            device = FakeSlateDevice(False)
+            notifier = SlateNotifier(device, journal)
+            self.assertTrue(notifier.sync_mode('tent'))
+            self.assertTrue(device.state)
+            self.assertIsNotNone(journal.load())
+            self.assertIsNone(notifier.pending)
+            self.assertFalse(notifier.sync_mode('tent'))
+            self.assertIsNotNone(journal.load())
+            notifier.close()
             self.assertFalse(device.state)
             self.assertIsNone(journal.load())
-            self.assertEqual(second.original, False)
 
-    def test_failed_startup_recovery_retains_the_journal(self):
+    def test_failed_deferred_recovery_retains_the_journal(self):
         with tempfile.TemporaryDirectory() as directory:
             journal = SlateJournal(Path(directory) / 'slate.json')
             journal.save(False, True)
             device = FakeSlateDevice(True)
             device.fail_set = True
+            notifier = SlateNotifier(device, journal)
             with self.assertRaises(SlateError):
-                SlateNotifier(device, journal)
+                notifier.sync_mode('laptop')
             self.assertTrue(journal.path.exists())
+            device.fail_set = False
+            notifier.close()
+            self.assertFalse(device.state)
+            self.assertIsNone(journal.load())
             self.assertTrue(device.closed)
 
     def test_journal_path_is_a_sibling_of_the_display_journal(self):

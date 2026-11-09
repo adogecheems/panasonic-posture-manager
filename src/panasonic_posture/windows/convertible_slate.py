@@ -15,7 +15,7 @@ import sys
 import time
 from typing import Protocol
 
-from .slate_journal import SlateJournal
+from .slate_journal import SlateJournal, SlateLease
 
 SUPPORTED_INSTANCE_ID = r"ACPI\INT33D3\2&DABA3FF&0"
 SUPPORTED_MANUFACTURER = "Panasonic Corporation"
@@ -349,29 +349,21 @@ class SlateNotifier:
         self.journal = journal
         self.original: bool | None = None
         self.last: bool | None = None
+        self.pending: SlateLease | None = None
         self.closed = False
         try:
-            self._recover()
+            self.pending = journal.load() if journal is not None else None
         except BaseException:
             device.close()
             raise
         try:
-            self.original = bool(device.read())
-            self.last = self.original
+            current = bool(device.read())
+            self.original = self.pending.original if self.pending is not None else current
+            self.last = current
         except (OSError, ValueError):
             # Keep the backend's primary failure at the first posture request.
-            self.last = None
-
-    def _recover(self) -> None:
-        if self.journal is None:
-            return
-        lease = self.journal.load()
-        if lease is None:
-            return
-        # Replaying an idempotent assignment is safe even when the process
-        # stopped after persisting the lease but before toggling the device.
-        self.device.set(lease.original)
-        self.journal.clear()
+            if self.pending is not None:
+                self.original = self.pending.original
 
     @staticmethod
     def desired(mode: str) -> bool | None:
@@ -385,7 +377,11 @@ class SlateNotifier:
         if self.closed:
             raise SlateError("convertible-slate notifier is closed")
         desired = self.desired(mode)
-        if desired is None or desired == self.last:
+        if desired is None:
+            return False
+        if self.pending is not None:
+            return self._coordinate_recovery(desired)
+        if desired == self.last:
             return False
         if self.original is None:
             self.original = bool(self.device.read())
@@ -400,10 +396,49 @@ class SlateNotifier:
         self.last = desired
         return changed
 
+    def _coordinate_recovery(self, desired: bool) -> bool:
+        """Reconcile a prior lease only once the current posture is known."""
+
+        pending = self.pending
+        if pending is None:
+            return False
+        current = bool(self.device.read())
+        retain_lease = False
+        if current == desired:
+            # A restart in the posture whose notification was interrupted
+            # adopts the observable state. Replaying the old startup value
+            # here would produce a false laptop-to-slate flash.
+            self.original = current
+            changed = False
+        else:
+            self.original = pending.original
+            retain_lease = desired != self.original
+            if retain_lease and self.journal is not None:
+                # The user may have changed posture before the first request
+                # after a crash. Persist the new destination before one toggle.
+                self.journal.save(self.original, desired)
+            changed = bool(self.device.set(desired))
+        self.last = desired
+        self.pending = None
+        if self.journal is not None and not retain_lease:
+            self.journal.clear()
+        return changed
+
     def release(self) -> None:
         """Return the indicator to its startup value, keeping the lease reusable."""
 
-        if self.closed or self.original is None:
+        if self.closed:
+            return
+        if self.pending is not None:
+            original = self.pending.original
+            self.device.set(original)
+            self.pending = None
+            self.original = original
+            self.last = original
+            if self.journal is not None:
+                self.journal.clear()
+            return
+        if self.original is None:
             return
         self.device.set(self.original)
         if self.journal is not None:

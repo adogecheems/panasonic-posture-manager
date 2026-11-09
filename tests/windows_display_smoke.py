@@ -158,6 +158,9 @@ def main():
             slate_worker.wait(timeout=3)
             with NativeSlateDevice() as recovered_device:
                 recovered = SlateNotifier(recovered_device, slate_journal)
+                assert recovered_device.read() is True
+                assert slate_journal.load() is not None
+                recovered.sync_mode('laptop')
                 assert recovered_device.read() is original_slate
                 recovered.close()
             assert slate_journal.load() is None
