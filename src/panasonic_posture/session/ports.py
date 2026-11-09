@@ -35,6 +35,14 @@ class DisplayBackend(Protocol):
     def restore(self, normal: bool = False) -> None: ...
 
 
+class DisplayRefresh(Protocol):
+    """Optional ongoing display work, serialized with apply/restore."""
+
+    def needs_refresh(self, target: Target) -> bool: ...
+
+    def refresh(self, state: StateSnapshot) -> None: ...
+
+
 class PostureNotifier(Protocol):
     @property
     def notification(self) -> int | None: ...

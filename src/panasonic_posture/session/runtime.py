@@ -24,7 +24,7 @@ from ..model import StateSnapshot
 from ..tasks import thread_executor
 from . import failures as errors
 from .failures import DisplayError, ErrorCode, FailureKind, ServiceError, describe_error
-from .ports import DisplayBackend, PostureNotifier, SessionClient
+from .ports import DisplayBackend, DisplayRefresh, PostureNotifier, SessionClient
 
 log = logging.getLogger(__name__)
 
@@ -75,10 +75,13 @@ class SessionRuntime:
         executor: Executor | None = None,
         lease_executor: Executor | None = None,
         schedule_completion: Callable[[], None] | None = None,
+        display_refresh: DisplayRefresh | None = None,
     ) -> None:
         self.client = client
         self.display = display
         self.notifier = notifier
+        self._display_refresh = display_refresh
+        self._refresh_at = float('-inf')
         self._screen_locked = screen_locked
         self._adapter_errors = (OSError, ValueError, *adapter_errors)
         self._executor = executor if executor is not None else thread_executor(
@@ -228,7 +231,7 @@ class SessionRuntime:
             task = self._tasks[0]
             if not task.future.done():
                 return
-            if task.kind in ("apply", "hold", "restore") and self._lease_task is not None:
+            if task.kind in ("apply", "hold", "restore", "refresh") and self._lease_task is not None:
                 # A not-ready heartbeat must finish before a ready report, or
                 # its late arrival would revoke the just-confirmed transaction.
                 return
@@ -254,7 +257,7 @@ class SessionRuntime:
             if not self.failure_active:
                 self._hold_check_at = now + contracts.TICK_SECONDS
                 self._submit("state", self.client.get_state)
-        elif task.kind == "apply":
+        elif task.kind in ("apply", "refresh"):
             if self.failure_active:
                 return  # finish the queued restore, never verify rejected work
             state, _generation, _daemon_error = task.context
@@ -300,7 +303,7 @@ class SessionRuntime:
             self._handle_service_failure(now, error)
         elif task.kind == "probe":
             self._enter_failure(now, error)
-        elif task.kind in ("apply", "hold"):
+        elif task.kind in ("apply", "hold", "refresh"):
             self._hold_until = 0.0
             state, generation, daemon_error = task.context
             if isinstance(error, DisplayError):
@@ -310,6 +313,10 @@ class SessionRuntime:
             if task.kind == "hold":
                 self._restore_display_async(now)
             self._queue_feedback(state, generation, now, daemon_error)
+            if task.kind == 'refresh':
+                # Withdraw the old success before restoring a failed ongoing
+                # rotation. Reapplication still follows the existing retry.
+                self._restore_display_async(now)
         elif task.kind == "restore":
             self._restore_retry_at = now + contracts.DISPLAY_RETRY_BASE_SECONDS
             log.warning("display restore pending: %s", describe_error(error))
@@ -320,7 +327,7 @@ class SessionRuntime:
         if self.failure_active or self._lease_task is not None:
             return
         task = self._tasks[0]
-        if task.kind not in ("apply", "hold", "restore") or task.future.done():
+        if task.kind not in ("apply", "hold", "restore", "refresh") or task.future.done():
             self._lease_wait_since = None
             return
         if self._lease_wait_since is None:
@@ -537,6 +544,13 @@ class SessionRuntime:
         self, state: StateSnapshot, generation: int, now: float
     ) -> bool:
         if self.ready:
+            if (self._display_refresh is not None and state.session_connected and not state.error_code and
+                    now >= self._refresh_at and self._display_refresh.needs_refresh(state.target)):
+                self._refresh_at = now + contracts.TICK_SECONDS
+                self._display_needs_restore = True
+                self._submit('refresh', self._display_refresh.refresh, state,
+                             context=(state, generation, self._daemon_error(state)))
+                return False
             return True
         if self._restore_retry_at:
             return True
