@@ -1,8 +1,9 @@
 """Explicit native-display exercise on an authorized Windows test machine.
 
-Temporarily rotates the unique built-in panel. Uses a persistent ownership
-journal and an independent recovery process; never changes display registry
-settings, automatic-rotation preferences or external monitor orientations.
+Temporarily rotates the unique built-in panel and exercises Windows shell
+modes. Uses a persistent ownership journal and an independent recovery
+process; restores the original lock and shell settings and never changes
+display registry settings or external monitor orientations.
 """
 import argparse
 from dataclasses import asdict
@@ -13,8 +14,9 @@ import sys
 import time
 
 from panasonic_posture.session.journal import Journal
-from panasonic_posture.windows.display import NativeDisplay, WindowsDisplay
+from panasonic_posture.windows.display import WindowsDisplay
 from panasonic_posture.windows.instance import InstanceLock
+from panasonic_posture.windows.tablet_mode import DESKTOP, TABLET, WindowsTabletMode
 
 
 def main():
@@ -50,16 +52,27 @@ def main():
         worker = None
         display = WindowsDisplay(journal=journal)
         original = display.api.read()
+        shell = WindowsTabletMode()
+        original_shell = shell.read()
         if original.transform == 2:
             raise RuntimeError('begin in an orientation other than flipped landscape')
         watchdog = subprocess.Popen(command + ['--watchdog'], creationflags=flags)
         try:
-            display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=True))
-            assert display.api.read().transform == 2
-            assert journal.load()['written_transform'] == 2
+            modes = []
+            for mode, transform, shell_mode in (
+                    ('tent', 2, TABLET), ('stand', 0, TABLET),
+                    ('laptop', 0, DESKTOP)):
+                display.apply(dict(mode=mode, tablet=mode == 'tent',
+                                   rotation=180 if mode == 'tent' else 0,
+                                   disable_internal_input=False))
+                assert display.api.read().transform == transform
+                assert display._read_state().shell_mode == shell_mode
+                modes.append(dict(mode=mode, transform=transform, shell_mode=shell_mode))
             time.sleep(1)
             display.restore()
             assert display.api.read().transform == original.transform
+            assert display.api.read().auto_rotation == original.auto_rotation
+            assert shell.read() == original_shell
             assert journal.load() is None
             worker = subprocess.Popen(command + ['--worker'], creationflags=flags)
             deadline = time.monotonic() + 8
@@ -75,9 +88,11 @@ def main():
             assert journal.load() is None
             (directory / 'result.json').write_text(json.dumps(dict(
                 original=asdict(original), restored=asdict(display.api.read()),
-                rotation_readback=True, normal_restore=True, killed_worker_recovery=True),
+                original_shell_mode=original_shell, modes=modes,
+                rotation_readback=True, shell_readback=True, lock_restore=True,
+                normal_restore=True, killed_worker_recovery=True),
                 indent=2), encoding='utf-8')
-            print('Native internal-panel rotation, readback, restore and killed-worker recovery passed')
+            print('Native panel, direction lock, shell mode, restore and killed-worker recovery passed')
         finally:
             if worker is not None and worker.poll() is None:
                 worker.kill()
