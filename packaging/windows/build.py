@@ -44,7 +44,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
 
     add_tree(runtime, 'runtime', ('__pycache__', '*.pyc', 'site-packages', 'Scripts',
                                  'Doc', 'Tools', 'include', 'libs', 'tcl', 'test', 'tests'))
-    add_tree(dependencies, 'runtime/Lib/site-packages', ('__pycache__', '*.pyc'))
+    add_tree(dependencies, 'runtime/Lib/site-packages', ('__pycache__', '*.pyc', 'qml'))
     add_tree(ROOT / 'src/panasonic_posture', 'app/panasonic_posture', ('__pycache__', '*.pyc'))
     add_tree(ROOT / 'data/assets', 'data/assets')
     files['po/zh_CN.po'] = ROOT / 'po/zh_CN.po'

@@ -28,6 +28,9 @@ class WindowsPackagingTests(unittest.TestCase):
                 (dependencies / name).mkdir(parents=True)
             (dependencies / 'Qt-1.dist-info/licenses/LICENSE').write_text('license', encoding='utf-8')
             (dependencies / 'qfluentwidgets/__init__.py').write_text('', encoding='utf-8')
+            qml = dependencies / 'PyQt6/Qt6/qml/Unused/Long/Path/asset.png'
+            qml.parent.mkdir(parents=True)
+            qml.write_bytes(b'not part of the widget preview')
             # Runtime DLLs and the complete archive may be large. Building
             # must hash and write bounded chunks instead of loading them whole.
             with patch.object(Path, 'read_bytes', side_effect=AssertionError('unbounded build read')):
@@ -47,6 +50,8 @@ class WindowsPackagingTests(unittest.TestCase):
                              'configure-slate-device.ps1'):
                     self.assertIn(prefix + name, names)
                 self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in names))
+                self.assertFalse(any('/qml/' in name for name in names))
+                self.assertLess(max(map(len, names)), 240)
                 native = bundle.read(prefix + 'Native.cmd').decode('utf-8')
                 self.assertIn('runtime\\pythonw.exe', native)
                 self.assertIn('--native-backend', native)
