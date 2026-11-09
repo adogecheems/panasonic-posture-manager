@@ -258,7 +258,9 @@ Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器�
 
 `windows/session_supervisor.py` 在主机循环中先登记确切进程，再安排工作线程放行；WTS、创建和资源清理占用一个有界工作槽，不阻塞引擎。控制台用户变化时先撤销旧角色、发出停止信号，等待最多五秒的显示恢复窗口，再清理旧进程，之后才能启动替代进程。过期创建结果、停止期间返回的进程和清理未完成的进程都不能被当作可用会话；主机停止须继续轮询到协调器确认关闭，不能只取消 Future 就报告清理成功。
 
-上述启动和协调检查目前采用 fake 系统边界，覆盖结构布局、标志、句柄、令牌、登记/放行顺序、切换与退出，不代表已完成真实 SYSTEM 创建用户进程或完整硬件服务验收。本机普通用户调用原生启动 API 会在控制台令牌查询及创建进程之前被拒绝。
+上述启动和协调的单元测试覆盖结构布局、标志、句柄、令牌、登记/放行顺序、切换与退出。2026-11-09，CFQV8 / Windows 10 Pro 19045 上另以哈希固定、ACL 与所有者均验证的隔离运行时执行两轮真实 SYSTEM 任务：创建非提权控制台用户进程、挂起期间登记确切身份、放行与取得租约、停止前撤销租约、停止信号及进程回收全部通过。普通用户客户端不能提交显示回执或写入受保护运行目录；引擎始终不支持硬件且没有 applied 结果，没有打开输入或采样设备、加载驱动或改变启动安全配置。任务已自动移除，清理目录的 UAC 请求被取消，因此保留 `C:\Program Files\PostureManager.Validation.e19cebe6fe87` 的只读快照，无常驻测试助手。此结果不等同于完整硬件服务安装、换用户、锁屏交接或强制终止主机后的 Job 回收验收。
+
+显式复现入口为 `tests/windows_launcher_smoke.py --prepare-runtime <新证据目录>`：普通用户生成标准库、应用与 fixture 的 SHA-256 清单，不提权、不启动设备。审阅并固定输出的 helper 哈希与清单哈希后，经 UAC 在管理员进程中执行 `tests/windows_launcher_admin.ps1 -Action Run -TaskName PostureManager.Validation.<12位小写十六进制> -Manifest <清单绝对路径> -ManifestHash <已固定哈希>`。管理员先逐文件复制并验证哈希，设置受保护 ACL 和可信所有者，再用安装解释器验证整个运行时；任务仅以 SYSTEM 运行无设备 fixture，最多两分钟并自动撤销任务。`ready.json` 出现后十八秒内，普通用户运行 `tests/windows_launcher_smoke.py --ordinary-instance <ready中的实例> --root <受保护目录>`，将结果保存在普通用户自己的证据目录。读取并保存结果后，`-Action Cleanup -TaskName <同一名称>` 仅删除经绝对路径、标记、任务已移除及无重解析点检查的精确目录。`RunStaged` 可在同一验证目录复测，仍先验证实际 ACL 和隔离解释器；这些脚本不更改全局 PowerShell 执行策略，不能通过临时放宽生产权限来运行。
 
 `windows/session_context.py` 用独立的单工作线程读取本进程会话，结合本地活跃控制台、锁屏状态，以及 `GUID_SESSION_DISPLAY_STATUS` 的系统电源回调。电源上下文与控制资格分开：读数超过一秒、未知或查询失败会使控制资格失效，已知的单纯熄屏则不使其失效。睡眠使旧查询失效，恢复时重新注册电源观察，取得当前值。回调只更新有锁的状态，不执行显示、输入或租约操作。依据：[会话显示电源状态](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids)、[注册后的初始电源回调](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powersettingregisternotification)。
 
