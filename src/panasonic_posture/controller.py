@@ -45,9 +45,14 @@ class Controller:
         self,
         policy: Policy | None = None,
         config: PolicyConfig | None = None,
+        *,
+        input_control: bool = True,
     ) -> None:
         if policy is not None and config is not None:
             raise ValueError("pass either policy or config, not both")
+        if type(input_control) is not bool:
+            raise ValueError("input_control must be a boolean")
+        self._input_control = input_control
         self.policy = policy if policy is not None else Policy(config)
         self.config = self.policy.config
         self.manual = Mode.AUTO
@@ -267,20 +272,20 @@ class Controller:
                 mode=TARGET_TENT,
                 tablet=True,
                 rotation=180,
-                disable_internal_input=True,
+                disable_internal_input=self._input_control,
             )
         if mode == TARGET_STAND:
             return Target(
                 mode=TARGET_STAND,
                 tablet=True,
                 rotation=0,
-                disable_internal_input=True,
+                disable_internal_input=self._input_control,
             )
-        # Manual tablet mode: keep native rotation policy, disable the
-        # internal input devices.
+        # Manual tablet mode keeps native rotation policy. Request input
+        # ownership only on platforms configured to provide that capability.
         return Target(
             mode=TARGET_TABLET,
             tablet=True,
             rotation=None,
-            disable_internal_input=True,
+            disable_internal_input=self._input_control,
         )

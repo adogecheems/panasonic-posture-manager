@@ -780,7 +780,7 @@ class Engine:
                     self._release_task is None
                     and self._last_release_key == key
                     and self._actuator.error_code is None
-                    and target.mode in ("laptop", "hardware")
+                    and target.mode in ("laptop", "hardware", "tent", "stand", "tablet")
                     and not target.disable_internal_input
                     and self._controller.applied != target
                     and self._prepared(self._lease_active(self._monotonic()), generation)
