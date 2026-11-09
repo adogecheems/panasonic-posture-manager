@@ -304,14 +304,17 @@ msgstr "后台已就绪，设备控制功能尚未接入。"
 msgid "Screen control only · Keyboard and touchpad stay enabled."
 msgstr "仅管理屏幕方向 · 键盘和触控板保持可用。"
 
-msgid "Turns the screen upside down"
-msgstr "将屏幕倒转"
+msgid "Returns to Windows desktop mode"
+msgstr "返回 Windows 桌面模式"
 
-msgid "Keeps the screen upright"
-msgstr "保持屏幕正向"
+msgid "Turns the screen upside down and enables Windows tablet mode"
+msgstr "将屏幕倒转并启用 Windows 平板模式"
 
-msgid "Automatic screen rotation is not available yet"
-msgstr "屏幕自动旋转尚未接入"
+msgid "Keeps the screen upright and enables Windows tablet mode"
+msgstr "保持屏幕正向并启用 Windows 平板模式"
+
+msgid "Rotates with the screen and enables Windows tablet mode"
+msgstr "跟随屏幕方向旋转并启用 Windows 平板模式"
 
 msgid "Open app"
 msgstr "打开应用"

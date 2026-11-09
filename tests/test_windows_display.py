@@ -20,13 +20,31 @@ class Api:
     def __init__(self):
         self.current = panel()
         self.writes = []
+        self.lock_writes = []
+        self.shell = 0
+        self.shell_writes = []
+        self.events = []
         self.fail = False
 
     def read(self):
         return self.current
 
+    def lock(self, locked):
+        self.lock_writes.append(locked)
+        self.events.append(('lock', locked))
+        self.current = replace(self.current, auto_rotation=1 if locked else 0)
+
+    def read_shell_mode(self):
+        return self.shell
+
+    def write_shell_mode(self, mode):
+        self.shell_writes.append(mode)
+        self.events.append(('shell', mode))
+        self.shell = mode
+
     def rotate(self, identity, previous, transform):
         self.writes.append(transform)
+        self.events.append(('rotate', transform))
         self.current = replace(self.current, transform=transform)
         if self.fail:
             self.fail = False
@@ -34,6 +52,13 @@ class Api:
 
 
 class WindowsDisplayTests(unittest.TestCase):
+    def make(self, api=None, journal=None, hardware_query=None):
+        return WindowsDisplay(
+            api=api or Api(),
+            journal=journal or MemoryJournal(),
+            hardware_query=hardware_query,
+        )
+
     def test_sdk_structures_have_fixed_windows_layout_on_every_platform(self):
         self.assertEqual(C.sizeof(DevMode), 220)
         self.assertEqual(C.sizeof(PathInfo), 72)
@@ -49,159 +74,151 @@ class WindowsDisplayTests(unittest.TestCase):
             with self.subTest(paths=paths), self.assertRaises(DisplayError):
                 select_panel(paths)
 
-    def test_tent_rotation_and_restore_reuse_the_ownership_journal(self):
+    def test_fixed_modes_lock_before_shell_and_rotation_then_restore_baseline(self):
         api, journal = Api(), MemoryJournal()
-        display = WindowsDisplay(api=api, journal=journal)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=True))
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
+
+        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+        self.assertEqual(api.events, [('lock', True), ('shell', 1), ('rotate', 2)])
         self.assertEqual(api.current.transform, 2)
+        self.assertEqual(journal.document['original_lock'], False)
+        self.assertEqual(journal.document['original_shell_mode'], 0)
+        self.assertEqual(journal.document['written_lock'], True)
+        self.assertEqual(journal.document['written_shell_mode'], 1)
         self.assertEqual(journal.document['written_transform'], 2)
+
+        display.apply(dict(mode='stand', tablet=True, rotation=0, disable_internal_input=False))
+        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.shell, 1)
+
+        display.apply(dict(mode='laptop', tablet=False, rotation=0, disable_internal_input=False))
+        self.assertEqual(api.shell, 0)
         display.restore()
         self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.shell, 0)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
 
-    def test_crash_and_failed_readback_keep_enough_information_to_restore(self):
+    def test_restore_returns_to_a_user_existing_tablet_mode_and_lock(self):
         api, journal = Api(), MemoryJournal()
-        display = WindowsDisplay(api=api, journal=journal)
+        api.current = panel(auto_rotation=1)
+        api.shell = 1
+        display = self.make(api, journal)
+        display.apply(dict(mode='laptop', tablet=False, rotation=0, disable_internal_input=False))
+        self.assertEqual(api.shell, 0)
+        self.assertEqual(journal.document['original_shell_mode'], 1)
+        display.restore()
+        self.assertEqual(api.shell, 1)
+        self.assertEqual(api.current.auto_rotation, 1)
+        self.assertIsNone(journal.document)
+
+    def test_crash_recovery_restores_rotation_shell_and_rotation_lock(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
+        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+        restarted = self.make(api, journal)
+        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.shell, 0)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertIsNone(journal.document)
+        self.assertIsNone(restarted.owned)
+
+    def test_failed_rotation_rolls_back_shell_rotation_and_lock(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
         api.fail = True
         with self.assertRaises(DisplayError):
-            display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=True))
+            display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
         self.assertEqual(api.current.transform, 0)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=True))
-        WindowsDisplay(api=api, journal=journal)
-        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.shell, 0)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
 
-    def test_restore_preserves_external_changes_and_rejects_replacement_panels(self):
+    def test_restore_preserves_external_rotation_and_rejects_replacement_panels(self):
         api, journal = Api(), MemoryJournal()
-        display = WindowsDisplay(api=api, journal=journal)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=True))
+        display = self.make(api, journal)
+        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
         api.current = replace(api.current, transform=1)
         display.restore()
         self.assertEqual(api.current.transform, 1)
         self.assertEqual(api.writes, [2])
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=True))
+        self.assertEqual(api.shell, 0)
+
+        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
         api.current = replace(api.current, identity='replacement')
         with self.assertRaises(DisplayError):
             display.restore()
         self.assertIsNotNone(journal.document)
         self.assertEqual(api.writes, [2, 2])
 
-    def test_does_not_claim_auto_rotation_control_or_override_an_unlocked_desktop(self):
-        for mode, state in (('tent', 0), ('tablet', 1)):
-            api, journal = Api(), MemoryJournal()
-            api.current = panel(auto_rotation=state)
-            display = WindowsDisplay(api=api, journal=journal)
-            with self.subTest(mode=mode), self.assertRaises(DisplayError):
-                display.apply(dict(mode=mode, tablet=True, rotation=None, disable_internal_input=True))
-            self.assertFalse(api.writes)
-            self.assertIsNone(journal.document)
-
-    def test_physical_handoff_relinquishes_rotation_without_changing_os_policy(self):
+    def test_hardware_handoff_locks_switches_tablet_then_releases_rotation(self):
         api, journal = Api(), MemoryJournal()
-        display = WindowsDisplay(api=api, journal=journal)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
-        api.current = replace(api.current, auto_rotation=0)
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
         display.apply(dict(mode='hardware', tablet=True, rotation=None, disable_internal_input=False))
-        self.assertIsNone(journal.document)
-        self.assertIsNone(display.owned)
-        api.current = replace(api.current, transform=1)
-        display.restore()
-        self.assertEqual(api.current.transform, 1)
-        self.assertEqual(api.writes, [2])
+        self.assertEqual(api.events, [('lock', True), ('shell', 1), ('lock', False)])
+        self.assertEqual(api.current.transform, 0)
+        self.assertIsNone(journal.document['written_transform'])
+        self.assertEqual(journal.document['written_shell_mode'], 1)
 
-    def test_restart_does_not_undo_native_rotation_after_the_os_takes_over(self):
-        api, journal = Api(), MemoryJournal()
-        display = WindowsDisplay(api=api, journal=journal)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
-        api.current = replace(api.current, auto_rotation=0)
-        restarted = WindowsDisplay(api=api, journal=journal)
+        api.current = replace(api.current, transform=2)
+        display.hold_orientation()
         self.assertEqual(api.current.transform, 2)
-        self.assertEqual(api.writes, [2])
-        self.assertIsNone(journal.document)
-        self.assertIsNone(restarted.owned)
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertEqual(journal.document['original_transform'], 2)
 
-    def test_restart_respects_physical_tablet_even_if_the_user_locked_native_rotation(self):
+        display.apply(dict(mode='stand', tablet=True, rotation=0, disable_internal_input=False))
+        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.shell, 1)
+        display.restore()
+        self.assertEqual(api.current.transform, 2)
+        self.assertEqual(api.shell, 0)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertIsNone(journal.document)
+
+    def test_physical_takeover_during_restart_keeps_native_direction(self):
         api, journal = Api(), MemoryJournal()
         physical = [False]
         query = lambda: (physical[0], HardwareStatus.OK)
-        display = WindowsDisplay(api=api, journal=journal, hardware_query=query)
+        display = self.make(api, journal, query)
         display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
         physical[0] = True
-        WindowsDisplay(api=api, journal=journal, hardware_query=query)
-        self.assertEqual(api.writes, [2])
+        api.current = replace(api.current, transform=2, auto_rotation=0)
+        api.shell = 0
+        restarted = self.make(api, journal, query)
         self.assertEqual(api.current.transform, 2)
+        self.assertEqual(api.shell, 1)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
+        self.assertIsNone(restarted.owned)
 
     def test_physical_unknown_or_takeover_before_write_cannot_start_a_fixed_mode(self):
         for hardware, status in ((True, HardwareStatus.OK), (None, HardwareStatus.AMBIGUOUS)):
             api, journal = Api(), MemoryJournal()
-            display = WindowsDisplay(api=api, journal=journal, hardware_query=lambda: (hardware, status))
+            display = self.make(api, journal, lambda: (hardware, status))
             with self.assertRaises(DisplayError):
                 display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
             self.assertEqual(api.writes, [])
+            self.assertFalse(api.lock_writes)
             self.assertIsNone(journal.document)
 
-    def test_failed_native_handoff_save_keeps_original_ownership_until_durable_retry(self):
-        class FailedJournal(MemoryJournal):
-            fail = False
-            def save(self, document):
-                if self.fail: raise OSError('full')
-                super().save(document)
-        api, journal = Api(), FailedJournal()
-        display = WindowsDisplay(api=api, journal=journal)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
-        original = dict(journal.document)
-        api.current = replace(api.current, auto_rotation=0)
-        journal.fail = True
-        with self.assertRaises(OSError): display.restore()
-        self.assertEqual(journal.document, original)
-        self.assertEqual(display.owned, original)
-        journal.fail = False
-        display.restore()
-        self.assertEqual(api.writes, [2])
-        self.assertIsNone(journal.document)
-
-    def test_fixed_mode_is_not_confirmed_when_native_rotation_takes_over_without_a_write(self):
-        class Race(Api):
-            reads = 0
-            def read(self):
-                self.reads += 1
-                if self.reads >= 3:
-                    self.current = replace(self.current, auto_rotation=0)
-                return self.current
-        api, journal = Race(), MemoryJournal()
-        display = WindowsDisplay(api=api, journal=journal)
-        with self.assertRaises(DisplayError):
-            display.apply(dict(mode='laptop', tablet=False, rotation=0, disable_internal_input=False))
-        self.assertEqual(api.writes, [])
-        self.assertIsNone(journal.document)
-
-    def test_late_native_takeover_does_not_restore_over_a_matching_native_direction(self):
+    def test_late_native_takeover_is_rolled_back_instead_of_confirmed(self):
         class Race(Api):
             def rotate(self, *args):
                 super().rotate(*args)
                 self.current = replace(self.current, auto_rotation=0)
         api, journal = Race(), MemoryJournal()
-        display = WindowsDisplay(api=api, journal=journal)
+        display = self.make(api, journal)
         with self.assertRaises(DisplayError):
             display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
-        self.assertEqual(api.writes, [2])
+        self.assertEqual(api.writes, [2, 0])
+        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.shell, 0)
         self.assertIsNone(journal.document)
 
-    def test_post_hardware_hold_only_owns_rotation_when_os_auto_rotation_is_disabled(self):
-        api, journal = Api(), MemoryJournal()
-        display = WindowsDisplay(api=api, journal=journal)
-        display.hold_orientation()
-        self.assertEqual(api.writes, [])
-        api.current = replace(api.current, transform=2)
-        display.hold_orientation()
-        self.assertEqual(api.current.transform, 0)
-        self.assertEqual(api.writes, [0])
-        display.restore()
-        self.assertIsNone(journal.document)
-        api.current = replace(api.current, auto_rotation=0)
-        with self.assertRaises(DisplayError): display.hold_orientation()
-        self.assertIsNone(journal.document)
 
 
 class NativeRotationTests(unittest.TestCase):
@@ -248,6 +265,33 @@ class NativeRotationTests(unittest.TestCase):
         state[0] = replace(state[0], auto_rotation=0)
         with self.assertRaises(DisplayError): api.rotate('panel-1', 0, 2)
         self.assertEqual(calls, [])
+
+    def test_native_lock_acquisition_and_restoration_are_read_back(self):
+        api = object.__new__(NativeDisplay)
+        state = [panel(auto_rotation=0)]
+        api.read = lambda: state[0]
+        def set_auto_rotation(enabled):
+            state[0] = replace(state[0], auto_rotation=0 if enabled else 1)
+            return True
+        api._set_auto_rotation = set_auto_rotation
+        api.lock(True)
+        self.assertTrue(bool(state[0].auto_rotation & 1))
+        api.lock(False)
+        self.assertFalse(bool(state[0].auto_rotation & 1))
+
+    def test_native_lock_fails_closed_without_the_shell_export(self):
+        api = object.__new__(NativeDisplay)
+        api.read = lambda: panel(auto_rotation=0)
+        api._set_auto_rotation = None
+        with self.assertRaises(DisplayError):
+            api.lock(True)
+
+    def test_native_lock_write_failure_is_not_confirmed(self):
+        api = object.__new__(NativeDisplay)
+        api.read = lambda: panel(auto_rotation=0)
+        api._set_auto_rotation = lambda enabled: False
+        with self.assertRaises(DisplayError):
+            api.lock(True)
 
     def test_native_query_retries_changing_buffer_sizes_only_within_bound(self):
         api = object.__new__(NativeDisplay)

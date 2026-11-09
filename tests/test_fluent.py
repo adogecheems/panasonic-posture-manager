@@ -285,8 +285,9 @@ window.show()
 QTest.qWait(50)
 assert window.settings.radios['tent'].isEnabled()
 assert not window.settings.radios['tablet'].isEnabled()
-assert window.settings.mode_cards['tent'].contentLabel.text() == 'Turns the screen upside down'
-assert window.settings.mode_cards['stand'].contentLabel.text() == 'Keeps the screen upright'
+assert window.settings.mode_cards['laptop'].contentLabel.text() == 'Returns to Windows desktop mode'
+assert window.settings.mode_cards['tent'].contentLabel.text() == 'Turns the screen upside down and enables Windows tablet mode'
+assert window.settings.mode_cards['stand'].contentLabel.text() == 'Keeps the screen upright and enables Windows tablet mode'
 assert any('Keyboard and touchpad stay enabled' in label.text() for label in window.findChildren(QLabel))
 ''')
 
@@ -551,13 +552,14 @@ assert window.stackedWidget.currentWidget() is window.home
 window.navigation.items['settings'].click()
 assert window.stackedWidget.currentWidget() is window.settings
 assert window.navigation.currentRouteKey() == 'settings'
+app_icon = QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png'))
 for theme, filename in ((Theme.LIGHT, 'lets-note-window-icon.png'),
                         (Theme.DARK, 'lets-note-window-icon-dark.png')):
     setTheme(theme)
     QTest.qWait(50)
-    expected = QIcon(str(data_root() / 'assets' / filename)).pixmap(72, 42).toImage()
-    assert window.windowIcon().pixmap(72, 42).toImage() == expected
+    assert window.windowIcon().pixmap(72, 42).toImage() == app_icon.pixmap(72, 42).toImage()
     mark = window.titleBar.iconLabel.pixmap()
+    assert mark.toImage() != window.windowIcon().pixmap(mark.width(), mark.height()).toImage()
     assert mark.width() >= 72 * window.devicePixelRatioF()
     assert abs(mark.deviceIndependentSize().width() - 72) < 0.1
     assert mark.deviceIndependentSize().height() > 35

@@ -38,11 +38,18 @@ class WindowsTabletDisplay(WindowsDisplay):
         # compete with an active one or modify the system's rotation policy.
         super()._validate(state, 'stand' if mode == 'tablet' else mode, transform)
 
+    def _releases_rotation_lock(self, mode):
+        # Software tablet rotation still needs the system rotator held so two
+        # orientation writers cannot race for the same panel.
+        return False if mode == 'tablet' else super()._releases_rotation_lock(mode)
+
     def _verify_owned(self, transform: int | None = None):
         current = self._read_state()
         self._validate(current, 'tablet', current.transform)
         if not self.owned or current.identity != tuple(self.owned['spec']):
             raise DisplayError(ErrorCode.DISPLAY_IDENTITY, 'tablet-display-ownership-changed')
+        if current.lock_supported and not current.lock:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'native-auto-rotation-took-over')
         if transform is not None and current.transform != transform:
             raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'tablet-rotation-changed-before-receipt')
         return current
@@ -95,6 +102,12 @@ class WindowsTabletDisplay(WindowsDisplay):
         super().hold_orientation()
 
     def restore(self, normal: bool = False, *, release_lock: bool = False, keep_journal: bool = False) -> None:
+        # Once dynamic tablet rotation is active, an OS rotator takeover is a
+        # fresh platform-owned direction.  Resolve that handoff before ending
+        # the dynamic ownership state used by ``refresh``.  Fixed postures and
+        # failed tablet startup retain the normal rollback contract.
+        if self._tablet and self.owned and not self._hardware():
+            self._relinquish_native_rotation()
         self._tablet = False
         self.policy.reset()
         super().restore(normal, release_lock=release_lock, keep_journal=keep_journal)

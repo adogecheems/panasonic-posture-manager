@@ -346,9 +346,12 @@ class Settings(Page):
             return
         descriptions = dict(self.mode_descriptions)
         if self.model.state.get('input_control_available') is False:
-            descriptions.update(tent=_('Turns the screen upside down'),
-                                stand=_('Keeps the screen upright'),
-                                tablet=_('Automatic screen rotation is not available yet'))
+            descriptions.update(
+                laptop=_('Returns to Windows desktop mode'),
+                tent=_('Turns the screen upside down and enables Windows tablet mode'),
+                stand=_('Keeps the screen upright and enables Windows tablet mode'),
+                tablet=_('Rotates with the screen and enables Windows tablet mode'),
+            )
         for key, card in self.mode_cards.items():
             card.setContent(descriptions[key])
         for key, radio in self.radios.items():

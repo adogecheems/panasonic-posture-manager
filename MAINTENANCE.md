@@ -107,13 +107,13 @@ CFQV8-1L 的真实用户态开发入口为：
 packaging\windows\run.cmd --native-backend --language zh_CN
 ```
 
-这条路径不使用模拟端口、不启用特权主机、不要求输入驱动或测试签名。只接受已采集 Windows 姿态证据的 Panasonic Corporation / CFQV8-1L、唯一且型号匹配的 WinRT 加速度计，以及原有 GPIO 开关与内屏选择检查；不对其他机器猜测安装方向。当前开放自动、笔记本、帐篷、支架和校准，手动软件平板自动旋转尚未接入，界面禁用该选项。输入目标和能力始终为 False，设置说明不再声称会禁用键盘或触控板。Windows 支持仅是这些开发能力的兼容级别，不是整机完整验收。
+这条路径不使用模拟端口、不启用特权主机、不要求输入驱动或测试签名。只接受已采集 Windows 姿态证据的 Panasonic Corporation / CFQV8-1L、唯一且型号匹配的 WinRT 加速度计，以及原有 GPIO 开关与内屏选择检查；不对其他机器猜测安装方向。当前开放自动、笔记本、帐篷、支架和校准，手动软件平板自动旋转尚未接入，界面禁用该选项。输入目标和能力始终为 False，键盘和触控板保持可用；这是产品范围，不是待补功能。Windows 支持仅是这些开发能力的兼容级别，不是整机完整验收。
 
 软件平板的内部事务位于 `windows/tablet_display.py`，要求装配显式提供简单方向映射；所有动态方向经已有日志、回读及恢复处理。共用 `SessionRuntime` 的可选 `DisplayRefresh` 与 apply/restore 串行，刷新后验证实例和代次，资格丢失或故障时撤销结果并恢复，Linux 默认不启用此端口。当前真实工厂和模式能力尚未接入该组件，隔离测试通过不代表四向真机旋转已验收。
 
-原生偏好独立存于 `native-settings.json`。显示恢复日志固定为同目录 `screen-display.json`，并有独立的每用户控制器锁，换一个 `--settings` 文件也不能启动第二个原生显示写入者。显示仍走共用事务、写前日志、身份检查、回读和恢复。物理平板交接只撤销程序的方向所有权，保留 Windows 自己的旋转策略；物理开关退出的短暂保持仅在系统自动旋转已禁用时执行，不冒充全局方向锁 API。
+原生偏好独立存于 `native-settings.json`。显示恢复日志固定为同目录 `screen-display.json`，并有独立的每用户控制器锁，换一个 `--settings` 文件也不能启动第二个原生显示写入者。显示仍走共用事务、写前日志、身份检查、回读和恢复。固定姿态先取得全局方向锁，再切换 Windows shell 模式并写入方向；笔记本、帐篷和支架分别恢复桌面或平板 shell 模式。物理平板交接先锁定当前方向，切到平板模式，再把旋转交还 Windows；退出时先锁方向、恢复桌面模式并纠正过渡偏移，最后恢复用户原来的方向锁。
 
-恢复旧日志时若发现 Windows 原生自动旋转已接管，或唯一 GPIO 开关确认处于物理平板，即使当前方向恰好等于程序过去的写入，也先持久化撤销完成/待写方向所有权，再清理日志，不把旧软件方向覆盖回去。转交保存失败则保留原日志与内存记录，等待重试；物理状态不明且未能证明原生接管时拒绝恢复写入。固定模式在写入前和回执前重查物理资格与原生旋转，未发生实际方向写入也必须复核，不能因方向恰好相同就确认成功。方向写入的底层回读也拒绝中途接管，不更改 Windows 原生策略。
+恢复旧日志时若发现 Windows 原生自动旋转已接管，或唯一 GPIO 开关确认处于物理平板，即使当前方向恰好等于程序过去的写入，也先持久化撤销完成/待写方向所有权，再恢复 shell 模式和用户方向锁并清理日志，不把旧软件方向覆盖回去。转交保存失败则保留原日志与内存记录，等待重试；物理状态不明且未能证明原生接管时拒绝恢复写入。固定模式在写入前和回执前重查物理资格、shell 模式和原生旋转，未发生实际方向写入也必须复核，不能因方向恰好相同就确认成功。
 
 真实后台入口默认常驻：关闭窗口只隐藏界面，托盘提供打开与退出；`--native-backend --background` 初次启动直接留在托盘。没有系统托盘时显示窗口与说明，保留可见的退出路径。每用户另有固定 UI 锁，再次启动只更新时间戳提示唤回旧窗口；该空文件只表达显示窗口，不读取内容或接收硬件回执、命令与设置。原生 UI 和后台在触碰用户状态文件前核对非提权本地控制台身份，不能让远程或提权实例抢占本地 UI；锁屏的本地会话可启动，控制仍等待原有资格检查。托盘生命周期使用 [Qt 系统托盘 API](https://doc.qt.io/qt-6/qsystemtrayicon.html)。
 
@@ -192,17 +192,7 @@ set PYTHONPATH=src
 
 隔离联测覆盖界面到硬件消息契约，以及硬件客户端、共用会话运行时、Windows 显示事务、恢复日志和 Engine 的链路。系统 API 与输入端口使用 fake；测试确认显示提交后才发送就绪回执、显示失败不获取输入、会话资格被拒绝后释放输入并恢复方向。这些结果不代表安装后的真实会话或内核输入验收。
 
-`backend/windows/driver.c` 是已通过 WDK 编译和链接、尚未加载验证的 KMDF 输入过滤驱动草稿，不进入便携包、默认构建或安装流程。`control.c` 及其独立 C 测试描述租约和空闲接管边界。HID 鼠标类触控板还必须匹配预登记的 `TouchpadParentInstanceId`，其父设备须来自内部 ACPI；USB、蓝牙和 HID 键盘不因此被允许。编译和边界测试不能替代内核加载、设备匹配和失效释放的真机验证。
-
-开发构建使用本地解压的 Microsoft.Windows.SDK.CPP / Microsoft.Windows.WDK.x64 10.0.26100.6584、KMDF 1.31 和 Zig 0.17.1 的 Clang/lld-link，编译器与 Windows 工具包不随应用分发：
-
-```bat
-python packaging\windows\build-driver.py --compiler build\tools\zig-x86_64-windows-0.17.1\zig.exe --sdk build\tools\sdk --wdk build\tools\wdk
-```
-
-构建器启用 C11、警告视为错误和栈保护，检查输出为 AMD64 native PE32+。输出 `build/windows-driver/posture-filter-unsigned.sys` 未签名，不能作为可安装成品。它不会注册服务、配置输入过滤器、安装驱动或更改启动安全配置。
-
-本机目前没有可用的代码签名证书，项目也尚无硬件开发者账号及 EV 签名资源。正式签名所需条件见 [Microsoft 驱动签名要求](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/code-signing-reqs)。正在准备本机测试签名安装路线：使用本地测试证书签署驱动及目录文件，检查测试签名环境并保留安装回退。此路线仍未实现安装执行，未在本机启用；测试签名需要管理员修改启动配置并重启，可能受 Secure Boot 阻止。仅导入证书或一次性禁用签名强制不能作为以后正常重启仍可加载驱动的保证；参见 [Microsoft 测试签名说明](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/the-testsigning-boot-configuration-option)。现有预览和构建命令不会修改这些配置。
+`backend/windows/driver.c`、`control.c` 和相关测试仅保留为隔离研究记录，不属于 Windows 产品路径，不进入便携包、默认构建或安装流程。Windows 产品不计划签名、加载或安装自研输入过滤驱动，也不会修改测试签名、Secure Boot 或启动配置；键盘和触控板由 Windows 继续管理。
 
 `windows/actuator.py` 实现服务端输入执行接口，只有 LocalSystem 可尝试打开固定的控制设备。它逐项核对二进制回执的长度、版本、序号、随机标识、就绪位和三秒租约；发送时间作为时限基准，迟到回执不能延长确认状态。忙状态等待后续空闲，已过期的续租不能当作重新接管；协议错误、关闭失败及释放失败沿用共用引擎的撤销和恢复路径。普通软件后台不加载此端口，当前仍未接入实际内核输入。
 
@@ -219,7 +209,7 @@ python tests\windows_actuator_smoke.py --control-library build\windows-driver\po
 
 `windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。当前仅识别已核对的 INT33D3 路径；CFQV8 笔记本姿态的交互用户与 SYSTEM 读取一致，SYSTEM 会话中的折叠变化和其他开关仍未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
 
-`windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。当前仅在系统报告自动旋转已停用时允许固定方向；系统方向锁、软件平板自动旋转和硬件平板交接尚未接通，因此普通预览不启用此适配器。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能充当系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
+`windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。`windows/tablet_mode.py` 通过 ImmersiveShell COM 边界读取和切换 Windows 桌面／平板模式，写入后有限重试回读。方向、方向锁和 shell 模式保存于同一恢复日志；旧版日志缺少 shell 字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
 
 已授权的真机可显式运行以下检查，屏幕会短暂倒转。检查保留恢复日志，另启恢复进程，并验证写入进程被强制结束后的恢复；每次使用新的证据目录：
 

@@ -40,8 +40,9 @@ class JournalTests(unittest.TestCase):
         data = document()
         self.journal.save(data)
         self.assertEqual(self.journal.load(), data)
-        self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
-        self.assertEqual(stat.S_IMODE(self.directory.stat().st_mode), 0o700)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(self.path.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(self.directory.stat().st_mode), 0o700)
         leftovers = [entry.name for entry in self.directory.iterdir() if entry.name != "display.json"]
         self.assertEqual(leftovers, [])
         self.assertEqual(json.loads(self.path.read_text(encoding="utf-8")), data)
@@ -57,6 +58,17 @@ class JournalTests(unittest.TestCase):
             backend="plasma",
             spec=["eDP-1"],
             original_policy="in-tablet-mode",
+        )
+        self.journal.save(data)
+        self.assertEqual(self.journal.load(), data)
+
+    def test_windows_document_round_trip_with_shell_mode(self):
+        data = document(
+            backend="windows",
+            spec=["panel-1"],
+            original_shell_mode=0,
+            written_shell_mode=1,
+            pending_shell_mode=0,
         )
         self.journal.save(data)
         self.assertEqual(self.journal.load(), data)
@@ -124,6 +136,27 @@ class JournalTests(unittest.TestCase):
                 self.assertIsNone(self.journal.load())
                 self.assertTrue((self.directory / "display.json.corrupt-1234").is_file())
 
+    def test_invalid_shell_modes_are_quarantined(self):
+        for override in (
+            {"original_shell_mode": True},
+            {"original_shell_mode": ""},
+            {"original_shell_mode": None, "written_shell_mode": 1},
+            {"original_shell_mode": 0, "written_shell_mode": False},
+            {"original_shell_mode": 0, "pending_shell_mode": 1.5},
+        ):
+            with self.subTest(override=override):
+                self.directory.mkdir(parents=True, exist_ok=True)
+                for entry in self.directory.iterdir():
+                    entry.unlink()
+                data = document(
+                    backend="windows",
+                    spec=["panel-1"],
+                    **override,
+                )
+                self.path.write_text(json.dumps(data), encoding="utf-8")
+                self.assertIsNone(self.journal.load())
+                self.assertTrue((self.directory / "display.json.corrupt-1234").is_file())
+
     def test_corrupt_files_do_not_overwrite_each_other(self):
         self.directory.mkdir(parents=True)
         fixed_clock = lambda: 7
@@ -147,6 +180,7 @@ class JournalTests(unittest.TestCase):
                     self.journal.save(invalid)  # type: ignore[arg-type]
                 self.assertFalse(self.path.exists())
 
+    @unittest.skipIf(os.name == "nt", "Windows does not enforce POSIX mode bits")
     def test_read_error_does_not_quarantine(self):
         self.directory.mkdir(parents=True)
         self.path.write_text(json.dumps(document()), encoding="utf-8")

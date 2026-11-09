@@ -15,7 +15,12 @@ class Api:
         self.current = Panel('panel', 'source', (1, 0, 0), 11, 0, 2880, 1920, 1)
         self.writes = []
         self.after_write = lambda: None
+        self.shell = 0
     def read(self): return self.current
+    def lock(self, locked):
+        self.current = replace(self.current, auto_rotation=1 if locked else 0)
+    def read_shell_mode(self): return self.shell
+    def write_shell_mode(self, mode): self.shell = mode
     def rotate(self, identity, previous, transform):
         if (identity, previous) != (self.current.identity, self.current.transform):
             raise DisplayError('display-identity-changed')

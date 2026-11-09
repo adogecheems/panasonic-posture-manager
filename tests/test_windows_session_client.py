@@ -288,6 +288,8 @@ class NativeSessionRuntimeTests(unittest.TestCase):
             fail = False
             def read(self):
                 return self.current
+            def lock(self, locked):
+                self.current = replace(self.current, auto_rotation=1 if locked else 0)
             def rotate(self, identity, previous, transform):
                 self.current = replace(self.current, transform=transform)
                 if self.fail:

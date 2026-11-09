@@ -42,13 +42,18 @@ class DisplayState:
     ``transform`` uses the Mutter numbering (0=normal, 1=90, 2=180, 3=270)
     because it is already the journal format used by GNOME.  ``lock`` is a
     bool for on/off backends or the backend's native policy string; it is
-    ``None`` when the backend cannot control automatic rotation.
+    ``None`` when the backend cannot control automatic rotation.  Some
+    platforms also expose a shell interaction mode (for example Windows
+    desktop/tablet mode); ``shell_mode`` is recorded in the same durable
+    transaction so a crash cannot leave the two layers disagreeing.
     """
 
     identity: tuple[str, ...]
     transform: int
     lock: bool | str | None = None
     lock_supported: bool = False
+    shell_mode: int | str | None = None
+    shell_mode_supported: bool = False
 
 
 class SoftwareDisplay:
@@ -92,6 +97,20 @@ class SoftwareDisplay:
         return locked
 
     def _write_original_lock(self, state: DisplayState, policy: str) -> None:
+        raise NotImplementedError
+
+    def _desired_shell_mode(self, mode: str) -> int | str | None:
+        """Return the backend shell mode for a posture, if it owns one."""
+
+        del mode
+        return None
+
+    def _releases_rotation_lock(self, mode: str) -> bool:
+        """Return whether a mode hands rotation back to the platform."""
+
+        return mode == "tablet"
+
+    def _write_shell_mode(self, state: DisplayState, mode: int | str) -> None:
         raise NotImplementedError
 
     def _validate(self, state: DisplayState, mode: str, transform: int) -> None:
@@ -144,8 +163,18 @@ class SoftwareDisplay:
                     ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
                 )
             state = current
+            shell_mode = self._desired_shell_mode(mode)
+            if state.shell_mode_supported and shell_mode is not None:
+                self._write_owned_shell_mode(state, shell_mode)
+                current = self._read_state()
+                if current.identity != state.identity:
+                    raise DisplayError(
+                        ErrorCode.DISPLAY_IDENTITY,
+                        "internal-monitor-identity-changed",
+                    )
+                state = current
             self._write_owned_rotation(state, transform)
-            if mode == "tablet" and state.lock_supported:
+            if self._releases_rotation_lock(mode) and state.lock_supported:
                 # Release automatic rotation only after landscape is stable.
                 current = self._read_state()
                 if current.identity != state.identity:
@@ -169,6 +198,15 @@ class SoftwareDisplay:
             self.owned = self._journal_document(state)
             self._persist()
         try:
+            # Stabilize rotation before asking the shell to switch modes.  A
+            # desktop/tablet transition can itself reset orientation.
+            if state.lock_supported and not self._is_locked(state):
+                self._write_owned_lock(state, True)
+                state = self._read_state()
+            shell_mode = self._desired_shell_mode("tablet")
+            if state.shell_mode_supported and shell_mode is not None:
+                self._write_owned_shell_mode(state, shell_mode)
+                state = self._read_state()
             # Relinquish rotation before unlocking: a crash after the desktop
             # takes over must not restore a coincidentally matching direction.
             self.owned["written_transform"] = None
@@ -243,11 +281,27 @@ class SoftwareDisplay:
         has_owned_lock = any(
             owned.get(field) is not None for field in ("written_lock", "pending_lock")
         )
+        has_owned_shell = any(
+            owned.get(field) is not None
+            for field in ("written_shell_mode", "pending_shell_mode")
+        )
+        original_transform = 0 if normal else int(owned.get("original_transform") or 0)
         restore_global_lock = self.lock_is_global and has_owned_lock and not release_lock
         state = self._read_for_restore(identity, release_lock, restore_global_lock)
         failure: DisplayError | None = None
 
-        if owned_transforms:
+        if has_owned_shell and state.identity == identity and state.lock_supported:
+            # Hardware mode deliberately releases the rotator.  Reacquire it
+            # before restoring either orientation or shell mode, then restore
+            # the user's captured policy at the end.
+            try:
+                if not self._is_locked(state):
+                    self._write_owned_lock(state, True)
+                    state = self._read_state()
+            except DisplayError as error:
+                failure = error
+
+        if owned_transforms and failure is None:
             if state.identity == identity and state.transform in owned_transforms:
                 original = 0 if normal else int(owned.get("original_transform") or 0)
                 if state.transform != original:
@@ -262,6 +316,23 @@ class SoftwareDisplay:
                 log.debug("display rotation already %s; not restoring", state.transform)
             else:
                 log.warning("display output changed; leaving rotation untouched")
+
+        rotation_was_original = (
+            state.identity == identity and state.transform == original_transform
+        )
+        if has_owned_shell and state.identity == identity and failure is None:
+            try:
+                self._restore_shell_mode(state)
+                state = self._read_state()
+                # A shell transition may still reset a locked display.  Put
+                # the recorded direction back before releasing the rotator.
+                if (owned_transforms and rotation_was_original
+                        and state.identity == identity
+                        and state.transform != original_transform):
+                    self._write_rotation(state, original_transform)
+                    state = self._read_state()
+            except DisplayError as error:
+                failure = error
 
         if release_lock and state.identity != identity:
             raise DisplayError(
@@ -355,6 +426,51 @@ class SoftwareDisplay:
         else:
             self._write_lock(state, bool(self.owned["original_lock"]))
 
+    def _owns_shell_mode(self, state: DisplayState) -> bool:
+        return any(
+            state.shell_mode == value
+            for value in (
+                self.owned.get("written_shell_mode"),
+                self.owned.get("pending_shell_mode"),
+            )
+        )
+
+    def _write_owned_shell_mode(self, state: DisplayState, mode: int | str) -> None:
+        if not state.shell_mode_supported:
+            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, "shell-mode-unavailable")
+        if state.shell_mode == mode:
+            return
+        if not self._owns_shell_mode(state):
+            # A user/session change becomes the new restore baseline.
+            self.owned["original_shell_mode"] = state.shell_mode
+            self.owned["written_shell_mode"] = None
+        self.owned["pending_shell_mode"] = mode
+        self._persist()
+        self._write_shell_mode(state, mode)
+        current = self._read_state()
+        if current.identity != state.identity or current.shell_mode != mode:
+            raise DisplayError(
+                ErrorCode.DISPLAY_UNAVAILABLE, "shell-mode-readback-failed"
+            )
+        self.owned["written_shell_mode"] = mode
+        self.owned.pop("pending_shell_mode")
+        self._persist()
+
+    def _restore_shell_mode(self, state: DisplayState) -> None:
+        if not state.shell_mode_supported:
+            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, "shell-mode-unavailable")
+        if not self._owns_shell_mode(state):
+            return
+        original = self.owned.get("original_shell_mode")
+        if original is None or state.shell_mode == original:
+            return
+        self._write_shell_mode(state, original)
+        current = self._read_state()
+        if current.identity != state.identity or current.shell_mode != original:
+            raise DisplayError(
+                ErrorCode.DISPLAY_UNAVAILABLE, "shell-mode-readback-failed"
+            )
+
     # -- journal ----------------------------------------------------------
 
     def _read_transaction_state(self) -> DisplayState:
@@ -370,7 +486,8 @@ class SoftwareDisplay:
             # the caller capture a fresh transaction for the current output.
             log.warning("internal monitor changed; restarting the display transaction")
         if output_changed or any(
-            self.owned.get(field) is not None for field in ("pending_transform", "pending_lock")
+            self.owned.get(field) is not None
+            for field in ("pending_transform", "pending_lock", "pending_shell_mode")
         ):
             self.restore()
             state = self._read_state()
@@ -388,6 +505,9 @@ class SoftwareDisplay:
         }
         if isinstance(state.lock, str):
             document["original_policy"] = state.lock
+        if state.shell_mode_supported:
+            document["original_shell_mode"] = state.shell_mode
+            document["written_shell_mode"] = None
         return document
 
     def _persist(self) -> None:

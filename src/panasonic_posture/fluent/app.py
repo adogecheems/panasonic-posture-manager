@@ -132,7 +132,7 @@ class Window(FluentWidget):
     def update_mark(self):
         name = 'lets-note-window-icon-dark.png' if isDarkTheme() else 'lets-note-window-icon.png'
         path = data_root() / 'assets' / name
-        self.setWindowIcon(QIcon(str(path)))
+        self.setWindowIcon(QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png')))
         mark = QPixmap(str(path))
         # Keep every source pixel. Qt samples the original at the destination
         # screen's scale instead of enlarging an already downsampled 1x image.
