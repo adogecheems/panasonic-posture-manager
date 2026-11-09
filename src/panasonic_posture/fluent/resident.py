@@ -1,0 +1,129 @@
+"""Native screen UI lifetime, tray entry and non-actionable posture notices."""
+import logging
+
+from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
+from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from qfluentwidgets import CaptionLabel
+
+from .pages import mode_labels
+
+log = logging.getLogger(__name__)
+
+
+class ResidentTray(QObject):
+    def __init__(self, window, *, activation=None, tray_factory=QSystemTrayIcon):
+        super().__init__(window)
+        self.window, self.activation = window, activation
+        self.client = window.client
+        self.app = QApplication.instance()
+        self.enabled = tray_factory.isSystemTrayAvailable()
+        self.quitting = False
+        self.sent = set()
+        self.instance = None
+        self.timer = QTimer(self)
+        self._ = window._
+        _ = self._
+        self.menu = QMenu(window)
+        self.open_action = self.menu.addAction(_('Open app'))
+        self.open_action.triggered.connect(self.show_window)
+        self.quit_action = self.menu.addAction(_('Quit'))
+        self.quit_action.triggered.connect(self.quit)
+        self.tray = tray_factory(window.windowIcon(), self)
+        self.tray.setContextMenu(self.menu)
+        self.tray.setToolTip(window.windowTitle())
+        self.tray.activated.connect(self.activated)
+        self.tray.messageClicked.connect(self.show_window)
+        window.state_changed.connect(self.update_state)
+        window.connection_lost.connect(self.unavailable)
+        self.app.aboutToQuit.connect(self.shutdown)
+        window.destroyed.connect(self.window_destroyed)
+        if self.enabled:
+            window.installEventFilter(self)
+            self.app.setQuitOnLastWindowClosed(False)
+            self.tray.show()
+            note = CaptionLabel(_('Closing this window keeps the app in the system tray. Use Quit there to stop it.'), window)
+        else:
+            note = CaptionLabel(_('The system tray is unavailable. Closing this window will stop the app.'), window)
+        note.setWordWrap(True)
+        note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        window.layout().addWidget(note)
+        if activation is not None:
+            self.timer.timeout.connect(self.check_activation)
+            self.timer.start(250)
+
+    def eventFilter(self, watched, event):
+        if watched is self.window and event.type() == QEvent.Type.Close and self.enabled and not self.quitting:
+            event.ignore()
+            self.window.hide()
+            return True
+        return super().eventFilter(watched, event)
+
+    def activated(self, reason):
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            self.show_window()
+
+    def show_window(self):
+        if self.quitting:
+            return
+        self.window.showNormal()
+        self.window.raise_()
+        self.window.activateWindow()
+        self.window.settings.refresh_startup()
+
+    def check_activation(self):
+        try:
+            if self.activation.poll():
+                self.show_window()
+        except OSError:
+            log.exception('cannot read native window activation hint')
+            self.timer.stop()
+            self.show_window()
+
+    def update_state(self, state):
+        _ = self._
+        mode = (state.get('applied') or {}).get('mode')
+        text = mode_labels(_).get('tablet' if mode == 'hardware' else mode,
+                                  _('Waiting for the desktop to get ready…'))
+        self.tray.setToolTip(self.window.windowTitle() + ' · ' + text)
+        if state['instance'] != self.instance:
+            self.instance = state['instance']
+            self.sent.clear()
+        epoch, prompt = state['pending_notification'], state['pending_prompt']
+        if (not self.enabled or not self.tray.supportsMessages() or not state['supported'] or
+                not state['session_connected'] or state['error_code'] or state['hardware'] is not False or
+                epoch is None or prompt not in ('tent', 'stand')):
+            return
+        key = epoch, prompt
+        if key in self.sent:
+            return
+        # Policy epochs only advance. Keep one latest notice per prompt type;
+        # temporarily hidden/unconfirmable prompts must not pop up again.
+        self.sent = {old for old in self.sent if old[1] != prompt}
+        self.sent.add(key)
+        title = _('Tent mode is available') if prompt == 'tent' else _('Stand mode is available')
+        self.tray.showMessage(title, _('Open the app to confirm the current posture.'),
+                              QSystemTrayIcon.MessageIcon.Information, 5000)
+
+    def unavailable(self):
+        self.tray.setToolTip(self.window.windowTitle() + ' · ' + self._('Connecting to background service…'))
+
+    def shutdown(self):
+        if self.quitting:
+            return
+        self.quitting = True
+        self.timer.stop()
+        self.tray.hide()
+        self.window.shutdown()
+
+    def quit(self):
+        self.shutdown()
+        self.window.close()
+        self.app.quit()
+
+    def window_destroyed(self):
+        if not self.quitting:
+            self.quitting = True
+            self.timer.stop()
+            self.tray.hide()
+            self.client.stop()
+        self.app.quit()

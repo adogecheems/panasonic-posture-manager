@@ -7,3 +7,4 @@ src/panasonic_posture/ui/posture.py
 src/panasonic_posture/ui/settings.py
 src/panasonic_posture/fluent/app.py
 src/panasonic_posture/fluent/pages.py
+src/panasonic_posture/fluent/resident.py

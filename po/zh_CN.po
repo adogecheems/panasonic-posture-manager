@@ -312,3 +312,39 @@ msgstr "保持屏幕正向"
 
 msgid "Automatic screen rotation is not available yet"
 msgstr "屏幕自动旋转尚未接入"
+
+msgid "Open app"
+msgstr "打开应用"
+
+msgid "Quit"
+msgstr "退出"
+
+msgid "The system tray is unavailable. Closing this window will stop the app."
+msgstr "系统托盘不可用，关闭此窗口将停止程序。"
+
+msgid "Closing this window keeps the app in the system tray. Use Quit there to stop it."
+msgstr "关闭此窗口后，应用仍在系统托盘运行。需停止时，请在托盘选择退出。"
+
+msgid "Tent mode is available"
+msgstr "可以切换到帐篷模式"
+
+msgid "Stand mode is available"
+msgstr "可以切换到支架模式"
+
+msgid "Open the app to confirm the current posture."
+msgstr "打开应用，确认当前姿态后切换。"
+
+msgid "Background"
+msgstr "后台运行"
+
+msgid "Start at login"
+msgstr "登录时启动"
+
+msgid "A login startup entry already points to another app or location."
+msgstr "已有登录启动项指向其他应用或位置。"
+
+msgid "Login startup is unavailable from this location."
+msgstr "当前位置不支持登录时启动。"
+
+msgid "Start in the system tray when you sign in. Keep this app in its current folder."
+msgstr "登录后在系统托盘运行。请将应用保留在当前文件夹。"

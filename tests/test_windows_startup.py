@@ -1,0 +1,124 @@
+"""Opt-in login startup, command quoting and GUI activation without host writes."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from panasonic_posture.windows.activation import WindowActivation
+from panasonic_posture.windows.startup import LoginStartup, StartupError, startup_command
+
+
+class Registry:
+    def __init__(self):
+        self.value = None
+        self.fail = False
+        self.ignore = False
+        self.writes = []
+    def read(self): return self.value
+    def write(self, command):
+        self.writes.append(command)
+        if self.fail: raise PermissionError('denied')
+        if not self.ignore: self.value = command
+    def delete(self):
+        if self.fail: raise PermissionError('denied')
+        self.value = None
+
+
+class LoginStartupTests(unittest.TestCase):
+    def setUp(self):
+        self.registry = Registry()
+        self.command = [str(Path(sys.executable).resolve()), 'launch file.py', '--native-backend', '--background']
+        self.startup = LoginStartup(self.command, registry=self.registry)
+
+    def test_opt_in_write_readback_disable_and_idempotence(self):
+        self.assertFalse(self.startup.status().enabled)
+        self.assertTrue(self.startup.status().available)
+        self.assertEqual(self.registry.writes, [])
+        self.startup.set_enabled(True)
+        self.assertTrue(self.startup.status().enabled)
+        self.assertEqual(self.registry.value, subprocess.list2cmdline(self.command))
+        self.startup.set_enabled(True)
+        self.assertEqual(len(self.registry.writes), 1)
+        self.startup.set_enabled(False)
+        self.assertFalse(self.startup.status().enabled)
+        self.assertIsNone(self.registry.value)
+
+    def test_foreign_or_replaced_entry_is_preserved_and_never_overwritten_or_deleted(self):
+        for enabled in (True, False):
+            self.registry.value = 'another user command'
+            self.assertTrue(self.startup.status().conflict)
+            self.assertFalse(self.startup.status().available)
+            with self.assertRaises(StartupError): self.startup.set_enabled(enabled)
+            self.assertEqual(self.registry.value, 'another user command')
+        self.assertEqual(self.registry.writes, [])
+
+    def test_denied_and_ignored_writes_do_not_report_enabled(self):
+        self.registry.fail = True
+        with self.assertRaises(PermissionError): self.startup.set_enabled(True)
+        self.assertFalse(self.startup.status().enabled)
+        self.registry.fail = False
+        self.registry.ignore = True
+        with self.assertRaises(StartupError): self.startup.set_enabled(True)
+        self.assertFalse(self.startup.status().enabled)
+
+    def test_invalid_and_overlong_commands_fail_before_registry_writes(self):
+        for command in ([], ['relative.exe'], [self.command[0], 'bad\0argument'],
+                        [self.command[0], '😀' * 150]):
+            with self.subTest(command=command), self.assertRaises((ValueError, StartupError)):
+                LoginStartup(command, registry=self.registry)
+        for enabled in ('yes', 1, None):
+            with self.assertRaises(ValueError): self.startup.set_enabled(enabled)
+        self.assertEqual(self.registry.writes, [])
+
+    def test_source_and_bundle_commands_are_absolute_fixed_and_independent_of_cwd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / 'runtime'
+            runtime.mkdir()
+            (runtime / 'pythonw.exe').touch()
+            (root / 'launch.py').touch()
+            self.assertEqual(startup_command(executable=runtime / 'python.exe', root=root),
+                (str(runtime / 'pythonw.exe'), '-I', str(root / 'launch.py'), '--native-backend', '--background'))
+            (root / 'launch.py').unlink()
+            with self.assertRaises(StartupError): startup_command(executable=runtime / 'python.exe', root=root)
+            (root / 'src/panasonic_posture').mkdir(parents=True)
+            entry = root / 'packaging/windows/launch-native.py'
+            entry.parent.mkdir(parents=True)
+            entry.touch()
+            self.assertEqual(startup_command(executable=runtime / 'python.exe', root=root),
+                             (str(runtime / 'pythonw.exe'), str(entry)))
+            with self.assertRaises(StartupError): startup_command(executable=Path('relative.exe'), root=root)
+
+
+class WindowActivationTests(unittest.TestCase):
+    def test_relaunch_requests_show_but_background_relaunch_does_not_and_stale_hint_is_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = WindowActivation(root), WindowActivation(root)
+            self.assertTrue(first.acquire())
+            try:
+                self.assertFalse(second.acquire(background=True))
+                self.assertFalse(first.poll())
+                self.assertFalse(second.acquire())
+                self.assertTrue(first.poll())
+                self.assertFalse(first.poll())
+                self.assertEqual(first.request.stat().st_size, 0)
+            finally:
+                first.close()
+            self.assertTrue(second.acquire())
+            self.assertFalse(second.poll())
+            second.close()
+            second.close()
+
+    def test_path_or_permission_failure_is_not_mistaken_for_an_existing_ui(self):
+        with tempfile.TemporaryDirectory() as directory:
+            activation = WindowActivation(Path(directory))
+            with patch('panasonic_posture.windows.instance.os.open', side_effect=PermissionError('denied')):
+                with self.assertRaises(PermissionError): activation.acquire()
+            self.assertFalse(activation.request.exists())
+
+
+if __name__ == '__main__': unittest.main()

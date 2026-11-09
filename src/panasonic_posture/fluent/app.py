@@ -1,7 +1,8 @@
 """Assemble Fluent with explicitly selected preview, screen or service clients."""
 import sys
 
-from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation
+from PyQt6 import sip
+from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtSignal, QCoreApplication, QEvent
 from PyQt6.QtGui import QIcon, QPixmap, QFont
 from PyQt6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QStackedWidget, QGraphicsOpacityEffect
 from qfluentwidgets import (
@@ -23,8 +24,12 @@ from .widgets import (
 
 
 class Window(FluentWidget):
+    state_changed = pyqtSignal(dict)
+    connection_lost = pyqtSignal()
+
     def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None,
-                 backend=False, simulate_backend=False, settings_path=None, hardware_backend=False, native_backend=False):
+                 backend=False, simulate_backend=False, settings_path=None, hardware_backend=False, native_backend=False,
+                 startup=None):
         if hardware_backend and (demo or backend or simulate_backend or native_backend or settings_path is not None):
             raise ValueError('hardware backend cannot be combined with software backend options')
         if native_backend and (demo or backend or simulate_backend):
@@ -48,6 +53,7 @@ class Window(FluentWidget):
         qconfig.themeChangedFinished.connect(self.update_mark)
         self.simulating = demo or simulate_backend
         self.memory_demo = demo
+        self._stopped = False
         if client is not None:
             self.client = client
         elif demo:
@@ -62,7 +68,7 @@ class Window(FluentWidget):
         if demo and client is None:
             self.client.scenario(scenario)
         self.home = Home(self.client, _, self.notify, self)
-        self.settings = Settings(self.client, _, self.notify, self)
+        self.settings = Settings(self.client, _, self.notify, self, startup=startup)
         self.stackedWidget = QStackedWidget(self)
         self.stackedWidget.addWidget(self.home)
         self.stackedWidget.addWidget(self.settings)
@@ -155,10 +161,12 @@ class Window(FluentWidget):
     def update_state(self, state):
         self.home.update_state(state)
         self.settings.update_state(state)
+        self.state_changed.emit(state)
 
     def unavailable(self):
         self.home.unavailable()
         self.settings.unavailable()
+        self.connection_lost.emit()
 
     def notify(self, success):
         _ = self._
@@ -171,22 +179,60 @@ class Window(FluentWidget):
             title, detail = _('Unable to complete the operation'), _('Please try again.')
         method(title, detail, duration=3500, position=InfoBarPosition.TOP, parent=self)
 
-    def closeEvent(self, event):
+    def shutdown(self):
+        if self._stopped:
+            return
+        self._stopped = True
         self.backend_timer.stop()
         self.unavailable()
         self.client.stop()
+
+    def closeEvent(self, event):
+        self.shutdown()
         super().closeEvent(event)
 
 
 def run(*, demo=False, language=None, scenario='laptop', backend=False,
-        simulate_backend=False, settings_path=None, hardware_backend=False, native_backend=False) -> int:
-    app = QApplication([sys.argv[0]])
-    app.setStyle('Fusion')
-    app.setApplicationName('Panasonic Posture Manager')
-    setTheme(Theme.AUTO)
-    setThemeColor('#0051f2')
-    window = Window(demo=demo, language=language, scenario=scenario, backend=backend,
-                    simulate_backend=simulate_backend, settings_path=settings_path, hardware_backend=hardware_backend,
-                    native_backend=native_backend)
-    window.show()
-    return app.exec()
+        simulate_backend=False, settings_path=None, hardware_backend=False, native_backend=False, background=False) -> int:
+    activation = None
+    startup = None
+    if native_backend:
+        from ..windows.screen_session import require_native_user
+        require_native_user()  # UI activation/startup never runs with an elevated token.
+        from ..windows.activation import WindowActivation
+        from ..windows.startup import LoginStartup, startup_command, UnavailableStartup
+        activation = WindowActivation(default_settings_path(native=True).parent)
+        if not activation.acquire(background=background):
+            return 0
+        try:
+            startup = LoginStartup(startup_command()) if settings_path is None else UnavailableStartup()
+        except (OSError, ValueError):
+            startup = UnavailableStartup()
+    try:
+        app = QApplication([sys.argv[0]])
+        app.setStyle('Fusion')
+        app.setApplicationName('Panasonic Posture Manager')
+        setTheme(Theme.AUTO)
+        setThemeColor('#0051f2')
+        window = Window(demo=demo, language=language, scenario=scenario, backend=backend,
+                        simulate_backend=simulate_backend, settings_path=settings_path, hardware_backend=hardware_backend,
+                        native_backend=native_backend, startup=startup)
+        resident = None
+        try:
+            if native_backend:
+                from .resident import ResidentTray
+                resident = ResidentTray(window, activation=activation)
+            if not background or resident is None or not resident.enabled:
+                window.show()
+            return app.exec()
+        finally:
+            if resident is not None:
+                resident.shutdown()
+            else:
+                window.shutdown()
+            if not sip.isdeleted(window):
+                window.close()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    finally:
+        if activation is not None:
+            activation.close()

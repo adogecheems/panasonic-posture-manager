@@ -96,11 +96,14 @@ def main(argv=None):
         parser.error('--scenario requires --simulate')
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     try:
+        if options.native:
+            from .screen_session import require_native_user
+            require_native_user()  # Do not open a caller-selected lock while elevated.
         with InstanceLock(options.settings):
             return serve(sys.stdin.buffer, sys.stdout.buffer,
                          Backend(options.settings, simulate=options.simulate, scenario=options.scenario, native=options.native))
     except OSError:
-        logging.exception('cannot acquire private backend instance or settings directory')
+        logging.exception('cannot start private user backend')
         return 1
 
 

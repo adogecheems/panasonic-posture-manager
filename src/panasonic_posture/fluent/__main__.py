@@ -11,11 +11,14 @@ def main(argv=None) -> int:
     parser.add_argument('--simulate-backend', action='store_true', help='simulate devices in the private backend')
     parser.add_argument('--hardware-backend', action='store_true', help='connect to the separate authenticated hardware service')
     parser.add_argument('--native-backend', action='store_true', help='real user-session posture and screen control; leaves input enabled')
+    parser.add_argument('--background', action='store_true', help='start the native screen UI in the system tray')
     parser.add_argument('--settings', type=Path, help='explicit backend settings file')
     parser.add_argument('--language', choices=('en', 'zh_CN'), help='interface language')
     parser.add_argument('--scenario', choices=('laptop', 'prompt', 'hardware', 'slow', 'error', 'disconnected'),
                         help='initial simulation scenario (requires --demo or --simulate-backend)')
     options = parser.parse_args(argv)
+    if options.background and not options.native_backend:
+        parser.error('--background requires --native-backend')
     if options.demo and (options.backend or options.simulate_backend or options.hardware_backend or options.native_backend or options.settings):
         parser.error('--demo cannot be combined with backend options')
     if options.hardware_backend and (options.backend or options.simulate_backend or options.native_backend or options.settings or options.scenario):
@@ -43,7 +46,8 @@ def main(argv=None) -> int:
         raise
     return run(demo=options.demo, language=options.language, scenario=options.scenario or 'laptop',
                backend=options.backend, simulate_backend=options.simulate_backend, settings_path=options.settings,
-               hardware_backend=options.hardware_backend, native_backend=options.native_backend)
+               hardware_backend=options.hardware_backend, native_backend=options.native_backend,
+               background=options.background)
 
 
 if __name__ == '__main__':

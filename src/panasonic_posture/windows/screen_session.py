@@ -2,7 +2,7 @@
 
 The engine stays on the backend owner thread. Display workers exchange bounded
 requests with it; they never mutate the engine or manufacture input receipts.
-This route neither imports the privileged hardware host nor opens its pipe.
+This route never constructs privileged hardware ports or opens their pipe.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from concurrent.futures import Future, TimeoutError
 from contextlib import ExitStack
 from dataclasses import replace
 import queue
+import os
 import threading
 import time
 from pathlib import Path
@@ -214,16 +215,25 @@ class ProfileSensor:
         self.sensor.close()
 
 
+def require_native_user() -> None:
+    from .security import WindowsSecurity
+    security = WindowsSecurity()
+    security.require_unprivileged()
+    identity = security.process_identity(os.getpid())
+    console = security.kernel.WTSGetActiveConsoleSessionId()
+    if console in (0, 0xffffffff) or identity.session_id != console:
+        raise PermissionError('native screen control requires the local console session')
+
+
 def native_screen_session(store: SettingsBackend, instance: str, journal_path: Path) -> ScreenSession:
     """Select only the machine/mount with collected Windows pose evidence."""
     import winreg
     from ..session.journal import Journal
     from .display import WindowsDisplay
-    from .security import WindowsSecurity
     from .sensor import WindowsSensor, IDENTITY
     from .session_context import WindowsSessionContext
     from .switch import WindowsSwitch
-    WindowsSecurity().require_unprivileged()
+    require_native_user()
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\BIOS') as key:
         vendor = winreg.QueryValueEx(key, 'SystemManufacturer')[0]
         product = winreg.QueryValueEx(key, 'SystemProductName')[0]

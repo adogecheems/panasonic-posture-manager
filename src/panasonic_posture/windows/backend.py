@@ -31,6 +31,9 @@ class Backend:
             raise ValueError('native and simulation backends are mutually exclusive')
         if screen_factory is not None and not native:
             raise ValueError('screen_factory requires native mode')
+        if native and screen_factory is None:
+            from .screen_session import require_native_user
+            require_native_user()  # Before even loading/quarantining user files.
         self._resources = ExitStack()
         self.store = SettingsStore(path)
         self.settings = self.store.load()

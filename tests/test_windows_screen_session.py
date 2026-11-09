@@ -167,13 +167,26 @@ class NativeScreenTests(unittest.TestCase):
 
 
 class BridgeTests(unittest.TestCase):
+    def test_native_startup_role_rejects_other_sessions_without_requiring_unlock(self):
+        from unittest.mock import patch
+        from panasonic_posture.windows.screen_session import require_native_user
+        security = SimpleNamespace(require_unprivileged=lambda: None,
+            process_identity=lambda pid: SimpleNamespace(session_id=1),
+            kernel=SimpleNamespace(WTSGetActiveConsoleSessionId=lambda: 1))
+        with patch('panasonic_posture.windows.security.WindowsSecurity', return_value=security):
+            require_native_user()
+            for console in (0, 0xffffffff, 2):
+                security.kernel.WTSGetActiveConsoleSessionId = lambda: console
+                with self.assertRaises(PermissionError): require_native_user()
+
     def test_different_settings_cannot_bypass_native_controller_lock_and_failed_start_releases_it(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake = SimpleNamespace(close=lambda: None)
             with patch.dict(os.environ, LOCALAPPDATA=str(root)):
-                with patch('panasonic_posture.windows.screen_session.native_screen_session', return_value=fake) as factory:
+                with patch('panasonic_posture.windows.screen_session.require_native_user'), patch(
+                        'panasonic_posture.windows.screen_session.native_screen_session', return_value=fake) as factory:
                     first = Backend(root / 'one.json', native=True)
                     try:
                         with self.assertRaises(OSError): Backend(root / 'two.json', native=True)
@@ -185,6 +198,19 @@ class BridgeTests(unittest.TestCase):
                     factory.side_effect = None
                     restarted = Backend(root / 'two.json', native=True)
                     restarted.close()
+
+    def test_elevated_native_entry_is_rejected_before_settings_or_lock_files_are_touched(self):
+        from unittest.mock import patch
+        from panasonic_posture.windows.__main__ import main
+        with patch('panasonic_posture.windows.screen_session.require_native_user', side_effect=PermissionError('elevated')):
+            with patch('panasonic_posture.windows.backend.SettingsStore') as store:
+                with self.assertRaises(PermissionError): Backend(Path('untouched.json'), native=True)
+                store.assert_not_called()
+            with patch('panasonic_posture.windows.__main__.sys.platform', 'win32'), patch(
+                    'panasonic_posture.windows.__main__.InstanceLock') as lock:
+                with self.assertLogs(level='ERROR'):
+                    self.assertEqual(main(['--stdio', '--native', '--settings', 'untouched.json']), 1)
+                lock.assert_not_called()
 
     def test_screen_core_does_not_import_the_privileged_host_input_or_session_transport(self):
         result = subprocess.run([sys.executable, '-S', '-c', '''

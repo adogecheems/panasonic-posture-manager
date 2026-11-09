@@ -1,6 +1,11 @@
 """One software host per settings file; OS locks are released after a crash."""
 from pathlib import Path
 import os
+import errno
+
+
+class InstanceBusy(OSError):
+    """Another process holds the lock, distinct from path/permission errors."""
 
 
 class InstanceLock:
@@ -22,9 +27,11 @@ class InstanceLock:
             else:
                 import fcntl
                 fcntl.flock(self.stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+        except OSError as error:
             self.stream.close()
             self.stream = None
+            if error.errno in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                raise InstanceBusy('private instance is already running') from error
             raise
         return self
 

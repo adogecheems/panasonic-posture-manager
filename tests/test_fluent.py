@@ -93,6 +93,12 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn('cannot be combined', result.stderr)
 
+    def test_background_requires_native_before_loading_qt(self):
+        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent', '--background'],
+                                text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('--background requires --native-backend', result.stderr)
+
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
@@ -126,6 +132,146 @@ class DemoTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent preview dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def run_resident(self, body):
+        self.run_ui('''
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtWidgets import QSystemTrayIcon
+from panasonic_posture.fluent.resident import ResidentTray
+class FakeTray(QObject):
+    available = True
+    activated = pyqtSignal(object)
+    messageClicked = pyqtSignal()
+    def __init__(self, icon, parent):
+        super().__init__(parent)
+        self.visible = False
+        self.messages = []
+    @classmethod
+    def isSystemTrayAvailable(cls): return cls.available
+    @staticmethod
+    def supportsMessages(): return True
+    def setContextMenu(self, menu): self.menu = menu
+    def setToolTip(self, text): self.tooltip = text
+    def show(self): self.visible = True
+    def hide(self): self.visible = False
+    def showMessage(self, *args): self.messages.append(args)
+window.close()
+client = DemoClient(QTimer.singleShot)
+client.state.update(native_backend=True, input_control_available=False,
+                    available_modes=['auto', 'laptop', 'tent', 'stand'])
+window = Window(native_backend=True, client=client, language='en')
+window.show()
+''' + body)
+
+    def test_resident_close_retains_backend_reopen_and_explicit_quit_stops_it(self):
+        self.run_resident('''
+from PyQt6 import sip
+resident = ResidentTray(window, tray_factory=FakeTray)
+assert resident.enabled and resident.tray.visible
+assert not app.quitOnLastWindowClosed()
+window.close()
+QTest.qWait(50)
+assert not window.isVisible() and not sip.isdeleted(window)
+assert not client._stopped and not window._stopped
+resident.open_action.trigger()
+assert window.isVisible()
+window.hide()
+resident.tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+assert window.isVisible()
+resident.quit_action.trigger()
+QTest.qWait(50)
+assert client._stopped
+assert sip.isdeleted(window)
+''')
+
+    def test_no_tray_keeps_a_visible_exit_path_and_close_stops_backend(self):
+        self.run_resident('''
+from PyQt6.QtWidgets import QLabel
+FakeTray.available = False
+resident = ResidentTray(window, tray_factory=FakeTray)
+assert not resident.enabled and window.isVisible()
+assert any('Closing this window will stop the app' in label.text() for label in window.findChildren(QLabel))
+window.close()
+QTest.qWait(50)
+assert client._stopped
+resident.shutdown()
+''')
+
+    def test_external_application_quit_cleans_up_a_hidden_resident(self):
+        self.run_resident('''
+resident = ResidentTray(window, tray_factory=FakeTray)
+window.close()
+fallback = []
+def emergency_quit():
+    fallback.append(True)
+    resident.quit()
+QTimer.singleShot(100, app.quit)
+QTimer.singleShot(1500, emergency_quit)
+assert app.exec() == 0
+assert not fallback, 'The close-to-tray filter must not prevent application shutdown'
+assert client._stopped
+''')
+
+    def test_tray_notices_deduplicate_epochs_and_only_open_current_confirmation(self):
+        self.run_resident('''
+resident = ResidentTray(window, tray_factory=FakeTray)
+window.hide()
+client.scenario('prompt')
+assert len(resident.tray.messages) == 1
+assert resident.tray.messages[0][0] == 'Tent mode is available'
+epoch = client.state['pending_notification']
+client.state['pending_notification'] = None
+client.refresh()
+client.state['pending_notification'] = epoch
+client.refresh()
+assert len(resident.tray.messages) == 1
+client.state['session_connected'] = False
+client.state['pending_notification'] = epoch + 1
+client.refresh()
+assert len(resident.tray.messages) == 1
+resident.tray.messageClicked.emit()
+assert window.isVisible()
+assert client.state['manual'] == 'auto'
+client.state['session_connected'] = True
+client.refresh()
+assert len(resident.tray.messages) == 2
+resident.quit()
+QTest.qWait(50)
+''')
+
+    def test_startup_ui_reads_back_and_reverts_failures_without_requiring_backend(self):
+        self.run_ui('''
+from panasonic_posture.windows.startup import LoginStartup
+class Registry:
+    value = None
+    fail = False
+    def read(self): return self.value
+    def write(self, command):
+        if self.fail: raise PermissionError('denied')
+        self.value = command
+    def delete(self):
+        if self.fail: raise PermissionError('denied')
+        self.value = None
+registry = Registry()
+startup = LoginStartup([sys.executable, 'fixed-entry.py'], registry=registry)
+window.close()
+window = Window(native_backend=True, client=UnavailableClient(), language='en', startup=startup)
+window.show()
+assert window.settings.startup_switch.isEnabled()
+window.settings.startup_switch.setChecked(True)
+assert registry.value == startup.command
+registry.fail = True
+window.settings.startup_switch.setChecked(False)
+assert window.settings.startup_switch.isChecked()
+registry.value = 'different program'
+window.settings.refresh_startup()
+assert not window.settings.startup_switch.isEnabled()
+assert 'another app or location' in window.settings.startup_card.contentLabel.text()
+registry.value = None
+window.settings.refresh_startup()
+window.unavailable()
+assert window.settings.startup_switch.isEnabled()
+''')
+
     def test_native_screen_mode_descriptions_and_capabilities_are_truthful(self):
         self.run_ui('''
 from PyQt6.QtCore import QTimer

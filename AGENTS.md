@@ -25,6 +25,7 @@
 - **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
   显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。它不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置与每用户固定显示日志/控制器锁，不复用或放宽 LocalSystem 硬件管道。
+  原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认不登记，仅在用户切换设置时操作当前用户的固定 Run 值，冲突内容须保留；不得隐式启用、改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
   `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
 - **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
@@ -52,6 +53,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
 | Windows 用户态真实显示后台 | `windows/{screen_session,backend,client,display,session_context}.py`、`fluent/` | `test_windows_screen_session`、`test_windows_display`、`test_frontend`、`test_fluent`；真机脚本仍须相应授权，不能用隔离端口代替真机证据 |
+| Windows 常驻、自启动与姿态通知 | `windows/{activation,startup,instance}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_screen_session`、`test_fluent`；实际注销登录和通知目视验收须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
 | Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
@@ -879,3 +881,12 @@ make WERROR=1 check
 - 界面：模式列表按已校验的能力收窄，输入保持可用的说明始终可见；源码预览若有旧的编译中文目录，缺失的新文案仍可从原始中文目录取得翻译，不手工修改生成的 `.mo`。
 - 证据：隔离测试覆盖实际共享显示事务/日志、子进程 stdio、回执与代次、失效恢复、正常退出及强制退出重连、不重放手动选择、能力校验和界面说明；真实 CFQV8 完成新链路的鲜活采样、GPIO 读取、锁屏拒绝、正常退出，以及杀死采样父进程后辅助进程退出。整链路真实旋转尝试因锁定而未执行，仍待解锁补验，不提升为完整真机支持。
 - 同步：Windows 用户态后台、通信、显示和采样，Fluent/共用前端、翻译、源码启动器、Windows CI、单元与显式真机脚本、README 与 MAINTENANCE。
+
+### 2026-11-09 - Windows 用户态常驻与登录入口
+
+- 变更：真实用户态入口增加托盘常驻、关闭时隐藏、打开与明确退出、每用户 UI 单实例及再次启动唤回；`--background` 仅用于原生入口，无托盘时显示窗口。新增默认关闭的当前用户登录启动设置，固定绝对命令、拒绝过长命令、写后回读，只删除自己当前命令，不覆盖冲突内容；源码固定入口不依赖登录工作目录或环境变量。
+- 动机：使已接通的真实后台能按 Linux 类似的日常流程持续工作，同时提供可发现的退出与恢复入口，避免重复后台争抢、窗口关闭即停用或在用户未选择时登记自启动。
+- 通知：只根据已校验快照、会话就绪和可确认 epoch 发送托盘姿态通知；短暂隐藏不重复发送。点击只打开当前页面，不在过期通知上直接执行切换。Windows 通知设置可影响实际显示，支持标志不构成目视验收。
+- 约束：原生 UI 与后台在任何用户状态文件访问前验证非提权本地控制台身份，锁屏本地会话可启动但不能绕过原有控制资格。该限制也避免远程实例抢占同用户的 UI/控制器锁。单实例唤回文件不接收内容、执行指令或硬件回执，不新增状态传输端点；原私有 stdio 与 LocalSystem 权限边界、Linux 行为、状态和持久化 schema 均不变。Run 登记属于用户显式选择的平台登录集成，保留 Windows 自己的禁用选择。
+- 证据：隔离测试覆盖注册/撤销、失败与冲突保留、长命令、源码与便携布局、单实例及旧提示、提权/其他会话在文件操作前被拒绝、托盘隐藏/打开/退出、无托盘回退、通知去重和安全点击、设置失败回退。CFQV8 原生 Qt/真实后台验证隐藏后继续运行、独立进程用公开 CLI 唤回同一后台、无 `PYTHONPATH` 且工作目录不同的固定登录入口、退出后的后台回收与方向清理。没有更改本机 Run 登记、注销登录或目视验收通知，不提升整机支持等级；用户仍离席，真实姿态旋转联合验收继续等待解锁。
+- 同步：原生 UI 生命周期、登录集成与身份前置检查、中文翻译与目录、源码登录入口、回归与显式真机脚本、Windows CI、README 和 MAINTENANCE。

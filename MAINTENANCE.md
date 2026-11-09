@@ -87,7 +87,7 @@ py -3 -m venv .venv-windows
 packaging\windows\preview.cmd --language zh_CN
 ```
 
-`preview.cmd` 加上 `--demo`，用于原有的内存演示。关闭窗口后设置清空。实际设备控制尚未接入，尚未在 Windows 真机上验收。
+`preview.cmd` 加上 `--demo`，用于原有的内存演示。关闭窗口后设置清空，不操作真实设备，不能作为真机验证。
 
 - **语言**　`--language en` 切换为英文，省略该参数则跟随环境语言。
 - **场景**　例如 `packaging\windows\preview.cmd --scenario prompt` 打开确认提示。还可选择 `laptop`（笔记本）、`hardware`（物理平板）、`slow`（切换缓慢）、`error`（故障）或 `disconnected`（断线）。
@@ -111,6 +111,14 @@ packaging\windows\run.cmd --native-backend --language zh_CN
 
 原生偏好独立存于 `native-settings.json`。显示恢复日志固定为同目录 `screen-display.json`，并有独立的每用户控制器锁，换一个 `--settings` 文件也不能启动第二个原生显示写入者。显示仍走共用事务、写前日志、身份检查、回读和恢复。物理平板交接只撤销程序的方向所有权，保留 Windows 自己的旋转策略；物理开关退出的短暂保持仅在系统自动旋转已禁用时执行，不冒充全局方向锁 API。
 
+真实后台入口默认常驻：关闭窗口只隐藏界面，托盘提供打开与退出；`--native-backend --background` 初次启动直接留在托盘。没有系统托盘时显示窗口与说明，保留可见的退出路径。每用户另有固定 UI 锁，再次启动只更新时间戳提示唤回旧窗口；该空文件只表达显示窗口，不读取内容或接收硬件回执、命令与设置。原生 UI 和后台在触碰用户状态文件前核对非提权本地控制台身份，不能让远程或提权实例抢占本地 UI；锁屏的本地会话可启动，控制仍等待原有资格检查。托盘生命周期使用 [Qt 系统托盘 API](https://doc.qt.io/qt-6/qsystemtrayicon.html)。
+
+「登录时启动」只在用户开启时写入 HKCU 的 `Software\Microsoft\Windows\CurrentVersion\Run` 中本项目的 `PanasonicPostureManager` 值；关闭时只删除与当前固定命令完全相同的值，发现其他内容则保留并显示冲突。不创建服务、计划任务或提权项，不更改 Windows 启动应用管理器的禁用选择。界面显示本项目启动登记是否存在，Windows 自身的启动管理或登录延迟仍可能阻止即时运行。命令使用绝对路径、正确引用与无控制台解释器，并拒绝超过 260 UTF-16 单元的命令；限制依据 [Microsoft Run 键说明](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)。移动便携文件夹前应先在旧位置关闭此项，移动后重新开启。使用 `--settings` 的独立测试实例不开放自启动。
+
+源码自启动由固定 `packaging/windows/launch-native.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --native-backend --background`。首次开发测试保持自启动关闭。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；通知点击只打开当前页面，过期通知不能直接执行模式切换。实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
+
+授权真机可运行 `tests/windows_resident_smoke.py --exercise-resident --directory <新证据目录>`。CFQV8 已通过真实后台隐藏后继续运行、另一个进程用公开入口唤回同一窗口、无源码环境变量的后台登录入口，以及明确退出后的清理；验证没有改动本机登录启动登记，也没有注销登录或声称原生通知已目视验收。
+
 只有显式原生客户端接受真实来源与能力字段，普通和模拟客户端仍拒绝这些快照。内部显示回执由有界队列交回引擎线程处理，过期、锁屏及失去本地会话资格的回执不能续租；原有 LocalSystem 管道和鉴权完全不变。正常关闭先请求后台恢复，最多等待六秒，失去响应再终止；重新启动先恢复残留日志，不重放手动选择。WinRT 辅助进程核对父进程 PID 和创建时间，父进程被强制终止后自行退出。
 
 原生验证脚本 `tests/windows_screen_smoke.py --exercise-screen --directory <新证据目录>` 会实际倒转内屏、测试正常退出与强制退出后的恢复，仅在获授权且已解锁的真机运行；`--locked-session` 验证锁屏拒绝与正常退出。`tests/windows_sensor_parent_smoke.py --directory <新证据目录>` 只读采样，并验证强制终止采样父进程后辅助进程退出。当前 CFQV8 已通过锁屏拒绝、真实采样及父进程退出清理；完整后台旋转测试因电脑锁定尚未通过，不用隔离端口测试替代这项真机证据。
@@ -126,7 +134,7 @@ packaging\windows\run.cmd --simulate-backend --scenario prompt
 
 普通设置存于 `%LOCALAPPDATA%\PanasonicPostureManager\settings.json`，模拟设置为同目录下的 `simulation.json`；`--settings` 可指定独立测试文件。只保存偏好与校准矩阵，不保存手动模式、已应用结果或旧会话。沿用设置 v1、原子替换和 `.corrupt-<timestamp>` 损坏隔离。每个设置文件只允许一个后台实例。
 
-界面通过子进程继承的私有标准管道通信，无网络监听或共享管道名。消息限制为 64 KiB，最多 32 个未完成请求，默认五秒超时。状态与完成回调在界面线程处理。断线立即使旧请求失效，重连采用有上限的退避，不重放写入；关闭窗口会回收后台。此通信能力只授予父进程，不替代未来系统服务的会话鉴权。管道继承与句柄关闭依据 [Python 子进程文档](https://docs.python.org/3.11/library/subprocess.html)。
+界面通过子进程继承的私有标准管道通信，无网络监听或共享管道名。消息限制为 64 KiB，最多 32 个未完成请求，默认五秒超时。状态与完成回调在界面线程处理。断线立即使旧请求失效，重连采用有上限的退避，不重放写入；普通与模拟预览关闭窗口会回收后台，真实入口从托盘退出才回收。此通信能力只授予父进程，不替代未来系统服务的会话鉴权。管道继承与句柄关闭依据 [Python 子进程文档](https://docs.python.org/3.11/library/subprocess.html)。
 
 在非 Windows 开发环境中，必须显式指定测试设置路径；默认不启动软件后台：
 

@@ -141,7 +141,7 @@ class Home(Page):
 
 
 class Settings(Page):
-    def __init__(self, client: UIClient, _, notify, parent=None):
+    def __init__(self, client: UIClient, _, notify, parent=None, *, startup=None):
         super().__init__('settings', parent)
         self._, self.client, self.notify = _, client, notify
         self.model = SettingsModel(client, self.render, lambda error: notify(False))
@@ -149,6 +149,8 @@ class Settings(Page):
         self.switches, self.radios = {}, {}
         self.cards = []
         self.groups = []
+        self.startup = startup
+        self.startup_card = None
         self.box.setContentsMargins(24, 16, 24, 20)
         self.box.setSpacing(18)
         group = self.add_group(_('Automatic mode'))
@@ -203,6 +205,17 @@ class Settings(Page):
             card.hBoxLayout.insertWidget(0, radio)
             card.hBoxLayout.setContentsMargins(16, 0, 0, 0)
             self.add_card(group, card, (radio,))
+        if startup is not None:
+            group = self.add_group(_('Background'))
+            self.startup_card = SwitchRow(QIcon(), _('Start at login'), '')
+            self.startup_switch = self.startup_card.switchButton
+            self.startup_switch.label.hide()
+            self.startup_switch.hBox.setContentsMargins(0, 0, 0, 0)
+            self.startup_switch.setFixedWidth(self.startup_switch.indicator.width())
+            self.startup_switch.setAccessibleName(_('Start at login'))
+            self.startup_card.checkedChanged.connect(self.change_startup)
+            self.add_card(group, self.startup_card, (self.startup_switch,))
+            self.refresh_startup()
         group = self.add_group(_('About'))
         self.add_card(group, SettingRow(QIcon(), _('Version'), __version__))
         self.add_card(group, SettingRow(QIcon(), _('Author'), 'adogecheems'))
@@ -297,6 +310,35 @@ class Settings(Page):
     def update_state(self, state):
         self.model.update(state)
         self.render()
+
+    def refresh_startup(self):
+        if self.startup_card is None:
+            return
+        _ = self._
+        try:
+            status = self.startup.status()
+            enabled, available, conflict = status.enabled, status.available, status.conflict
+        except (OSError, ValueError):
+            enabled = available = conflict = False
+        self.startup_switch.blockSignals(True)
+        self.startup_switch.setChecked(enabled)
+        self.startup_switch.setEnabled(available)
+        self.startup_switch.blockSignals(False)
+        text = (_('A login startup entry already points to another app or location.') if conflict else
+                _('Login startup is unavailable from this location.') if not available else
+                _('Start in the system tray when you sign in. Keep this app in its current folder.'))
+        self.startup_card.setContent(text)
+        QTimer.singleShot(0, self.fit_cards)
+
+    def change_startup(self, enabled):
+        try:
+            self.startup.set_enabled(enabled)
+        except (OSError, ValueError):
+            self.notify(False)
+        else:
+            self.notify(True)
+        finally:
+            self.refresh_startup()
 
     def render(self):
         _ = self._
