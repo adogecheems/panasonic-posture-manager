@@ -242,11 +242,11 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
     with ExitStack() as resources:
         context = WindowsSessionContext()
         resources.callback(context.close)
-        display = WindowsDisplay(journal=Journal(journal_path))
+        switch = WindowsSwitch()
+        display = WindowsDisplay(journal=Journal(journal_path), hardware_query=switch.query)
         resources.callback(display.restore)
         sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY))
         resources.callback(sensor.close)
-        switch = WindowsSwitch()
         session = ScreenSession(store=store, instance=instance,
             sensor=sensor, switch=switch, display=display, context=context,
             device=DeviceInfo(id='windows-cfqv8-screen', vendor=vendor, product=product,

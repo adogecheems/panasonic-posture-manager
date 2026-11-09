@@ -2,8 +2,8 @@
 
 This adapter does not claim to control Windows' system rotation lock. Until
 that port is implemented it accepts fixed modes only while Windows reports
-auto-rotation disabled; tablet/native handoff fails closed. Ordinary software
-preview never instantiates this adapter.
+auto-rotation disabled. Physical tablet handoff relinquishes ownership to
+Windows without changing its policy. Ordinary preview never uses this port.
 """
 from dataclasses import dataclass
 import ctypes as C
@@ -11,6 +11,7 @@ import sys
 import time
 
 from ..contracts import ErrorCode
+from ..model import HardwareStatus, Target
 from ..session.failures import DisplayError
 from ..session.transaction import DisplayState, SoftwareDisplay
 
@@ -166,6 +167,8 @@ class NativeDisplay:
         before = self.read()
         if before.identity != identity or before.transform != previous:
             raise DisplayError(ErrorCode.DISPLAY_IDENTITY, 'display-changed-before-write')
+        if not before.auto_rotation & 1:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'native-auto-rotation-took-over')
         mode = self._mode(before.source)
         if (mode.orientation, mode.width, mode.height) != (before.transform, before.width, before.height):
             raise DisplayError(ErrorCode.DISPLAY_LAYOUT, 'display-mode-changed-before-write')
@@ -186,6 +189,8 @@ class NativeDisplay:
             current = self.read()
             if current.identity != identity:
                 raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
+            if not current.auto_rotation & 1:
+                raise DisplayError(ErrorCode.DISPLAY_LOCK, 'native-auto-rotation-took-over')
             if current.transform == transform:
                 return
             time.sleep(.05)
@@ -195,8 +200,12 @@ class NativeDisplay:
 class WindowsDisplay(SoftwareDisplay):
     backend_name = 'windows'
 
-    def __init__(self, *, journal, api=None):
+    def __init__(self, *, journal, api=None, hardware_query=None):
+        if api is None and hardware_query is None:
+            from .switch import WindowsSwitch
+            hardware_query = WindowsSwitch().query
         self.api = api if api is not None else NativeDisplay()
+        self.hardware_query = hardware_query
         super().__init__(journal=journal)
 
     def _read_state(self):
@@ -212,6 +221,51 @@ class WindowsDisplay(SoftwareDisplay):
     def _validate(self, state, mode, transform):
         if mode not in ('laptop', 'tent', 'stand') or not self.api.read().auto_rotation & 1:
             raise DisplayError(ErrorCode.DISPLAY_LOCK, 'system-rotation-lock-port-unavailable')
+        self._require_software_ownership()
+
+    def _hardware(self):
+        if self.hardware_query is None:
+            return False  # Explicitly injected display-only fixture.
+        hardware, status = self.hardware_query()
+        if type(hardware) is not bool or status != HardwareStatus.OK:
+            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'physical-state-unavailable')
+        return hardware
+
+    def _require_software_ownership(self):
+        if self._hardware():
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'physical-tablet-took-over')
+
+    def apply(self, target: Target | dict) -> None:
+        super().apply(target)
+        mode = target.get('mode') if isinstance(target, dict) else target.mode
+        if mode in ('laptop', 'tent', 'stand'):
+            try:
+                current = self.api.read()
+                self._require_software_ownership()
+                if not current.auto_rotation & 1:
+                    raise DisplayError(ErrorCode.DISPLAY_LOCK, 'native-auto-rotation-took-over')
+                if (current.identity,) != tuple(self.owned['spec']):
+                    raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
+                if current.transform != (2 if mode == 'tent' else 0):
+                    raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'fixed-rotation-changed-before-receipt')
+            except (DisplayError, OSError, ValueError):
+                self._rollback()
+                raise
+
+    def restore(self, normal: bool = False, *, release_lock: bool = False, keep_journal: bool = False) -> None:
+        if self.owned:
+            current = self.api.read()
+            if ((current.identity,) == tuple(self.owned['spec']) and
+                    (not current.auto_rotation & 1 or self._hardware())):
+                # Native rotation may now coincidentally equal our old write.
+                # Durably relinquish both completed and interrupted intent
+                # before generic recovery can mistake that match for ownership.
+                document = self.owned.copy()
+                document['written_transform'] = None
+                document.pop('pending_transform', None)
+                self.journal.save(document)
+                self.owned = document
+        super().restore(normal=normal, release_lock=release_lock, keep_journal=keep_journal)
 
     def _apply_hardware(self):
         # Windows owns its physical slate/rotation policy. Relinquish our
@@ -242,4 +296,7 @@ class WindowsDisplay(SoftwareDisplay):
             raise
 
     def _write_rotation(self, state, transform):
+        self._require_software_ownership()
+        if not self.api.read().auto_rotation & 1:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'native-auto-rotation-took-over')
         self.api.rotate(state.identity[0], state.transform, transform)
