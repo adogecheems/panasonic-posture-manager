@@ -130,6 +130,12 @@ class WindowsSessionClient:
         unattended = self.unattended()
         if type(unattended) is not bool:
             raise ValueError('invalid unattended context')
+        if unattended:
+            # A plain not-ready heartbeat intentionally retains input during
+            # software orientation changes. Lost native display qualification
+            # must instead revoke that ownership while preserving context.
+            error_code = ErrorCode.DISPLAY_UNAVAILABLE
+            error_detail = 'native-session-unattended'
         self._request('session_update', dict(generation=generation, ready=ready and not unattended,
             error_code=error_code or None, error_detail=error_detail or None, unattended=unattended))
 

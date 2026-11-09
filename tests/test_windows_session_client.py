@@ -24,6 +24,7 @@ from panasonic_posture.windows.hardware_ipc import (
 from panasonic_posture.windows.hardware_host import CHANNEL, ConsoleIdentity, HardwareHost
 from panasonic_posture.windows.simulation import SimulatedInput
 from panasonic_posture.windows.session_client import WindowsSessionClient
+from panasonic_posture.windows.session_agent import WindowsSessionAgent
 from panasonic_posture.windows.protocol import ProtocolError
 
 
@@ -66,6 +67,7 @@ class SessionClientTests(unittest.TestCase):
         client.session_update(1, True)
         self.assertEqual(connection.calls[-1][1]['unattended'], True)
         self.assertEqual(connection.calls[-1][1]['ready'], False)
+        self.assertEqual(connection.calls[-1][1]['error_code'], 'display-unavailable')
 
     def test_invalid_runtime_feedback_is_not_transmitted(self):
         client, connection = self.client()
@@ -359,4 +361,56 @@ class NativeSessionRuntimeTests(unittest.TestCase):
         self.assertFalse(self.input.running)
         self.assertIsNone(self.engine.state.applied)
         self.assertEqual(self.api.current.transform, 0)
+        self.assertIsNone(self.journal.load())
+
+    def test_agent_reuses_startup_worker_and_keeps_unattended_receipts_ordered(self):
+        lock = threading.RLock()
+        dispatch = self.host.dispatch
+        def serial_dispatch(peer, request):
+            with lock:
+                return dispatch(peer, request)
+        self.host.dispatch = serial_dispatch
+        context = SimpleNamespace(absent=False, poll=lambda: None, close=lambda: None)
+        context.unattended = lambda: context.absent
+        self.client.unattended = context.unattended
+        self.engine.set_mode('tent')
+        self.engine.tick()
+        agent = WindowsSessionAgent(context_factory=lambda: context,
+            client_factory=lambda unattended: self.client, display_factory=lambda: self.display)
+        self.addCleanup(agent.close)
+        agent.start()
+        def until(predicate):
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                with lock:
+                    self.now += .05
+                    self.host.tick()
+                agent.tick(self.now)
+                with lock:
+                    if predicate():
+                        return
+                time.sleep(.005)
+            self.fail('native session assembly did not reach expected state')
+        until(lambda: self.engine.state.applied is not None)
+        self.assertEqual(len(self.client._channels), 1)
+        context.absent = True
+        with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
+            until(lambda: agent.runtime.failure_active and self.api.current.transform == 0)
+        self.assertFalse(self.input.running)
+        self.assertIsNone(self.engine.state.applied)
+        self.assertEqual(len(self.client._channels), 2)
+        # Move beyond a lease period while still off. The independent lane
+        # keeps the same authenticated context, without reporting ready.
+        beginning = self.now
+        until(lambda: self.now - beginning > 4)
+        self.assertEqual(self.engine.session_owner, self.peer.owner)
+        self.assertLess(self.now - self.engine.agent_seen, 3)
+        self.assertFalse(self.input.running)
+        context.absent = False
+        until(lambda: self.engine.state.applied is not None)
+        self.assertEqual(self.engine.state.applied.mode, 'tent')
+        self.assertEqual(self.api.current.transform, 2)
+        self.assertEqual(len(self.client._channels), 2)
+        agent.close()
+        self.assertFalse(self.input.running)
         self.assertIsNone(self.journal.load())

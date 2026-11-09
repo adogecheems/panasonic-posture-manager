@@ -53,6 +53,10 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_windows_session_client.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_windows_session_context.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_windows_session_agent.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_frontend.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_fluent.py -v

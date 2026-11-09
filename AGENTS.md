@@ -27,6 +27,7 @@
   `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
 - **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
+  原生会话进程须使用非提权交互令牌，并先核对回执资格再创建显示后端。锁屏、熄屏或会话状态未知时，经既有显示不可用错误回执释放软件输入并恢复所有方向事务；不能用无错误的未就绪心跳代表资格丢失。旧未就绪心跳完成后才允许恢复就绪。
 
 **接入平台。** 姿态策略、服务引擎、会话运行时和显示事务可共用。实现 `service/ports.py` 和 `session/ports.py` 中的接口。共用层使用 `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`、`DeviceInfo` 和输入完成判定。Linux 在 `service/application.py` 和 `session/agent.py` 接入时钟、设备、设置、D-Bus 和桌面组件。平台负责配置和通信错误分类。显示事务必须显式传入恢复日志。
 
@@ -51,7 +52,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
-| Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
+| Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -816,3 +817,11 @@ make WERROR=1 check
 - 约束：不改变硬件 JSON v1、鉴权、预登记进程职责、租约、Linux D-Bus 或持久化 schema。原生能力不能由模拟快照取得；当前没有完整服务安装/会话启动流程，也没有加载自研驱动，不提升支持等级。保留用户要求的启动安全配置。
 - 证据：隔离测试联通 UI 消息契约及会话、显示日志、Engine，覆盖成功、显示失败和资格撤销。另在 CFQV8 真机一次性 SYSTEM 任务中核对笔记本开关、五份新鲜加速度计样本和六项普通客户端权限通信检查；任务已移除。没有将 fake 输入或 Session 0 无显示输出当作硬件控制验收。
 - 同步：硬件 UI/会话客户端、快照/操作回执校验、Fluent 显式入口、回归测试、Windows CI、README 和 MAINTENANCE。
+
+### 2026-11-09 - 原生 Windows 会话资格与无人值守撤销
+
+- 变更：装配显式原生会话进程，只用普通非提权交互令牌，先在既有工作线程证明回执资格再构造显示后端。新增本进程 WTS 会话和本会话显示电源观察；查询有一个工作槽、有效期一秒，睡眠前结果在恢复后不能生效，电源回调不执行硬件操作。
+- 动机：共用引擎会在无错误的方向准备心跳期间保留软件输入，因此 Windows 的锁屏、熄屏和未知资格必须上报既有显示不可用错误并走恢复路径。独立未就绪心跳维持允许续租的会话上下文，且必须完成后再允许恢复就绪，避免迟到心跳撤销新事务。
+- 约束：不更改命名管道鉴权、确切会话进程预登记、JSON v1、Linux 行为或日志版本。普通预览仍不启动硬件会话，没有新增服务安装或自登记入口；真实输入和系统方向锁仍未验收。显示恢复中重新取得资格不能把已回滚的事务当作成功。
+- 证据：隔离测试覆盖成功、回执拒绝、资格变化、线程通道复用、过期/睡眠前查询、资源释放及共用 Engine 输入撤销。CFQV8 真机只读取得本地会话和显示关闭的系统回调并释放所有通知注册；未主动改变锁屏、电源、方向或加载自研驱动，不据此声明整机会话验收。
+- 同步：Windows 会话装配、上下文、客户端和普通令牌检查，回归/只读原生 fixture、Windows CI、README 与 MAINTENANCE。

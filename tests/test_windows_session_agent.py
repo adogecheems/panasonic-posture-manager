@@ -1,0 +1,201 @@
+"""Native session assembly must prove receipt authority before desktop work."""
+from dataclasses import replace
+from concurrent.futures import Future
+import ctypes as C
+from types import SimpleNamespace
+import unittest
+
+from panasonic_posture.model import StateSnapshot, Target
+from panasonic_posture.session.failures import ServiceError, FailureKind
+from panasonic_posture.tasks import InlineExecutor
+from panasonic_posture.windows.session_agent import WindowsSessionAgent
+from panasonic_posture.windows.security import WindowsSecurity, AuthenticationError
+
+
+class Context:
+    def __init__(self):
+        self.absent = False
+        self.closed = False
+    def unattended(self):
+        return self.absent
+    def poll(self):
+        pass
+    def close(self):
+        self.closed = True
+
+
+class Client:
+    def __init__(self):
+        self.state = StateSnapshot(instance='native-fixture', hardware=False, sensor_source='windows-winrt',
+            target=Target(mode='tent', tablet=True, rotation=180, disable_internal_input=True))
+        self.feedback = []
+        self.closed = False
+        self.deny = False
+    def get_state(self):
+        return self.state
+    def session_update(self, generation, ready, error_code=None, error_detail=None):
+        if self.deny:
+            raise ServiceError('access-denied', 'unregistered-session-process')
+        self.feedback.append((generation, ready, error_code, error_detail))
+        self.state = replace(self.state, session_connected=True)
+    def close(self):
+        self.closed = True
+
+
+class Display:
+    def __init__(self):
+        self.current = 0
+        self.writes = []
+        self.during_apply = lambda: None
+    def apply(self, target):
+        self.current = 2
+        self.writes.append(2)
+        self.during_apply()
+    def restore(self, normal=False):
+        self.current = 0
+        self.writes.append(0)
+    def hold_orientation(self):
+        self.writes.append('hold')
+
+
+class SessionAgentTests(unittest.TestCase):
+    def setUp(self):
+        self.context, self.client, self.display = Context(), Client(), Display()
+        self.created = []
+        def display():
+            self.created.append(True)
+            self.assertTrue(self.client.feedback)
+            self.assertFalse(self.client.feedback[0][1])
+            return self.display
+        self.agent = WindowsSessionAgent(context_factory=lambda: self.context,
+            client_factory=lambda unattended: self.client, display_factory=display,
+            executor=InlineExecutor(), lease_executor=InlineExecutor())
+        self.addCleanup(self.agent.close)
+
+    def test_denied_startup_cannot_construct_a_display_or_write_a_journal(self):
+        self.client.deny = True
+        with self.assertRaises(ServiceError):
+            self.agent.start()
+        self.assertFalse(self.created)
+        self.assertFalse(self.display.writes)
+        self.assertTrue(self.client.closed)
+        self.assertTrue(self.context.closed)
+
+    def test_authorized_agent_runs_shared_transactions_then_restores_on_close(self):
+        self.agent.start()
+        self.agent.tick(10.)
+        self.assertTrue(self.agent.runtime.ready)
+        self.assertEqual(self.display.current, 2)
+        self.assertTrue(any(ready for _, ready, _, _ in self.client.feedback))
+        self.agent.close()
+        self.assertEqual(self.display.current, 0)
+        self.assertTrue(self.client.closed)
+        self.assertTrue(self.context.closed)
+
+    def test_unattended_transition_reports_not_ready_and_restores_owned_direction(self):
+        self.agent.start()
+        self.agent.tick(10.)
+        self.context.absent = True
+        with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
+            self.agent.tick(10.6)
+        self.assertTrue(self.agent.runtime.failure_active)
+        self.assertEqual(self.display.current, 0)
+        self.assertFalse(self.client.feedback[-1][1])
+        self.context.absent = False
+        self.agent.tick(13.)
+        self.assertFalse(self.agent.runtime.failure_active)
+        self.assertTrue(self.agent.runtime.ready)
+        self.assertEqual(self.display.current, 2)
+
+    def test_unknown_context_at_startup_cannot_apply_a_new_rotation(self):
+        self.context.absent = True
+        self.agent.start()
+        with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
+            self.agent.tick(10.)
+        self.assertNotIn(2, self.display.writes)
+        self.assertTrue(all(not ready for _, ready, _, _ in self.client.feedback))
+
+    def test_context_loss_during_apply_rolls_back_before_ready_feedback(self):
+        self.agent.start()
+        self.display.during_apply = lambda: setattr(self.context, 'absent', True)
+        with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
+            self.agent.tick(10.)
+        self.assertEqual(self.display.current, 0)
+        self.assertFalse(self.agent.runtime.ready)
+        self.assertTrue(all(not ready for _, ready, _, _ in self.client.feedback))
+
+    def test_unproven_or_replaced_service_does_not_construct_a_display(self):
+        self.client.session_update = lambda *args: setattr(self.client, 'state',
+            replace(self.client.state, instance='replacement', session_connected=True))
+        with self.assertRaises(ServiceError) as caught:
+            self.agent.start()
+        self.assertEqual(caught.exception.kind, FailureKind.REJECTED)
+        self.assertFalse(self.created)
+
+    def test_late_unattended_heartbeat_finishes_before_resumed_ready_feedback(self):
+        jobs = []
+        class Worker:
+            def submit(self, function):
+                future = Future()
+                jobs.append((function, future))
+                return future
+        self.agent.lease_executor = Worker()
+        self.agent.start()
+        self.agent.tick(10.)
+        self.context.absent = True
+        with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
+            self.agent.tick(10.6)
+        self.assertEqual(len(jobs), 1)
+        for _ in range(10):
+            self.agent.tick(11.)
+        self.assertEqual(len(jobs), 1)
+        self.context.absent = False
+        self.agent.tick(13.)
+        self.assertTrue(self.agent.runtime.failure_active)
+        self.assertEqual(self.display.current, 0)
+        function, future = jobs[0]
+        function()
+        future.set_result(None)
+        last_false = len(self.client.feedback) - 1
+        self.agent.tick(13.1)
+        self.assertTrue(self.agent.runtime.ready)
+        self.assertEqual(self.display.current, 2)
+        self.assertEqual([ready for _, ready, _, _ in self.client.feedback[last_false + 1:]], [False, True])
+
+    def test_restore_followed_by_quick_resume_still_requires_a_new_transaction(self):
+        self.agent.start()
+        self.display.during_apply = lambda: setattr(self.context, 'absent', True)
+        restore = self.display.restore
+        def resumed_restore(normal=False):
+            restore(normal)
+            self.context.absent = False
+        self.display.restore = resumed_restore
+        with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
+            self.agent.tick(10.)
+        self.assertEqual(self.display.current, 0)
+        self.assertFalse(self.agent.runtime.ready)
+        self.assertTrue(all(not ready for _, ready, _, _ in self.client.feedback))
+
+
+class NativeAgentTokenTests(unittest.TestCase):
+    def security(self, *, sid='S-1-5-21-1000', session=1, elevation=0, length=4):
+        api = object.__new__(WindowsSecurity)
+        closed = []
+        def open_token(process, access, token):
+            token._obj.value = 12
+            return True
+        api.kernel = SimpleNamespace(GetCurrentProcess=lambda: 10, CloseHandle=lambda value: closed.append(value.value))
+        api.advapi = SimpleNamespace(OpenProcessToken=open_token)
+        api.token_identity = lambda token: (sid, 100, session)
+        api._token_info = lambda token, kind: C.create_string_buffer(elevation.to_bytes(4, 'little')[:length], length)
+        return api, closed
+
+    def test_agent_requires_an_ordinary_non_elevated_interactive_token(self):
+        api, closed = self.security()
+        api.require_unprivileged()
+        self.assertEqual(closed, [12])
+        for changes in ({'sid': 'S-1-5-18'}, {'session': 0}, {'elevation': 1}, {'length': 2}):
+            api, closed = self.security(**changes)
+            with self.assertRaises(AuthenticationError):
+                api.require_unprivileged()
+            self.assertEqual(closed, [12])

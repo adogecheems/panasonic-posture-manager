@@ -121,6 +121,19 @@ class WindowsSecurity:
         finally:
             self.kernel.CloseHandle(token)
 
+    def require_unprivileged(self) -> None:
+        """The native desktop adapter must use an ordinary interactive token."""
+        token = HANDLE()
+        self._check(self.advapi.OpenProcessToken(self.kernel.GetCurrentProcess(), 8, C.byref(token)))
+        try:
+            identity = self.token_identity(token)
+            elevation = self._token_info(token, 20)  # TokenElevation
+            if (identity[0] == 'S-1-5-18' or identity[2] in (0, 0xffffffff) or
+                    C.sizeof(elevation) != C.sizeof(U32) or C.cast(elevation, C.POINTER(U32))[0] != 0):
+                raise AuthenticationError('native session agent requires a non-elevated user token')
+        finally:
+            self.kernel.CloseHandle(token)
+
     def process_identity(self, pid: int) -> ConsoleIdentity:
         process = self._check(self.kernel.OpenProcess(0x1000, False, pid))
         token = HANDLE()

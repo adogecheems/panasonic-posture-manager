@@ -207,6 +207,25 @@ Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器�
 
 2026-11-09，在上述 CFQV8 真机上，以受保护且校验过哈希的代码/运行时快照执行一次性 SYSTEM 任务：GPIO 笔记本状态与交互用户一致，WinRT 取得同一加速度计的五份新鲜样本，普通非提权客户端再次通过六项原生通信检查；快照没有发布支持或已应用模式。Session 0 无交互显示输出，显示查询返回不可用，未尝试显示写入。任务已结束并移除，没有保留提权助手或改变启动安全配置。
 
+### Windows 原生会话开发验证
+
+`windows/session_agent.py` 将原生会话观察、硬件客户端、共用 SessionRuntime 和 Windows 显示事务装配为独立的普通用户进程。它拒绝 SYSTEM、非交互和已提权令牌；必须先通过主机对确切进程身份的显示回执检查，才能创建显示后端或恢复日志事务。启动握手复用显示工作线程，不额外占用第三条 RPC 通道。普通 UI 不启动此进程，当前还没有安装后的可信启动器。
+
+开发入口为 `python -m panasonic_posture.windows.session_agent --journal <当前用户的恢复日志路径>`；必须由可信硬件主机预登记该确切进程，手动运行不能自行取得回执资格。缺少服务或未获登记时在显示后端构造之前退出，不能把命令能运行当作安装成功。
+
+`windows/session_context.py` 用独立的单工作线程读取本进程会话，结合本地活跃控制台、锁屏状态，以及 `GUID_SESSION_DISPLAY_STATUS` 的系统电源回调。读数超过一秒、未知或查询失败都视为无人值守；睡眠使旧查询失效，恢复时重新注册电源观察，取得当前值。回调只更新有锁的状态，不执行显示、输入或租约操作。依据：[会话显示电源状态](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids)、[注册后的初始电源回调](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powersettingregisternotification)。
+
+无人值守时，适配器通过既有 `display-unavailable` 错误回执撤销软件输入，沿用共用运行时的方向恢复；不能只发无错误的未就绪心跳，因为引擎会为软件方向切换保留已有输入。独立通道维持当前会话上下文，恢复时先等待旧未就绪心跳完成，再允许新的就绪回执。显示事务执行中失去资格会恢复并报告失败，即使恢复期间很快重新亮屏，也要重新完成事务。
+
+以下检查只观察，不锁屏、熄屏、休眠、唤醒或旋转；每次使用新的证据目录：
+
+```bat
+set PYTHONPATH=src
+python tests\windows_session_smoke.py --observe-only --directory build\session-evidence-new
+```
+
+2026-11-09，CFQV8 / Windows 10 Pro 19045、普通非提权进程下已取得本地会话和当前显示关闭的真实回调，正确保持无人值守，退出后通知注册全部释放。另确认缺少硬件服务时，会话进程在构造显示后端之前退出。没有为了验证改变锁屏、电源或方向；解锁、亮屏和睡眠恢复的真实变化尚未主动验收。隔离测试覆盖这些变化、迟到查询、线程与回执顺序，以及共用 Engine 的输入释放，不能替代安装后的真实会话与内核输入验收。
+
 ### Windows 便携预览包
 
 在 Windows 的独立构建环境中，使用与预览依赖兼容的 64 位 Python 3.11+：
