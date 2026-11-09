@@ -1,16 +1,15 @@
-"""Windows shell tablet-mode COM boundary without touching the live shell."""
-
+"""Read-only Windows shell observation without touching the live shell."""
 import ctypes as C
 from contextlib import contextmanager
+from pathlib import Path
 import unittest
 from unittest import mock
 
 from panasonic_posture.windows import tablet_mode
 
 
-def _calls(current, *, query_result=0, write_result=0, apply_write=True):
+def _calls(current, *, query_result=0):
     reads = []
-    writes = []
 
     @C.WINFUNCTYPE(C.c_long, C.c_void_p, C.POINTER(C.c_int))
     def query(this, destination):
@@ -19,19 +18,10 @@ def _calls(current, *, query_result=0, write_result=0, apply_write=True):
         destination[0] = current['mode']
         return query_result
 
-    @C.WINFUNCTYPE(C.c_long, C.c_void_p, C.c_int, C.c_int)
-    def write(this, mode, trigger):
-        del this
-        writes.append((mode, trigger))
-        if apply_write and write_result >= 0:
-            current['mode'] = mode
-        return write_result
-
-    vtable = (C.c_void_p * 5)(
+    vtable = (C.c_void_p * 4)(
         None, None, None, C.cast(query, C.c_void_p).value,
-        C.cast(write, C.c_void_p).value,
     )
-    return vtable, reads, writes
+    return vtable, reads
 
 
 class TabletModeTests(unittest.TestCase):
@@ -50,62 +40,39 @@ class TabletModeTests(unittest.TestCase):
         self.assertTrue(tablet_mode._succeeded(1))
         self.assertFalse(tablet_mode._succeeded(-2147467259))
 
-    def test_read_and_verified_write_use_the_documented_vtable_slots(self):
-        state = {'mode': tablet_mode.DESKTOP}
-        vtable, reads, writes = _calls(state)
+    def test_read_uses_only_the_observation_vtable_slot(self):
+        state = {'mode': tablet_mode.TABLET}
+        vtable, reads = _calls(state)
 
         @contextmanager
         def controller():
             yield vtable, None
 
         with mock.patch.object(tablet_mode, '_controller', controller):
-            bridge = tablet_mode.WindowsTabletMode()
-            self.assertEqual(bridge.read(), tablet_mode.DESKTOP)
-            bridge.write(tablet_mode.TABLET)
+            bridge = tablet_mode.WindowsShellMode()
             self.assertEqual(bridge.read(), tablet_mode.TABLET)
+        self.assertEqual(reads, [1])
 
-        self.assertEqual(reads, [1, 1, 1])
-        self.assertEqual(writes, [(tablet_mode.TABLET, tablet_mode._TRIGGER_API)])
+    def test_query_failure_and_invalid_modes_are_rejected(self):
+        for mode, result in ((-1, 0), (2, 0), (tablet_mode.TABLET, -2147467259)):
+            state = {'mode': mode}
+            vtable, reads = _calls(state, query_result=result)
 
-    def test_invalid_mode_is_rejected_before_opening_com_and_booleans_are_not_modes(self):
-        with mock.patch.object(
-                tablet_mode, '_controller',
-                side_effect=AssertionError('COM must not be opened')):
-            bridge = tablet_mode.WindowsTabletMode()
-            for invalid in (True, False, -1, 2, 'tablet'):
-                with self.subTest(invalid=invalid):
-                    with self.assertRaises(ValueError):
-                        bridge.write(invalid)
+            @contextmanager
+            def controller():
+                yield vtable, None
 
-    def test_write_failure_is_reported_without_polling_read_back(self):
-        state = {'mode': tablet_mode.DESKTOP}
-        vtable, reads, writes = _calls(state, write_result=-2147467259)
+            with self.subTest(mode=mode, result=result), \
+                    mock.patch.object(tablet_mode, '_controller', controller), \
+                    self.assertRaises(tablet_mode.TabletModeError):
+                tablet_mode.WindowsShellMode().read()
+            self.assertEqual(reads, [1])
 
-        @contextmanager
-        def controller():
-            yield vtable, None
-
-        with mock.patch.object(tablet_mode, '_controller', controller):
-            with self.assertRaises(tablet_mode.TabletModeError):
-                tablet_mode.WindowsTabletMode().write(tablet_mode.TABLET)
-        self.assertEqual(reads, [])
-        self.assertEqual(len(writes), 1)
-
-    def test_read_back_mismatch_has_a_fixed_bounded_retry_count(self):
-        state = {'mode': tablet_mode.DESKTOP}
-        vtable, reads, writes = _calls(state, apply_write=False)
-
-        @contextmanager
-        def controller():
-            yield vtable, None
-
-        with mock.patch.object(tablet_mode, '_controller', controller), \
-                mock.patch.object(tablet_mode.time, 'sleep') as sleep:
-            with self.assertRaises(tablet_mode.TabletModeError):
-                tablet_mode.WindowsTabletMode().write(tablet_mode.TABLET)
-        self.assertEqual(len(writes), 1)
-        self.assertEqual(len(reads), 10)
-        self.assertEqual(sleep.call_count, 10)
+    def test_adapter_has_no_shell_switching_api(self):
+        self.assertFalse(hasattr(tablet_mode.WindowsShellMode, 'write'))
+        source = Path(tablet_mode.__file__).read_text(encoding='utf-8')
+        self.assertNotIn('SetMode', source)
+        self.assertNotIn('_TRIGGER_API', source)
 
 
 if __name__ == '__main__':

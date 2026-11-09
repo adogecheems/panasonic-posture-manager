@@ -25,7 +25,7 @@
 - **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
   可选的持续显示刷新与 apply、hold、restore 共用同一串行工作线程，刷新后仍须核对实例和代次；不另起绕过事务或租约的显示写入循环。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
-  显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。它不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置与每用户固定显示日志/控制器锁，不复用或放宽 LocalSystem 硬件管道。
+  显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。帐篷、支架和物理平板通过经核对的 `ACPI\INT33D3` PDO 报告平板使用状态，笔记本报告普通状态；Windows 按用户自己的选择决定 shell，程序不得调用 ImmersiveShell 强制模式接口。设备 PDO 的单字节写入是 toggle，必须先读、目标不同时至多写一次并回读。首次设备非独占配置由独立管理员脚本完成，需要重启且可逆。该入口不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置、每用户固定显示日志/控制器锁及同目录的原子 slate 租约日志，不复用或放宽 LocalSystem 硬件管道。
   原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认不登记，仅在用户切换设置时操作当前用户的固定 Run 值，冲突内容须保留；不得隐式启用、改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
   `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
@@ -53,7 +53,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 用户态真实显示后台 | `windows/{screen_session,backend,client,display,session_context}.py`、`fluent/` | `test_windows_screen_session`、`test_windows_display`、`test_frontend`、`test_fluent`；真机脚本仍须相应授权，不能用隔离端口代替真机证据 |
+| Windows 用户态真实显示与平板通知 | `windows/{screen_session,backend,client,display,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；真机脚本仍须相应授权，不能用隔离端口代替真机证据 |
 | Windows 常驻、自启动与姿态通知 | `windows/{activation,startup,instance}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_screen_session`、`test_fluent`；实际注销登录和通知目视验收须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
@@ -93,6 +93,8 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
    已有软件 relay 可在物理平板期间转为硬件转发，退出后独立保留最多两秒的桌面平板
    信号，心跳不得延长窗口。原始硬件状态始终如实上报；等待期间不确认已应用模式，
    软件输入重新接管仍须匹配代次的显示回执。原生平板启动不得为此新建 relay。
+   Windows 的平板状态通知与显示事务相互独立：通知失败阻止姿态确认，旋转失败回滚旋转与锁；
+   shell 保持桌面或自动切换都是 Windows 对同一通知的合法响应，不能伪造或反推设备状态。
 6. **设备发现拒绝歧义。** 排除 relay 创建的虚拟开关。物理开关、内置输入和加速度计有歧义时拒绝选择。
    Profile 只能收窄候选，不能绕开能力和总线校验。
 7. **持久化安全。** 设置和显示日志复用 `SettingsStore` 与 `Journal` 的原子写入与损坏隔离。
@@ -944,3 +946,10 @@ make WERROR=1 check
 - 约束：所有写入先持久化恢复日志并回读；shell 写入失败、方向锁导出缺失或身份变化均拒绝确认。日志仍为 v1，新增 shell 字段可选且旧记录兼容。此项取代此前“允许暂缓输入禁用”的扩展方向：Windows 产品永久保留键盘和触控板可用，自研输入控制不再作为待完成产品或签名目标。
 - 证据：隔离测试覆盖固定模式顺序、崩溃恢复、物理接管、原生旋转接管、方向锁回读、shell 重试和日志兼容；真机只读探测确认 ImmersiveShell 可读写、方向锁可回读并在检查后恢复原值。完整姿态矩阵仍需便携成品真机验收。
 - 同步：共用显示事务、显示日志 schema、Windows 显示与 shell 适配器、Fluent 图标和文案、翻译、回归测试、README、MAINTENANCE 与本记录。
+
+### 2026-11-10 - Windows 通过原生 CSM 指示器通知系统
+
+- 变更：Windows 显示事务只管理内屏方向、全局自动旋转锁和恢复日志。新增经精确实例与 PDO 核对的 `ACPI\INT33D3` 指示器适配器，读取当前字节；目标不同时至多执行一次 toggle 并回读。每个目标先锁定当前方向，再通知 slate，最后执行显示 apply；独立原子 slate 租约日志在首次写前持久化启动值，强杀后的下一次启动先幂等恢复该值。帐篷、支架和物理平板报告平板使用状态，笔记本报告普通使用状态。Windows 根据 `ConvertibleSlateModePromptPreference` 自行决定询问、保持桌面或切换 shell；程序不调用 ImmersiveShell 强制模式接口，也不直接修改 CSM registry cache。
+- 动机：用户选择“不要切换”时，系统保持桌面并显示屏幕键盘是合法策略结果。把 shell 写入放在显示事务中会把策略响应误当执行成功，并在部分状态强制覆盖用户选择。一个字节的设备写入是 toggle 而非赋值，也必须防止重复写。
+- 约束：显示旋转失败只回滚方向和锁；平板通知失败阻止该姿态确认并恢复预锁，但不得伪造 shell 成功。slate 日志恢复或回读失败时拒绝启动原生会话，保留日志供下次重试；启动时已折叠的设备不会先闪回普通状态。固定姿态写前和回执前重新检查物理资格与原生旋转；旧日志中的 shell 字段只作兼容读取并丢弃所有权。设备非独占配置由独立可逆脚本设置，记录安装前值，要求重启；普通运行不修改机器策略或用户 shell 偏好。键盘和触控板始终可用。本记录取代 2026-11-09「Windows 桌面模式、平板模式与方向锁事务」中由显示事务强制写入 shell 的部分。
+- 同步：`AGENTS.md` 运行边界、Windows 显示、用户态会话装配、平板通知设备适配、只读 shell 观察、Fluent 文案、翻译、显示/双向崩溃恢复/通知失败与顺序测试、真机显示烟测、Windows 打包脚本、README、MAINTENANCE 与本记录。

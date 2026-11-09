@@ -285,9 +285,9 @@ window.show()
 QTest.qWait(50)
 assert window.settings.radios['tent'].isEnabled()
 assert not window.settings.radios['tablet'].isEnabled()
-assert window.settings.mode_cards['laptop'].contentLabel.text() == 'Returns to Windows desktop mode'
-assert window.settings.mode_cards['tent'].contentLabel.text() == 'Turns the screen upside down and enables Windows tablet mode'
-assert window.settings.mode_cards['stand'].contentLabel.text() == 'Keeps the screen upright and enables Windows tablet mode'
+assert window.settings.mode_cards['laptop'].contentLabel.text() == 'Reports laptop use and keeps Windows in control of the shell'
+assert window.settings.mode_cards['tent'].contentLabel.text() == 'Turns the screen upside down and reports slate use to Windows'
+assert window.settings.mode_cards['stand'].contentLabel.text() == 'Keeps the screen upright and reports slate use to Windows'
 assert any('Keyboard and touchpad stay enabled' in label.text() for label in window.findChildren(QLabel))
 ''')
 

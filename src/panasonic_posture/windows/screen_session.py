@@ -28,7 +28,7 @@ from ..session.failures import FailureKind, ServiceError
 from ..session.runtime import SessionRuntime
 from ..session.ports import DisplayBackend
 from .display_only_input import DisplayOnlyInput
-from .session_display import QualifiedDisplay, SessionContext
+from .session_display import QualifiedDisplay, SessionContext, SlatePosture
 
 SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
 
@@ -127,13 +127,17 @@ class SessionBridge:
 class ScreenSession:
     def __init__(self, *, store: SettingsBackend, instance: str, sensor: ManagedSensor,
                  switch: SlateSwitch, display: DisplayBackend, context: SessionContext,
-                 device: DeviceInfo, clock: Callable[[], float] = time.monotonic) -> None:
+                 device: DeviceInfo, slate: SlatePosture | None = None,
+                 clock: Callable[[], float] = time.monotonic) -> None:
         self._stack = ExitStack()
         self.closed = False
         self.context = context
         self._stack.callback(context.close)
         self._stack.callback(sensor.close)
-        self._stack.callback(display.restore)
+        if slate is not None:
+            self._stack.callback(slate.close)
+        qualified = QualifiedDisplay(display, context, slate)
+        self._stack.callback(qualified.restore)
         self.owner = SessionOwner('windows-screen-session', instance)
         try:
             self.engine = Engine(controller=Controller(input_control=False), sensor=sensor,
@@ -142,7 +146,7 @@ class ScreenSession:
             self._stack.callback(self.engine.shutdown)
             self.bridge = SessionBridge(self.engine.state, context.control_available,
                                         getattr(context, 'unattended', lambda: False))
-            self.session = SessionRuntime(self.bridge, QualifiedDisplay(display, context), None,
+            self.session = SessionRuntime(self.bridge, qualified, None,
                 screen_locked=lambda: not context.control_available())
             self._stack.callback(self.session.close)
             self._stack.callback(self.bridge.close)
@@ -240,6 +244,8 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
     """Select only the machine/mount with collected Windows pose evidence."""
     import winreg
     from ..session.journal import Journal
+    from .convertible_slate import NativeSlateDevice, SlateNotifier
+    from .slate_journal import SlateJournal, lease_path
     from .display import WindowsDisplay
     from .sensor import WindowsSensor, IDENTITY
     from .session_context import WindowsSessionContext
@@ -254,12 +260,14 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
         context = WindowsSessionContext()
         resources.callback(context.close)
         switch = WindowsSwitch()
+        slate = SlateNotifier(
+            NativeSlateDevice(), SlateJournal(lease_path(journal_path))
+        )
         display = WindowsDisplay(journal=Journal(journal_path), hardware_query=switch.query)
-        resources.callback(display.restore)
         sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY))
         resources.callback(sensor.close)
         session = ScreenSession(store=store, instance=instance,
-            sensor=sensor, switch=switch, display=display, context=context,
+            sensor=sensor, switch=switch, display=display, context=context, slate=slate,
             device=DeviceInfo(id='windows-cfqv8-screen', vendor=vendor, product=product,
                               platform='windows', support_tier='compatible'))
         resources.pop_all()  # ScreenSession now owns all three resources.

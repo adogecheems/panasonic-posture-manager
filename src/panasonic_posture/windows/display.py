@@ -1,9 +1,10 @@
 """Native panel rotation through the shared ownership transaction.
 
-This adapter does not claim to control Windows' system rotation lock. Until
-that port is implemented it accepts fixed modes only while Windows reports
-auto-rotation disabled. Physical tablet handoff relinquishes ownership to
-Windows without changing its policy. Ordinary preview never uses this port.
+This adapter owns only the internal panel direction, automatic-rotation
+lock and their crash-recovery journal. Windows shell state is reported through
+the convertible-slate device as an independent operation. Physical tablet
+handoff relinquishes panel rotation to Windows without changing the user's
+shell policy. Ordinary preview never uses this port.
 """
 from dataclasses import dataclass
 import ctypes as C
@@ -234,48 +235,24 @@ class NativeDisplay:
         raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'display-readback-failed')
 
 
-_AUTO_SHELL_MODE = object()
-
-
 class WindowsDisplay(SoftwareDisplay):
     backend_name = 'windows'
     lock_is_global = True
 
-    def __init__(self, *, journal, api=None, hardware_query=None,
-                 shell_mode=_AUTO_SHELL_MODE):
-        native_api = api is None
+    def __init__(self, *, journal, api=None, hardware_query=None):
         if api is None and hardware_query is None:
             from .switch import WindowsSwitch
             hardware_query = WindowsSwitch().query
         self.api = api if api is not None else NativeDisplay()
         self.hardware_query = hardware_query
-        if shell_mode is _AUTO_SHELL_MODE:
-            if native_api:
-                from .tablet_mode import WindowsTabletMode
-                shell_mode = WindowsTabletMode()
-            elif (callable(getattr(api, 'read_shell_mode', None)) and
-                  callable(getattr(api, 'write_shell_mode', None))):
-                shell_mode = api
-            else:
-                # Injected display fixtures must not touch the host shell.
-                shell_mode = None
-        self.shell_mode = shell_mode
         super().__init__(journal=journal)
 
     def _read_state(self):
         current = self.api.read()
-        if self.shell_mode is None:
-            shell = None
-        elif self.shell_mode is self.api:
-            shell = self.api.read_shell_mode()
-        else:
-            shell = self.shell_mode.read()
         return DisplayState(
             (current.identity,), current.transform,
             lock=bool(current.auto_rotation & 1),
             lock_supported=callable(getattr(self.api, 'lock', None)),
-            shell_mode=shell,
-            shell_mode_supported=self.shell_mode is not None,
         )
 
     def _read_restore_state(self, identity):
@@ -295,23 +272,6 @@ class WindowsDisplay(SoftwareDisplay):
         if policy not in ('true', 'false'):
             raise DisplayError(ErrorCode.DISPLAY_LOCK, 'invalid-original-lock-policy')
         self.api.lock(policy == 'true')
-
-    def _desired_shell_mode(self, mode):
-        from .tablet_mode import DESKTOP, TABLET
-        if mode in ('tent', 'stand', 'tablet'):
-            return TABLET
-        if mode == 'laptop':
-            return DESKTOP
-        return None
-
-    def _write_shell_mode(self, state, mode):
-        del state
-        if self.shell_mode is None:
-            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'shell-mode-unavailable')
-        if self.shell_mode is self.api:
-            self.api.write_shell_mode(mode)
-        else:
-            self.shell_mode.write(mode)
 
     def _validate(self, state, mode, transform):
         del transform
@@ -346,19 +306,36 @@ class WindowsDisplay(SoftwareDisplay):
                     raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
                 if current.transform != (2 if mode == 'tent' else 0):
                     raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'fixed-rotation-changed-before-receipt')
-                expected_shell = self._desired_shell_mode(mode)
-                if (current.shell_mode_supported and
-                        current.shell_mode != expected_shell):
-                    raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'shell-mode-changed-before-receipt')
             except (DisplayError, OSError, ValueError):
                 self._rollback()
                 raise
 
     def restore(self, normal: bool = False, *, release_lock: bool = False,
                 keep_journal: bool = False) -> None:
+        if self.owned and any(
+                field in self.owned
+                for field in ('original_shell_mode', 'written_shell_mode',
+                              'pending_shell_mode')):
+            # Older journals coupled shell ownership to the display. Current
+            # recovery owns rotation only and must leave the shell where the
+            # user or Windows put it.
+            for field in ('original_shell_mode', 'written_shell_mode',
+                          'pending_shell_mode'):
+                self.owned.pop(field, None)
+            self._persist()
         if self.owned and self._hardware():
             self._restore_for_hardware()
             return
+        if self.owned and not release_lock and any(
+                self.owned.get(field) is not None
+                for field in ('written_transform', 'pending_transform')):
+            state = self._read_state()
+            if (tuple(self.owned.get('spec') or ()) == state.identity
+                    and state.lock_supported and not self._is_locked(state)):
+                # Reacquire only while the journal shows that this transaction
+                # owned the direction. This lets a failed fixed-mode write put
+                # its own rotation back, then restores the user's lock policy.
+                self._write_owned_lock(state, True)
         super().restore(
             normal=normal,
             release_lock=release_lock,
@@ -379,9 +356,8 @@ class WindowsDisplay(SoftwareDisplay):
         if not state.lock_supported or self._is_locked(state):
             return
         # The software transaction always keeps Windows' rotator locked while
-        # it owns a fixed direction.  Seeing it unlocked (or a different lock
-        # value during the write) means the platform has taken over.  Persist
-        # that handoff before restoring the shell and the user's lock policy.
+        # it owns a fixed direction. Seeing it unlocked means the platform has
+        # taken over; persist that handoff before restoring the lock policy.
         owned['written_transform'] = None
         owned.pop('pending_transform', None)
         self._persist()
@@ -389,16 +365,12 @@ class WindowsDisplay(SoftwareDisplay):
     def _restore_for_hardware(self) -> None:
         """Discard software orientation while preserving physical priority."""
 
-        from .tablet_mode import TABLET
-
         state = self._read_state()
         if tuple(self.owned['spec']) != state.identity:
             raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
         if state.lock_supported and not self._is_locked(state):
             self._write_owned_lock(state, True)
             state = self._read_state()
-        self._write_owned_shell_mode(state, TABLET)
-        state = self._read_state()
         self.owned['written_transform'] = None
         self.owned.pop('pending_transform', None)
         self._persist()

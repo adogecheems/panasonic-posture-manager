@@ -1,5 +1,6 @@
 """Nonprivileged display qualification shared by both Windows compositions."""
 from collections.abc import Callable
+import logging
 from typing import Protocol
 
 from ..contracts import ErrorCode
@@ -8,39 +9,112 @@ from ..session.failures import DisplayError
 from ..session.ports import DisplayBackend, DisplayRefresh
 
 
+log = logging.getLogger(__name__)
+
+
 class SessionContext(Protocol):
     def control_available(self) -> bool: ...
     def poll(self) -> None: ...
     def close(self) -> None: ...
 
 
+class SlatePosture(Protocol):
+    """Bounded notification of a convertible posture; the OS owns response."""
+
+    def sync_mode(self, mode: str) -> bool: ...
+    def release(self) -> None: ...
+    def close(self) -> None: ...
+
+
 class QualifiedDisplay:
-    def __init__(self, display: DisplayBackend, context: SessionContext) -> None:
-        self.display, self.context = display, context
+    def __init__(
+        self,
+        display: DisplayBackend,
+        context: SessionContext,
+        slate: SlatePosture | None = None,
+    ) -> None:
+        self.display, self.context, self.slate = display, context, slate
 
     def _require_available(self) -> None:
         if not self.context.control_available():
-            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'native session control is unavailable')
+            raise DisplayError(
+                ErrorCode.DISPLAY_UNAVAILABLE,
+                'native session control is unavailable',
+            )
+
+    def _release_slate(self) -> None:
+        if self.slate is None:
+            return
+        try:
+            self.slate.release()
+        except (OSError, ValueError):
+            # A display rollback remains the authoritative failure. Session
+            # shutdown will make another bounded release attempt.
+            pass
+
+    def _sync_slate(self, target: Target) -> None:
+        if self.slate is None or target.mode == 'unavailable':
+            return
+        try:
+            self.slate.sync_mode(target.mode)
+        except (OSError, ValueError) as error:
+            raise DisplayError(
+                ErrorCode.DISPLAY_UNAVAILABLE,
+                'convertible-slate-notification-failed',
+            ) from error
+
+    def _restore_after_failed_transaction(self) -> None:
+        try:
+            self.display.restore()
+        except (OSError, RuntimeError, ValueError) as error:
+            # Keep the original transaction failure visible. The durable
+            # display journal is retained whenever this cleanup cannot finish.
+            log.warning('Windows display rollback after a failed apply: %s', error)
 
     def apply(self, target: Target) -> None:
         if target.mode == 'unavailable':
             self.display.apply(target)  # Existing ownership may still restore.
+            self._release_slate()
             return
         self._require_available()
-        self.display.apply(target)
-        if not self.context.control_available():
-            self.display.restore()
-            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'session changed during display apply')
+        try:
+            # Lock the current direction before notifying Windows. The shell
+            # response can run asynchronously and must never expose an
+            # intermediate auto-rotated frame.
+            if self.slate is not None:
+                self.display.hold_orientation()
+                self._require_available()
+                self._sync_slate(target)
+                self._require_available()
+            self.display.apply(target)
+            if not self.context.control_available():
+                raise DisplayError(
+                    ErrorCode.DISPLAY_UNAVAILABLE,
+                    'session changed during display apply',
+                )
+        except BaseException:
+            self._restore_after_failed_transaction()
+            self._release_slate()
+            raise
 
     def hold_orientation(self) -> None:
         self._require_available()
-        self.display.hold_orientation()
-        if not self.context.control_available():
-            self.display.restore()
-            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'session changed during display hold')
-
+        try:
+            self.display.hold_orientation()
+            if not self.context.control_available():
+                raise DisplayError(
+                    ErrorCode.DISPLAY_UNAVAILABLE,
+                    'session changed during display hold',
+                )
+        except BaseException:
+            self._restore_after_failed_transaction()
+            self._release_slate()
+            raise
     def restore(self, normal: bool = False) -> None:
-        self.display.restore(normal=normal)
+        try:
+            self.display.restore(normal=normal)
+        finally:
+            self._release_slate()
 
 
 class QualifiedRefresh:

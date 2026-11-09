@@ -1,16 +1,14 @@
-"""Minimal Windows 10 tablet-mode controller with transactional callers.
+"""Read-only observation of the current Windows shell interaction mode.
 
-The public UWP API exposes the current user interaction mode but does not
-provide a setter.  Windows 10's ImmersiveShell exposes the same controller
-used by the shell and OOBE to switch between desktop and tablet mode.  This
-module keeps the undocumented COM boundary isolated and strictly validates
-both the mode and the post-write read-back.
+Posture changes are reported through the laptop/slate GPIO indicator.  Windows
+owns the user's "ask / do not switch / switch automatically" choice, so this
+module never calls the ImmersiveShell mode setter.
 """
 from contextlib import contextmanager
 import ctypes as C
 from ctypes import wintypes
+import logging
 import sys
-import time
 import uuid
 
 DESKTOP = 0
@@ -20,11 +18,31 @@ VALID_MODES = frozenset((DESKTOP, TABLET))
 _COINIT_APARTMENTTHREADED = 0x2
 _RPC_E_CHANGED_MODE = -2147417850
 _CLSCTX_LOCAL_SERVER = 0x4
-_TRIGGER_API = 0x4
+_IMMERSIVE_SHELL_KEY = r'Software\Microsoft\Windows\CurrentVersion\ImmersiveShell'
+_TABLET_MODE_PREFERENCE = 'ConvertibleSlateModePromptPreference'
 
 
 class TabletModeError(OSError):
     pass
+
+
+log = logging.getLogger(__name__)
+
+
+def read_prompt_preference() -> int | None:
+    """Read the user's Windows-owned response choice without changing it."""
+
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _IMMERSIVE_SHELL_KEY, 0,
+                            winreg.KEY_QUERY_VALUE) as key:
+            value, kind = winreg.QueryValueEx(key, _TABLET_MODE_PREFERENCE)
+    except FileNotFoundError:
+        return None
+    if kind != winreg.REG_DWORD or type(value) is not int or value not in (0, 1, 2):
+        log.warning('Windows tablet-mode preference has an unknown value')
+        return None
+    return value
 
 
 class _Guid(C.Structure):
@@ -48,7 +66,7 @@ def _succeeded(result: int) -> bool:
 @contextmanager
 def _apartment():
     if sys.platform != 'win32':
-        raise TabletModeError('Windows tablet mode requires Windows')
+        raise TabletModeError('Windows shell mode requires Windows')
     ole32 = C.WinDLL('ole32', use_last_error=True)
     ole32.CoInitializeEx.argtypes = [C.c_void_p, wintypes.DWORD]
     ole32.CoInitializeEx.restype = C.c_long
@@ -91,7 +109,7 @@ def _controller():
                 C.byref(_IID_TABLET_MODE_CONTROLLER), C.byref(controller),
             )
             if not _succeeded(result):
-                raise TabletModeError(f'tablet mode controller unavailable: 0x{result & 0xffffffff:08x}')
+                raise TabletModeError(f'tablet mode observer unavailable: 0x{result & 0xffffffff:08x}')
             try:
                 yield C.cast(controller, C.POINTER(C.POINTER(C.c_void_p)))[0], controller
             finally:
@@ -104,8 +122,8 @@ def _controller():
             release(service)
 
 
-class WindowsTabletMode:
-    """Read and verify the current shell interaction mode."""
+class WindowsShellMode:
+    """Observe the shell result; never force a desktop/tablet switch."""
 
     def read(self) -> int:
         with _controller() as (vtable, controller):
@@ -114,27 +132,15 @@ class WindowsTabletMode:
             result = get_mode(controller, C.byref(mode))
             if not _succeeded(result) or mode.value not in VALID_MODES:
                 raise TabletModeError(
-                    f'tablet mode query failed: hr=0x{result & 0xffffffff:08x} mode={mode.value}'
+                    f'shell mode query failed: hr=0x{result & 0xffffffff:08x} mode={mode.value}'
                 )
             return mode.value
 
-    def write(self, mode: int) -> None:
-        if type(mode) is not int or mode not in VALID_MODES:
-            raise ValueError('tablet mode must be desktop (0) or tablet (1)')
-        with _controller() as (vtable, controller):
-            set_mode = C.WINFUNCTYPE(C.c_long, C.c_void_p, C.c_int, C.c_int)(vtable[4])
-            result = set_mode(controller, mode, _TRIGGER_API)
-            if not _succeeded(result):
-                raise TabletModeError(f'tablet mode write failed: 0x{result & 0xffffffff:08x}')
-        current = None
-        for _ in range(10):
-            current = self.read()
-            if current == mode:
-                return
-            time.sleep(.05)
-        raise TabletModeError(
-            f'tablet mode read-back mismatch: {current} != {mode}'
-        )
 
+# Preserve the existing import name while making its read-only contract clear.
+WindowsTabletMode = WindowsShellMode
 
-__all__ = ['DESKTOP', 'TABLET', 'TabletModeError', 'WindowsTabletMode']
+__all__ = [
+    'DESKTOP', 'TABLET', 'TabletModeError', 'WindowsShellMode',
+    'WindowsTabletMode', 'read_prompt_preference',
+]

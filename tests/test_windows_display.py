@@ -21,10 +21,9 @@ class Api:
         self.current = panel()
         self.writes = []
         self.lock_writes = []
-        self.shell = 0
-        self.shell_writes = []
         self.events = []
         self.fail = False
+        self.shell = 1
 
     def read(self):
         return self.current
@@ -33,14 +32,6 @@ class Api:
         self.lock_writes.append(locked)
         self.events.append(('lock', locked))
         self.current = replace(self.current, auto_rotation=1 if locked else 0)
-
-    def read_shell_mode(self):
-        return self.shell
-
-    def write_shell_mode(self, mode):
-        self.shell_writes.append(mode)
-        self.events.append(('shell', mode))
-        self.shell = mode
 
     def rotate(self, identity, previous, transform):
         self.writes.append(transform)
@@ -66,7 +57,7 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertEqual(DevMode.orientation.offset, 84)
 
     def test_selects_only_unique_internal_unmirrored_panel(self):
-        external = panel(identity='external', source=r'\\.\DISPLAY2', source_key=(1, 0, 1), technology=5)
+        external = panel(identity='external', source=r'\.\DISPLAY2', source_key=(1, 0, 1), technology=5)
         self.assertEqual(select_panel([external, panel()]), panel())
         for paths in ([], [external], [panel(), panel(identity='other')],
                       [panel(), replace(external, source_key=panel().source_key)],
@@ -74,95 +65,117 @@ class WindowsDisplayTests(unittest.TestCase):
             with self.subTest(paths=paths), self.assertRaises(DisplayError):
                 select_panel(paths)
 
-    def test_fixed_modes_lock_before_shell_and_rotation_then_restore_baseline(self):
+    def test_legacy_shell_journal_is_migrated_without_touching_shell(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(transform=2, auto_rotation=1)
+        api.shell = 0
+        journal.document = {
+            'version': 1,
+            'backend': 'windows',
+            'spec': ['panel-1'],
+            'original_transform': 0,
+            'original_lock': False,
+            'written_lock': True,
+            'written_transform': 2,
+            'original_shell_mode': 1,
+            'written_shell_mode': 0,
+        }
+        display = self.make(api, journal)
+        self.assertEqual(api.current.transform, 0)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertEqual(api.shell, 0)
+        self.assertIsNone(journal.document)
+        self.assertIsNone(display.owned)
+
+    def test_fixed_modes_lock_rotate_and_restore_without_touching_shell(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)
         display = self.make(api, journal)
 
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
-        self.assertEqual(api.events, [('lock', True), ('shell', 1), ('rotate', 2)])
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
+        self.assertEqual(api.events, [('lock', True), ('rotate', 2)])
         self.assertEqual(api.current.transform, 2)
         self.assertEqual(journal.document['original_lock'], False)
-        self.assertEqual(journal.document['original_shell_mode'], 0)
+        self.assertNotIn('original_shell_mode', journal.document)
         self.assertEqual(journal.document['written_lock'], True)
-        self.assertEqual(journal.document['written_shell_mode'], 1)
         self.assertEqual(journal.document['written_transform'], 2)
 
-        display.apply(dict(mode='stand', tablet=True, rotation=0, disable_internal_input=False))
+        display.apply(dict(mode='stand', tablet=True, rotation=0,
+                           disable_internal_input=False))
         self.assertEqual(api.current.transform, 0)
-        self.assertEqual(api.shell, 1)
-
-        display.apply(dict(mode='laptop', tablet=False, rotation=0, disable_internal_input=False))
-        self.assertEqual(api.shell, 0)
+        display.apply(dict(mode='laptop', tablet=False, rotation=0,
+                           disable_internal_input=False))
         display.restore()
         self.assertEqual(api.current.transform, 0)
-        self.assertEqual(api.shell, 0)
+        self.assertEqual(api.shell, 1)
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
 
-    def test_restore_returns_to_a_user_existing_tablet_mode_and_lock(self):
+    def test_restore_returns_to_the_users_existing_rotation_lock(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=1)
-        api.shell = 1
         display = self.make(api, journal)
-        display.apply(dict(mode='laptop', tablet=False, rotation=0, disable_internal_input=False))
-        self.assertEqual(api.shell, 0)
-        self.assertEqual(journal.document['original_shell_mode'], 1)
+        display.apply(dict(mode='laptop', tablet=False, rotation=0,
+                           disable_internal_input=False))
         display.restore()
-        self.assertEqual(api.shell, 1)
         self.assertEqual(api.current.auto_rotation, 1)
         self.assertIsNone(journal.document)
 
-    def test_crash_recovery_restores_rotation_shell_and_rotation_lock(self):
+    def test_crash_recovery_restores_rotation_and_lock_only(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)
         display = self.make(api, journal)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
         restarted = self.make(api, journal)
         self.assertEqual(api.current.transform, 0)
-        self.assertEqual(api.shell, 0)
+        self.assertEqual(api.shell, 1)
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
         self.assertIsNone(restarted.owned)
 
-    def test_failed_rotation_rolls_back_shell_rotation_and_lock(self):
+    def test_failed_rotation_rolls_back_rotation_and_lock(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)
         display = self.make(api, journal)
         api.fail = True
         with self.assertRaises(DisplayError):
-            display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+            display.apply(dict(mode='tent', tablet=True, rotation=180,
+                               disable_internal_input=False))
         self.assertEqual(api.current.transform, 0)
-        self.assertEqual(api.shell, 0)
+        self.assertEqual(api.shell, 1)
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
 
     def test_restore_preserves_external_rotation_and_rejects_replacement_panels(self):
         api, journal = Api(), MemoryJournal()
         display = self.make(api, journal)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
         api.current = replace(api.current, transform=1)
         display.restore()
         self.assertEqual(api.current.transform, 1)
         self.assertEqual(api.writes, [2])
-        self.assertEqual(api.shell, 0)
 
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
         api.current = replace(api.current, identity='replacement')
         with self.assertRaises(DisplayError):
             display.restore()
         self.assertIsNotNone(journal.document)
         self.assertEqual(api.writes, [2, 2])
 
-    def test_hardware_handoff_locks_switches_tablet_then_releases_rotation(self):
+    def test_hardware_handoff_locks_then_releases_rotation(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)
         display = self.make(api, journal)
-        display.apply(dict(mode='hardware', tablet=True, rotation=None, disable_internal_input=False))
-        self.assertEqual(api.events, [('lock', True), ('shell', 1), ('lock', False)])
+        display.apply(dict(mode='hardware', tablet=True, rotation=None,
+                           disable_internal_input=False))
+        self.assertEqual(api.events, [('lock', True), ('lock', False)])
         self.assertEqual(api.current.transform, 0)
         self.assertIsNone(journal.document['written_transform'])
-        self.assertEqual(journal.document['written_shell_mode'], 1)
+        self.assertNotIn('written_shell_mode', journal.document)
 
         api.current = replace(api.current, transform=2)
         display.hold_orientation()
@@ -170,12 +183,11 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(journal.document['original_transform'], 2)
 
-        display.apply(dict(mode='stand', tablet=True, rotation=0, disable_internal_input=False))
+        display.apply(dict(mode='stand', tablet=True, rotation=0,
+                           disable_internal_input=False))
         self.assertEqual(api.current.transform, 0)
-        self.assertEqual(api.shell, 1)
         display.restore()
         self.assertEqual(api.current.transform, 2)
-        self.assertEqual(api.shell, 0)
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
 
@@ -184,10 +196,10 @@ class WindowsDisplayTests(unittest.TestCase):
         physical = [False]
         query = lambda: (physical[0], HardwareStatus.OK)
         display = self.make(api, journal, query)
-        display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
         physical[0] = True
         api.current = replace(api.current, transform=2, auto_rotation=0)
-        api.shell = 0
         restarted = self.make(api, journal, query)
         self.assertEqual(api.current.transform, 2)
         self.assertEqual(api.shell, 1)
@@ -196,11 +208,13 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertIsNone(restarted.owned)
 
     def test_physical_unknown_or_takeover_before_write_cannot_start_a_fixed_mode(self):
-        for hardware, status in ((True, HardwareStatus.OK), (None, HardwareStatus.AMBIGUOUS)):
+        for hardware, status in ((True, HardwareStatus.OK),
+                                 (None, HardwareStatus.AMBIGUOUS)):
             api, journal = Api(), MemoryJournal()
             display = self.make(api, journal, lambda: (hardware, status))
             with self.assertRaises(DisplayError):
-                display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+                display.apply(dict(mode='tent', tablet=True, rotation=180,
+                                   disable_internal_input=False))
             self.assertEqual(api.writes, [])
             self.assertFalse(api.lock_writes)
             self.assertIsNone(journal.document)
@@ -213,12 +227,12 @@ class WindowsDisplayTests(unittest.TestCase):
         api, journal = Race(), MemoryJournal()
         display = self.make(api, journal)
         with self.assertRaises(DisplayError):
-            display.apply(dict(mode='tent', tablet=True, rotation=180, disable_internal_input=False))
+            display.apply(dict(mode='tent', tablet=True, rotation=180,
+                               disable_internal_input=False))
         self.assertEqual(api.writes, [2, 0])
         self.assertEqual(api.current.transform, 0)
-        self.assertEqual(api.shell, 0)
+        self.assertEqual(api.shell, 1)
         self.assertIsNone(journal.document)
-
 
 
 class NativeRotationTests(unittest.TestCase):

@@ -347,10 +347,10 @@ class Settings(Page):
         descriptions = dict(self.mode_descriptions)
         if self.model.state.get('input_control_available') is False:
             descriptions.update(
-                laptop=_('Returns to Windows desktop mode'),
-                tent=_('Turns the screen upside down and enables Windows tablet mode'),
-                stand=_('Keeps the screen upright and enables Windows tablet mode'),
-                tablet=_('Rotates with the screen and enables Windows tablet mode'),
+                laptop=_('Reports laptop use and keeps Windows in control of the shell'),
+                tent=_('Turns the screen upside down and reports slate use to Windows'),
+                stand=_('Keeps the screen upright and reports slate use to Windows'),
+                tablet=_('Rotates with the screen and reports slate use to Windows'),
             )
         for key, card in self.mode_cards.items():
             card.setContent(descriptions[key])
