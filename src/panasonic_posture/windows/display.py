@@ -188,7 +188,8 @@ class NativeDisplay:
         if self._set_auto_rotation is None:
             raise DisplayError(ErrorCode.DISPLAY_LOCK, 'rotation-lock-export-unavailable')
         if not self._set_auto_rotation(not locked):
-            error = C.get_last_error()
+            get_error = getattr(C, 'get_last_error', None)
+            error = get_error() if get_error is not None else None
             raise DisplayError(ErrorCode.DISPLAY_LOCK, f'rotation-lock-write-{error}')
         for _ in range(20):
             current = self.read()

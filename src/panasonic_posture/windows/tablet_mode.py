@@ -20,6 +20,7 @@ _RPC_E_CHANGED_MODE = -2147417850
 _CLSCTX_LOCAL_SERVER = 0x4
 _IMMERSIVE_SHELL_KEY = r'Software\Microsoft\Windows\CurrentVersion\ImmersiveShell'
 _TABLET_MODE_PREFERENCE = 'ConvertibleSlateModePromptPreference'
+_FUNCTYPE = getattr(C, 'WINFUNCTYPE', C.CFUNCTYPE)
 
 
 class TabletModeError(OSError):
@@ -46,8 +47,8 @@ def read_prompt_preference() -> int | None:
 
 
 class _Guid(C.Structure):
-    _fields_ = [('data1', wintypes.DWORD), ('data2', wintypes.WORD),
-                ('data3', wintypes.WORD), ('data4', C.c_ubyte * 8)]
+    _fields_ = [('data1', C.c_uint32), ('data2', C.c_uint16),
+                ('data3', C.c_uint16), ('data4', C.c_ubyte * 8)]
 
     @classmethod
     def parse(cls, value: str):
@@ -99,7 +100,7 @@ def _controller():
             raise TabletModeError(f'ImmersiveShell unavailable: 0x{result & 0xffffffff:08x}')
         try:
             service_vtable = C.cast(service, C.POINTER(C.POINTER(C.c_void_p)))[0]
-            query_service = C.WINFUNCTYPE(
+            query_service = _FUNCTYPE(
                 C.c_long, C.c_void_p, C.POINTER(_Guid), C.POINTER(_Guid),
                 C.POINTER(C.c_void_p),
             )(service_vtable[3])
@@ -113,12 +114,12 @@ def _controller():
             try:
                 yield C.cast(controller, C.POINTER(C.POINTER(C.c_void_p)))[0], controller
             finally:
-                release = C.WINFUNCTYPE(wintypes.ULONG, C.c_void_p)(
+                release = _FUNCTYPE(wintypes.ULONG, C.c_void_p)(
                     C.cast(controller, C.POINTER(C.POINTER(C.c_void_p)))[0][2]
                 )
                 release(controller)
         finally:
-            release = C.WINFUNCTYPE(wintypes.ULONG, C.c_void_p)(service_vtable[2])
+            release = _FUNCTYPE(wintypes.ULONG, C.c_void_p)(service_vtable[2])
             release(service)
 
 
@@ -127,7 +128,7 @@ class WindowsShellMode:
 
     def read(self) -> int:
         with _controller() as (vtable, controller):
-            get_mode = C.WINFUNCTYPE(C.c_long, C.c_void_p, C.POINTER(C.c_int))(vtable[3])
+            get_mode = _FUNCTYPE(C.c_long, C.c_void_p, C.POINTER(C.c_int))(vtable[3])
             mode = C.c_int(-1)
             result = get_mode(controller, C.byref(mode))
             if not _succeeded(result) or mode.value not in VALID_MODES:

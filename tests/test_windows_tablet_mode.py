@@ -7,11 +7,13 @@ from unittest import mock
 
 from panasonic_posture.windows import tablet_mode
 
+_FUNCTYPE = getattr(C, 'WINFUNCTYPE', C.CFUNCTYPE)
+
 
 def _calls(current, *, query_result=0):
     reads = []
 
-    @C.WINFUNCTYPE(C.c_long, C.c_void_p, C.POINTER(C.c_int))
+    @_FUNCTYPE(C.c_long, C.c_void_p, C.POINTER(C.c_int))
     def query(this, destination):
         del this
         reads.append(1)

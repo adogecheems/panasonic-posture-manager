@@ -238,6 +238,7 @@ class PlasmaTransactionTests(unittest.TestCase):
         command = FakePlasmaCommand(transform=2, policy="in-tablet-mode")
         display = self.display(command)
         display.apply(Target(mode="hardware"))
+        command.calls.clear()
         set_policy = command.set_policy
 
         def finish_native_rotation(output, policy):

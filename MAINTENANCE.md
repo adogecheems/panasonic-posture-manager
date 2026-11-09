@@ -212,7 +212,7 @@ python tests\windows_actuator_smoke.py --control-library build\windows-driver\po
 
 `windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。当前仅识别已核对的 INT33D3 路径；CFQV8 笔记本姿态的交互用户与 SYSTEM 读取一致，SYSTEM 会话中的折叠变化和其他开关仍未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
 
-`windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。`windows/tablet_mode.py` 通过 ImmersiveShell COM 边界读取和切换 Windows 桌面／平板模式，写入后有限重试回读。方向、方向锁和 shell 模式保存于同一恢复日志；旧版日志缺少 shell 字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
+`windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。`windows/tablet_mode.py` 通过 ImmersiveShell COM 边界只读观察 Windows 桌面／平板模式；产品路径不调用强制 setter，旧版日志中的 shell 字段只作兼容读取并在恢复时丢弃。方向与方向锁保存在同一恢复日志，旧版日志缺少新增字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
 
 已授权的真机可显式运行以下检查，屏幕会短暂倒转。检查保留恢复日志，另启恢复进程，并验证写入进程被强制结束后的恢复；每次使用新的证据目录：
 
