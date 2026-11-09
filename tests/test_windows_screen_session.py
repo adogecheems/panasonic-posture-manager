@@ -167,6 +167,36 @@ class NativeScreenTests(unittest.TestCase):
 
 
 class BridgeTests(unittest.TestCase):
+    def test_close_rejects_receipt_accepted_before_snapshot_publication(self):
+        bridge = SessionBridge(StateSnapshot(), lambda: True)
+        engine = SimpleNamespace(session_update=lambda *args, **kwargs: True)
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            request = worker.submit(bridge.session_update, 0, False)
+            deadline = time.monotonic() + 2
+            while bridge._requests.empty() and time.monotonic() < deadline: time.sleep(.001)
+            bridge.drain(engine, 'owner-fixture')
+            bridge.close()
+            with self.assertRaises(ServiceError): request.result(timeout=2)
+        bridge.publish(StateSnapshot(session_connected=True))
+        self.assertEqual(bridge._accepted, [])
+
+    def test_successful_receipt_is_not_returned_before_the_updated_snapshot_is_published(self):
+        bridge = SessionBridge(StateSnapshot(session_connected=False), lambda: True)
+        engine = SimpleNamespace(session_update=lambda *args, **kwargs: True)
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            def receipt_then_read():
+                bridge.session_update(0, False)
+                return bridge.get_state().session_connected
+            request = worker.submit(receipt_then_read)
+            deadline = time.monotonic() + 2
+            while bridge._requests.empty() and time.monotonic() < deadline: time.sleep(.001)
+            internal = bridge._requests.queue[0][0]
+            bridge.drain(engine, 'owner-fixture')
+            self.assertFalse(internal.done(), 'success must follow the accepted-state publication')
+            bridge.publish(StateSnapshot(session_connected=True))
+            self.assertTrue(request.result(timeout=2))
+        bridge.close()
+
     def test_native_startup_role_rejects_other_sessions_without_requiring_unlock(self):
         from unittest.mock import patch
         from panasonic_posture.windows.screen_session import require_native_user
@@ -236,6 +266,7 @@ from panasonic_posture.windows.backend import Backend
             while bridge._requests.empty() and time.monotonic() < deadline: time.sleep(.001)
             self.assertEqual(calls, [])
             bridge.drain(engine, 'owner-fixture')
+            bridge.publish(StateSnapshot())
             request.result(timeout=2)
             expired = worker.submit(bridge.session_update, 4, True)
             with self.assertRaises(ServiceError): expired.result(timeout=2)

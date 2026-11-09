@@ -51,6 +51,7 @@ class SessionBridge:
         self._state, self.available = state, available
         self.unattended = unattended
         self._requests: queue.Queue[tuple[Future[None], tuple[int, bool, str | None, str | None]]] = queue.Queue(maxsize=4)
+        self._accepted: list[Future[None]] = []
         self._closed = False
 
     @staticmethod
@@ -60,6 +61,12 @@ class SessionBridge:
     def publish(self, state: StateSnapshot) -> None:
         with self._lock:
             self._state = state
+            accepted, self._accepted = self._accepted, []
+        # SessionRuntime probes by reading immediately after a receipt. The
+        # response must not race ahead of the owner tick's accepted snapshot.
+        for future in accepted:
+            if not future.done():
+                future.set_result(None)
 
     def get_state(self) -> StateSnapshot:
         with self._lock:
@@ -99,11 +106,15 @@ class SessionBridge:
             except Exception as error:
                 future.set_exception(error)
             else:
-                future.set_result(None)
+                self._accepted.append(future)
 
     def close(self) -> None:
         with self._lock:
             self._closed = True
+            accepted, self._accepted = self._accepted, []
+            for future in accepted:
+                if not future.done():
+                    future.set_exception(self.rejected())
             while True:
                 try:
                     future, _ = self._requests.get_nowait()
