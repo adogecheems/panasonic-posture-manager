@@ -22,6 +22,7 @@ class SlatePosture(Protocol):
     """Bounded notification of a convertible posture; the OS owns response."""
 
     def sync_mode(self, mode: str) -> bool: ...
+    def wait_for_display_handoff(self) -> None: ...
     def release(self) -> None: ...
     def close(self) -> None: ...
 
@@ -97,13 +98,16 @@ class QualifiedDisplay:
             return
         self._require_available()
         try:
-            # Lock the current direction before notifying Windows. The shell
-            # response can run asynchronously and must never expose an
-            # intermediate auto-rotated frame.
+            # Send the platform posture first and let Windows begin its native
+            # shell/orientation response without a competing rotation lock.
+            # The short handoff wait lets that response settle before the
+            # fixed target verifies or corrects the direction.
             if self.slate is not None:
-                self.display.hold_orientation()
-                self._require_available()
                 self._sync_slate(target)
+                self._require_available()
+                wait = getattr(self.slate, 'wait_for_display_handoff', None)
+                if wait is not None:
+                    wait()
                 self._require_available()
             self.display.apply(target)
             if not self.context.control_available():

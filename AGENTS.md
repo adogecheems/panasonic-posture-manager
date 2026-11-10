@@ -26,8 +26,8 @@
   可选的持续显示刷新与 apply、hold、restore 共用同一串行工作线程，刷新后仍须核对实例和代次；不另起绕过事务或租约的显示写入循环。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
   两个平台的手动模式都只有自动、笔记本、帐篷、支架；平板只表示物理折叠/硬件姿态，不得重新加入可选手动模式。
-  显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。前台启动先核对普通用户本地控制台和精确机型并给出可读拒绝原因，后台仍须重复完整资格检查。经核对的 `ACPI\INT33D3` PDO 只读表示实体笔记本/平板姿态；程序不得写入该 PDO 或把软件帐篷/支架伪装成物理平板。软件帐篷/支架的 shell 响应必须遵循 Windows 当前实体平板开关偏好：不切换、显示 Windows 自己的确认提示或自动切换三者择一；不得无条件强制平板模式。该响应不持久化用户偏好，不得替代物理开关，离开软件姿态、物理平板接管、失败或退出时恢复进入前模式。帐篷、支架和笔记本只由加速度计与显示事务控制方向。首次设备非独占配置由独立管理员脚本完成，需要重启且可逆。该入口不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置、每用户固定显示日志/控制器锁，不复用或放宽 LocalSystem 硬件管道。
-  原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。姿态通知的点击确认必须同时匹配已校验快照中的实例、提示代次、姿态类型和当前可确认条件；匹配时点击本身即明确切换，直接确认且不打开主窗口，过期、不匹配或不可确认时只能打开界面。Windows 可能同时交付通知点击与托盘激活，同一次点击不得重复确认或因配对信号再次打开窗口。软件帐篷/支架的屏幕键盘由临时 shell 交互模式驱动，不得新增主页或托盘的“显示屏幕键盘”入口，也不得写 PDO 或取得输入控制。私有后台在首个状态前失败时只能发送固定原因集的 `fatal` 回执；UI 不得展示自由文本或 traceback，设备配置原因应给出操作说明并停止该连接重连。私有后台在身份检查后向设置文件旁的同名滚动日志写入有界诊断，不得记录输入内容。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认不登记，仅在用户切换设置时操作当前用户的固定 Run 值，冲突内容须保留；不得隐式启用、改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
+  显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。前台启动先核对普通用户本地控制台和精确机型并给出可读拒绝原因，后台仍须重复完整资格检查。经核对的 `ACPI\INT33D3` PDO 始终只读，表示真实实体笔记本/平板姿态；软件帐篷/支架不得写入该 PDO，以免覆盖后续硬件姿态判断。软件姿态通过 Windows shell 模式状态表达当前平板交互，让系统启用自己的屏幕键盘和触摸行为；程序不读取或改写 Windows 切换偏好。帐篷、支架和笔记本先发布 shell 状态并短暂等待原生交接，再通过共用显示事务核对或修正方向；笔记本、离开姿态、失败、物理接管或退出时恢复程序改变前的 shell 状态。首次设备非独占配置由独立管理员脚本完成，需要重启且可逆。该入口不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置和每用户固定显示日志/控制器锁，不复用或放宽 LocalSystem 硬件管道。
+  原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。姿态通知的点击确认必须同时匹配已校验快照中的实例、提示代次、姿态类型和当前可确认条件；匹配时点击本身即明确切换，直接确认且不打开主窗口，过期、不匹配或不可确认时只能打开界面。Windows 可能同时交付通知点击与托盘激活，同一次点击不得重复确认或因配对信号打开窗口。软件帐篷/支架的屏幕键盘由 Windows 对 slate 状态的原生响应驱动，不得新增主页或托盘的“显示屏幕键盘”入口，也不得取得输入控制。私有后台在首个状态前失败时只能发送固定原因集的 `fatal` 回执；UI 不得展示自由文本或 traceback，设备配置原因应给出操作说明并停止该连接重连。私有后台在身份检查后向设置文件旁的同名滚动日志写入有界诊断，不得记录输入内容。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认不登记，仅在用户切换设置时操作当前用户的固定 Run 值，冲突内容须保留；不得隐式启用、改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
   `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
 - **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
@@ -55,7 +55,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
 | Windows 用户态真实显示与物理开关 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py` 和 `windows_physical_posture_smoke.py`，不能用隔离端口代替真机证据 |
-| Windows 常驻、自启动、姿态通知与临时 shell 交互 | `windows/{activation,startup,instance,touch_mode,screen_session}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_touch_mode`、`test_windows_tablet_mode`、`test_windows_screen_session`、`test_fluent`；实际注销登录、通知点击和屏幕键盘显示须单独记录，不能由 mock 或支持标志代替 |
+| Windows 常驻、自启动、姿态通知与 shell 状态发布 | `windows/{activation,startup,instance,touch_mode,screen_session,session_display}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_touch_mode`、`test_windows_screen_session`、`test_fluent`；实际注销登录、通知点击和屏幕键盘显示须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
 | Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
@@ -96,7 +96,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
    软件输入重新接管仍须匹配代次的显示回执。原生平板启动不得为此新建 relay。
    Windows 的平板状态通知与显示事务相互独立：通知失败阻止姿态确认，旋转失败回滚旋转与锁；
    物理姿态下 shell 保持桌面或自动切换都是 Windows 对同一通知的合法响应，不能伪造或反推设备状态。
-   软件帐篷/支架的 shell 响应只服务于屏幕键盘和触摸交互，必须按 Windows 当前实体平板切换偏好决定是否切换或询问，不能强制平板模式，也不能替代物理姿态通知。
+   软件帐篷/支架通过 Windows shell 平板状态表达当前交互，让系统启用自己的屏幕键盘和触摸行为；实体 PDO 保持只读，程序不读取切换偏好。
    物理平板释放后的有界姿态等待期采纳 Windows 刚完成的平台方向交接，不把第一次 hold
    的方向写回；等待期间保持旋转锁释放，避免阻断平台交接，结束后仍由稳定目标执行一次显示事务。
    没有活动内屏且存在活动外屏时，Windows 可只读保留外屏拓扑和方向，并通过共用刷新通道
@@ -1137,3 +1137,10 @@ make WERROR=1 check
 - 动机：真机反馈表明无条件 setter 会在用户选择“不切换”时强制进入平板模式；等待期第一次 hold 取得方向锁会阻断 Windows 的方向交接，造成平板退出至帐篷时再次跳变；通知在姿态短暂离开确认区时会丢失内部 token，点击只剩打开窗口。
 - 影响：Windows 对实体平板开关的用户偏好成为软件姿态 shell 响应的唯一依据；程序仍不写 PDO、不保存新的 shell 偏好，离开软件姿态时只撤销自己造成的改变。等待期不再阻止平台旋转，但仍保持不确认姿态、不续租之外的状态边界。通知点击仍以当前快照、实例、epoch 和姿态类型复核后才确认。
 - 同步：`windows/touch_mode.py`、`windows/tablet_mode.py`、`windows/display.py`、`fluent/resident.py`、Windows/Fluent 回归测试、README、MAINTENANCE 与运行边界。本记录取代“Windows 姿态交互与平台交接对齐 Linux”中无条件临时设置 shell 以及等待期提前 hold 锁的说明。
+
+### 2026-11-11 - 发布 shell 平板状态且保持实体开关只读
+
+- 变更：软件帐篷/支架通过 `WindowsShellPosture` 把当前交互状态发布到 Windows shell，使系统启用自己的屏幕键盘和触摸行为。生产原生会话不再连接 `SlateNotifier`，不写 `ACPI\INT33D3`，也不读取 `ConvertibleSlateModePromptPreference`。软件切换时先发布 shell 状态，短暂等待 Windows 开始原生方向交接，再执行显示事务；程序记录进入前的 shell 状态并在笔记本、离开姿态、失败、物理接管或退出时恢复。
+- 动机：写实体指示器能让 Windows 收到 CSM 事件，但会覆盖真实笔记本/平板状态，干扰后续姿态判断。读取系统偏好再直接设置 shell 又只是复制策略，没有把软件姿态告诉 Windows。保持 PDO 只读并单独发布 shell 平板状态可以同时避免硬件污染和等待期方向竞争。
+- 影响：实体硬件状态始终来自真实开关；物理平板期间不得覆盖 Windows 自己的 shell 结果。shell 状态发布只改变当前用户交互模式，不取得输入控制、不持久化偏好，也不等价于写入硬件 PDO。显示方向先经过短暂平台交接，稳定目标仍只在方向不一致时执行一次事务。
+- 同步：`windows/touch_mode.py`、`windows/session_display.py`、`windows/screen_session.py`、Windows/Fluent 回归测试、README、MAINTENANCE 与运行边界。本记录取代“通过 slate 状态通知 Windows 原生响应”中写实体指示器的方案，以及“尊重 Windows 平板切换偏好”中读取偏好或直接设置 shell 的说明。

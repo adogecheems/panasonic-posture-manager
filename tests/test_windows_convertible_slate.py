@@ -283,27 +283,48 @@ class SlateNotifierTests(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertEqual(len(sleeps), 10)
 
-    def test_orientation_is_held_before_notification_and_apply(self):
+    def test_slate_notification_precedes_display_apply_without_a_rotation_lock(self):
         events = []
         slate = mock.Mock()
         slate.sync_mode.side_effect = lambda mode: events.append(('notify', mode))
+        slate.wait_for_display_handoff.side_effect = lambda: events.append(('settle', None))
         display, context = FakeDisplay(), FakeContext()
-        original_hold = display.hold_orientation
         original_apply = display.apply
-
-        def hold():
-            events.append(('hold', None))
-            original_hold()
 
         def apply(target):
             events.append(('apply', target.mode))
             original_apply(target)
 
-        display.hold_orientation, display.apply = hold, apply
+        display.apply = apply
         QualifiedDisplay(display, context, slate).apply(Target(mode='tent'))
         self.assertEqual(events, [
-            ('hold', None), ('notify', 'tent'), ('apply', 'tent'),
+            ('notify', 'tent'), ('settle', None), ('apply', 'tent'),
         ])
+
+    def test_windows_handoff_can_reach_the_target_without_an_extra_write(self):
+        class Display(FakeDisplay):
+            def __init__(self):
+                super().__init__()
+                self.transform = 0
+                self.writes = []
+
+            def apply(self, target):
+                self.calls.append(('apply', target.mode))
+                want = 2 if target.mode == 'tent' else 0
+                if self.transform != want:
+                    self.writes.append(want)
+
+        display, context = Display(), FakeContext()
+        slate = mock.Mock()
+        def notify(mode):
+            # Windows handles the platform transition in response to the
+            # published slate state before the fixed display transaction.
+            display.transform = 2 if mode == 'tent' else 0
+            return True
+        slate.sync_mode.side_effect = notify
+        QualifiedDisplay(display, context, slate).apply(Target(mode='tent'))
+        self.assertEqual(display.transform, 2)
+        self.assertEqual(display.writes, [])
 
     def test_notification_failure_restores_hold_and_releases_slate(self):
         slate = mock.Mock()
@@ -315,7 +336,7 @@ class SlateNotifierTests(unittest.TestCase):
         self.assertEqual(
             caught.exception.detail, 'convertible-slate-notification-failed'
         )
-        self.assertEqual(display.calls, [('hold', None), ('restore', False)])
+        self.assertEqual(display.calls, [('restore', False)])
         slate.release.assert_called_once_with()
 
     def test_display_failure_releases_slate_without_faking_a_receipt(self):
@@ -326,7 +347,7 @@ class SlateNotifierTests(unittest.TestCase):
         with self.assertRaises(DisplayError):
             proxy.apply(Target(mode='tent'))
         self.assertEqual(display.calls, [
-            ('hold', None), ('apply', 'tent'), ('restore', False),
+            ('apply', 'tent'), ('restore', False),
         ])
         slate.sync_mode.assert_called_once_with('tent')
         slate.release.assert_called_once_with()
