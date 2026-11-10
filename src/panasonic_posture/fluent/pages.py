@@ -179,6 +179,9 @@ class Home(Page):
     def sync_buttons(self):
         prompt = self.model.state and self.model.state['pending_prompt']
         self.confirm_button.setText(self._('Enter stand mode') if prompt == 'stand' else self._('Enter tent mode'))
+        self.retry_button.setText(
+            self._('Retrying…') if self.actions.busy == 'retry' else self._('Retry')
+        )
         self.confirm_button.setEnabled(self.actions.busy is None)
         self.retry_button.setEnabled(self.actions.busy is None)
         self.auto_button.setEnabled(self.actions.busy is None)

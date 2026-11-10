@@ -162,6 +162,21 @@ assert errors[-1] == (
 )
 ''')
 
+    def test_retry_button_reports_an_in_progress_request(self):
+        self.run_ui('''
+from concurrent.futures import Future
+client = window.client
+client.state['error_code'] = 'display-unavailable'
+client.refresh()
+pending = Future()
+client.retry = lambda fallback_mode=None: pending
+window.home.retry_button.click()
+assert window.home.retry_button.text() == 'Retrying…'
+assert not window.home.retry_button.isEnabled()
+pending.set_result(None)
+assert window.home.retry_button.text() == 'Retry'
+''')
+
     def test_settings_failures_show_stable_error_reason(self):
         self.run_ui('''
 from panasonic_posture.contracts import ErrorCode
