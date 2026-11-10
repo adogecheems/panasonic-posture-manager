@@ -15,7 +15,6 @@ import os
 import threading
 import time
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Protocol
 
 from ..contracts import ErrorCode
@@ -32,7 +31,6 @@ from .display_only_input import DisplayOnlyInput
 from .orientation import OrientationReading
 from .session_display import (
     QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture,
-    slate_qualified_hardware,
 )
 
 SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
@@ -299,9 +297,7 @@ def select_native_display(api, journal, *, hardware_query):
 def native_screen_session(store: SettingsBackend, instance: str, journal_path: Path) -> ScreenSession:
     """Select only the machine/mount with collected Windows pose evidence."""
     from ..session.journal import Journal
-    from .convertible_slate import NativeSlateDevice, SlateNotifier
     from .display import NativeDisplay
-    from .slate_journal import SlateJournal, lease_path
     from .sensor import WindowsSensor, IDENTITY
     from .session_context import WindowsSessionContext
     from .switch import WindowsSwitch
@@ -311,23 +307,16 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
         context = WindowsSessionContext()
         resources.callback(context.close)
         switch = WindowsSwitch()
-        slate = SlateNotifier(
-            NativeSlateDevice(), SlateJournal(lease_path(journal_path))
-        )
         sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY, include_orientation=False))
         resources.callback(sensor.close)
         journal = Journal(journal_path)
         api = NativeDisplay()
-        hardware_query = slate_qualified_hardware(
-            switch.query, lambda: slate.software_owned,
-            lambda: slate.software_settling,
-        )
         display = select_native_display(
-            api, journal, hardware_query=hardware_query,
+            api, journal, hardware_query=switch.query,
         )
         session = ScreenSession(store=store, instance=instance,
-            sensor=sensor, switch=SimpleNamespace(query=hardware_query),
-            display=display, context=context, slate=slate,
+            sensor=sensor, switch=switch,
+            display=display, context=context,
             device=DeviceInfo(id='windows-cfqv8-screen', vendor=vendor, product=product,
                               platform='windows', support_tier='compatible'))
         resources.pop_all()  # ScreenSession now owns all three resources.

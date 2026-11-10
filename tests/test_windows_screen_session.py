@@ -458,7 +458,6 @@ from panasonic_posture.windows.backend import Backend
         )
         context = SimpleNamespace(control_available=lambda: True, close=lambda: None)
         switch = SimpleNamespace(query=lambda: (False, HardwareStatus.OK))
-        slate = SimpleNamespace(close=lambda: None)
         native_api = SimpleNamespace(panels=lambda: [
             Panel('panel-1', r'\\.\DISPLAY1', (1, 0, 0), 11, 0, 2880, 1920, 1),
         ])
@@ -483,11 +482,6 @@ from panasonic_posture.windows.backend import Backend
                 patch('winreg.QueryValueEx', side_effect=query), \
                 patch('panasonic_posture.windows.session_context.WindowsSessionContext', return_value=context), \
                 patch('panasonic_posture.windows.switch.WindowsSwitch', return_value=switch), \
-                patch('panasonic_posture.windows.convertible_slate.NativeSlateDevice', return_value=object()), \
-                patch('panasonic_posture.windows.convertible_slate.SlateNotifier', return_value=slate), \
-                patch('panasonic_posture.windows.slate_journal.SlateJournal', return_value=object()), \
-                patch('panasonic_posture.windows.slate_journal.lease_path',
-                      return_value=Path(directory) / 'slate.json'), \
                 patch('panasonic_posture.windows.display.NativeDisplay', return_value=native_api), \
                 patch('panasonic_posture.windows.sensor.WindowsSensor', Sensor), \
                 patch('panasonic_posture.windows.display.WindowsDisplay', Display), \
@@ -501,6 +495,8 @@ from panasonic_posture.windows.backend import Backend
         self.assertIs(captured['display']['api'], native_api)
         self.assertIsInstance(captured['session']['sensor'], ProfileSensor)
         self.assertIsInstance(captured['session']['display'], Display)
+        self.assertIs(captured['session']['switch'], switch)
+        self.assertNotIn('slate', captured['session'])
 
 
 class PrivateScreenProcessTests(unittest.TestCase):

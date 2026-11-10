@@ -26,7 +26,7 @@
   可选的持续显示刷新与 apply、hold、restore 共用同一串行工作线程，刷新后仍须核对实例和代次；不另起绕过事务或租约的显示写入循环。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
   两个平台的手动模式都只有自动、笔记本、帐篷、支架；平板只表示物理折叠/硬件姿态，不得重新加入可选手动模式。
-  显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。前台启动先核对普通用户本地控制台和精确机型并给出可读拒绝原因，后台仍须重复完整资格检查。帐篷、支架和物理平板通过经核对的 `ACPI\INT33D3` PDO 报告平板使用状态，笔记本报告普通状态；Windows 按用户自己的选择决定 shell，程序不得调用 ImmersiveShell 强制模式接口。设备 PDO 的单字节写入是 toggle，必须先读、目标不同时至多写一次并回读。首次设备非独占配置由独立管理员脚本完成，需要重启且可逆。该入口不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置、每用户固定显示日志/控制器锁及同目录的原子 slate 租约日志，不复用或放宽 LocalSystem 硬件管道。
+  显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。前台启动先核对普通用户本地控制台和精确机型并给出可读拒绝原因，后台仍须重复完整资格检查。经核对的 `ACPI\INT33D3` PDO 只读表示实体笔记本/平板姿态；Windows 只在真实物理状态变化时按用户自己的选择决定 shell，程序不得写入该 PDO、调用 ImmersiveShell 强制模式接口或把软件帐篷/支架伪装成物理平板。帐篷、支架和笔记本只由加速度计与显示事务控制方向。首次设备非独占配置由独立管理员脚本完成，需要重启且可逆。该入口不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置、每用户固定显示日志/控制器锁，不复用或放宽 LocalSystem 硬件管道。
   原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。姿态通知的点击确认必须同时匹配已校验快照中的实例、提示代次、姿态类型和当前可确认条件，过期或不匹配时只能打开界面。私有后台在首个状态前失败时只能发送固定原因集的 `fatal` 回执；UI 不得展示自由文本或 traceback，设备配置原因应给出操作说明并停止该连接重连。私有后台在身份检查后向设置文件旁的同名滚动日志写入有界诊断，不得记录输入内容。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认不登记，仅在用户切换设置时操作当前用户的固定 Run 值，冲突内容须保留；不得隐式启用、改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
   `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
@@ -54,7 +54,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 用户态真实显示与平板通知 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py` 和 `windows_physical_posture_smoke.py`，不能用隔离端口代替真机证据 |
+| Windows 用户态真实显示与物理开关 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py` 和 `windows_physical_posture_smoke.py`，不能用隔离端口代替真机证据 |
 | Windows 常驻、自启动与姿态通知 | `windows/{activation,startup,instance}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_screen_session`、`test_fluent`；实际注销登录和通知目视验收须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
@@ -1085,6 +1085,13 @@ make WERROR=1 check
 - 动机：显示事务尚在过渡时，`applied` 仍为上一姿态，界面会把已经识别的帐篷/支架错误标成旧模式，用户无法据此判断识别结果。
 - 影响：`applied` 仍是设置页和控制事务的事实源，目标/结果分离不变；主页明确表示实体姿态，不再用旧已应用目标覆盖新识别结果。
 - 同步：共用前端姿态展示、前端回归测试与本记录。本记录取代 2026-11-04「主页优先显示已应用模式」及其过渡期补充。
+
+### 2026-11-11 - Windows 实体平板开关恢复只读
+
+- 变更：Windows 原生入口停止为帐篷、支架或软件平板写入 `ACPI\INT33D3` PDO；该设备仅用于读取实体笔记本/平板状态。原生装配不再创建 SlateNotifier 或 slate 租约，帐篷/支架只执行加速度计识别和内屏方向事务。
+- 动机：纯硬件真机记录证明该 PDO 在应用未运行时能稳定按 `1=笔记本 → 0=完全折叠 → 1=展开` 变化；旧软件写入会改写同一状态，导致首次折叠后实体判据失真和极性反转。
+- 影响：Windows shell 只在真实物理姿态变化时响应驱动状态；软件帐篷/支架不再伪造平板通知，避免污染后续实体判定。输入边界、显示事务、会话资格和用户自己的 Windows shell 选择不变，可选 slate 通知代码只保留为未接入的隔离实现。
+- 同步：Windows 原生会话装配、显示开关查询、原生工厂测试、README、MAINTENANCE 与本记录。本记录取代此前“帐篷/支架通过 PDO 报告平板使用状态”的生产装配说明。
 
 ### 2026-11-11 - 以连续实体切换确认 CFQV8 开关映射
 
