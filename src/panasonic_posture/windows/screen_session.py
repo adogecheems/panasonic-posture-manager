@@ -34,6 +34,15 @@ from .session_display import QualifiedDisplay, QualifiedRefresh, SessionContext,
 SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
 
 
+def available_screen_modes(display: object) -> tuple[str, ...]:
+    refreshable = (callable(getattr(display, 'needs_refresh', None)) and
+                   callable(getattr(display, 'refresh', None)))
+    tablet_available = refreshable and bool(
+        getattr(display, 'supports_software_tablet', True)
+    )
+    return SCREEN_MODES + (('tablet',) if tablet_available else ())
+
+
 class ManagedSensor(SensorBackend, Protocol):
     def start(self) -> None: ...
     def close(self) -> None: ...
@@ -139,9 +148,10 @@ class ScreenSession:
             self._stack.callback(slate.close)
         qualified = QualifiedDisplay(display, context, slate)
         self._stack.callback(qualified.restore)
-        refreshable = (callable(getattr(display, 'needs_refresh', None)) and
-                       callable(getattr(display, 'refresh', None)))
-        self.available_modes = SCREEN_MODES + (('tablet',) if refreshable else ())
+        self.available_modes = available_screen_modes(display)
+        refreshable = callable(getattr(display, 'needs_refresh', None)) and callable(
+            getattr(display, 'refresh', None)
+        )
         self.owner = SessionOwner('windows-screen-session', instance)
         try:
             self.engine = Engine(controller=Controller(input_control=False), sensor=sensor,

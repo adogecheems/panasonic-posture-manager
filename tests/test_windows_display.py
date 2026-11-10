@@ -10,7 +10,7 @@ from panasonic_posture.session.failures import DisplayError
 from panasonic_posture.windows.simulation import MemoryJournal
 import ctypes as C
 from types import SimpleNamespace
-from panasonic_posture.model import HardwareStatus
+from panasonic_posture.model import HardwareStatus, Target
 
 
 def panel(**changes):
@@ -89,12 +89,17 @@ class WindowsDisplayTests(unittest.TestCase):
         display.hold_orientation()
         display.apply(dict(mode='tent', tablet=True, rotation=180,
                            disable_internal_input=False))
+        self.assertTrue(display.needs_refresh(Target(mode='tent')))
+        self.assertFalse(display.needs_refresh(Target(mode='hardware')))
+        display.refresh(None)
         display.apply(dict(mode='unavailable', tablet=None, rotation=None,
                            disable_internal_input=False))
         with self.assertRaises(DisplayError):
             display.apply(dict(mode='tablet', tablet=True, rotation=None,
                                disable_internal_input=False))
         api.identity = ('replacement',)
+        with self.assertRaises(DisplayError):
+            display.refresh(None)
         with self.assertRaises(DisplayError):
             display.apply(dict(mode='stand', tablet=True, rotation=0,
                                disable_internal_input=False))

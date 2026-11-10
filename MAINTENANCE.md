@@ -218,7 +218,7 @@ python tests\windows_actuator_smoke.py --control-library build\windows-driver\po
 
 `windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。`windows/tablet_mode.py` 通过 ImmersiveShell COM 边界只读观察 Windows 桌面／平板模式；产品路径不调用强制 setter，旧版日志中的 shell 字段只作兼容读取并在恢复时丢弃。方向与方向锁保存在同一恢复日志，旧版日志缺少新增字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
 
-没有活动内屏、但有一个或多个活动外屏时，原生工厂使用只读的 `ExternalOnlyDisplay`。它记录并复核对活动外屏身份，姿态操作只验证拓扑稳定后返回，不取得旋转锁、不写 CCD、不创建显示日志，也不开放没有实际执行对象的软件平板模式；姿态和平板状态通知仍按共用链路处理。若设置目录已有未恢复的内屏显示日志，工厂拒绝进入只读外接模式，等待内屏恢复或用户按原恢复流程处理，不能静默丢弃旧所有权。内外屏同时存在仍要求内屏唯一且不镜像。
+没有活动内屏、但有一个或多个活动外屏时，原生工厂使用只读的 `ExternalOnlyDisplay`。它记录并复核对活动外屏身份，姿态操作和持续刷新只验证拓扑稳定后返回，不取得旋转锁、不写 CCD、不创建显示日志，也不开放没有实际执行对象的软件平板模式；姿态和平板状态通知仍按共用链路处理。固定软件姿态由共用刷新通道限速复核，外屏拔出、替换或内屏重新出现时撤销成功并走恢复/重试。若设置目录已有未恢复的内屏显示日志，工厂拒绝进入只读外接模式，等待内屏恢复或用户按原恢复流程处理，不能静默丢弃旧所有权。内外屏同时存在仍要求内屏唯一且不镜像。
 
 已授权的真机可显式运行以下检查，屏幕会短暂倒转。检查保留恢复日志，另启恢复进程，并验证写入进程被强制结束后的恢复；每次使用新的证据目录：
 

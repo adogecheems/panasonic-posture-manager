@@ -262,6 +262,7 @@ class NativeDisplay:
 class ExternalOnlyDisplay:
     """Preserve a docked external layout while posture/slate logic continues."""
     backend_name = 'windows-external-only'
+    supports_software_tablet = False
 
     def __init__(self, api):
         self.api = api
@@ -283,6 +284,14 @@ class ExternalOnlyDisplay:
         self._verify()
 
     def hold_orientation(self) -> None:
+        self._verify()
+
+    @staticmethod
+    def needs_refresh(target: Target) -> bool:
+        return target.mode in {'laptop', 'tent', 'stand'}
+
+    def refresh(self, state) -> None:
+        del state
         self._verify()
 
     def restore(self, normal: bool = False, *, release_lock: bool = False,
