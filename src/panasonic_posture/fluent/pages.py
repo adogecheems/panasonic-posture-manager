@@ -143,7 +143,7 @@ class Home(Page):
             Detail.SWITCH: _('The tablet switch is unavailable. Restart the background service if this continues.'),
             Detail.SENSOR: _('No posture data is available. Keep the device still; switching will resume automatically.'),
             Detail.SLOW: _('Switching is taking longer than usual. Please wait or choose another mode in Settings.'),
-            Detail.COMPATIBLE: _('Compatibility mode: this model is supported but has not been individually validated.'),
+            Detail.COMPATIBLE: '',
         }
         if self.action_detail is not None:
             text = self.action_detail
@@ -263,10 +263,10 @@ class Settings(Page):
         group = self.add_group(_('Mode selection'))
         self.group = QButtonGroup(self)
         descriptions = {
-            'auto': _('Switch automatically to suit the current posture'),
+            'auto': _('Switch automatically with the current posture'),
             'laptop': _('Best for typing and precise work'),
-            'tent': _('Turns the screen upside down and disables the built-in keyboard and touchpad'),
-            'stand': _('Keeps the screen upright and disables the built-in keyboard and touchpad'),
+            'tent': _('Designed for use in tent form'),
+            'stand': _('Designed for viewing in stand form'),
         }
         self.mode_cards = {}
         self.mode_descriptions = descriptions
@@ -423,12 +423,6 @@ class Settings(Page):
         if self.model.state is None:
             return
         descriptions = dict(self.mode_descriptions)
-        if self.model.state.get('input_control_available') is False:
-            descriptions.update(
-                laptop=_('Reports laptop use and keeps Windows in control of the shell'),
-                tent=_('Turns the screen upside down and reports slate use to Windows'),
-                stand=_('Keeps the screen upright and reports slate use to Windows'),
-            )
         for key, card in self.mode_cards.items():
             card.setContent(descriptions[key])
         for key, radio in self.radios.items():

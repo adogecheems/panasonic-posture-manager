@@ -241,7 +241,7 @@ else:
     def run_resident(self, body):
         self.run_ui('''
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QSystemTrayIcon
+from PyQt6.QtWidgets import QLabel, QSystemTrayIcon
 from panasonic_posture.fluent.resident import ResidentTray
 class FakeTray(QObject):
     available = True
@@ -274,6 +274,7 @@ from PyQt6 import sip
 resident = ResidentTray(window, tray_factory=FakeTray)
 assert resident.enabled and resident.tray.visible
 assert not app.quitOnLastWindowClosed()
+assert not any('system tray' in label.text().lower() for label in window.findChildren(QLabel))
 window.close()
 QTest.qWait(50)
 assert not window.isVisible() and not sip.isdeleted(window)
@@ -398,10 +399,12 @@ window.show()
 QTest.qWait(50)
 assert window.settings.radios['tent'].isEnabled()
 assert 'tablet' not in window.settings.radios
-assert window.settings.mode_cards['laptop'].contentLabel.text() == 'Reports laptop use and keeps Windows in control of the shell'
-assert window.settings.mode_cards['tent'].contentLabel.text() == 'Turns the screen upside down and reports slate use to Windows'
-assert window.settings.mode_cards['stand'].contentLabel.text() == 'Keeps the screen upright and reports slate use to Windows'
-assert any('Keyboard and touchpad stay enabled' in label.text() for label in window.findChildren(QLabel))
+assert window.settings.mode_cards['laptop'].contentLabel.text() == 'Best for typing and precise work'
+assert window.settings.mode_cards['tent'].contentLabel.text() == 'Designed for use in tent form'
+assert window.settings.mode_cards['stand'].contentLabel.text() == 'Designed for viewing in stand form'
+assert not any('Windows' in label.text() or 'screen rotation' in label.text().lower()
+               for label in window.findChildren(QLabel))
+assert not any('Compatibility mode' in label.text() for label in window.findChildren(QLabel))
 ''')
 
     def test_native_hardware_client_updates_widgets_via_the_wire_contract(self):
@@ -670,13 +673,18 @@ translated.close()
 
     def test_compact_shell_logo_and_two_page_navigation(self):
         self.run_ui('''
-from qfluentwidgets import setTheme, Theme
-from PyQt6.QtGui import QIcon
+from qfluentwidgets import fontFamilies, setTheme, Theme
+from PyQt6.QtGui import QFont, QIcon
 from panasonic_posture.fluent.resources import data_root
 assert (window.width(), window.height()) == (500, 660)
 assert window.stackedWidget.count() == 2
 assert not hasattr(window, 'navigationInterface')
 assert window.stackedWidget.currentWidget() is window.home
+assert app.font().hintingPreference() == QFont.HintingPreference.PreferFullHinting
+assert fontFamilies() == app.font().families()
+assert window.titleBar.titleLabel.font().families() == fontFamilies()
+assert window.titleBar.titleLabel.font().pixelSize() == 13
+assert window.titleBar.titleLabel.contentsMargins().bottom() == 5
 window.navigation.items['settings'].click()
 assert window.stackedWidget.currentWidget() is window.settings
 assert window.navigation.currentRouteKey() == 'settings'

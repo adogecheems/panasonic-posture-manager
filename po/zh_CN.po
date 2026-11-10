@@ -136,17 +136,17 @@ msgstr "模式选择"
 msgid "Automatic"
 msgstr "自动"
 
-msgid "Switch automatically to suit the current posture"
-msgstr "根据设备姿态自动切换"
+msgid "Switch automatically with the current posture"
+msgstr "根据当前形态自动切换"
 
 msgid "Best for typing and precise work"
 msgstr "适合打字和精细操作"
 
-msgid "Turns the screen upside down and disables the built-in keyboard and touchpad"
-msgstr "倒转屏幕，停用内置键盘和触控板"
+msgid "Designed for use in tent form"
+msgstr "适合帐篷形态使用"
 
-msgid "Keeps the screen upright and disables the built-in keyboard and touchpad"
-msgstr "保持屏幕正向，停用内置键盘和触控板"
+msgid "Designed for viewing in stand form"
+msgstr "适合支架形态观看"
 
 msgid "About"
 msgstr "关于"
@@ -183,9 +183,6 @@ msgstr "正在等待桌面功能就绪…"
 
 msgid "This model does not support automatic mode changes."
 msgstr "当前机型不支持自动切换模式。"
-
-msgid "Compatibility mode: this model is supported but has not been individually validated."
-msgstr "兼容模式：当前机型可用，但尚未逐机验证。"
 
 msgid "This mode is not available right now."
 msgstr "当前无法选择该模式。"
@@ -307,18 +304,6 @@ msgstr "设置已保存"
 msgid "The background service is ready. Device control is not available yet."
 msgstr "后台已就绪，设备控制功能尚未接入。"
 
-msgid "Screen control only · Keyboard and touchpad stay enabled."
-msgstr "仅管理屏幕方向 · 键盘和触控板保持可用。"
-
-msgid "Reports laptop use and keeps Windows in control of the shell"
-msgstr "报告为笔记本使用，由 Windows 决定外壳模式"
-
-msgid "Turns the screen upside down and reports slate use to Windows"
-msgstr "将屏幕倒转，并向 Windows 报告为平板使用状态"
-
-msgid "Keeps the screen upright and reports slate use to Windows"
-msgstr "保持屏幕正向，并向 Windows 报告为平板使用状态"
-
 msgid "Open app"
 msgstr "打开应用"
 
@@ -327,9 +312,6 @@ msgstr "退出"
 
 msgid "The system tray is unavailable. Closing this window will stop the app."
 msgstr "系统托盘不可用，关闭此窗口将停止程序。"
-
-msgid "Closing this window keeps the app in the system tray. Use Quit there to stop it."
-msgstr "关闭此窗口后，应用仍在系统托盘运行。需停止时，请在托盘选择退出。"
 
 msgid "Tent mode is available"
 msgstr "可以切换到帐篷模式"

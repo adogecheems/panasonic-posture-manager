@@ -93,7 +93,7 @@ class PosturePage:
         elif self._model.detail == Detail.SLOW:
             text = _('Switching is taking longer than usual. Please wait or choose another mode in Settings.')
         elif self._model.detail == Detail.COMPATIBLE:
-            text = _('Compatibility mode: this model is supported but has not been individually validated.')
+            text = ''
         self.detail.set_label(text)
         self.detail.set_visible(bool(text))
 

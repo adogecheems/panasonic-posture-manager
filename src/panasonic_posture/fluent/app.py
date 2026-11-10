@@ -9,6 +9,7 @@ from qfluentwidgets import (
     FluentWidget, FluentIcon as Icon, TitleLabel, BodyLabel, CaptionLabel,
     PrimaryPushButton, ComboBox, InfoBar, InfoBarPosition, Theme, setTheme,
     setThemeColor, isDarkTheme, qconfig, setCustomStyleSheet, setFont,
+    setFontFamilies,
 )
 
 from ..contracts import TICK_SECONDS
@@ -24,6 +25,20 @@ from .widgets import (
 )
 
 
+def configure_application_font():
+    """Use the platform UI font for both Latin and CJK text."""
+    app = QApplication.instance()
+    if app is None:
+        return
+    font = QFont(app.font())
+    families = [family for family in font.families() if family]
+    if families:
+        setFontFamilies(families)
+    font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    app.setFont(font)
+
+
 class Window(FluentWidget):
     state_changed = pyqtSignal(dict)
     connection_lost = pyqtSignal()
@@ -35,6 +50,7 @@ class Window(FluentWidget):
             raise ValueError('hardware backend cannot be combined with software backend options')
         if native_backend and (demo or backend or simulate_backend):
             raise ValueError('native backend cannot be combined with preview backend options')
+        configure_application_font()
         super().__init__()
         _ = translator(language)
         self._ = _
@@ -50,6 +66,7 @@ class Window(FluentWidget):
         self.titleBar.iconLabel.setFixedSize(72, 42)
         self.titleBar.iconLabel.setAccessibleName("Let's note")
         self.titleBar.titleLabel.setMinimumWidth(0)
+        self.titleBar.titleLabel.setContentsMargins(0, 0, 0, 5)
         self.update_mark()
         qconfig.themeChangedFinished.connect(self.update_mark)
         self.simulating = demo or simulate_backend
@@ -103,11 +120,6 @@ class Window(FluentWidget):
             note.setWordWrap(True)
             note.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(note)
-        if native_backend:
-            note = CaptionLabel(_('Screen control only · Keyboard and touchpad stay enabled.'))
-            note.setWordWrap(True)
-            note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(note)
         for label in self.findChildren((BodyLabel, CaptionLabel, TitleLabel)):
             caption = isinstance(label, CaptionLabel)
             label.setTextColor(MUTED_LIGHT if caption else TEXT_LIGHT,
@@ -123,7 +135,7 @@ class Window(FluentWidget):
             else:
                 setCustomStyleSheet(button, style + f'{selector}:enabled {{color: {TEXT_LIGHT};}}',
                                    style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
-        setFont(self.titleBar.titleLabel, 12)
+        setFont(self.titleBar.titleLabel, 13)
         self.client.start(self.update_state, self.unavailable)
         self.backend_timer = QTimer(self)
         if isinstance(self.client, (ProcessClient, HardwareUIClient)):

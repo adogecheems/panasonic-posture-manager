@@ -43,12 +43,11 @@ class ResidentTray(QObject):
             window.installEventFilter(self)
             self.app.setQuitOnLastWindowClosed(False)
             self.tray.show()
-            note = CaptionLabel(_('Closing this window keeps the app in the system tray. Use Quit there to stop it.'), window)
         else:
             note = CaptionLabel(_('The system tray is unavailable. Closing this window will stop the app.'), window)
-        note.setWordWrap(True)
-        note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        window.layout().addWidget(note)
+            note.setWordWrap(True)
+            note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            window.layout().addWidget(note)
         if activation is not None:
             self.timer.timeout.connect(self.check_activation)
             self.timer.start(250)
