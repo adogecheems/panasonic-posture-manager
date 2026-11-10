@@ -132,6 +132,31 @@ class DemoTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent preview dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def test_native_preflight_explains_session_and_machine_rejections(self):
+        self.run_ui('''
+from panasonic_posture.fluent.app import native_start_failure
+from PyQt6.QtWidgets import QMessageBox
+messages = []
+QMessageBox.critical = lambda parent, title, text: messages.append((title, text))
+assert native_start_failure('en', 'session') == 1
+assert messages[-1] == (
+    'Native mode is unavailable',
+    'Native mode requires the active local desktop and a normal user account.',
+)
+assert native_start_failure('en', 'machine') == 1
+assert messages[-1] == (
+    'Native mode is unavailable',
+    'This device does not have a verified Windows sensor and display configuration. '
+    'Use preview mode or check the supported models in the maintenance guide.',
+)
+try:
+    native_start_failure('en', 'unknown')
+except ValueError:
+    pass
+else:
+    raise AssertionError('unknown preflight failures must be rejected')
+''')
+
     def run_resident(self, body):
         self.run_ui('''
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal

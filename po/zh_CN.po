@@ -337,6 +337,15 @@ msgstr "可以切换到支架模式"
 msgid "Tap to enable the current posture."
 msgstr "点击即可切换到当前姿态。"
 
+msgid "Native mode is unavailable"
+msgstr "原生模式不可用"
+
+msgid "Native mode requires the active local desktop and a normal user account."
+msgstr "请从当前本地桌面使用普通用户账户运行原生模式。"
+
+msgid "This device does not have a verified Windows sensor and display configuration. Use preview mode or check the supported models in the maintenance guide."
+msgstr "此设备没有经过验证的 Windows 传感器和显示配置。请使用预览模式，并在维护指南中查看受支持机型。"
+
 msgid "Background"
 msgstr "后台运行"
 

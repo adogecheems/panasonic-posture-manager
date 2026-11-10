@@ -110,6 +110,8 @@ packaging\windows\run.cmd --native-backend --language zh_CN
 
 第一条命令需要管理员权限，只把已核对的 `ACPI\INT33D3` 驱动配置设为 `LaptopSlateExclusiveAccess=0`，并在首次设置时记录安装前值；必须重启一次才会生效。`-Action Remove` 恢复安装前配置，`-Action Status` 只报告当前状态。便携包的同样操作由 `Configure Slate Device.cmd`、`Remove Slate Device Configuration.cmd` 和 `Slate Device Status.cmd` 提供。
 
+原生界面启动前台会先核对普通用户本地控制台身份和 BIOS 机型，再启动私有后台。身份不符或机型不是已采集的 Panasonic Corporation / CFQV8-1L 时直接显示中文或英文原因，不创建后台、设置锁或用户状态文件；后台随后仍会重复核对身份、传感器、开关和显示能力，界面预检不能替代实际设备资格。
+
 原生入口不使用模拟端口、不启用输入过滤驱动，也不需要测试签名。只接受已采集 Windows 姿态证据的 Panasonic Corporation / CFQV8-1L、唯一且型号匹配的 WinRT 加速度计、原有 GPIO 开关与内屏选择检查，以及实例 `ACPI\INT33D3\2&DABA3FF&0`。设备访问只认 PDO 名称，先读取当前字节；一次写会使驱动切换状态，因此仅在目标不同时写一次并立即回读。绝不直接修改 `PriorityControl\ConvertibleSlateMode`、共享内存或用户 shell 偏好。当前开放自动、笔记本、帐篷、支架、手动软件平板和校准。软件平板只在显示后端具备持续刷新能力时出现在界面；输入目标和能力始终为 False，键盘和触控板保持可用，这是产品范围，不是待补功能。
 
 软件平板的内部事务位于 `windows/tablet_display.py`，真实工厂显式提供系统简单方向映射；`SimpleOrientation` 的逆时针设备旋转按固定表转换为显示事务的顺时针象限，所有动态方向经已有日志、回读及恢复处理。共用 `SessionRuntime` 的可选 `DisplayRefresh` 与 apply/restore 串行，刷新后验证实例和代次；新目标先发送就绪回执再开始持续刷新，并以限速心跳续租，避免刷新饿死确认。资格丢失或故障时撤销结果并恢复，Linux 默认不启用此端口。真实工厂和模式能力已接入；隔离测试通过仍不代表四向真机旋转已验收。

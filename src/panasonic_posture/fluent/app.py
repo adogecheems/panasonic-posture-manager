@@ -4,7 +4,7 @@ import sys
 from PyQt6 import sip
 from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtSignal, QCoreApplication, QEvent
 from PyQt6.QtGui import QIcon, QPixmap, QFont
-from PyQt6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QStackedWidget, QGraphicsOpacityEffect
+from PyQt6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QStackedWidget, QGraphicsOpacityEffect, QMessageBox
 from qfluentwidgets import (
     FluentWidget, FluentIcon as Icon, TitleLabel, BodyLabel, CaptionLabel,
     PrimaryPushButton, ComboBox, InfoBar, InfoBarPosition, Theme, setTheme,
@@ -197,8 +197,14 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
     activation = None
     startup = None
     if native_backend:
-        from ..windows.screen_session import require_native_user
-        require_native_user()  # UI activation/startup never runs with an elevated token.
+        from ..windows.screen_session import require_native_user, verified_machine
+        try:
+            require_native_user()  # UI activation/startup never runs with an elevated token.
+            verified_machine()
+        except PermissionError:
+            return native_start_failure(language, 'session')
+        except OSError:
+            return native_start_failure(language, 'machine')
         from ..windows.activation import WindowActivation
         from ..windows.startup import LoginStartup, startup_command, UnavailableStartup
         activation = WindowActivation(default_settings_path(native=True).parent)
@@ -236,3 +242,16 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
     finally:
         if activation is not None:
             activation.close()
+
+
+def native_start_failure(language, reason: str) -> int:
+    """Explain a preflight rejection without starting a backend or touching state."""
+    if reason not in ('session', 'machine'):
+        raise ValueError('unknown native startup failure')
+    _ = translator(language)
+    detail = (_('Native mode requires the active local desktop and a normal user account.')
+              if reason == 'session' else
+              _('This device does not have a verified Windows sensor and display configuration. Use preview mode or check the supported models in the maintenance guide.'))
+    app = QApplication.instance() or QApplication([sys.argv[0]])
+    QMessageBox.critical(None, _('Native mode is unavailable'), detail)
+    return 1

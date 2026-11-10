@@ -18,7 +18,9 @@ from panasonic_posture.windows.backend import Backend, BackendError
 from panasonic_posture.windows.display import Panel
 from panasonic_posture.windows.orientation import OrientationReading, SIMPLE_ORIENTATION_TRANSFORM
 from panasonic_posture.windows.protocol import validate_state, ProtocolError
-from panasonic_posture.windows.screen_session import ScreenSession, SessionBridge, ProfileSensor
+from panasonic_posture.windows.screen_session import (
+    ScreenSession, SessionBridge, ProfileSensor, verified_machine,
+)
 from panasonic_posture.windows.simulation import SimulatedDisplay
 from panasonic_posture.windows.tablet_display import WindowsTabletDisplay
 
@@ -277,6 +279,29 @@ class SoftwareTabletScreenTests(unittest.TestCase):
 
 
 class BridgeTests(unittest.TestCase):
+    def test_native_machine_preflight_requires_the_collected_exact_model(self):
+        from unittest.mock import patch
+
+        class Key:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        def identity(vendor, product):
+            def query(key, name):
+                del key
+                return (vendor if name == 'SystemManufacturer' else product), 1
+            return query
+
+        with patch('winreg.OpenKey', return_value=Key()):
+            with patch('winreg.QueryValueEx', side_effect=identity('Panasonic Corporation', 'CFQV8-1L')):
+                self.assertEqual(verified_machine(), ('Panasonic Corporation', 'CFQV8-1L'))
+            for vendor, product in (('Panasonic Corporation', 'CFQV9-1L'),
+                                    ('Other', 'CFQV8-1L')):
+                with self.subTest(vendor=vendor, product=product), \
+                        patch('winreg.QueryValueEx', side_effect=identity(vendor, product)), \
+                        self.assertRaises(OSError):
+                    verified_machine()
+
     def test_close_rejects_receipt_accepted_before_snapshot_publication(self):
         bridge = SessionBridge(StateSnapshot(), lambda: True)
         engine = SimpleNamespace(session_update=lambda *args, **kwargs: True)

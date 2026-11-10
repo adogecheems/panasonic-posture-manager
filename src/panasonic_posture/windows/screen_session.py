@@ -249,9 +249,19 @@ def require_native_user() -> None:
         raise PermissionError('native screen control requires the local console session')
 
 
+def verified_machine() -> tuple[str, str]:
+    """Read identity only; capability checks stay in the native session factory."""
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\BIOS') as key:
+        vendor = winreg.QueryValueEx(key, 'SystemManufacturer')[0]
+        product = winreg.QueryValueEx(key, 'SystemProductName')[0]
+    if (vendor, product) != ('Panasonic Corporation', 'CFQV8-1L'):
+        raise OSError('no verified Windows posture mount for this machine')
+    return vendor, product
+
+
 def native_screen_session(store: SettingsBackend, instance: str, journal_path: Path) -> ScreenSession:
     """Select only the machine/mount with collected Windows pose evidence."""
-    import winreg
     from ..session.journal import Journal
     from .convertible_slate import NativeSlateDevice, SlateNotifier
     from .slate_journal import SlateJournal, lease_path
@@ -260,11 +270,7 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
     from .switch import WindowsSwitch
     from .tablet_display import WindowsTabletDisplay
     require_native_user()
-    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\BIOS') as key:
-        vendor = winreg.QueryValueEx(key, 'SystemManufacturer')[0]
-        product = winreg.QueryValueEx(key, 'SystemProductName')[0]
-    if (vendor, product) != ('Panasonic Corporation', 'CFQV8-1L'):
-        raise OSError('no verified Windows posture mount for this machine')
+    vendor, product = verified_machine()
     with ExitStack() as resources:
         context = WindowsSessionContext()
         resources.callback(context.close)
