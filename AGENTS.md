@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-11）
 
-- **最新主线**：代码状态为 `05d8090 fix: suspend Windows tablet notification and pre-lock slate exit`；当前交接记录由 `ce979f8 docs: record the current Windows handoff state` 建立。工作树除任务开始前已有的未跟踪 `$null` 外应保持干净；不要提交、删除或覆盖它。
+- **最新主线**：产品代码状态为 `05d8090 fix: suspend Windows tablet notification and pre-lock slate exit`；其后的提交只维护本交接记录。工作树除任务开始前已有的未跟踪 `$null` 外应保持干净；不要提交、删除或覆盖它。
 - **产品边界**：Windows 软件帐篷/支架的“让 Windows 知道平板状态”功能暂时停用。生产路径不写 `ACPI\INT33D3`、不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示 Windows 屏幕键盘。实体开关和硬件姿态查询必须保持只读、真实。
 - **当前方向修复**：`HardwareReleasePreparationTests` 对应的 `prepare_hardware_release()` 会在实体开关仍为平板、但传感器已经识别出帐篷/支架时，提前锁定当前翻转横屏，目标是阻止物理开关释放后 Windows 先执行 `2→0`、应用再写回 `2`。该路径已通过单元测试，但最后这次预锁实现尚未完成真机复测。
 - **已捕获真机时序**：2026-11-11 `03:12:07.057` 为 `(transform=0, lock=0, hardware=True)`，`07.434` 为 `(2,0,True)`；`03:12:16.260` 开关释放为 `(2,0,False)`，`16.358` 变为 `(0,1,False)`，`17.981` 再变为 `(2,1,False)`。这证明旧实现存在 Windows 回正与软件目标修正之间的双跳。新实现是否消除 `16.358` 的 `2→0` 仍待实测。
