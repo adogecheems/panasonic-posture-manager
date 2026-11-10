@@ -294,6 +294,21 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertTrue(self.controller.acknowledge(self.controller.generation, True))
         self.assertEqual(self.controller.applied, target)
 
+    def test_hardware_release_pose_reads_geometry_without_the_tablet_mask(self):
+        self.hold(80.0, hardware=True, seconds=0.5)
+        self.assertEqual(self.controller.policy.mode, "H")
+        self.assertEqual(self.controller.hardware_release_pose, "tent")
+        self.controller.tent_enabled = False
+        self.assertIsNone(self.controller.hardware_release_pose)
+
+    def test_release_uses_the_cached_tent_target_on_the_first_tick(self):
+        self.hold(80.0, hardware=True, seconds=0.5)
+        generation, target = self.step(80.0, hardware=False, dt=0.01)
+        self.assertEqual(target.mode, "tent")
+        self.assertEqual(target.rotation, 180)
+        self.assertGreater(generation, 1)
+        self.assertTrue(self.controller.policy.posture_pending)
+
     def test_stand_prompt_waits_for_confirmation(self):
         self.controller.stand_prompt = True
         self.hold(175.0)

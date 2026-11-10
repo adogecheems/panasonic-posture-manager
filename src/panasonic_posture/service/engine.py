@@ -233,6 +233,10 @@ class Engine:
     def state_json(self) -> str:
         return dumps_state(self._state)
 
+    @property
+    def hardware_release_pose(self) -> str | None:
+        return getattr(self._controller, "hardware_release_pose", None)
+
     # -- D-Bus method handlers -------------------------------------------
 
     def set_mode(self, mode: str) -> bool:

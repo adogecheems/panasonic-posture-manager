@@ -20,6 +20,7 @@ from .policy import (
     MODE_TENT,
     Policy,
     PolicyConfig,
+    in_tent_zone,
 )
 from .contracts import ErrorCode
 
@@ -65,6 +66,9 @@ class Controller:
         self.error_code: str | None = None
         self.error_detail: str | None = None
         self.hardware: bool | None = None
+        self._release_pose: str | None = None
+        self._release_candidate: str | None = None
+        self._release_since: float | None = None
 
     # -- derived state -------------------------------------------------------
 
@@ -83,6 +87,12 @@ class Controller:
     @property
     def posture_pending(self) -> bool:
         return self.policy.posture_pending
+
+    @property
+    def hardware_release_pose(self) -> str | None:
+        """Recognize an opening posture while the physical switch still says tablet."""
+
+        return self._release_pose if self.tent_enabled else None
 
     @property
     def pending_notification(self) -> int | None:
@@ -204,6 +214,9 @@ class Controller:
         self.error_code = None
         self.error_detail = None
         self.target = Target()
+        self._release_pose = None
+        self._release_candidate = None
+        self._release_since = None
 
     # -- state machine -------------------------------------------------------
 
@@ -220,6 +233,9 @@ class Controller:
         if hardware is True and self.hardware is not True:
             # The physical switch has priority over every manual selection.
             self.manual = Mode.AUTO
+            self._release_pose = None
+            self._release_candidate = None
+            self._release_since = None
         self.hardware = hardware
         prompt_from_laptop = not self._unattended and self.manual in (Mode.AUTO, Mode.LAPTOP)
         self.policy.update(
@@ -230,6 +246,7 @@ class Controller:
             tent_prompt=bool(self.tent_prompt) and prompt_from_laptop,
             stand_prompt=bool(self.stand_prompt) and prompt_from_laptop,
         )
+        self._advance_release_candidate(now)
 
         if hardware is True:
             target = Target(
@@ -240,6 +257,16 @@ class Controller:
             )
         elif hardware is None:
             target = Target()
+        elif self.policy.posture_pending and self._release_pose == TARGET_TENT:
+            # The geometry reached the tent zone before the switch released.
+            # Apply that target on the first released tick instead of waiting
+            # through another settle window exposed as laptop orientation.
+            target = Target(
+                mode=TARGET_TENT,
+                tablet=True,
+                rotation=180,
+                disable_internal_input=self._input_control,
+            )
         elif self.policy.mode == MODE_DISABLED:
             # Stale/invalid sensor data releases the software takeover even in
             # manual mode: without sensor evidence we cannot keep a fake
@@ -247,6 +274,10 @@ class Controller:
             target = Target()
         else:
             target = self._software_target()
+        if hardware is False and self.policy.mode in (MODE_TENT, MODE_STAND):
+            self._release_pose = None
+            self._release_candidate = None
+            self._release_since = None
 
         if target != self.target:
             self.generation += 1
@@ -255,6 +286,29 @@ class Controller:
             self.error_code = None
             self.error_detail = None
         return self.generation, self.target
+
+    def _advance_release_candidate(self, now: float) -> None:
+        if self.hardware is not True:
+            if self.hardware is False and self.policy.posture_pending:
+                return
+            self._release_pose = None
+            self._release_candidate = None
+            self._release_since = None
+            return
+        pitch, roll, _flat = self.policy.current_geometry
+        candidate = TARGET_TENT if self.tent_enabled and in_tent_zone(pitch, roll) else None
+        if candidate is None:
+            self._release_pose = None
+            self._release_candidate = None
+            self._release_since = None
+            return
+        if candidate != self._release_candidate:
+            self._release_pose = None
+            self._release_candidate = candidate
+            self._release_since = now
+            return
+        if self._release_since is not None and now - self._release_since >= 0.3:
+            self._release_pose = candidate
 
     # -- internals -----------------------------------------------------------
 

@@ -270,18 +270,20 @@ class HardwareReleasePreparationTests(unittest.TestCase):
         session._hardware_release_key = None
         session.qualified = Prepared()
         session.engine = SimpleNamespace(state=StateSnapshot(
-            instance='one', generation=3, hardware=True, pose='tent',
+            instance='one', generation=3, hardware=True, pose='tablet',
             target=Target(mode='hardware'),
-        ))
+        ), hardware_release_pose='tent')
         session._prepare_hardware_release()
-        session._prepare_hardware_release()
-        self.assertEqual(session.qualified.calls, 1)
-
-        session.engine.state.hardware = False
-        session._prepare_hardware_release()
-        session.engine.state.hardware = True
         session._prepare_hardware_release()
         self.assertEqual(session.qualified.calls, 2)
+
+        session.engine.state.hardware = False
+        session.engine.hardware_release_pose = None
+        session._prepare_hardware_release()
+        session.engine.state.hardware = True
+        session.engine.hardware_release_pose = 'tent'
+        session._prepare_hardware_release()
+        self.assertEqual(session.qualified.calls, 3)
 
 
 class BridgeTests(unittest.TestCase):

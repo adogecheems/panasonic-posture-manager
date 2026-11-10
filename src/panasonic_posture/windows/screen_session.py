@@ -188,19 +188,20 @@ class ScreenSession:
 
     def _prepare_hardware_release(self) -> None:
         state = self.engine.state
-        if state.hardware is True and state.pose in ('tent', 'stand'):
-            key = (state.instance, state.generation, state.pose)
-            if key != self._hardware_release_key:
-                try:
-                    self.qualified.prepare_hardware_release()
-                except (DisplayError, OSError, ValueError) as error:
-                    log.warning('cannot prepare for physical tablet release: %s', error)
-                else:
+        pose = self.engine.hardware_release_pose
+        if state.hardware is True and pose in ('tent', 'stand'):
+            key = (state.instance, state.generation, pose)
+            try:
+                self.qualified.prepare_hardware_release()
+            except (DisplayError, OSError, ValueError) as error:
+                log.warning('cannot prepare for physical tablet release: %s', error)
+            else:
+                if key != self._hardware_release_key:
                     log.warning(
                         'pre-locked the physical tablet direction for pending %s',
-                        state.pose,
+                        pose,
                     )
-                    self._hardware_release_key = key
+                self._hardware_release_key = key
         elif state.hardware is not True:
             self._hardware_release_key = None
 

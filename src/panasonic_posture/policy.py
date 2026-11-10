@@ -261,6 +261,12 @@ class Policy:
         )
 
     @property
+    def current_geometry(self) -> tuple[float | None, float, float | None]:
+        """Return the current smoothed pitch, roll and flat angle."""
+
+        return self._classify()
+
+    @property
     def pending_notification(self) -> int | None:
         """Epoch of the tent or stand confirmation prompt, or ``None``.
 
