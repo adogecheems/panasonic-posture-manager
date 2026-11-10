@@ -12,14 +12,14 @@ import unittest
 
 from panasonic_posture.model import DeviceInfo, HardwareStatus, SensorInfo, SensorReading, StateSnapshot
 from panasonic_posture.service.engine import Engine
-from panasonic_posture.session.failures import ServiceError
+from panasonic_posture.session.failures import DisplayError, ServiceError
 from panasonic_posture.session.journal import Journal
 from panasonic_posture.windows.backend import Backend, BackendError
 from panasonic_posture.windows.display import Panel
 from panasonic_posture.windows.orientation import OrientationReading, SIMPLE_ORIENTATION_TRANSFORM
 from panasonic_posture.windows.protocol import validate_state, ProtocolError
 from panasonic_posture.windows.screen_session import (
-    ScreenSession, SessionBridge, ProfileSensor, verified_machine,
+    ScreenSession, SessionBridge, ProfileSensor, select_native_display, verified_machine,
 )
 from panasonic_posture.windows.simulation import SimulatedDisplay
 from panasonic_posture.windows.tablet_display import WindowsTabletDisplay
@@ -302,6 +302,22 @@ class BridgeTests(unittest.TestCase):
                         self.assertRaises(OSError):
                     verified_machine()
 
+    def test_native_display_selection_uses_read_only_external_layout_or_keeps_recovery(self):
+        external = Panel('external', r'\\.\DISPLAY2', (1, 0, 1), 5, 0, 1920, 1080, 0)
+        api = SimpleNamespace(panels=lambda: [external])
+        missing = SimpleNamespace(load=lambda: None)
+        selected = select_native_display(
+            api, missing, orientation=lambda: None, hardware_query=None,
+        )
+        self.assertEqual(selected.backend_name, 'windows-external-only')
+        self.assertEqual(selected.api, api)
+        pending = SimpleNamespace(load=lambda: {'version': 1})
+        with self.assertRaises(DisplayError) as caught:
+            select_native_display(
+                api, pending, orientation=lambda: None, hardware_query=None,
+            )
+        self.assertEqual(caught.exception.detail, 'external-only-display-recovery-pending')
+
     def test_close_rejects_receipt_accepted_before_snapshot_publication(self):
         bridge = SessionBridge(StateSnapshot(), lambda: True)
         engine = SimpleNamespace(session_update=lambda *args, **kwargs: True)
@@ -451,6 +467,9 @@ from panasonic_posture.windows.backend import Backend
         context = SimpleNamespace(control_available=lambda: True, close=lambda: None)
         switch = SimpleNamespace(query=lambda: (False, HardwareStatus.OK))
         slate = SimpleNamespace(close=lambda: None)
+        native_api = SimpleNamespace(panels=lambda: [
+            Panel('panel-1', r'\\.\DISPLAY1', (1, 0, 0), 11, 0, 2880, 1920, 1),
+        ])
 
         class Sensor:
             def __init__(self, **kwargs):
@@ -477,6 +496,7 @@ from panasonic_posture.windows.backend import Backend
                 patch('panasonic_posture.windows.slate_journal.SlateJournal', return_value=object()), \
                 patch('panasonic_posture.windows.slate_journal.lease_path',
                       return_value=Path(directory) / 'slate.json'), \
+                patch('panasonic_posture.windows.display.NativeDisplay', return_value=native_api), \
                 patch('panasonic_posture.windows.sensor.WindowsSensor', Sensor), \
                 patch('panasonic_posture.windows.tablet_display.WindowsTabletDisplay', Display), \
                 patch.object(module, 'ScreenSession', Session):
@@ -486,6 +506,7 @@ from panasonic_posture.windows.backend import Backend
         self.assertTrue(captured['sensor']['include_orientation'])
         self.assertEqual(captured['display']['mapping'], SIMPLE_ORIENTATION_TRANSFORM)
         self.assertTrue(callable(captured['display']['orientation']))
+        self.assertIs(captured['display']['api'], native_api)
         self.assertIsInstance(captured['session']['sensor'], ProfileSensor)
         self.assertIsInstance(captured['session']['display'], Display)
 

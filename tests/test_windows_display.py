@@ -3,7 +3,8 @@ from dataclasses import replace
 import unittest
 
 from panasonic_posture.windows.display import (
-    Panel, select_panel, WindowsDisplay, NativeDisplay, DevMode, PathInfo, ModeInfo,
+    ExternalOnlyDisplay, Panel, select_external_only, select_panel, WindowsDisplay,
+    NativeDisplay, DevMode, PathInfo, ModeInfo,
 )
 from panasonic_posture.session.failures import DisplayError
 from panasonic_posture.windows.simulation import MemoryJournal
@@ -64,6 +65,42 @@ class WindowsDisplayTests(unittest.TestCase):
                       [panel(identity='')], [panel(transform=8)]):
             with self.subTest(paths=paths), self.assertRaises(DisplayError):
                 select_panel(paths)
+
+    def test_external_only_layout_is_distinct_and_requires_valid_unique_outputs(self):
+        external = panel(identity='external', source=r'\.\DISPLAY2', source_key=(1, 0, 1), technology=5)
+        second = replace(external, identity='external-2', source=r'\.\DISPLAY3', source_key=(1, 0, 2))
+        self.assertEqual(select_external_only([external, second]),
+                         ('external', 'external-2'))
+        for paths in ([], [panel()], [panel(), external],
+                      [replace(external, identity='')],
+                      [replace(external, transform=8)],
+                      [external, replace(second, identity='external')]):
+            with self.subTest(paths=paths), self.assertRaises(DisplayError):
+                select_external_only(paths)
+
+    def test_external_only_display_never_writes_and_rejects_topology_changes(self):
+        class Api:
+            identity = ('external',)
+            def external_identity(self):
+                return self.identity
+
+        api = Api()
+        display = ExternalOnlyDisplay(api)
+        display.hold_orientation()
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
+        display.apply(dict(mode='unavailable', tablet=None, rotation=None,
+                           disable_internal_input=False))
+        with self.assertRaises(DisplayError):
+            display.apply(dict(mode='tablet', tablet=True, rotation=None,
+                               disable_internal_input=False))
+        api.identity = ('replacement',)
+        with self.assertRaises(DisplayError):
+            display.apply(dict(mode='stand', tablet=True, rotation=0,
+                               disable_internal_input=False))
+        display.restore()
+        display.apply(dict(mode='laptop', tablet=False, rotation=0,
+                           disable_internal_input=False))
 
     def test_legacy_shell_journal_is_migrated_without_touching_shell(self):
         api, journal = Api(), MemoryJournal()

@@ -24,7 +24,7 @@ from ..model import DeviceInfo, HardwareStatus, SensorInfo, SensorReading, State
 from ..presentation import PosePresentation
 from ..service.engine import Engine
 from ..service.ports import SensorBackend, SessionOwner, SettingsBackend
-from ..session.failures import FailureKind, ServiceError
+from ..session.failures import DisplayError, FailureKind, ServiceError
 from ..session.runtime import SessionRuntime
 from ..session.ports import DisplayBackend
 from .display_only_input import DisplayOnlyInput
@@ -260,15 +260,43 @@ def verified_machine() -> tuple[str, str]:
     return vendor, product
 
 
+def select_native_display(api, journal, *, orientation, hardware_query):
+    """Choose a write-capable internal transaction or a read-only docked layout."""
+    from .display import ExternalOnlyDisplay, select_external_only, select_panel
+    from .tablet_display import WindowsTabletDisplay
+
+    panels = api.panels()
+    try:
+        select_panel(panels)
+    except DisplayError as panel_error:
+        try:
+            select_external_only(panels)
+        except DisplayError as external_error:
+            # Multiple/ambiguous internal panels are a different failure than
+            # a deliberately docked external-only topology.
+            raise (panel_error if external_error.detail == 'internal-panel-still-present'
+                   else external_error) from external_error
+        if journal.load() is not None:
+            raise DisplayError(
+                ErrorCode.DISPLAY_UNAVAILABLE,
+                'external-only-display-recovery-pending',
+            ) from panel_error
+        return ExternalOnlyDisplay(api)
+    return WindowsTabletDisplay(
+        journal=journal, api=api, hardware_query=hardware_query,
+        orientation=orientation, mapping=SIMPLE_ORIENTATION_TRANSFORM,
+    )
+
+
 def native_screen_session(store: SettingsBackend, instance: str, journal_path: Path) -> ScreenSession:
     """Select only the machine/mount with collected Windows pose evidence."""
     from ..session.journal import Journal
     from .convertible_slate import NativeSlateDevice, SlateNotifier
+    from .display import NativeDisplay
     from .slate_journal import SlateJournal, lease_path
     from .sensor import WindowsSensor, IDENTITY
     from .session_context import WindowsSessionContext
     from .switch import WindowsSwitch
-    from .tablet_display import WindowsTabletDisplay
     require_native_user()
     vendor, product = verified_machine()
     with ExitStack() as resources:
@@ -280,9 +308,10 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
         )
         sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY, include_orientation=True))
         resources.callback(sensor.close)
-        display = WindowsTabletDisplay(
-            journal=Journal(journal_path), hardware_query=switch.query,
-            orientation=sensor.orientation, mapping=SIMPLE_ORIENTATION_TRANSFORM,
+        journal = Journal(journal_path)
+        api = NativeDisplay()
+        display = select_native_display(
+            api, journal, orientation=sensor.orientation, hardware_query=switch.query,
         )
         session = ScreenSession(store=store, instance=instance,
             sensor=sensor, switch=switch, display=display, context=context, slate=slate,

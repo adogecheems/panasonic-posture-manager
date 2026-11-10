@@ -18,6 +18,7 @@ from ..session.failures import DisplayError
 from ..session.transaction import DisplayState, SoftwareDisplay
 
 U16, U32, I32 = C.c_uint16, C.c_uint32, C.c_int32
+INTERNAL_TECHNOLOGIES = frozenset((6, 11, 13, 0x80000000))
 
 
 class Luid(C.Structure):
@@ -90,7 +91,7 @@ class Panel:
 
 
 def select_panel(paths: list[Panel]) -> Panel:
-    internal = [path for path in paths if path.technology in (6, 11, 13, 0x80000000)]
+    internal = [path for path in paths if path.technology in INTERNAL_TECHNOLOGIES]
     if len(internal) != 1:
         raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'internal-panel-is-not-unique')
     panel = internal[0]
@@ -99,6 +100,22 @@ def select_panel(paths: list[Panel]) -> Panel:
     if not panel.identity or not panel.source or panel.transform not in range(4) or min(panel.width, panel.height) <= 0:
         raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'invalid-internal-panel')
     return panel
+
+
+def select_external_only(paths: list[Panel]) -> tuple[str, ...]:
+    """Return a stable external layout that must be preserved without writes."""
+    if any(path.technology in INTERNAL_TECHNOLOGIES for path in paths):
+        raise DisplayError(ErrorCode.DISPLAY_IDENTITY, 'internal-panel-still-present')
+    external = list(paths)
+    if not external:
+        raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'no-active-display')
+    if any(not path.identity or not path.source or path.transform not in range(4)
+           or min(path.width, path.height) <= 0 for path in external):
+        raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'invalid-external-display')
+    identities = tuple(sorted(path.identity for path in external))
+    if len(set(identities)) != len(identities):
+        raise DisplayError(ErrorCode.DISPLAY_IDENTITY, 'external-display-identity-not-unique')
+    return identities
 
 
 class NativeDisplay:
@@ -155,7 +172,7 @@ class NativeDisplay:
             raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'display-mode-query-failed')
         return mode
 
-    def read(self) -> Panel:
+    def panels(self) -> list[Panel]:
         rotation = U32()
         if not self.user.GetAutoRotationState(C.byref(rotation)):
             raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'rotation-state-query-failed')
@@ -169,7 +186,13 @@ class NativeDisplay:
             panels.append(Panel(_wide(target.path), source,
                 (path.source.adapter.low, path.source.adapter.high, path.source.id),
                 path.target.technology, mode.orientation, mode.width, mode.height, rotation.value))
-        return select_panel(panels)
+        return panels
+
+    def read(self) -> Panel:
+        return select_panel(self.panels())
+
+    def external_identity(self) -> tuple[str, ...]:
+        return select_external_only(self.panels())
 
     def lock(self, locked: bool) -> None:
         """Acquire or restore the global automatic-rotation lock.
@@ -234,6 +257,38 @@ class NativeDisplay:
                 return
             time.sleep(.05)
         raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'display-readback-failed')
+
+
+class ExternalOnlyDisplay:
+    """Preserve a docked external layout while posture/slate logic continues."""
+    backend_name = 'windows-external-only'
+
+    def __init__(self, api):
+        self.api = api
+        self.identity: tuple[str, ...] | None = None
+
+    def _verify(self) -> tuple[str, ...]:
+        current = self.api.external_identity()
+        if self.identity is not None and current != self.identity:
+            raise DisplayError(ErrorCode.DISPLAY_IDENTITY, 'external-layout-changed')
+        self.identity = current
+        return current
+
+    def apply(self, target: Target | dict) -> None:
+        mode = target.get('mode') if isinstance(target, dict) else target.mode
+        if mode == 'unavailable':
+            return
+        if mode not in {'laptop', 'tent', 'stand', 'hardware'}:
+            raise DisplayError(ErrorCode.DISPLAY_UNKNOWN_MODE, str(mode or 'empty'))
+        self._verify()
+
+    def hold_orientation(self) -> None:
+        self._verify()
+
+    def restore(self, normal: bool = False, *, release_lock: bool = False,
+                keep_journal: bool = False) -> None:
+        del normal, release_lock, keep_journal
+        self.identity = None
 
 
 class WindowsDisplay(SoftwareDisplay):
