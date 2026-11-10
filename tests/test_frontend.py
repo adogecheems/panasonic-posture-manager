@@ -119,6 +119,8 @@ from panasonic_posture.frontend import ports, state, actions
 
     def test_display_and_detail_priority(self):
         model = PostureModel()
+        model.update(state(manual='auto', applied={'mode': 'laptop'}, pose='stand'), 0)
+        self.assertEqual(model.pose, 'stand')
         model.update(state(applied={'mode': 'hardware'}), 0)
         self.assertEqual(model.pose, 'tablet')
         model.update(state(pose='unknown', manual='auto', target={'mode': 'unavailable'}), 1)

@@ -21,6 +21,16 @@ def notice_confirmable(state: dict | None, notice: tuple | None) -> bool:
 
 
 def displayed_pose(state: dict) -> str:
+    if state.get('hardware') is True:
+        # Hardware slate mode is authoritative even if the accelerometer pose
+        # is flat or stale while the device is folded.
+        return 'tablet'
+    pose = state.get('pose')
+    if state.get('manual') == 'auto' and pose in POSES:
+        # The current-posture page describes the recognized physical posture.
+        # Applied mode may still be the previous target while the bounded
+        # display transaction settles, and must not relabel the device.
+        return pose
     applied = (state.get('applied') or {}).get('mode')
     if applied == 'hardware':
         return 'tablet'
@@ -29,7 +39,7 @@ def displayed_pose(state: dict) -> str:
     manual = state.get('manual')
     if not state.get('error_code') and manual in POSES and (state.get('target') or {}).get('mode') == manual:
         return manual
-    return state.get('pose') if state.get('pose') in POSES else 'unknown'
+    return pose if pose in POSES else 'unknown'
 
 
 class Detail(StrEnum):
