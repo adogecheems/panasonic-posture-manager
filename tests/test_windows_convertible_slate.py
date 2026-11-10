@@ -217,7 +217,7 @@ class SlateNotifierTests(unittest.TestCase):
 
     def test_device_toggle_is_conditional_and_read_back(self):
         device = object.__new__(NativeSlateDevice)
-        state = [0]
+        state = [1]
         writes = []
         sleeps = []
         device.handle = 1
@@ -227,7 +227,7 @@ class SlateNotifierTests(unittest.TestCase):
         def write(handle, data, size, count, overlapped):
             del handle, data, size, overlapped
             writes.append(True)
-            state[0] = 1
+            state[0] = 0
             count._obj.value = 1
             return 1
 
@@ -237,19 +237,19 @@ class SlateNotifierTests(unittest.TestCase):
         self.assertFalse(device.set(True))
         self.assertEqual(writes, [True])
 
-    def test_verified_raw_bytes_map_zero_to_laptop_one_to_slate(self):
+    def test_verified_raw_bytes_map_zero_to_slate_one_to_laptop(self):
         device = object.__new__(NativeSlateDevice)
         device._raw_read = lambda: 0
-        self.assertFalse(device.read())
-        device._raw_read = lambda: 1
         self.assertTrue(device.read())
+        device._raw_read = lambda: 1
+        self.assertFalse(device.read())
 
     def test_toggle_refuses_more_than_one_write_and_surfaces_readback_mismatch(self):
         device = object.__new__(NativeSlateDevice)
         writes = []
         sleeps = []
         device.handle = 1
-        device._raw_read = lambda: 0
+        device._raw_read = lambda: 1
         device.sleep = sleeps.append
 
         def write(handle, data, size, count, overlapped):

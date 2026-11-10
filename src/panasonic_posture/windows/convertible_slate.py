@@ -34,9 +34,9 @@ _DIGCF_ALLCLASSES = 0x00000004
 _INVALID_HANDLE_VALUE = C.c_void_p(-1).value
 _ERROR_NO_MORE_ITEMS = 259
 # On the verified CFQV8 firmware, the raw byte exposed by msgpiowin32 is 0
-# while the device is open in laptop use and 1 after it is folded to slate.
-_SLATE_RAW = 1
-_LAPTOP_RAW = 0
+# while the device is folded to slate and 1 while open in laptop use.
+_SLATE_RAW = 0
+_LAPTOP_RAW = 1
 CSM_SETTLE_SECONDS = 2.0
 
 
