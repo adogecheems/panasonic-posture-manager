@@ -26,6 +26,25 @@ class SlatePosture(Protocol):
     def close(self) -> None: ...
 
 
+def slate_qualified_hardware(query: Callable[[], tuple[bool | None, str]],
+                             owned: Callable[[], bool | None],
+                             settling: Callable[[], bool] = lambda: False):
+    """Separate our slate notification from an independent physical change."""
+    def qualified():
+        hardware, status = query()
+        if settling():
+            return False, HardwareStatus.OK
+        target = owned()
+        if target is None or status != HardwareStatus.OK or type(hardware) is not bool:
+            return hardware, status
+        if hardware != target:
+            return None, HardwareStatus.AMBIGUOUS
+        # The raw CSM currently reflects our own notification, not a physical
+        # takeover. An external change to the opposite state fails above.
+        return False, HardwareStatus.OK
+    return qualified
+
+
 class QualifiedDisplay:
     def __init__(
         self,

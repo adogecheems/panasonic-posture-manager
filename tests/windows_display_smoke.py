@@ -19,6 +19,8 @@ from panasonic_posture.windows.display import WindowsDisplay
 from panasonic_posture.windows.instance import InstanceLock
 from panasonic_posture.windows.session_display import QualifiedDisplay
 from panasonic_posture.windows.slate_journal import SlateJournal, lease_path
+from panasonic_posture.windows.session_display import slate_qualified_hardware
+from panasonic_posture.windows.switch import WindowsSwitch
 from panasonic_posture.windows.tablet_mode import WindowsShellMode, read_prompt_preference
 
 
@@ -84,11 +86,15 @@ def main():
                    '--exercise-rotation', '--directory', str(directory)]
         flags = subprocess.CREATE_NO_WINDOW
         worker = slate_worker = None
-        display = WindowsDisplay(journal=journal)
-        original = display.api.read()
         slate_device = NativeSlateDevice()
         original_slate = slate_device.read()
         slate = SlateNotifier(slate_device, slate_journal)
+        hardware_query = slate_qualified_hardware(
+            WindowsSwitch().query, lambda: slate.software_owned,
+            lambda: slate.software_settling,
+        )
+        display = WindowsDisplay(journal=journal, hardware_query=hardware_query)
+        original = display.api.read()
         qualified = QualifiedDisplay(display, SmokeContext(), slate)
         shell = WindowsShellMode()
         original_shell = shell.read()

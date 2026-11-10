@@ -4,14 +4,14 @@ import tempfile
 import unittest
 from unittest import mock
 
-from panasonic_posture.model import Target
+from panasonic_posture.model import HardwareStatus, Target
 from panasonic_posture.session.failures import DisplayError
 from panasonic_posture.windows.convertible_slate import (
     NativeSlateDevice,
     SlateError,
     SlateNotifier,
 )
-from panasonic_posture.windows.session_display import QualifiedDisplay
+from panasonic_posture.windows.session_display import QualifiedDisplay, slate_qualified_hardware
 from panasonic_posture.windows.slate_journal import SlateJournal, lease_path
 
 
@@ -73,14 +73,49 @@ class FakeDisplay:
 
 class SlateNotifierTests(unittest.TestCase):
     def test_postures_set_only_when_the_desired_slate_state_changes(self):
+        now = [10.0]
         device = FakeSlateDevice(False)
-        notifier = SlateNotifier(device)
+        notifier = SlateNotifier(device, clock=lambda: now[0])
         self.assertTrue(notifier.sync_mode('tent'))
         self.assertFalse(notifier.sync_mode('stand'))
         self.assertFalse(notifier.sync_mode('hardware'))
         self.assertTrue(notifier.sync_mode('laptop'))
         self.assertFalse(notifier.sync_mode('unavailable'))
+        self.assertIs(notifier.software_owned, False)
+        now[0] += 2.1
+        self.assertIsNone(notifier.software_owned)
         self.assertEqual(device.sets, [True, False])
+
+    def test_notifier_exposes_only_the_slate_value_it_changed(self):
+        now = [10.0]
+        notifier = SlateNotifier(FakeSlateDevice(False), clock=lambda: now[0])
+        self.assertIsNone(notifier.software_owned)
+        notifier.sync_mode('tent')
+        self.assertIs(notifier.software_owned, True)
+        notifier.sync_mode('laptop')
+        self.assertIs(notifier.software_owned, False)
+        now[0] += 2.1
+        self.assertIsNone(notifier.software_owned)
+
+    def test_slate_aware_hardware_masks_only_the_owned_indicator_value(self):
+        owned = [True]
+        scoped = slate_qualified_hardware(
+            lambda: (True, HardwareStatus.OK), lambda: owned[0]
+        )
+        self.assertEqual(scoped(), (False, HardwareStatus.OK))
+        owned[0] = None
+        self.assertEqual(scoped(), (True, HardwareStatus.OK))
+        owned[0] = False
+        self.assertEqual(scoped(), (None, HardwareStatus.AMBIGUOUS))
+        error = slate_qualified_hardware(
+            lambda: (None, HardwareStatus.READ_ERROR), lambda: True
+        )
+        self.assertEqual(error(), (None, HardwareStatus.READ_ERROR))
+        settling = slate_qualified_hardware(
+            lambda: (False, HardwareStatus.OK), lambda: True,
+            lambda: True,
+        )
+        self.assertEqual(settling(), (False, HardwareStatus.OK))
 
     def test_release_restores_startup_state_and_keeps_the_lease_reusable(self):
         device = FakeSlateDevice(True)

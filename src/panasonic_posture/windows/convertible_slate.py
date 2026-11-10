@@ -35,6 +35,7 @@ _INVALID_HANDLE_VALUE = C.c_void_p(-1).value
 _ERROR_NO_MORE_ITEMS = 259
 _SLATE_RAW = 0
 _LAPTOP_RAW = 1
+CSM_SETTLE_SECONDS = 2.0
 
 
 class SlateError(OSError):
@@ -344,12 +345,17 @@ class SlateNotifier:
         self,
         device: SlateDevice,
         journal: SlateJournal | None = None,
+        *,
+        clock=time.monotonic,
     ) -> None:
         self.device = device
         self.journal = journal
+        self.clock = clock
         self.original: bool | None = None
         self.last: bool | None = None
         self.pending: SlateLease | None = None
+        self._expected: bool | None = None
+        self._settle_until = float('-inf')
         self.closed = False
         try:
             self.pending = journal.load() if journal is not None else None
@@ -373,6 +379,31 @@ class SlateNotifier:
             return False
         return None
 
+    @property
+    def software_owned(self) -> bool | None:
+        """Return the slate value changed by this notifier, if any."""
+        if self.pending is not None:
+            # Recovery has not reconciled the interrupted write yet, so its
+            # current CSM cannot establish software ownership.
+            return None
+        if self._expected is not None and self.clock() < self._settle_until:
+            # Device readback is synchronous, but Windows' CSM notification is
+            # asynchronous. Keep the just-written value authoritative for a
+            # bounded handoff window.
+            return self._expected
+        self._expected = None
+        if self.original is None or self.last is None or self.last == self.original:
+            return None
+        return self.last
+
+    @property
+    def software_settling(self) -> bool:
+        return self._expected is not None and self.clock() < self._settle_until
+
+    def _mark_settle(self, desired: bool) -> None:
+        self._expected = desired
+        self._settle_until = self.clock() + CSM_SETTLE_SECONDS
+
     def sync_mode(self, mode: str) -> bool:
         if self.closed:
             raise SlateError("convertible-slate notifier is closed")
@@ -387,12 +418,14 @@ class SlateNotifier:
             self.original = bool(self.device.read())
         if desired == self.original:
             changed = bool(self.device.set(desired))
+            self._mark_settle(desired)
             if self.journal is not None:
                 self.journal.clear()
         else:
             if self.journal is not None:
                 self.journal.save(self.original, desired)
             changed = bool(self.device.set(desired))
+            self._mark_settle(desired)
         self.last = desired
         return changed
 
@@ -418,6 +451,7 @@ class SlateNotifier:
                 # after a crash. Persist the new destination before one toggle.
                 self.journal.save(self.original, desired)
             changed = bool(self.device.set(desired))
+            self._mark_settle(desired)
         self.last = desired
         self.pending = None
         if self.journal is not None and not retain_lease:
@@ -432,6 +466,7 @@ class SlateNotifier:
         if self.pending is not None:
             original = self.pending.original
             self.device.set(original)
+            self._mark_settle(original)
             self.pending = None
             self.original = original
             self.last = original
@@ -441,6 +476,7 @@ class SlateNotifier:
         if self.original is None:
             return
         self.device.set(self.original)
+        self._mark_settle(self.original)
         if self.journal is not None:
             self.journal.clear()
         self.last = self.original

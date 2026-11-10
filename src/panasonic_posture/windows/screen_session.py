@@ -15,6 +15,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Protocol
 
 from ..contracts import ErrorCode
@@ -29,7 +30,10 @@ from ..session.runtime import SessionRuntime
 from ..session.ports import DisplayBackend
 from .display_only_input import DisplayOnlyInput
 from .orientation import SIMPLE_ORIENTATION_TRANSFORM, OrientationReading
-from .session_display import QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture
+from .session_display import (
+    QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture,
+    slate_qualified_hardware,
+)
 
 SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
 
@@ -320,11 +324,16 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
         resources.callback(sensor.close)
         journal = Journal(journal_path)
         api = NativeDisplay()
+        hardware_query = slate_qualified_hardware(
+            switch.query, lambda: slate.software_owned,
+            lambda: slate.software_settling,
+        )
         display = select_native_display(
-            api, journal, orientation=sensor.orientation, hardware_query=switch.query,
+            api, journal, orientation=sensor.orientation, hardware_query=hardware_query,
         )
         session = ScreenSession(store=store, instance=instance,
-            sensor=sensor, switch=switch, display=display, context=context, slate=slate,
+            sensor=sensor, switch=SimpleNamespace(query=hardware_query),
+            display=display, context=context, slate=slate,
             device=DeviceInfo(id='windows-cfqv8-screen', vendor=vendor, product=product,
                               platform='windows', support_tier='compatible'))
         resources.pop_all()  # ScreenSession now owns all three resources.
