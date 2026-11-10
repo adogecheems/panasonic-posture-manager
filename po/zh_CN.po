@@ -334,8 +334,8 @@ msgstr "可以切换到帐篷模式"
 msgid "Stand mode is available"
 msgstr "可以切换到支架模式"
 
-msgid "Open the app to confirm the current posture."
-msgstr "打开应用，确认当前姿态后切换。"
+msgid "Tap to enable the current posture."
+msgstr "点击即可切换到当前姿态。"
 
 msgid "Background"
 msgstr "后台运行"

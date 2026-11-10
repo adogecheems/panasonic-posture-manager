@@ -122,7 +122,7 @@ packaging\windows\run.cmd --native-backend --language zh_CN
 
 「登录时启动」只在用户开启时写入 HKCU 的 `Software\Microsoft\Windows\CurrentVersion\Run` 中本项目的 `PanasonicPostureManager` 值；关闭时只删除与当前固定命令完全相同的值，发现其他内容则保留并显示冲突。不创建服务、计划任务或提权项，不更改 Windows 启动应用管理器的禁用选择。界面显示本项目启动登记是否存在，Windows 自身的启动管理或登录延迟仍可能阻止即时运行。命令使用绝对路径、正确引用与无控制台解释器，并拒绝超过 260 UTF-16 单元的命令；限制依据 [Microsoft Run 键说明](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)。移动便携文件夹前应先在旧位置关闭此项，移动后重新开启。使用 `--settings` 的独立测试实例不开放自启动。
 
-源码自启动由固定 `packaging/windows/launch-native.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --native-backend --background`。首次开发测试保持自启动关闭。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；通知点击只打开当前页面，过期通知不能直接执行模式切换。实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
+源码自启动由固定 `packaging/windows/launch-native.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --native-backend --background`。首次开发测试保持自启动关闭。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；点击通知时，仅当后台实例、epoch、提示类型和当前可确认条件仍完全匹配才经页面现有事务确认，否则只打开界面。实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
 
 授权真机可运行 `tests/windows_resident_smoke.py --exercise-resident --directory <新证据目录>`。CFQV8 已通过真实后台隐藏后继续运行、另一个进程用公开入口唤回同一窗口、无源码环境变量的后台登录入口，以及明确退出后的清理；验证没有改动本机登录启动登记，也没有注销登录或声称原生通知已目视验收。
 

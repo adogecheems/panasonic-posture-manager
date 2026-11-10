@@ -4,7 +4,7 @@ import subprocess
 import sys
 import unittest
 
-from panasonic_posture.frontend.state import PostureModel, Detail
+from panasonic_posture.frontend.state import PostureModel, Detail, notice_confirmable, notice_token
 from panasonic_posture.frontend.actions import SettingsModel, ActionRunner
 from panasonic_posture.model import StateSnapshot
 
@@ -85,6 +85,22 @@ from panasonic_posture.frontend import ports, state, actions
         model.disconnect()
         self.assertIsNone(model.deadline)
         self.assertEqual(model.detail, Detail.DISCONNECTED)
+
+    def test_clicked_notice_requires_the_same_current_actionable_snapshot(self):
+        current = state(pending_notification=4, pending_prompt='tent')
+        notice = notice_token(current)
+        self.assertTrue(notice_confirmable(current, notice))
+        for changes in (
+            {'instance': 'two'}, {'pending_notification': 5}, {'pending_prompt': 'stand'},
+            {'session_connected': False}, {'supported': False},
+            {'error_code': 'display-unavailable'}, {'hardware': True},
+        ):
+            with self.subTest(changes=changes):
+                changed = dict(pending_notification=4, pending_prompt='tent')
+                changed.update(changes)
+                self.assertFalse(notice_confirmable(state(**changed), notice))
+        self.assertFalse(notice_confirmable(None, notice))
+        self.assertFalse(notice_confirmable(current, None))
 
     def test_return_auto_requires_supported_connected_manual_state(self):
         model = PostureModel()

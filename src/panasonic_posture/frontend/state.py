@@ -4,6 +4,22 @@ from enum import StrEnum
 POSES = frozenset({'laptop', 'tent', 'stand', 'tablet'})
 
 
+def notice_token(state: dict | None) -> tuple | None:
+    if state is None:
+        return None
+    return state.get('instance'), state.get('pending_notification'), state.get('pending_prompt')
+
+
+def notice_confirmable(state: dict | None, notice: tuple | None) -> bool:
+    """A clicked notice is only actionable while its exact snapshot is current."""
+    return bool(
+        state and notice is not None and notice_token(state) == notice
+        and state.get('supported') and state.get('session_connected')
+        and not state.get('error_code') and state.get('hardware') is False
+        and notice[2] in ('tent', 'stand')
+    )
+
+
 def displayed_pose(state: dict) -> str:
     applied = (state.get('applied') or {}).get('mode')
     if applied == 'hardware':

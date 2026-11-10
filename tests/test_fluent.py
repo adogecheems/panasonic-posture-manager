@@ -211,7 +211,7 @@ assert not fallback, 'The close-to-tray filter must not prevent application shut
 assert client._stopped
 ''')
 
-    def test_tray_notices_deduplicate_epochs_and_only_open_current_confirmation(self):
+    def test_tray_notices_deduplicate_epochs_and_confirm_only_the_current_notice(self):
         self.run_resident('''
 resident = ResidentTray(window, tray_factory=FakeTray)
 window.hide()
@@ -234,6 +234,13 @@ assert client.state['manual'] == 'auto'
 client.state['session_connected'] = True
 client.refresh()
 assert len(resident.tray.messages) == 2
+assert client.state['pending_notification'] == epoch + 1
+window.hide()
+resident.tray.messageClicked.emit()
+QTest.qWait(450)
+assert window.isVisible()
+assert client.state['manual'] == 'tent'
+assert window.home.heading.text() == 'Tent'
 resident.quit()
 QTest.qWait(50)
 ''')

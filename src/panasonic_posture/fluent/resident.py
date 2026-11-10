@@ -1,10 +1,11 @@
-"""Native screen UI lifetime, tray entry and non-actionable posture notices."""
+"""Native screen UI lifetime, tray entry and guarded posture notices."""
 import logging
 
 from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from qfluentwidgets import CaptionLabel
 
+from ..frontend.state import notice_confirmable, notice_token
 from .pages import mode_labels
 
 log = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ class ResidentTray(QObject):
         self.enabled = tray_factory.isSystemTrayAvailable()
         self.quitting = False
         self.sent = set()
+        self.notice = None
         self.instance = None
         self.timer = QTimer(self)
         self._ = window._
@@ -32,7 +34,7 @@ class ResidentTray(QObject):
         self.tray.setContextMenu(self.menu)
         self.tray.setToolTip(window.windowTitle())
         self.tray.activated.connect(self.activated)
-        self.tray.messageClicked.connect(self.show_window)
+        self.tray.messageClicked.connect(self.open_notice)
         window.state_changed.connect(self.update_state)
         window.connection_lost.connect(self.unavailable)
         self.app.aboutToQuit.connect(self.shutdown)
@@ -70,6 +72,17 @@ class ResidentTray(QObject):
         self.window.activateWindow()
         self.window.settings.refresh_startup()
 
+    def open_notice(self):
+        """Confirm only when the clicked notice still describes the current state."""
+        state = self.window.settings.model.state
+        if self.quitting or not notice_confirmable(state, self.notice):
+            self.show_window()
+            return
+        # The page owns busy/error handling and rechecks the same snapshot before
+        # sending the epoch-bound confirmation.
+        self.show_window()
+        self.window.home.confirm()
+
     def check_activation(self):
         try:
             if self.activation.poll():
@@ -92,6 +105,7 @@ class ResidentTray(QObject):
         if (not self.enabled or not self.tray.supportsMessages() or not state['supported'] or
                 not state['session_connected'] or state['error_code'] or state['hardware'] is not False or
                 epoch is None or prompt not in ('tent', 'stand')):
+            self.notice = None
             return
         key = epoch, prompt
         if key in self.sent:
@@ -101,10 +115,12 @@ class ResidentTray(QObject):
         self.sent = {old for old in self.sent if old[1] != prompt}
         self.sent.add(key)
         title = _('Tent mode is available') if prompt == 'tent' else _('Stand mode is available')
-        self.tray.showMessage(title, _('Open the app to confirm the current posture.'),
+        self.notice = notice_token(state)
+        self.tray.showMessage(title, _('Tap to enable the current posture.'),
                               QSystemTrayIcon.MessageIcon.Information, 5000)
 
     def unavailable(self):
+        self.notice = None
         self.tray.setToolTip(self.window.windowTitle() + ' · ' + self._('Connecting to background service…'))
 
     def shutdown(self):
