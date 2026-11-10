@@ -18,65 +18,6 @@ from .tablet_mode import (
 
 log = logging.getLogger(__name__)
 SOFTWARE_TOUCH_MODES = frozenset(('tent', 'stand'))
-DISPLAY_HANDOFF_SECONDS = 0.75
-
-
-class WindowsShellPosture:
-    """Publish software tablet state without touching the physical PDO."""
-
-    def __init__(self, shell, hardware_query, *, clock=time.monotonic,
-                 sleep=time.sleep) -> None:
-        self.shell = shell
-        self.hardware_query = hardware_query
-        self.clock = clock
-        self.sleep = sleep
-        self._original: int | None = None
-        self._handoff_until = float('-inf')
-
-    @staticmethod
-    def desired(mode: str) -> int | None:
-        if mode in SOFTWARE_TOUCH_MODES or mode == 'tablet':
-            return TABLET
-        if mode == 'laptop':
-            return DESKTOP
-        return None
-
-    def sync_mode(self, mode: str) -> bool:
-        desired = self.desired(mode)
-        if desired is None:
-            return False
-        hardware, _status = self.hardware_query()
-        if hardware is not False:
-            return False
-        current = self.shell.read()
-        if self._original is None:
-            self._original = current
-        changed = current != desired
-        if changed:
-            self.shell.set_mode(desired)
-        self._handoff_until = self.clock() + DISPLAY_HANDOFF_SECONDS
-        return changed
-
-    def wait_for_display_handoff(self) -> None:
-        remaining = self._handoff_until - self.clock()
-        if remaining > 0:
-            self.sleep(min(DISPLAY_HANDOFF_SECONDS, remaining))
-
-    def release(self) -> None:
-        try:
-            hardware, _status = self.hardware_query()
-        except (OSError, ValueError):
-            return
-        if hardware is not False or self._original is None:
-            return
-        current = self.shell.read()
-        if current != self._original:
-            self.shell.set_mode(self._original)
-        self._original = None
-        self._handoff_until = float('-inf')
-
-    def close(self) -> None:
-        self.release()
 
 
 class WindowsTouchMode:
@@ -177,7 +118,4 @@ class WindowsTouchMode:
         self._retry_at = 0.0
 
 
-__all__ = [
-    'DISPLAY_HANDOFF_SECONDS', 'SOFTWARE_TOUCH_MODES', 'WindowsShellPosture',
-    'WindowsTouchMode',
-]
+__all__ = ['SOFTWARE_TOUCH_MODES', 'WindowsTouchMode']

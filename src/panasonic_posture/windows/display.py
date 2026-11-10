@@ -411,6 +411,25 @@ class WindowsDisplay(SoftwareDisplay):
             self.owned['original_transform'] = state.transform
             self._persist()
 
+    def prepare_hardware_release(self) -> None:
+        """Lock the settled tablet direction before the physical switch opens."""
+
+        state = self._read_state()
+        if not self.owned:
+            self.owned = self._journal_document(state)
+            self._persist()
+        self._write_owned_lock(state, True)
+        current = self._read_state()
+        if current.identity != state.identity:
+            raise DisplayError(
+                ErrorCode.DISPLAY_IDENTITY,
+                'display-changed-while-preparing-hardware-release',
+            )
+        self._held_orientation = current
+        if self.owned.get('written_transform') is None:
+            self.owned['original_transform'] = current.transform
+            self._persist()
+
     def restore(self, normal: bool = False, *, release_lock: bool = False,
                 keep_journal: bool = False) -> None:
         self._adopt_native_handoff = False

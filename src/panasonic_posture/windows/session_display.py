@@ -133,6 +133,14 @@ class QualifiedDisplay:
             self._restore_after_failed_transaction()
             self._release_slate()
             raise
+
+    def prepare_hardware_release(self) -> None:
+        prepare = getattr(self.display, 'prepare_hardware_release', None)
+        if prepare is None:
+            return
+        self._require_available()
+        prepare()
+
     def restore(self, normal: bool = False) -> None:
         try:
             self.display.restore(normal=normal)

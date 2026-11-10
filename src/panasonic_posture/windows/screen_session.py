@@ -10,6 +10,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, TimeoutError
 from contextlib import ExitStack
 from dataclasses import replace
+import logging
 import queue
 import os
 import threading
@@ -32,9 +33,9 @@ from .orientation import OrientationReading
 from .session_display import (
     QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture,
 )
-from .touch_mode import WindowsShellPosture
 
 SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
+log = logging.getLogger(__name__)
 
 
 def available_screen_modes(display: object) -> tuple[str, ...]:
@@ -141,11 +142,14 @@ class ScreenSession:
         self._stack = ExitStack()
         self.closed = False
         self.context = context
+        self.slate = slate
         self._stack.callback(context.close)
         self._stack.callback(sensor.close)
         if slate is not None:
             self._stack.callback(slate.close)
         qualified = QualifiedDisplay(display, context, slate)
+        self.qualified = qualified
+        self._hardware_release_key = None
         self._stack.callback(qualified.restore)
         self.available_modes = available_screen_modes(display)
         refreshable = callable(getattr(display, 'needs_refresh', None)) and callable(
@@ -179,7 +183,26 @@ class ScreenSession:
         self.bridge.drain(self.engine, self.owner)
         self.engine.tick()
         self.bridge.publish(self.engine.state)
+        self._prepare_hardware_release()
         self.session.tick(now)
+
+    def _prepare_hardware_release(self) -> None:
+        state = self.engine.state
+        if state.hardware is True and state.pose in ('tent', 'stand'):
+            key = (state.instance, state.generation, state.pose)
+            if key != self._hardware_release_key:
+                try:
+                    self.qualified.prepare_hardware_release()
+                except (DisplayError, OSError, ValueError) as error:
+                    log.warning('cannot prepare for physical tablet release: %s', error)
+                else:
+                    log.warning(
+                        'pre-locked the physical tablet direction for pending %s',
+                        state.pose,
+                    )
+                    self._hardware_release_key = key
+        elif state.hardware is not True:
+            self._hardware_release_key = None
 
     def call(self, method: str, params: dict) -> None:
         if method == 'set_mode':
@@ -302,7 +325,6 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
     from .sensor import WindowsSensor, IDENTITY
     from .session_context import WindowsSessionContext
     from .switch import WindowsSwitch
-    from .tablet_mode import WindowsShellModeController
     require_native_user()
     vendor, product = verified_machine()
     with ExitStack() as resources:
@@ -316,12 +338,9 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
         display = select_native_display(
             api, journal, hardware_query=switch.query,
         )
-        shell = WindowsShellPosture(
-            WindowsShellModeController(), switch.query
-        )
         session = ScreenSession(store=store, instance=instance,
             sensor=sensor, switch=switch,
-            display=display, context=context, slate=shell,
+            display=display, context=context,
             device=DeviceInfo(id='windows-cfqv8-screen', vendor=vendor, product=product,
                               platform='windows', support_tier='compatible'))
         resources.pop_all()  # ScreenSession now owns all three resources.

@@ -264,6 +264,26 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(api.writes, [])
 
+    def test_physical_release_preparation_locks_the_settled_tablet_direction(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
+        display.apply(dict(mode='hardware', tablet=True, rotation=None,
+                           disable_internal_input=False))
+        api.current = replace(api.current, transform=2)
+
+        display.prepare_hardware_release()
+        self.assertEqual(api.current.transform, 2)
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertEqual(journal.document['original_transform'], 2)
+        self.assertIsNone(journal.document['written_transform'])
+
+        # The physical switch can now release without Windows first rotating
+        # through desktop orientation.
+        display.hold_orientation()
+        self.assertEqual(api.current.transform, 2)
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+
     def test_physical_takeover_during_restart_keeps_native_direction(self):
         api, journal = Api(), MemoryJournal()
         physical = [False]

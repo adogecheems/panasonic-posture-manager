@@ -10,7 +10,9 @@ import time
 from types import SimpleNamespace
 import unittest
 
-from panasonic_posture.model import DeviceInfo, HardwareStatus, SensorInfo, SensorReading, StateSnapshot
+from panasonic_posture.model import (
+    DeviceInfo, HardwareStatus, SensorInfo, SensorReading, StateSnapshot, Target,
+)
 from panasonic_posture.service.engine import Engine
 from panasonic_posture.session.failures import DisplayError, ServiceError
 from panasonic_posture.session.journal import Journal
@@ -24,7 +26,6 @@ from panasonic_posture.windows.screen_session import (
 )
 from panasonic_posture.windows.simulation import SimulatedDisplay
 from panasonic_posture.windows.tablet_display import WindowsTabletDisplay
-from panasonic_posture.windows.touch_mode import WindowsShellPosture
 
 
 def screen_worker(path):
@@ -256,6 +257,31 @@ class ManualTabletRetirementTests(unittest.TestCase):
         self.assertEqual(validate_state(state, native=True), state)
         with self.assertRaises(BackendError):
             self.backend.call('set_mode', {'mode': 'tablet'})
+
+
+class HardwareReleasePreparationTests(unittest.TestCase):
+    def test_tent_pose_while_still_physically_folded_prepares_once(self):
+        class Prepared:
+            calls = 0
+            def prepare_hardware_release(self):
+                self.calls += 1
+
+        session = object.__new__(ScreenSession)
+        session._hardware_release_key = None
+        session.qualified = Prepared()
+        session.engine = SimpleNamespace(state=StateSnapshot(
+            instance='one', generation=3, hardware=True, pose='tent',
+            target=Target(mode='hardware'),
+        ))
+        session._prepare_hardware_release()
+        session._prepare_hardware_release()
+        self.assertEqual(session.qualified.calls, 1)
+
+        session.engine.state.hardware = False
+        session._prepare_hardware_release()
+        session.engine.state.hardware = True
+        session._prepare_hardware_release()
+        self.assertEqual(session.qualified.calls, 2)
 
 
 class BridgeTests(unittest.TestCase):
@@ -497,7 +523,7 @@ from panasonic_posture.windows.backend import Backend
         self.assertIsInstance(captured['session']['sensor'], ProfileSensor)
         self.assertIsInstance(captured['session']['display'], Display)
         self.assertIs(captured['session']['switch'], switch)
-        self.assertIsInstance(captured['session']['slate'], WindowsShellPosture)
+        self.assertNotIn('slate', captured['session'])
 
 
 class PrivateScreenProcessTests(unittest.TestCase):

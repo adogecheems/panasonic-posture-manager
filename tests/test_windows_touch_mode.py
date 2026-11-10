@@ -7,7 +7,7 @@ from panasonic_posture.windows.tablet_mode import (
     DESKTOP, PREFERENCE_ALWAYS_SWITCH, PREFERENCE_ASK, PREFERENCE_DONT_SWITCH,
     TABLET,
 )
-from panasonic_posture.windows.touch_mode import WindowsShellPosture, WindowsTouchMode
+from panasonic_posture.windows.touch_mode import WindowsTouchMode
 
 
 class Shell:
@@ -136,36 +136,6 @@ class WindowsTouchModeTests(unittest.TestCase):
         self.hardware[0] = False
         self.touch.close()
         self.assertEqual(self.shell.mode, DESKTOP)
-
-
-class WindowsShellPostureTests(unittest.TestCase):
-    def test_publishes_tablet_state_to_windows_and_restores_the_original(self):
-        shell, hardware, now, sleeps = Shell(), [False], [10.0], []
-        def sleep(seconds):
-            sleeps.append(seconds)
-            now[0] += seconds
-        posture = WindowsShellPosture(
-            shell, lambda: (hardware[0], None),
-            clock=lambda: now[0], sleep=sleep)
-
-        self.assertTrue(posture.sync_mode('tent'))
-        self.assertEqual(shell.writes, [TABLET])
-        posture.wait_for_display_handoff()
-        self.assertEqual(len(sleeps), 1)
-        self.assertTrue(posture.sync_mode('laptop'))
-        self.assertEqual(shell.mode, DESKTOP)
-        self.assertEqual(shell.writes, [TABLET, DESKTOP])
-
-    def test_physical_tablet_or_unknown_state_is_never_overwritten(self):
-        for hardware in (True, None):
-            with self.subTest(hardware=hardware):
-                shell = Shell()
-                posture = WindowsShellPosture(
-                    shell, lambda: (hardware, None),
-                    clock=lambda: 10.0, sleep=lambda seconds: None)
-                self.assertFalse(posture.sync_mode('tent'))
-                posture.release()
-                self.assertEqual(shell.writes, [])
 
 
 if __name__ == '__main__':
