@@ -283,8 +283,8 @@ msgstr "跟随系统"
 msgid "Unable to complete the operation"
 msgstr "操作未能完成"
 
-msgid "Windows preview · The backend is not connected yet."
-msgstr "Windows 界面预览 · 后台服务尚未接入。"
+msgid "The background service is not connected yet."
+msgstr "后台服务尚未连接。"
 
 msgid "Return to automatic"
 msgstr "返回自动"

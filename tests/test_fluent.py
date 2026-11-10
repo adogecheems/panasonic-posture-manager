@@ -540,6 +540,7 @@ normal = Window(language='en', client=UnavailableClient())
 assert isinstance(normal.client, UnavailableClient)
 assert not normal.settings.radios['tent'].isEnabled()
 assert 'not connected' in normal.home.detail.text().lower()
+assert 'preview' not in normal.home.detail.text().lower()
 normal.close()
 ''')
 

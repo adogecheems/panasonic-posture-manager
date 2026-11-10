@@ -127,7 +127,7 @@ class Home(Page):
     def render_detail(self):
         _ = self._
         messages = {
-            Detail.NONE: '', Detail.DISCONNECTED: _('Windows preview · The backend is not connected yet.'),
+            Detail.NONE: '', Detail.DISCONNECTED: _('The background service is not connected yet.'),
             Detail.SESSION: _('Waiting for the desktop to get ready…'),
             Detail.UNSUPPORTED: _('This model does not support automatic mode changes.'),
             Detail.SWITCH: _('The tablet switch is unavailable. Restart the background service if this continues.'),
