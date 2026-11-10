@@ -111,6 +111,23 @@ class DemoTests(unittest.TestCase):
                 self.assertEqual(translator('zh_CN')('Laptop'), '笔记本')
                 self.assertEqual(translator('en')('Laptop'), 'Laptop')
 
+    def test_windows_ui_language_wins_over_process_lang(self):
+        from unittest.mock import patch
+        from panasonic_posture.fluent.resources import default_language
+        environment = {'LANGUAGE': '', 'LC_ALL': '', 'LC_MESSAGES': '', 'LANG': 'C.UTF-8'}
+        with patch.dict(os.environ, environment), \
+                patch('panasonic_posture.fluent.resources._windows_language',
+                      return_value='zh_CN'):
+            self.assertEqual(default_language(), 'zh_CN')
+        with patch.dict(os.environ, environment), \
+                patch('panasonic_posture.fluent.resources._windows_language',
+                      return_value=None):
+            self.assertEqual(default_language(), 'C.UTF-8')
+        with patch.dict(os.environ, dict(environment, LC_ALL='zh_CN.UTF-8')), \
+                patch('panasonic_posture.fluent.resources._windows_language',
+                      return_value=None):
+            self.assertEqual(default_language(), 'zh_CN.UTF-8')
+
     def test_new_source_strings_survive_an_older_compiled_catalog(self):
         import gettext
         from tempfile import TemporaryDirectory

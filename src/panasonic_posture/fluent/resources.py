@@ -1,5 +1,6 @@
 """Portable source-preview resources and gettext without Linux configuration."""
 import ast
+import ctypes
 import gettext
 import locale
 import os
@@ -11,8 +12,38 @@ def data_root() -> Path:
     return Path(override) if override else Path(__file__).resolve().parents[3] / 'data'
 
 
+def _windows_language() -> str | None:
+    if os.name != 'nt':
+        return None
+    try:
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        function = kernel.GetUserDefaultUILanguage
+        function.restype = ctypes.c_uint16
+        function.argtypes = []
+        langid = int(function())
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+    if langid <= 0:
+        return None
+    # The project ships one Chinese catalog. Use it for every Chinese
+    # Windows UI language rather than falling back to process LANG=C.UTF-8.
+    return 'zh_CN' if langid & 0x3ff == 0x04 else 'en'
+
+
+def default_language() -> str:
+    system_language = _windows_language()
+    if system_language:
+        return system_language
+    return (os.environ.get('LANGUAGE', '').split(':')[0] or
+            os.environ.get('LC_ALL', '') or
+            os.environ.get('LC_MESSAGES', '') or
+            os.environ.get('LANG', '') or
+            locale.getlocale()[0] or
+            'en')
+
+
 def translator(language: str | None = None):
-    language = language or os.environ.get('LANGUAGE', '').split(':')[0] or locale.getlocale()[0] or 'en'
+    language = language or default_language()
     root = data_root().parent
     compiled = gettext.translation('panasonic-posture-manager', localedir=root / 'locale',
                                    languages=[language], fallback=True)
