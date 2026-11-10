@@ -394,6 +394,20 @@ class SlateNotifier:
             # bounded handoff window.
             return self._expected
         self._expected = None
+        try:
+            observed = bool(self.device.read())
+        except (OSError, ValueError):
+            observed = self.last
+        if self.last is not None and observed != self.last:
+            # The physical indicator changed while software owned the previous
+            # value. Treat that as a hardware takeover and relinquish the lease
+            # immediately; otherwise hardware qualification stays ambiguous and
+            # the display transaction can never return to laptop.
+            self.original = observed
+            self.last = observed
+            if self.journal is not None:
+                self.journal.clear()
+            return None
         if self.original is None or self.last is None or self.last == self.original:
             return None
         return self.last

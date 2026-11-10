@@ -97,6 +97,25 @@ class SlateNotifierTests(unittest.TestCase):
         now[0] += 2.1
         self.assertIsNone(notifier.software_owned)
 
+    def test_external_change_during_software_ownership_releases_the_lease(self):
+        now = [10.0]
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            device = FakeSlateDevice(False)
+            notifier = SlateNotifier(device, journal, clock=lambda: now[0])
+            self.assertTrue(notifier.sync_mode('stand'))
+            self.assertTrue(journal.path.exists())
+            now[0] += 2.1
+            self.assertIs(notifier.software_owned, True)
+
+            # Moving out of tent/stand changes the physical indicator while the
+            # app still owns the previous slate value.
+            device.state = False
+            self.assertIsNone(notifier.software_owned)
+            self.assertIs(notifier.original, False)
+            self.assertIs(notifier.last, False)
+            self.assertIsNone(journal.load())
+
     def test_external_physical_target_is_adopted_without_software_ownership(self):
         device = FakeSlateDevice(True)
         notifier = SlateNotifier(device)
