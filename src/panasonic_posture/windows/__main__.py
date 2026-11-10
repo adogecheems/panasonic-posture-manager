@@ -8,6 +8,7 @@ import time
 from typing import BinaryIO
 
 from .backend import Backend, BackendError
+from .diagnostics import configure_logging
 from .protocol import VERSION, MAX_FRAME, MAX_PENDING, ProtocolError, encode, decode
 from .instance import InstanceLock
 
@@ -94,11 +95,11 @@ def main(argv=None):
         parser.error('--native requires Windows')
     if options.scenario != 'laptop' and not options.simulate:
         parser.error('--scenario requires --simulate')
-    logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
     try:
         if options.native:
             from .screen_session import require_native_user
             require_native_user()  # Do not open a caller-selected lock while elevated.
+        configure_logging(options.settings)
         with InstanceLock(options.settings):
             return serve(sys.stdin.buffer, sys.stdout.buffer,
                          Backend(options.settings, simulate=options.simulate, scenario=options.scenario, native=options.native))

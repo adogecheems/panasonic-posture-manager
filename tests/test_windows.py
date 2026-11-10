@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from panasonic_posture.windows.backend import Backend
 from panasonic_posture.windows.client import ProcessClient
+from panasonic_posture.windows.diagnostics import log_path
 from panasonic_posture.windows.protocol import encode, decode, validate_state, ProtocolError
 from panasonic_posture.windows.instance import InstanceLock
 
@@ -238,6 +239,8 @@ class ProcessTests(unittest.TestCase):
         self.until(future.done)
         self.assertIsNotNone(future.exception())
         self.assertIsNone(self.client.process.poll())
+        self.until(lambda: log_path(self.path).is_file() and
+                   'backend request rejected' in log_path(self.path).read_text(encoding='utf-8'))
 
     def test_queue_bound_and_timeout_fail_all_without_replay(self):
         self.until(lambda: bool(self.states))
