@@ -208,7 +208,7 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertIsNotNone(journal.document)
         self.assertEqual(api.writes, [2, 2])
 
-    def test_hardware_handoff_locks_then_releases_rotation(self):
+    def test_hardware_handoff_stays_unlocked_until_the_target_applies(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)
         display = self.make(api, journal)
@@ -222,7 +222,7 @@ class WindowsDisplayTests(unittest.TestCase):
         api.current = replace(api.current, transform=2)
         display.hold_orientation()
         self.assertEqual(api.current.transform, 2)
-        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertEqual(journal.document['original_transform'], 2)
 
         display.apply(dict(mode='stand', tablet=True, rotation=0,
@@ -240,26 +240,28 @@ class WindowsDisplayTests(unittest.TestCase):
         display.apply(dict(mode='hardware', tablet=True, rotation=None,
                            disable_internal_input=False))
 
-        api.current = replace(api.current, transform=2)
+        api.current = replace(api.current, transform=0)
         display.hold_orientation()
-        self.assertEqual(api.current.transform, 2)
-        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertEqual(api.current.transform, 0)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
 
         # Leaving physical tablet mode may let the shell finish a direction
         # handoff after the first hold reading. The bounded pending-posture
-        # window adopts that platform result instead of rotating back to 2 and
-        # then immediately rotating again for stand.
-        api.current = replace(api.current, transform=0)
+        # window adopts that platform result instead of rotating back to the
+        # first sample and then immediately rotating again for tent.
+        api.current = replace(api.current, transform=2)
         api.writes.clear()
         display.hold_orientation()
-        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.current.transform, 2)
         self.assertEqual(api.writes, [])
-        self.assertEqual(journal.document['original_transform'], 0)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertEqual(journal.document['original_transform'], 2)
         self.assertIsNone(journal.document['written_transform'])
 
-        display.apply(dict(mode='stand', tablet=True, rotation=0,
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
                            disable_internal_input=False))
-        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.current.transform, 2)
+        self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(api.writes, [])
 
     def test_physical_takeover_during_restart_keeps_native_direction(self):

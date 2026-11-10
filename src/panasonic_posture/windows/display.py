@@ -392,21 +392,24 @@ class WindowsDisplay(SoftwareDisplay):
                 self._adopt_native_handoff = True
 
     def hold_orientation(self) -> None:
-        """Settle a post-hardware shell handoff before fixing direction."""
+        """Observe, but do not interrupt, Windows' post-tablet direction handoff."""
 
-        held = self._held_orientation
-        if self._adopt_native_handoff and held is not None:
-            current = self._read_state()
-            if current.identity == held.identity and current.transform != held.transform:
-                # The physical switch releases before Windows finishes moving
-                # between tablet and the settled posture. Adopting that one
-                # platform direction avoids rewinding to the first sample and
-                # producing a second visible rotation before the real target.
-                self._held_orientation = current
-                if self.owned is not None and self.owned.get('written_transform') is None:
-                    self.owned['original_transform'] = current.transform
-                    self._persist()
-        super().hold_orientation()
+        if not self._adopt_native_handoff:
+            super().hold_orientation()
+            return
+        # Locking the first sample prevents Windows from finishing the native
+        # desktop/tablet orientation transition. Keep the panel read-only for
+        # the bounded wait and treat the last observed platform direction as
+        # the transaction baseline. The settled target then performs at most
+        # one visible rotation through the normal apply path.
+        state = self._read_transaction_state()
+        self._held_orientation = state
+        if not self.owned:
+            self.owned = self._journal_document(state)
+            self._persist()
+        elif self.owned.get('written_transform') is None:
+            self.owned['original_transform'] = state.transform
+            self._persist()
 
     def restore(self, normal: bool = False, *, release_lock: bool = False,
                 keep_journal: bool = False) -> None:

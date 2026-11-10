@@ -3,7 +3,10 @@
 import unittest
 
 from panasonic_posture.model import StateSnapshot, Target
-from panasonic_posture.windows.tablet_mode import DESKTOP, TABLET
+from panasonic_posture.windows.tablet_mode import (
+    DESKTOP, PREFERENCE_ALWAYS_SWITCH, PREFERENCE_ASK, PREFERENCE_DONT_SWITCH,
+    TABLET,
+)
 from panasonic_posture.windows.touch_mode import WindowsTouchMode
 
 
@@ -11,6 +14,7 @@ class Shell:
     def __init__(self, mode=DESKTOP):
         self.mode = mode
         self.writes = []
+        self.prompts = []
         self.fail = False
 
     def read(self):
@@ -21,6 +25,11 @@ class Shell:
             raise OSError('shell write failed')
         self.writes.append(mode)
         self.mode = mode
+
+    def prompt_mode(self, mode):
+        if self.fail:
+            raise OSError('shell prompt failed')
+        self.prompts.append(mode)
 
 
 def state(mode, *, hardware=False, pending=False):
@@ -33,10 +42,12 @@ class WindowsTouchModeTests(unittest.TestCase):
     def setUp(self):
         self.shell = Shell()
         self.hardware = [False]
+        self.preference = [PREFERENCE_ALWAYS_SWITCH]
         self.now = 10.0
         self.touch = WindowsTouchMode(
             self.shell,
             lambda: (self.hardware[0], None),
+            preference_query=lambda: self.preference[0],
             clock=lambda: self.now,
             retry_seconds=0.5,
         )
@@ -48,6 +59,33 @@ class WindowsTouchModeTests(unittest.TestCase):
         self.assertEqual(self.shell.writes, [TABLET])
         self.touch.sync(state('laptop'))
         self.assertEqual(self.shell.writes, [TABLET, DESKTOP])
+
+    def test_windows_preferences_choose_no_switch_prompt_or_automatic_switch(self):
+        self.preference[0] = PREFERENCE_DONT_SWITCH
+        self.touch.sync(state('tent'))
+        self.assertEqual(self.shell.mode, DESKTOP)
+        self.assertEqual((self.shell.writes, self.shell.prompts), ([], []))
+
+        self.preference[0] = PREFERENCE_ASK
+        self.touch = WindowsTouchMode(
+            self.shell, lambda: (self.hardware[0], None),
+            preference_query=lambda: self.preference[0], clock=lambda: self.now,
+            retry_seconds=0.5,
+        )
+        self.touch.sync(state('tent'))
+        self.assertEqual(self.shell.mode, DESKTOP)
+        self.assertEqual(self.shell.writes, [])
+        self.assertEqual(self.shell.prompts, [TABLET])
+
+        self.preference[0] = PREFERENCE_ALWAYS_SWITCH
+        self.touch = WindowsTouchMode(
+            self.shell, lambda: (self.hardware[0], None),
+            preference_query=lambda: self.preference[0], clock=lambda: self.now,
+            retry_seconds=0.5,
+        )
+        self.touch.sync(state('tent'))
+        self.assertEqual(self.shell.mode, TABLET)
+        self.assertEqual(self.shell.writes, [TABLET])
 
     def test_unconfirmed_or_failed_target_does_not_switch_the_shell(self):
         pending = StateSnapshot(target=Target(mode='tent'), applied=Target(mode='laptop'),

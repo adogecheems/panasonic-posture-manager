@@ -16,12 +16,19 @@ import uuid
 DESKTOP = 0
 TABLET = 1
 VALID_MODES = frozenset((DESKTOP, TABLET))
+PREFERENCE_DONT_SWITCH = 0
+PREFERENCE_ASK = 1
+PREFERENCE_ALWAYS_SWITCH = 2
+VALID_PREFERENCES = frozenset((
+    PREFERENCE_DONT_SWITCH, PREFERENCE_ASK, PREFERENCE_ALWAYS_SWITCH,
+))
 
 _COINIT_APARTMENTTHREADED = 0x2
 _RPC_E_CHANGED_MODE = -2147417850
 _CLSCTX_LOCAL_SERVER = 0x4
 _IMMERSIVE_SHELL_KEY = r'Software\Microsoft\Windows\CurrentVersion\ImmersiveShell'
 _TABLET_MODE_PREFERENCE = 'ConvertibleSlateModePromptPreference'
+_TRIGGER_SETTINGS = 4
 _FUNCTYPE = getattr(C, 'WINFUNCTYPE', C.CFUNCTYPE)
 
 
@@ -134,7 +141,7 @@ class WindowsShellMode:
 
 
 class WindowsShellModeController(WindowsShellMode):
-    """Apply the shell interaction mode for the software posture session."""
+    """Prompt for or apply the choice configured for the physical slate switch."""
 
     def __init__(self, *, sleep=time.sleep):
         self._sleep = sleep
@@ -146,7 +153,7 @@ class WindowsShellModeController(WindowsShellMode):
             set_mode = _FUNCTYPE(
                 C.c_long, C.c_void_p, C.c_int, C.c_int
             )(vtable[4])
-            result = set_mode(controller, mode, 4)
+            result = set_mode(controller, mode, _TRIGGER_SETTINGS)
             if not _succeeded(result):
                 raise TabletModeError(
                     f'tablet mode switch failed: 0x{result & 0xffffffff:08x}'
@@ -159,6 +166,21 @@ class WindowsShellModeController(WindowsShellMode):
         raise TabletModeError(
             f'tablet mode readback failed: expected {mode}'
         )
+
+    def prompt_mode(self, mode: int) -> None:
+        """Show Windows' native confirmation for the requested shell mode."""
+
+        if mode not in VALID_MODES:
+            raise ValueError('invalid Windows shell mode')
+        with _controller() as (vtable, controller):
+            prompt = _FUNCTYPE(
+                C.c_long, C.c_void_p, C.c_int, C.c_int
+            )(vtable[5])
+            result = prompt(controller, mode, _TRIGGER_SETTINGS)
+            if not _succeeded(result):
+                raise TabletModeError(
+                    f'tablet mode prompt failed: 0x{result & 0xffffffff:08x}'
+                )
 
 
 def _read_mode(vtable, controller) -> int:
@@ -176,6 +198,8 @@ def _read_mode(vtable, controller) -> int:
 WindowsTabletMode = WindowsShellMode
 
 __all__ = [
-    'DESKTOP', 'TABLET', 'TabletModeError', 'WindowsShellMode',
-    'WindowsShellModeController', 'WindowsTabletMode', 'read_prompt_preference',
+    'DESKTOP', 'PREFERENCE_ALWAYS_SWITCH', 'PREFERENCE_ASK',
+    'PREFERENCE_DONT_SWITCH', 'TABLET', 'TabletModeError', 'VALID_PREFERENCES',
+    'WindowsShellMode', 'WindowsShellModeController', 'WindowsTabletMode',
+    'read_prompt_preference',
 ]

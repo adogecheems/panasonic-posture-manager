@@ -1,7 +1,6 @@
-"""Read-only Windows shell observation without touching the live shell."""
+"""Windows shell observation plus preference-driven native prompt/switch calls."""
 import ctypes as C
 from contextlib import contextmanager
-from pathlib import Path
 import unittest
 from unittest import mock
 
@@ -28,6 +27,7 @@ def _calls(current, *, query_result=0):
 
 def _switching_calls(current, *, set_result=0, readback=None):
     writes = []
+    prompts = []
 
     @_FUNCTYPE(C.c_long, C.c_void_p, C.POINTER(C.c_int))
     def query(this, destination):
@@ -45,11 +45,18 @@ def _switching_calls(current, *, set_result=0, readback=None):
             current['mode'] = mode
         return set_result
 
-    vtable = (C.c_void_p * 5)(
+    @_FUNCTYPE(C.c_long, C.c_void_p, C.c_int, C.c_int)
+    def prompt(this, mode, trigger):
+        del this
+        prompts.append((mode, trigger))
+        return set_result
+
+    vtable = (C.c_void_p * 6)(
         None, None, None, C.cast(query, C.c_void_p).value,
         C.cast(setter, C.c_void_p).value,
+        C.cast(prompt, C.c_void_p).value,
     )
-    return vtable, writes
+    return vtable, writes, prompts
 
 
 class TabletModeTests(unittest.TestCase):
@@ -97,14 +104,12 @@ class TabletModeTests(unittest.TestCase):
             self.assertEqual(reads, [1])
 
     def test_observer_has_no_shell_switching_api(self):
-        self.assertFalse(hasattr(tablet_mode.WindowsShellMode, 'write'))
-        source = Path(tablet_mode.__file__).read_text(encoding='utf-8')
-        self.assertNotIn('SetMode', source)
-        self.assertNotIn('_TRIGGER_API', source)
+        self.assertFalse(hasattr(tablet_mode.WindowsShellMode, 'set_mode'))
+        self.assertFalse(hasattr(tablet_mode.WindowsShellMode, 'prompt_mode'))
 
     def test_controller_switches_shell_and_reads_back_the_result(self):
         current = {'mode': tablet_mode.DESKTOP}
-        vtable, writes = _switching_calls(current)
+        vtable, writes, prompts = _switching_calls(current)
 
         @contextmanager
         def controller():
@@ -115,13 +120,15 @@ class TabletModeTests(unittest.TestCase):
             bridge.set_mode(tablet_mode.TABLET)
         self.assertEqual(current['mode'], tablet_mode.TABLET)
         self.assertEqual(writes, [(tablet_mode.TABLET, 4)])
+        self.assertEqual(prompts, [])
 
     def test_controller_rejects_write_and_readback_failures(self):
         for current_mode, result, readback in (
                 (tablet_mode.DESKTOP, -2147467259, None),
                 (tablet_mode.DESKTOP, 0, tablet_mode.DESKTOP)):
             current = {'mode': current_mode}
-            vtable, writes = _switching_calls(current, set_result=result, readback=readback)
+            vtable, writes, prompts = _switching_calls(
+                current, set_result=result, readback=readback)
 
             @contextmanager
             def controller():
@@ -133,6 +140,21 @@ class TabletModeTests(unittest.TestCase):
                 tablet_mode.WindowsShellModeController(sleep=lambda _seconds: None).set_mode(
                     tablet_mode.TABLET)
             self.assertEqual(writes, [(tablet_mode.TABLET, 4)])
+            self.assertEqual(prompts, [])
+
+    def test_controller_uses_windows_native_confirmation_prompt(self):
+        current = {'mode': tablet_mode.DESKTOP}
+        vtable, writes, prompts = _switching_calls(current)
+
+        @contextmanager
+        def controller():
+            yield vtable, None
+
+        with mock.patch.object(tablet_mode, '_controller', controller):
+            tablet_mode.WindowsShellModeController().prompt_mode(tablet_mode.TABLET)
+        self.assertEqual(current['mode'], tablet_mode.DESKTOP)
+        self.assertEqual(writes, [])
+        self.assertEqual(prompts, [(tablet_mode.TABLET, 4)])
 
 
 if __name__ == '__main__':

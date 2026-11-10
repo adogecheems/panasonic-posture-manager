@@ -388,6 +388,25 @@ resident.quit()
 QTest.qWait(50)
 ''')
 
+    def test_notice_click_survives_a_temporary_confirmability_gap(self):
+        self.run_resident('''
+resident = ResidentTray(window, tray_factory=FakeTray)
+window.hide()
+client.scenario('prompt')
+epoch = client.state['pending_notification']
+client.state['pending_notification'] = None
+client.refresh()
+assert resident.notice is not None
+client.state['pending_notification'] = epoch
+client.refresh()
+resident.tray.messageClicked.emit()
+QTest.qWait(450)
+assert not window.isVisible()
+assert client.state['manual'] == 'tent'
+resident.quit()
+QTest.qWait(50)
+''')
+
     def test_startup_ui_reads_back_and_reverts_failures_without_requiring_backend(self):
         self.run_ui('''
 from panasonic_posture.windows.startup import LoginStartup

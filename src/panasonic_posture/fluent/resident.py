@@ -126,7 +126,11 @@ class ResidentTray(QObject):
         if (not self.enabled or not self.tray.supportsMessages() or not state['supported'] or
                 not state['session_connected'] or state['error_code'] or state['hardware'] is not False or
                 epoch is None or prompt not in ('tent', 'stand')):
-            self.notice = None
+            # Keep the token across temporary unconfirmable snapshots. A
+            # toast already handed to Windows may still be clicked in Action
+            # Center after the prompt briefly disappears and returns with the
+            # same epoch. _notice_confirmable() still validates the current
+            # snapshot before sending anything.
             return
         key = epoch, prompt
         if key in self.sent:
