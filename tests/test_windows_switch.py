@@ -8,12 +8,12 @@ from panasonic_posture.windows.switch import WindowsSwitch
 
 
 class SwitchTests(unittest.TestCase):
-    def test_inverts_only_the_authenticated_physical_slate_metric(self):
+    def test_maps_verified_firmware_zero_laptop_one_slate(self):
         native = SimpleNamespace(candidates=lambda: ['ACPI\\INT33D3\\one'], metric=Mock(return_value=1))
         switch = WindowsSwitch(native)
-        self.assertEqual(switch.query(), (False, HardwareStatus.OK))
-        native.metric.return_value = 0
         self.assertEqual(switch.query(), (True, HardwareStatus.OK))
+        native.metric.return_value = 0
+        self.assertEqual(switch.query(), (False, HardwareStatus.OK))
 
     def test_missing_and_ambiguous_switches_never_consume_the_default_metric(self):
         for candidates, status in (([], HardwareStatus.ABSENT), (['one', 'two'], HardwareStatus.AMBIGUOUS)):
@@ -24,7 +24,7 @@ class SwitchTests(unittest.TestCase):
     def test_replacement_does_not_inherit_the_original_device_identity(self):
         native = SimpleNamespace(candidates=Mock(return_value=['one']), metric=lambda: 1)
         switch = WindowsSwitch(native)
-        self.assertEqual(switch.query(), (False, HardwareStatus.OK))
+        self.assertEqual(switch.query(), (True, HardwareStatus.OK))
         native.candidates.return_value = ['two']
         self.assertEqual(switch.query(), (None, HardwareStatus.READ_ERROR))
 

@@ -216,7 +216,7 @@ python tests\windows_actuator_smoke.py --control-library build\windows-driver\po
 
 ### Windows 原生显示与物理开关开发验证
 
-`windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。当前仅识别已核对的 INT33D3 路径；CFQV8 笔记本姿态的交互用户与 SYSTEM 读取一致，SYSTEM 会话中的折叠变化和其他开关仍未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
+`windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。CFQV8-1L 实测该固件/驱动组合为 `0=笔记本电脑，1=折叠平板`；这与部分通用文档对 SM_CONVERTIBLESLATEMODE 的描述相反，因此映射属于已验证机型适配，不能套用到未验证机型。当前仅识别已核对的 INT33D3 路径；SYSTEM 会话中的折叠变化和其他开关仍未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
 
 `windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。`windows/tablet_mode.py` 通过 ImmersiveShell COM 边界只读观察 Windows 桌面／平板模式；产品路径不调用强制 setter，旧版日志中的 shell 字段只作兼容读取并在恢复时丢弃。方向与方向锁保存在同一恢复日志，旧版日志缺少新增字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
 
@@ -247,7 +247,7 @@ python tests\windows_physical_posture_smoke.py --exercise-physical --directory b
 
 操作者必须实际把设备折叠到平板形态，再按提示旋转并展开。脚本观察硬件开关、`hardware` 目标和显示回读，不使用手动平板模式。
 
-2026-11-09，CFQV8-1L、Windows 10 专业版 19045 x64 上取得笔记本、帐篷、支架和完全折叠的真实采样：笔记本 z 约 -9.8 m/s²，帐篷 y 约 -9.3 m/s²，支架 z 约 +9.9 m/s²；物理开关在折叠/展开时按 1→0→1 变化。此证据确认当前采样的 y/z 方向与策略一致，不代表完整安装矩阵、持续会话控制或整机验收。2880×1920 内屏的倒转、回读、正常恢复和写入进程被结束后的日志恢复通过，最终方向与原方向一致。驱动反汇编和只读设备探测确认 `msgpiowin32` 接受一个字节时执行 toggle、读取返回当前字节，并发出 CSM 状态变化；设备仍处于独占时普通用户和 SYSTEM 都无法安全绕过该独占策略，因此通过可逆配置并要求重启。shell 选择为“不要切换”时保留桌面的结果属于 Windows 自己的策略，程序不调用强制 setter。
+2026-11-09，CFQV8-1L、Windows 10 专业版 19045 x64 上取得笔记本、帐篷、支架和完全折叠的真实采样：笔记本 z 约 -9.8 m/s²，帐篷 y 约 -9.3 m/s²，支架 z 约 +9.9 m/s²。2026-11-10 的时间序列复测确认物理开关按“笔记本 0 → 折叠平板 1 → 展开笔记本 0”变化，PDO 原始字节与 SM_CONVERTIBLESLATEMODE 一致；此前按 `1→0→1` 记录的阶段结论已被该证据取代。此证据确认当前采样的 y/z 方向与策略一致，不代表完整安装矩阵、持续会话控制或整机验收。2880×1920 内屏的倒转、回读、正常恢复和写入进程被结束后的日志恢复通过，最终方向与原方向一致。驱动反汇编和只读设备探测确认 `msgpiowin32` 接受一个字节时执行 toggle、读取返回当前字节，并发出 CSM 状态变化；设备仍处于独占时普通用户和 SYSTEM 都无法安全绕过该独占策略，因此通过可逆配置并要求重启。shell 选择为“不要切换”时保留桌面的结果属于 Windows 自己的策略，程序不调用强制 setter。
 
 同机从 `C:\util2\drivers\SynTP_d20194747` 安装了签名有效、硬件 ID 精确匹配的厂商驱动；安装后为 Synaptics HID TouchPad / Synaptics HID Device 19.5.26.18，用户确认移动、点击、滚动正常。自研输入过滤驱动没有加载；用户选择保留启动安全配置，测试签名仍关闭。这些证据不提升 Windows 机型支持等级。
 

@@ -1036,3 +1036,10 @@ make WERROR=1 check
 - 动机：物理折叠已经由硬件开关和桌面/Windows 原生旋转处理；手动软件平板只适用于展开后人为旋转，产品用途不明确，并引入 SimpleOrientation、持续刷新和额外真机验收复杂度。
 - 影响：`Mode.TABLET` 仅保留用于解码旧快照，不能由控制器选择；`TARGET_MODES` 继续兼容读取旧目标。Windows CFQV8 生产工厂不采集 SimpleOrientation，也不再实例化 `WindowsTabletDisplay`。可选后端代码和隔离测试保留，但不对用户开放。本记录取代 2026-11-10「Windows 软件平板接入真实用户态入口」中开放五模式和方向采集的生产装配说明。
 - 同步：共享模式常量、控制器、引擎、Linux/Fluent 设置页、前端能力判断、Windows 协议与原生工厂、回归测试、README、MAINTENANCE 与本记录。
+
+### 2026-11-10 - 修正 CFQV8 物理开关字节映射
+
+- 变更：CFQV8-1L 实测 PDO 原始字节和 `SM_CONVERTIBLESLATEMODE` 均为 `0`（笔记本）与 `1`（折叠平板）；硬件读取和 slate 写入映射改为 `0=laptop, 1=slate`。
+- 动机：此前按通用文档假设 `0=slate`，导致真实折叠时系统和程序仍按笔记本处理，自动旋转、屏幕键盘及设备所有权判定相反。
+- 影响：映射仅适用于已采集 CFQV8-1L 固件/驱动证据，不能直接推广到未验证机型。`SlateNotifier` 的布尔语义、目标/回读、租约、显示事务和用户 Windows shell 选择均不变。
+- 同步：PDO 读写、WindowsSwitch、硬件回归测试、MAINTENANCE 真机证据和本记录。本记录取代此前“折叠/展开 1→0→1”的阶段结论。

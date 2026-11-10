@@ -91,7 +91,8 @@ class WindowsSwitch:
             metric = self.native.metric()
             if type(metric) is not int or metric not in (0, 1):
                 return None, HardwareStatus.READ_ERROR
-            return metric == 0, HardwareStatus.OK
+            # Verified CFQV8 firmware reports 0 for laptop and 1 for slate.
+            return metric == 1, HardwareStatus.OK
         except PermissionError:
             return None, HardwareStatus.PERMISSION
         except (OSError, ValueError, TypeError):
