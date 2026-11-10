@@ -136,7 +136,10 @@ class FluentWidgetTests(unittest.TestCase):
         self.run_ui('''
 from concurrent.futures import Future
 from panasonic_posture.contracts import ErrorCode
+from qfluentwidgets import InfoBar
 client = window.client
+errors = []
+InfoBar.error = lambda title, content, **kwargs: errors.append((title, content))
 client.state['error_code'] = ErrorCode.DISPLAY_TRANSFORM
 client.refresh()
 assert window.home.detail.text() == (
@@ -153,6 +156,29 @@ window.home.confirm()
 assert window.home.detail.text() == (
     'Mode change failed: The rotation lock could not be changed. Please try again.'
 )
+assert errors[-1] == (
+    'Unable to complete the operation',
+    'The rotation lock could not be changed. Please try again.',
+)
+''')
+
+    def test_settings_failures_show_stable_error_reason(self):
+        self.run_ui('''
+from panasonic_posture.contracts import ErrorCode
+from qfluentwidgets import InfoBar
+errors = []
+InfoBar.error = lambda title, content, **kwargs: errors.append((title, content))
+window.settings.action_failed(RuntimeError(ErrorCode.CONFIG_WRITE))
+assert errors[-1] == (
+    'Unable to complete the operation',
+    'The setting could not be saved. Please try again.',
+)
+window.settings.action_failed(RuntimeError('PRIVATE diagnostic detail'))
+assert errors[-1] == (
+    'Unable to complete the operation',
+    'Something went wrong. Please try again.',
+)
+assert all('PRIVATE' not in content for _, content in errors)
 ''')
 
     def test_native_preflight_explains_session_and_machine_rejections(self):

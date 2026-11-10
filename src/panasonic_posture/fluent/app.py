@@ -168,16 +168,17 @@ class Window(FluentWidget):
         self.settings.unavailable()
         self.connection_lost.emit()
 
-    def notify(self, success):
+    def notify(self, success, detail: str | None = None):
         _ = self._
-        method = InfoBar.success if success else InfoBar.error
         if success:
             title = _('Preview updated') if self.simulating else _('Settings saved')
-            detail = (_('Demo preview · Changes stay in this window.') if self.memory_demo else
-                      _('Simulation · Preferences are saved separately.') if self.simulating else '')
+            message = (_('Demo preview · Changes stay in this window.') if self.memory_demo else
+                       _('Simulation · Preferences are saved separately.') if self.simulating else '')
+            InfoBar.success(title, message, duration=3500,
+                            position=InfoBarPosition.TOP, parent=self)
         else:
-            title, detail = _('Unable to complete the operation'), _('Please try again.')
-        method(title, detail, duration=3500, position=InfoBarPosition.TOP, parent=self)
+            InfoBar.error(_('Unable to complete the operation'), detail or _('Please try again.'),
+                          duration=3500, position=InfoBarPosition.TOP, parent=self)
 
     def shutdown(self):
         if self._stopped:

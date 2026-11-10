@@ -28,7 +28,7 @@ def mode_labels(_):
             'stand': _('Stand'), 'tablet': _('Tablet')}
 
 
-def posture_error_text(code: str | None, _) -> str:
+def stable_error_text(code: str | None, _) -> str:
     """Localize stable service failures without exposing diagnostic detail."""
     messages = {
         ErrorCode.INVALID_MODE: _('This mode is not available right now.'),
@@ -139,7 +139,7 @@ class Home(Page):
             text = self.action_detail
         elif self.model.detail == Detail.ERROR:
             code = self.model.state['error_code'] if self.model.state else None
-            text = f"{_('Mode change failed')}: {posture_error_text(code, _)}"
+            text = f"{_('Mode change failed')}: {stable_error_text(code, _)}"
         else:
             text = messages[self.model.detail]
         self.detail.setText(text)
@@ -168,12 +168,13 @@ class Home(Page):
 
     def action_failed(self, error):
         _ = self._
+        reason = stable_error_text(action_error_code(error), _)
         self.action_detail = (
             f"{_('Mode change failed')}: "
-            f"{posture_error_text(action_error_code(error), _)}"
+            f"{reason}"
         )
         self.render_detail()
-        self.notify(False)
+        self.notify(False, reason)
 
     def sync_buttons(self):
         prompt = self.model.state and self.model.state['pending_prompt']
@@ -200,8 +201,8 @@ class Settings(Page):
     def __init__(self, client: UIClient, _, notify, parent=None, *, startup=None):
         super().__init__('settings', parent)
         self._, self.client, self.notify = _, client, notify
-        self.model = SettingsModel(client, self.render, lambda error: notify(False))
-        self.calibration = ActionRunner(self.render_calibration, lambda error: notify(False), self.calibrated)
+        self.model = SettingsModel(client, self.render, self.action_failed)
+        self.calibration = ActionRunner(self.render_calibration, self.action_failed, self.calibrated)
         self.switches, self.radios = {}, {}
         self.cards = []
         self.groups = []
@@ -434,6 +435,9 @@ class Settings(Page):
     def calibrated(self):
         self.notify(True)
         self.client.refresh()
+
+    def action_failed(self, error):
+        self.notify(False, stable_error_text(action_error_code(error), self._))
 
     def ask_calibration(self):
         _ = self._
