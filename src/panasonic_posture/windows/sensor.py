@@ -52,19 +52,27 @@ __ORIENTATION_SETUP__
 $selector=[Windows.Devices.Sensors.Accelerometer]::GetDeviceSelector([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
 $sensor=[Windows.Devices.Sensors.Accelerometer]::GetDefault([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
 if ($null -eq $sensor) { throw 'Windows accelerometer is unavailable' }
+$deviceId=$sensor.DeviceId
+$ids=@()
+$identityCheck=[Diagnostics.Stopwatch]::StartNew()
 while (-not $parent.HasExited) {
-    $operation=[Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($selector)
-    $task=$asTask.MakeGenericMethod([Windows.Devices.Enumeration.DeviceInformationCollection]).Invoke($null,@($operation))
-    if (-not $task.Wait(2000)) { throw 'Accelerometer enumeration timed out' }
-    $ids=@($task.Result | ForEach-Object { $_.Id })
-    if ($ids.Count -ne 1 -or $ids[0] -ne $sensor.DeviceId) { throw 'Accelerometer identity is ambiguous or changed' }
+    # Device enumeration is expensive. Keep the authenticated sensor object
+    # and revalidate selection at the sample freshness horizon.
+    if ($ids.Count -eq 0 -or $identityCheck.Elapsed.TotalSeconds -ge 2) {
+        $operation=[Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($selector)
+        $task=$asTask.MakeGenericMethod([Windows.Devices.Enumeration.DeviceInformationCollection]).Invoke($null,@($operation))
+        if (-not $task.Wait(2000)) { throw 'Accelerometer enumeration timed out' }
+        $ids=@($task.Result | ForEach-Object { $_.Id })
+        if ($ids.Count -ne 1 -or $ids[0] -ne $deviceId) { throw 'Accelerometer identity is ambiguous or changed' }
+        $identityCheck.Restart()
+    }
     $reading=$sensor.GetCurrentReading()
     if ($null -eq $reading) { throw 'Windows accelerometer returned no sample' }
     $orientation=$null
     __ORIENTATION_READ__
     [ordered]@{
         version=1
-        device=$sensor.DeviceId
+        device=$deviceId
         candidates=$ids
         minimum_report_interval_ms=$sensor.MinimumReportInterval
         timestamp=$reading.Timestamp.ToString('o')

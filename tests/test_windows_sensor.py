@@ -82,6 +82,9 @@ class SourceTests(unittest.TestCase):
         spawn.assert_not_called()
         from panasonic_posture.windows.sensor import STREAM_SCRIPT
         self.assertIn('FindAllAsync', STREAM_SCRIPT)
+        self.assertIn('$identityCheck.Elapsed.TotalSeconds -ge 2', STREAM_SCRIPT)
+        self.assertLess(STREAM_SCRIPT.index('$identityCheck=[Diagnostics.Stopwatch]::StartNew()'),
+                        STREAM_SCRIPT.index('while (-not $parent.HasExited)'))
         self.assertNotIn('.ReportInterval=', STREAM_SCRIPT)
         self.assertNotIn('.ReadingTransform=', STREAM_SCRIPT)
 
