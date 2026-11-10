@@ -324,6 +324,8 @@ page.close()
 
     def test_displayed_pose_and_readiness(self):
         self.run_ui('''
+assert page.detail.get_label() == ''
+assert not page.detail.get_visible()
 for mode, expected in [('tent','Tent'),('stand','Stand'),('hardware','Tablet'),('laptop','Laptop')]:
     page.update(state(applied={'mode': mode}))
     assert page.heading.get_label() == expected

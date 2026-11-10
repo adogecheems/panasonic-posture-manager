@@ -564,6 +564,27 @@ assert 'preview' not in normal.home.detail.text().lower()
 normal.close()
 ''')
 
+    def test_startup_does_not_flash_connecting_copy(self):
+        self.run_ui('''
+class DelayedClient:
+    def start(self, on_state, on_unavailable, on_connected=None):
+        self.on_state, self.on_unavailable = on_state, on_unavailable
+        self._on_connected = on_connected
+    def refresh(self):
+        pass
+    def stop(self):
+        pass
+window.close()
+window = Window(client=DelayedClient(), language='en')
+window.show()
+QTest.qWait(50)
+assert window.home.detail.text() == ''
+assert not window.home.detail.isVisible()
+window.unavailable()
+assert 'not connected' in window.home.detail.text().lower()
+assert window.home.detail.isVisible()
+''')
+
     def test_native_slate_configuration_failure_has_actionable_message(self):
         self.run_ui('''
 client = UnavailableClient()
@@ -684,7 +705,9 @@ assert app.font().hintingPreference() == QFont.HintingPreference.PreferFullHinti
 assert fontFamilies() == app.font().families()
 assert window.titleBar.titleLabel.font().families() == fontFamilies()
 assert window.titleBar.titleLabel.font().pixelSize() == 13
-assert window.titleBar.titleLabel.contentsMargins().bottom() == 5
+assert window.titleBar.hBoxLayout.itemAt(1).spacerItem().sizeHint().width() == 6
+margins = window.titleBar.titleLabel.contentsMargins()
+assert (margins.top(), margins.bottom()) == (1, 4)
 window.navigation.items['settings'].click()
 assert window.stackedWidget.currentWidget() is window.settings
 assert window.navigation.currentRouteKey() == 'settings'

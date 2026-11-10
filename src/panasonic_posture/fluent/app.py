@@ -66,7 +66,11 @@ class Window(FluentWidget):
         self.titleBar.iconLabel.setFixedSize(72, 42)
         self.titleBar.iconLabel.setAccessibleName("Let's note")
         self.titleBar.titleLabel.setMinimumWidth(0)
-        self.titleBar.titleLabel.setContentsMargins(0, 0, 0, 5)
+        # Keep a little breathing room between the wordmark and window title.
+        self.titleBar.hBoxLayout.insertSpacing(1, 6)
+        # Keep the text and mark on one visual center while allowing a small
+        # vertical correction for CJK font metrics.
+        self.titleBar.titleLabel.setContentsMargins(0, 1, 0, 4)
         self.update_mark()
         qconfig.themeChangedFinished.connect(self.update_mark)
         self.simulating = demo or simulate_backend
