@@ -64,6 +64,16 @@ def action_error_code(error: BaseException) -> str | None:
     return code if isinstance(code, str) and code in ALL_ERROR_CODES else None
 
 
+def startup_failure_text(reason: str | None, _) -> str | None:
+    messages = {
+        'slate-configuration-required': _('The convertible-slate indicator is still exclusive. Run the device configuration for this app, then restart Windows.'),
+        'native-session-unavailable': _('Native mode requires the active local desktop and a normal user account.'),
+        'native-startup-failed': _('Native device control could not start. Check the device configuration and try again.'),
+        'backend-startup-failed': _('The background service could not start. Please try again.'),
+    }
+    return messages.get(reason)
+
+
 class Home(Page):
     def __init__(self, client: UIClient, _, notify, parent=None):
         super().__init__('posture', parent)
@@ -161,7 +171,14 @@ class Home(Page):
         self.actions.disconnect()
         self.action_detail = None
         self.model.disconnect()
-        self.render_detail()
+        failure = startup_failure_text(
+            getattr(self.client, 'startup_failure', None), self._
+        )
+        if failure is None:
+            self.render_detail()
+        else:
+            self.detail.setText(failure)
+            self.detail.setVisible(True)
         self.confirm_button.hide()
         self.retry_button.hide()
         self.auto_button.hide()

@@ -11,9 +11,13 @@ from unittest.mock import patch
 
 from panasonic_posture.windows.backend import Backend
 from panasonic_posture.windows.client import ProcessClient
+from panasonic_posture.windows.convertible_slate import SlateError
 from panasonic_posture.windows.diagnostics import log_path
-from panasonic_posture.windows.protocol import encode, decode, validate_state, ProtocolError
+from panasonic_posture.windows.protocol import (
+    STARTUP_REASONS, encode, encode_startup_failure, decode, validate_state, ProtocolError,
+)
 from panasonic_posture.windows.instance import InstanceLock
+from panasonic_posture.windows.__main__ import startup_failure_reason
 
 
 class BackendTests(unittest.TestCase):
@@ -145,6 +149,25 @@ class BackendTests(unittest.TestCase):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_startup_failure_frames_are_bounded_to_known_safe_reasons(self):
+        for reason in STARTUP_REASONS:
+            with self.subTest(reason=reason):
+                self.assertEqual(decode(encode_startup_failure(reason)),
+                                 {'version': 1, 'type': 'fatal', 'reason': reason})
+        with self.assertRaises(ProtocolError):
+            encode_startup_failure('private-detail')
+
+    def test_backend_startup_errors_map_to_stable_user_safety_reasons(self):
+        self.assertEqual(startup_failure_reason(
+            SlateError('configure LaptopSlateExclusiveAccess=0 and restart Windows'), native=True),
+            'slate-configuration-required')
+        self.assertEqual(startup_failure_reason(
+            PermissionError('remote session'), native=True), 'native-session-unavailable')
+        self.assertEqual(startup_failure_reason(
+            OSError('fixture'), native=True), 'native-startup-failed')
+        self.assertEqual(startup_failure_reason(
+            OSError('fixture'), native=False), 'backend-startup-failed')
+
     def test_windows_host_imports_without_linux_or_gui_dependencies(self):
         result = subprocess.run([sys.executable, '-S', '-c', '''
 import sys
@@ -266,6 +289,23 @@ class ProcessTests(unittest.TestCase):
                                'instance': state['instance'], 'state': state})
         self.client.poll()
         self.assertEqual(len(self.states), before)
+        self.assertIsNone(self.client.process)
+
+    def test_fatal_startup_reason_is_published_without_reconnecting(self):
+        self.until(lambda: bool(self.states))
+        process = self.client.process
+        self.client.inbox.put({
+            'version': 1,
+            'type': 'fatal',
+            'reason': 'slate-configuration-required',
+        })
+        self.client.poll()
+        self.assertEqual(self.client.startup_failure, 'slate-configuration-required')
+        self.assertIsNone(self.client.process)
+        self.assertIsNotNone(process.poll())
+        self.until(lambda: bool(self.unavailable))
+        self.client.retry_at = 0
+        self.client.poll()
         self.assertIsNone(self.client.process)
 
     def test_idle_backend_that_stops_responding_is_disconnected_and_reconnected(self):

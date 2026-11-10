@@ -559,6 +559,18 @@ assert 'preview' not in normal.home.detail.text().lower()
 normal.close()
 ''')
 
+    def test_native_slate_configuration_failure_has_actionable_message(self):
+        self.run_ui('''
+client = UnavailableClient()
+client.startup_failure = 'slate-configuration-required'
+native = Window(native_backend=True, client=client, language='en')
+assert native.home.detail.text() == (
+    'The convertible-slate indicator is still exclusive. '
+    'Run the device configuration for this app, then restart Windows.'
+)
+native.close()
+''')
+
     def test_private_backend_persists_preferences_and_disables_device_controls(self):
         self.run_ui('''
 from pathlib import Path

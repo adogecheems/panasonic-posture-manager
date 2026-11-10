@@ -286,6 +286,15 @@ msgstr "操作未能完成"
 msgid "The background service is not connected yet."
 msgstr "后台服务尚未连接。"
 
+msgid "The convertible-slate indicator is still exclusive. Run the device configuration for this app, then restart Windows."
+msgstr "平板指示器仍处于独占状态。请为本应用运行设备配置，然后重启 Windows。"
+
+msgid "Native device control could not start. Check the device configuration and try again."
+msgstr "原生设备控制未能启动。请检查设备配置后重试。"
+
+msgid "The background service could not start. Please try again."
+msgstr "后台服务未能启动，请重试。"
+
 msgid "Return to automatic"
 msgstr "返回自动"
 

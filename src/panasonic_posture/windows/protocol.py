@@ -11,6 +11,12 @@ from ..snapshot_codec import parse_snapshot
 VERSION = 1
 MAX_FRAME = 65536
 MAX_PENDING = 32
+STARTUP_REASONS = frozenset({
+    'backend-startup-failed',
+    'native-session-unavailable',
+    'native-startup-failed',
+    'slate-configuration-required',
+})
 
 
 class ProtocolError(ValueError):
@@ -39,6 +45,12 @@ def encode(value: dict) -> bytes:
     if len(frame) > MAX_FRAME:
         raise ProtocolError('frame too large')
     return frame
+
+
+def encode_startup_failure(reason: str) -> bytes:
+    if reason not in STARTUP_REASONS:
+        raise ProtocolError('unknown startup failure')
+    return encode(dict(version=VERSION, type='fatal', reason=reason))
 
 
 def decode(frame: bytes) -> dict:

@@ -14,7 +14,10 @@ import sys
 import threading
 import time
 
-from .protocol import VERSION, MAX_FRAME, MAX_PENDING, ProtocolError, encode, decode, validate_state
+from .protocol import (
+    VERSION, MAX_FRAME, MAX_PENDING, STARTUP_REASONS, ProtocolError,
+    encode, decode, validate_state,
+)
 
 
 class BackendUnavailable(RuntimeError):
@@ -44,6 +47,7 @@ class ProcessClient:
         self.serial = 0
         self.connection = 0
         self.instance = None
+        self.startup_failure = None
         self.stopped = True
         self.retry_at = 0.0
         self.backoff = .5
@@ -63,6 +67,7 @@ class ProcessClient:
     def _spawn(self) -> None:
         self.connection += 1
         self.instance = None
+        self.startup_failure = None
         self.inbox = queue.Queue(maxsize=MAX_PENDING * 2)
         self.outbox = queue.Queue(maxsize=MAX_PENDING)
         self.worker_stop = threading.Event()
@@ -191,6 +196,8 @@ class ProcessClient:
         if self.stopped:
             return
         if self.process is None:
+            if self.startup_failure is not None:
+                return
             if self.clock() >= self.retry_at:
                 self._spawn()
             return
@@ -202,10 +209,17 @@ class ProcessClient:
                     break
                 if isinstance(message, Exception):
                     raise message
+                kind = message.get('type')
+                if kind == 'fatal':
+                    reason = message.get('reason')
+                    if (set(message) != {'version', 'type', 'reason'} or
+                            reason not in STARTUP_REASONS):
+                        raise ProtocolError('invalid startup failure')
+                    self.startup_failure = reason
+                    raise BackendUnavailable('backend startup failed')
                 instance = message.get('instance')
                 if not isinstance(instance, str) or not instance:
                     raise ProtocolError('missing instance')
-                kind = message.get('type')
                 if kind == 'state':
                     state = validate_state(message.get('state'), native=self.native)
                     if instance != state['instance'] or self.instance not in (None, instance):

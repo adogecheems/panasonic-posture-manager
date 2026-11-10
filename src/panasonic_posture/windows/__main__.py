@@ -9,7 +9,9 @@ from typing import BinaryIO
 
 from .backend import Backend, BackendError
 from .diagnostics import configure_logging
-from .protocol import VERSION, MAX_FRAME, MAX_PENDING, ProtocolError, encode, decode
+from .protocol import (
+    VERSION, MAX_FRAME, MAX_PENDING, ProtocolError, encode, encode_startup_failure, decode,
+)
 from .instance import InstanceLock
 
 
@@ -80,6 +82,15 @@ def serve(source: BinaryIO, sink: BinaryIO, backend: Backend) -> int:
     return 0
 
 
+def startup_failure_reason(error: OSError, *, native: bool) -> str:
+    text = str(error)
+    if 'LaptopSlateExclusiveAccess=0' in text:
+        return 'slate-configuration-required'
+    if isinstance(error, PermissionError):
+        return 'native-session-unavailable'
+    return 'native-startup-failed' if native else 'backend-startup-failed'
+
+
 def main(argv=None):
     from pathlib import Path
     parser = argparse.ArgumentParser(description=__doc__)
@@ -103,8 +114,14 @@ def main(argv=None):
         with InstanceLock(options.settings):
             return serve(sys.stdin.buffer, sys.stdout.buffer,
                          Backend(options.settings, simulate=options.simulate, scenario=options.scenario, native=options.native))
-    except OSError:
+    except OSError as error:
         logging.exception('cannot start private user backend')
+        try:
+            sys.stdout.buffer.write(encode_startup_failure(
+                startup_failure_reason(error, native=options.native)))
+            sys.stdout.buffer.flush()
+        except (OSError, ProtocolError):
+            pass
         return 1
 
 
