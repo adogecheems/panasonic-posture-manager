@@ -13,10 +13,14 @@ import unittest
 from panasonic_posture.model import DeviceInfo, HardwareStatus, SensorInfo, SensorReading, StateSnapshot
 from panasonic_posture.service.engine import Engine
 from panasonic_posture.session.failures import ServiceError
+from panasonic_posture.session.journal import Journal
 from panasonic_posture.windows.backend import Backend, BackendError
+from panasonic_posture.windows.display import Panel
+from panasonic_posture.windows.orientation import OrientationReading, SIMPLE_ORIENTATION_TRANSFORM
 from panasonic_posture.windows.protocol import validate_state, ProtocolError
 from panasonic_posture.windows.screen_session import ScreenSession, SessionBridge, ProfileSensor
 from panasonic_posture.windows.simulation import SimulatedDisplay
+from panasonic_posture.windows.tablet_display import WindowsTabletDisplay
 
 
 def screen_worker(path):
@@ -89,6 +93,8 @@ class NativeScreenTests(unittest.TestCase):
 
     def test_real_engine_modes_have_truthful_capabilities_and_display_receipts(self):
         self.until(lambda: self.backend.snapshot()['applied'] is not None)
+        self.assertEqual(self.backend.snapshot()['available_modes'],
+                         ['auto', 'laptop', 'tent', 'stand'])
         for mode, rotation in (('tent', 2), ('stand', 0), ('laptop', 0)):
             self.backend.call('set_mode', {'mode': mode})
             self.assertIsNone(self.backend.snapshot()['applied'])
@@ -164,6 +170,110 @@ class NativeScreenTests(unittest.TestCase):
         self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'tent')
         self.assertIsNone(self.backend.snapshot()['pending_notification'])
         self.assertTrue(self.context.control_available())
+
+
+class TabletApi:
+    def __init__(self):
+        self.current = Panel('panel', 'source', (1, 0, 0), 11, 0, 2880, 1920, 1)
+
+    def read(self):
+        return self.current
+
+    def lock(self, locked):
+        self.current = replace(self.current, auto_rotation=1 if locked else 0)
+
+    def rotate(self, identity, previous, transform):
+        if (identity, previous) != (self.current.identity, self.current.transform):
+            raise AssertionError('display identity changed')
+        self.current = replace(self.current, transform=transform)
+
+
+class SoftwareTabletScreenTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.clock, self.context = Clock(), Context()
+        self.api = TabletApi()
+        self.value, self.missing, self.hardware = 4, False, False
+        self.sensor = SimpleNamespace(
+            info=SensorInfo(ready=True, backend='windows-winrt'),
+            reading=lambda: SensorReading((0., 0., -9.81), self.clock()),
+            orientation=lambda: None if self.missing else OrientationReading(
+                self.value, self.clock(), 'orientation-1'),
+            start=lambda: None, close=lambda: None,
+        )
+
+        def factory(store, instance, journal):
+            display = WindowsTabletDisplay(
+                journal=Journal(journal), api=self.api, clock=self.clock,
+                orientation=self.sensor.orientation,
+                mapping=SIMPLE_ORIENTATION_TRANSFORM,
+                hardware_query=lambda: (self.hardware, HardwareStatus.OK),
+            )
+            return ScreenSession(store=store, instance=instance, sensor=self.sensor,
+                switch=SimpleNamespace(query=lambda: (self.hardware, HardwareStatus.OK)),
+                display=display, context=self.context, clock=self.clock,
+                device=DeviceInfo(platform='windows'))
+
+        self.backend = Backend(Path(self.directory.name) / 'tablet.json',
+                               native=True, screen_factory=factory)
+        self.addCleanup(self.backend.close)
+        self.advance(85)
+
+    def advance(self, count=30):
+        for _ in range(count):
+            self.clock.now += .05
+            self.backend.advance(self.clock.now)
+            time.sleep(.001)
+
+    def until(self, condition):
+        for _ in range(400):
+            self.advance(1)
+            if condition():
+                return
+        self.fail('software-tablet pipeline did not settle')
+
+    def applied(self):
+        return (self.backend.snapshot()['applied'] or {}).get('mode')
+
+    def test_mode_follows_four_quadrants_and_restores_after_qualification_loss(self):
+        self.until(lambda: self.applied() == 'laptop')
+        state = self.backend.snapshot()
+        self.assertEqual(state['available_modes'],
+                         ['auto', 'laptop', 'tent', 'stand', 'tablet'])
+        self.assertEqual(validate_state(state, native=True), state)
+
+        self.backend.call('set_mode', {'mode': 'tablet'})
+        self.until(lambda: self.applied() == 'tablet')
+        self.assertEqual(self.api.current.transform, 0)
+        for value, transform in ((1, 3), (2, 2), (3, 1), (0, 0)):
+            self.value = value
+            self.until(lambda transform=transform: self.api.current.transform == transform)
+            self.until(lambda: self.applied() == 'tablet')
+
+        self.context.available = False
+        self.advance()
+        self.assertIsNone(self.backend.snapshot()['applied'])
+        self.until(lambda: self.api.current.transform == 0)
+        self.assertIsNone(self.backend.screen.engine.state.applied)
+
+    def test_missing_direction_and_physical_switch_never_confirm_stale_rotation(self):
+        self.until(lambda: self.applied() == 'laptop')
+        self.backend.call('set_mode', {'mode': 'tablet'})
+        self.until(lambda: self.applied() == 'tablet')
+        self.value = 1
+        self.until(lambda: self.api.current.transform == 3)
+
+        self.missing = True
+        self.until(lambda: self.backend.snapshot()['error_code'])
+        self.assertIsNone(self.backend.snapshot()['applied'])
+        self.until(lambda: self.api.current.transform == 0)
+
+        self.missing = False
+        self.hardware = True
+        self.until(lambda: self.applied() == 'hardware')
+        self.assertEqual(self.api.current.transform, 0)
+        self.assertIs(self.backend.snapshot()['hardware'], True)
 
 
 class BridgeTests(unittest.TestCase):
@@ -279,16 +389,80 @@ from panasonic_posture.windows.backend import Backend
         with self.assertRaises(ServiceError): bridge.get_state()
 
     def test_profile_does_not_apply_mount_to_another_device(self):
+        direction = OrientationReading(1, 10., 'orientation-1')
         sensor = SimpleNamespace(info=SensorInfo(ready=True, backend='windows-winrt', device='other'),
-                                 reading=lambda: SensorReading((0., 0., -9.81), 10.))
+                                 reading=lambda: SensorReading((0., 0., -9.81), 10.),
+                                 orientation=lambda: direction)
         port = ProfileSensor(sensor)
         self.assertFalse(port.info.ready)
         self.assertFalse(port.reading().valid)
+        self.assertIsNone(port.orientation())
         sensor.info = replace(sensor.info, device='')
         self.assertFalse(port.info.ready)
         sensor.info = replace(sensor.info, device=r'\\?\HID#Vid_8087&Pid_0AC2#unique')
         self.assertTrue(port.info.ready)
         self.assertTrue(port.reading().valid)
+        self.assertIs(port.orientation(), direction)
+
+    def test_native_factory_wires_verified_orientation_and_tablet_display(self):
+        from unittest.mock import patch
+        import panasonic_posture.windows.screen_session as module
+        captured = {}
+
+        class Key:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        def query(key, name):
+            del key
+            return (( 'Panasonic Corporation' if name == 'SystemManufacturer' else 'CFQV8-1L'), 1)
+
+        sensor = SimpleNamespace(
+            info=SensorInfo(ready=True, backend='windows-winrt'),
+            reading=lambda: SensorReading((0., 0., -9.81), 10.),
+            orientation=lambda: OrientationReading(0, 10., 'orientation-1'),
+            start=lambda: None, close=lambda: None,
+        )
+        context = SimpleNamespace(control_available=lambda: True, close=lambda: None)
+        switch = SimpleNamespace(query=lambda: (False, HardwareStatus.OK))
+        slate = SimpleNamespace(close=lambda: None)
+
+        class Sensor:
+            def __init__(self, **kwargs):
+                captured['sensor'] = kwargs
+                self.info, self.reading = sensor.info, sensor.reading
+                self.orientation, self.start, self.close = sensor.orientation, sensor.start, sensor.close
+
+        class Display:
+            def __init__(self, **kwargs):
+                captured['display'] = kwargs
+
+        class Session:
+            def __init__(self, **kwargs):
+                captured['session'] = kwargs
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(module, 'require_native_user'), \
+                patch('winreg.OpenKey', return_value=Key()), \
+                patch('winreg.QueryValueEx', side_effect=query), \
+                patch('panasonic_posture.windows.session_context.WindowsSessionContext', return_value=context), \
+                patch('panasonic_posture.windows.switch.WindowsSwitch', return_value=switch), \
+                patch('panasonic_posture.windows.convertible_slate.NativeSlateDevice', return_value=object()), \
+                patch('panasonic_posture.windows.convertible_slate.SlateNotifier', return_value=slate), \
+                patch('panasonic_posture.windows.slate_journal.SlateJournal', return_value=object()), \
+                patch('panasonic_posture.windows.slate_journal.lease_path',
+                      return_value=Path(directory) / 'slate.json'), \
+                patch('panasonic_posture.windows.sensor.WindowsSensor', Sensor), \
+                patch('panasonic_posture.windows.tablet_display.WindowsTabletDisplay', Display), \
+                patch.object(module, 'ScreenSession', Session):
+            result = module.native_screen_session(object(), 'fixture', Path(directory) / 'display.json')
+
+        self.assertIsInstance(result, Session)
+        self.assertTrue(captured['sensor']['include_orientation'])
+        self.assertEqual(captured['display']['mapping'], SIMPLE_ORIENTATION_TRANSFORM)
+        self.assertTrue(callable(captured['display']['orientation']))
+        self.assertIsInstance(captured['session']['sensor'], ProfileSensor)
+        self.assertIsInstance(captured['session']['display'], Display)
 
 
 class PrivateScreenProcessTests(unittest.TestCase):

@@ -255,6 +255,39 @@ class PipeTests(HostFixture):
         self.assertTrue(all(slot.retired for slot in server.slots))
         self.assertEqual(len(ticks), 101)
 
+    def test_close_never_unlinks_a_pipe_while_authentication_still_owns_it(self):
+        now, jobs, closed = [10.], [], []
+
+        class Executor:
+            def submit(self, fn):
+                del fn
+                future = Future()
+                jobs.append(future)
+                return future
+
+        class Pipes:
+            handles = iter(range(4))
+            def create(self, name, *, first): return next(self.handles)
+            def accept(self, handle): return True
+            def read(self, handle): return {'version': 1}
+            def close(self, handle): closed.append(handle)
+            def reset(self, handle): pass
+
+        class Security:
+            def require_system(self): pass
+            def is_active(self, peer): return True
+
+        server = HardwareServer(self.engine, security=Security(), pipes=Pipes(),
+            clock=lambda: now[0], executor=Executor(), guard_executor=InlineExecutor())
+        server.poll()
+        self.assertEqual(len(jobs), 4)
+        server.close()
+        self.assertTrue(server.closed)
+        self.assertEqual(closed, [])
+        for future in jobs:
+            future.set_result((AGENT, now[0]))
+        self.assertEqual(sorted(closed), list(range(4)))
+
     def test_fake_transport_dispatches_after_os_auth_and_rejects_replays(self):
         requests, responses, resets = {}, [], []
         class Pipes:

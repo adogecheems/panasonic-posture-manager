@@ -78,13 +78,16 @@ def validate_state(value: object, *, native: bool = False) -> dict:
     if value['simulation'] != (state.sensor_source == 'windows-simulation'):
         raise ProtocolError('inconsistent simulation source')
     if native:
+        modes = value.get('available_modes')
         if (value.get('native_backend') is not True or value['simulation'] is not False or
                 value.get('input_control_available') is not False or
-                value.get('available_modes') != ['auto', 'laptop', 'tent', 'stand'] or
+                modes not in (['auto', 'laptop', 'tent', 'stand'],
+                              ['auto', 'laptop', 'tent', 'stand', 'tablet']) or
                 state.support_tier != 'compatible' or
-                state.manual not in ('auto', 'laptop', 'tent', 'stand') or
-                state.target.mode not in ('unavailable', 'laptop', 'tent', 'stand', 'hardware') or
-                (state.applied is not None and state.applied.mode not in ('laptop', 'tent', 'stand', 'hardware')) or
+                state.manual not in ('auto', 'laptop', 'tent', 'stand', 'tablet') or
+                state.target.mode not in ('unavailable', 'laptop', 'tent', 'stand', 'tablet', 'hardware') or
+                (state.applied is not None and state.applied.mode not in
+                 ('laptop', 'tent', 'stand', 'tablet', 'hardware')) or
                 state.target.disable_internal_input or
                 (state.applied is not None and state.applied.disable_internal_input)):
             raise ProtocolError('invalid native screen capability')

@@ -78,10 +78,10 @@ class Backend:
 
     def snapshot(self) -> dict:
         if self.screen:
-            from .screen_session import SCREEN_MODES
             state = self.screen.engine.state.to_dict()
             state.update(preferences_available=True, simulation=False, native_backend=True,
-                         input_control_available=False, available_modes=list(SCREEN_MODES))
+                         input_control_available=False,
+                         available_modes=list(self.screen.available_modes))
             return state
         state = dict(self.simulation.engine.state.to_dict() if self.simulation else self.state)
         state.update(instance=self.instance, preferences_available=True, simulation=self.simulation is not None,

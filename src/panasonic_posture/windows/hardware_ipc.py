@@ -339,9 +339,20 @@ class HardwareServer:
         try:
             self.host.close()
         finally:
+            handles = []
             for slot in self.slots:
-                self.pipes.close(slot.handle)
+                if slot.pending is not None and not slot.pending.done():
+                    # peer() owns the handle until it returns. Close it from
+                    # the worker's completion callback instead of racing the
+                    # in-flight WTS lookup with an unlink/close operation.
+                    slot.pending.add_done_callback(
+                        lambda _future, handle=slot.handle: self.pipes.close(handle)
+                    )
+                else:
+                    handles.append(slot.handle)
             self.slots.clear()
+            for handle in handles:
+                self.pipes.close(handle)
             self.guard.close()
             if self.owned_executor:
                 self.executor.shutdown(wait=False, cancel_futures=True)

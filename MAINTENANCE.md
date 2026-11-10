@@ -110,9 +110,9 @@ packaging\windows\run.cmd --native-backend --language zh_CN
 
 第一条命令需要管理员权限，只把已核对的 `ACPI\INT33D3` 驱动配置设为 `LaptopSlateExclusiveAccess=0`，并在首次设置时记录安装前值；必须重启一次才会生效。`-Action Remove` 恢复安装前配置，`-Action Status` 只报告当前状态。便携包的同样操作由 `Configure Slate Device.cmd`、`Remove Slate Device Configuration.cmd` 和 `Slate Device Status.cmd` 提供。
 
-原生入口不使用模拟端口、不启用输入过滤驱动，也不需要测试签名。只接受已采集 Windows 姿态证据的 Panasonic Corporation / CFQV8-1L、唯一且型号匹配的 WinRT 加速度计、原有 GPIO 开关与内屏选择检查，以及实例 `ACPI\INT33D3\2&DABA3FF&0`。设备访问只认 PDO 名称，先读取当前字节；一次写会使驱动切换状态，因此仅在目标不同时写一次并立即回读。绝不直接修改 `PriorityControl\ConvertibleSlateMode`、共享内存或用户 shell 偏好。当前开放自动、笔记本、帐篷、支架和校准，手动软件平板自动旋转尚未接入，界面禁用该选项。输入目标和能力始终为 False，键盘和触控板保持可用；这是产品范围，不是待补功能。
+原生入口不使用模拟端口、不启用输入过滤驱动，也不需要测试签名。只接受已采集 Windows 姿态证据的 Panasonic Corporation / CFQV8-1L、唯一且型号匹配的 WinRT 加速度计、原有 GPIO 开关与内屏选择检查，以及实例 `ACPI\INT33D3\2&DABA3FF&0`。设备访问只认 PDO 名称，先读取当前字节；一次写会使驱动切换状态，因此仅在目标不同时写一次并立即回读。绝不直接修改 `PriorityControl\ConvertibleSlateMode`、共享内存或用户 shell 偏好。当前开放自动、笔记本、帐篷、支架、手动软件平板和校准。软件平板只在显示后端具备持续刷新能力时出现在界面；输入目标和能力始终为 False，键盘和触控板保持可用，这是产品范围，不是待补功能。
 
-软件平板的内部事务位于 `windows/tablet_display.py`，要求装配显式提供简单方向映射；所有动态方向经已有日志、回读及恢复处理。共用 `SessionRuntime` 的可选 `DisplayRefresh` 与 apply/restore 串行，刷新后验证实例和代次，资格丢失或故障时撤销结果并恢复，Linux 默认不启用此端口。当前真实工厂和模式能力尚未接入该组件，隔离测试通过不代表四向真机旋转已验收。
+软件平板的内部事务位于 `windows/tablet_display.py`，真实工厂显式提供系统简单方向映射；`SimpleOrientation` 的逆时针设备旋转按固定表转换为显示事务的顺时针象限，所有动态方向经已有日志、回读及恢复处理。共用 `SessionRuntime` 的可选 `DisplayRefresh` 与 apply/restore 串行，刷新后验证实例和代次；新目标先发送就绪回执再开始持续刷新，并以限速心跳续租，避免刷新饿死确认。资格丢失或故障时撤销结果并恢复，Linux 默认不启用此端口。真实工厂和模式能力已接入；隔离测试通过仍不代表四向真机旋转已验收。
 
 原生偏好独立存于 `native-settings.json`。显示恢复日志固定为同目录 `screen-display.json`，slate 租约日志为同目录 `screen-display-slate.json`，并有独立的每用户控制器锁，换一个 `--settings` 文件也不能启动第二个原生显示写入者。显示仍走共用事务、写前日志、身份检查、回读和恢复，只拥有内屏方向与全局自动旋转锁。帐篷、支架和物理平板另行报告平板使用状态，笔记本报告普通使用状态；Windows 根据用户自己的 shell 选择决定是否切换。通知失败会阻止姿态确认，但当前 shell 仍为桌面且用户选择“不要切换”属于策略允许的结果，不被当作失败。每个姿态先锁定当前方向，再报告 slate 状态，最后应用显示，防止 Windows 异步响应时出现中间旋转画面。slate 操作在首次写前原子记录启动值；进程被强杀后，下次原生会话先读取租约和当前设备值，在首个姿态请求时才协调：设备已等于目标就沿用现状并清除租约，否则至多一次切到目标。未收到姿态请求便退出时恢复租约中的启动值；物理平板交接随后把旋转交还 Windows，正常退出时先恢复方向事务，再把平板指示器恢复到本次会话的基准值。
 
@@ -128,7 +128,7 @@ packaging\windows\run.cmd --native-backend --language zh_CN
 
 只有显式原生客户端接受真实来源与能力字段，普通和模拟客户端仍拒绝这些快照。内部显示回执由有界队列交回引擎线程处理，过期、锁屏及失去本地会话资格的回执不能续租；原有 LocalSystem 管道和鉴权完全不变。正常关闭先请求后台恢复，最多等待六秒，失去响应再终止；重新启动先恢复残留日志，不重放手动选择。WinRT 辅助进程核对父进程 PID 和创建时间，父进程被强制终止后自行退出。
 
-原生验证脚本 `tests/windows_screen_smoke.py --exercise-screen --directory <新证据目录>` 会实际倒转内屏、测试正常退出与强制退出后的恢复，仅在获授权且已解锁的真机运行；`--locked-session` 验证锁屏拒绝与正常退出。`tests/windows_sensor_parent_smoke.py --directory <新证据目录>` 只读采样，并验证强制终止采样父进程后辅助进程退出。2026-11-09，CFQV8 已通过锁屏拒绝、真实采样及父进程退出清理，并在解锁后通过完整真实后台的笔记本、帐篷倒转、支架回正、偏好保存、校准及重置、正常退出恢复、强制退出重连恢复；最终内屏回读为原有正常方向，恢复日志已清除。此次未改变物理折叠姿态、测试四方向软件平板或禁用输入，不能据此宣称完整姿态验收通过。
+原生验证脚本 `tests/windows_screen_smoke.py --exercise-screen --directory <新证据目录>` 会实际倒转内屏、测试正常退出与强制退出后的恢复，仅在获授权且已解锁的真机运行；`--locked-session` 验证锁屏拒绝与正常退出。`tests/windows_sensor_parent_smoke.py --directory <新证据目录>` 只读采样，并验证强制终止采样父进程后辅助进程退出。四向软件平板使用 `tests/windows_software_tablet_smoke.py --exercise-software-tablet --directory <新证据目录>`：操作者依次把设备置于正向、逆时针 90°、倒置和逆时针 270°，脚本核对系统方向值、内屏显示变换、已确认模式和错误状态，并要求目视确认屏幕保持竖直，最后验证正常退出恢复。2026-11-09，CFQV8 已通过锁屏拒绝、真实采样及父进程退出清理，并在解锁后通过完整真实后台的笔记本、帐篷倒转、支架回正、偏好保存、校准及重置、正常退出恢复、强制退出重连恢复；最终内屏回读为原有正常方向，恢复日志已清除。此次未改变物理折叠姿态、测试四方向软件平板或禁用输入，不能据此宣称完整姿态验收通过。
 
 需要验证完整软件事务时显式打开后台模拟模式：
 
@@ -173,11 +173,11 @@ set PYTHONPATH=src
 
 此命令输出逐行 JSON，时间换算至 Python 单调时钟，单位为 m/s²，`mount_verified=false` 表示仍沿用传感器原始轴向，不能当作机型姿态校验。它逐次枚举 Standard 加速度计，只接受唯一且与默认传感器标识一致的设备，不设置 ReportInterval 或 ReadingTransform。WinRT 在刚打开时可能先返回很久以前的缓存；旧帧不会发布，启动最多等待 20 秒，新鲜样本间隔不能超过两秒。重复时间戳不更新样本时间。断线后间隔两秒重试，保持原设备身份和最后的原始时间戳；更换设备必须重新建立并验证安装方向。
 
-`windows.sensor.WindowsSensor` 实现共用 SensorBackend 的只读接口，构造时要求显式传入安装方向矩阵。它校验采样与接收时间、墙钟和单调时钟的相对变化，遇到时钟跳变重新连接并建立时间基准；错误或过期时立即返回无效读数。它尚未接入普通软件后台，也不改变设备支持等级。传感器接口与固定坐标系见 [Microsoft Accelerometer 文档](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.accelerometer)。
+`windows.sensor.WindowsSensor` 实现共用 SensorBackend 的只读接口，构造时要求显式传入安装方向矩阵。它校验采样与接收时间、墙钟和单调时钟的相对变化，遇到时钟跳变重新连接并建立时间基准；错误或过期时立即返回无效读数。普通软件后台不启用该端口；显式 `--native-backend` 的已验证机型工厂会附带方向采集，设备支持等级仍以运行时探针和机型配置为准。传感器接口与固定坐标系见 [Microsoft Accelerometer 文档](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.accelerometer)。
 
 `--orientation` 显式附加系统 SimpleOrientationSensor 的四象限/朝上/朝下快照，默认采样路径保持不变。方向源同样要求唯一、身份固定且 ReadingTransform 为原始值 0；不修改该属性或采样配置。方向快照有独立的观察时间，使用已经校验的时钟基准换算到单调时钟，不能把较早的加速度测量时间冒充方向观察时间，也不把观察时间当成方向变更事件时间；只有加速度计出现不同的有效采样时间时才发布，缓存不能续期。方向失败只使方向端口失效，不破坏仍正常的重力姿态采样。接口语义见 [Microsoft 简单方向说明](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/use-the-orientation-sensor)。
 
-纯方向判定要求显式四象限映射和连续的新鲜样本达到稳定窗口，平放朝上/朝下保持当前方向，失效与断档清除候选；目前尚未接入软件平板显示执行或开放界面选项，不用原始 X 轴猜测方向映射。CFQV8 原生只读验证在约两秒取得 14 个不同观察时间的有效快照，当前平放为值 4（朝上）；四向旋转仍需实际摆放与显示配合验证。`tests/windows_sensor_parent_smoke.py --orientation --directory <新证据目录>` 已验证附加方向采集时，强制结束父进程仍会回收辅助进程。
+纯方向判定要求显式四象限映射和连续的新鲜样本达到稳定窗口，平放朝上/朝下保持当前方向，失效与断档清除候选；软件平板显示执行使用固定表把系统简单方向的逆时针值转换为顺时针显示变换，不用原始加速度轴猜测方向映射。CFQV8 原生只读验证在约两秒取得 14 个不同观察时间的有效快照，当前平放为值 4（朝上）；四向旋转仍需实际摆放与显示配合验证。`tests/windows_sensor_parent_smoke.py --orientation --directory <新证据目录>` 已验证附加方向采集时，强制结束父进程仍会回收辅助进程。
 
 2026-11-08，同一 Windows 10 虚拟机的普通用户下，持续采样约 3.4 秒取得 23 个不同时间戳的样本，退出时回收读取子进程。测试覆盖启动旧缓存、缓存不续期、设备更换、断线重试、时钟跳变与退出清理；不代表传感器安装方向或整机姿态已验收。
 

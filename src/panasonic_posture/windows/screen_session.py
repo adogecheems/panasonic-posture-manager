@@ -28,7 +28,8 @@ from ..session.failures import FailureKind, ServiceError
 from ..session.runtime import SessionRuntime
 from ..session.ports import DisplayBackend
 from .display_only_input import DisplayOnlyInput
-from .session_display import QualifiedDisplay, SessionContext, SlatePosture
+from .orientation import SIMPLE_ORIENTATION_TRANSFORM, OrientationReading
+from .session_display import QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture
 
 SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
 
@@ -138,6 +139,9 @@ class ScreenSession:
             self._stack.callback(slate.close)
         qualified = QualifiedDisplay(display, context, slate)
         self._stack.callback(qualified.restore)
+        refreshable = (callable(getattr(display, 'needs_refresh', None)) and
+                       callable(getattr(display, 'refresh', None)))
+        self.available_modes = SCREEN_MODES + (('tablet',) if refreshable else ())
         self.owner = SessionOwner('windows-screen-session', instance)
         try:
             self.engine = Engine(controller=Controller(input_control=False), sensor=sensor,
@@ -146,8 +150,10 @@ class ScreenSession:
             self._stack.callback(self.engine.shutdown)
             self.bridge = SessionBridge(self.engine.state, context.control_available,
                                         getattr(context, 'unattended', lambda: False))
+            refresh = (QualifiedRefresh(display, context, lambda: self.engine.state)
+                       if refreshable else None)
             self.session = SessionRuntime(self.bridge, qualified, None,
-                screen_locked=lambda: not context.control_available())
+                screen_locked=lambda: not context.control_available(), display_refresh=refresh)
             self._stack.callback(self.session.close)
             self._stack.callback(self.bridge.close)
             self.engine.start()
@@ -169,14 +175,14 @@ class ScreenSession:
     def call(self, method: str, params: dict) -> None:
         if method == 'set_mode':
             mode = params['mode']
-            if not isinstance(mode, str) or mode not in SCREEN_MODES:
+            if not isinstance(mode, str) or mode not in self.available_modes:
                 from ..service.engine import ServiceError as EngineError
                 raise EngineError(ErrorCode.INVALID_MODE, 'screen-mode-unavailable')
             self.engine.set_mode(mode)
         elif method == 'retry':
             fallback = params['fallback_mode']
             if fallback is not None:
-                if not isinstance(fallback, str) or fallback not in SCREEN_MODES:
+                if not isinstance(fallback, str) or fallback not in self.available_modes:
                     raise ValueError('invalid fallback mode')
                 self.engine.set_mode(fallback)
             self.engine.retry()
@@ -223,6 +229,9 @@ class ProfileSensor:
     def reading(self) -> SensorReading:
         return self.sensor.reading() if self.info.ready else SensorReading(source='windows-winrt')
 
+    def orientation(self) -> OrientationReading | None:
+        return self.sensor.orientation() if self.info.ready else None
+
     def start(self) -> None:
         self.sensor.start()
 
@@ -246,10 +255,10 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
     from ..session.journal import Journal
     from .convertible_slate import NativeSlateDevice, SlateNotifier
     from .slate_journal import SlateJournal, lease_path
-    from .display import WindowsDisplay
     from .sensor import WindowsSensor, IDENTITY
     from .session_context import WindowsSessionContext
     from .switch import WindowsSwitch
+    from .tablet_display import WindowsTabletDisplay
     require_native_user()
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\BIOS') as key:
         vendor = winreg.QueryValueEx(key, 'SystemManufacturer')[0]
@@ -263,9 +272,12 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
         slate = SlateNotifier(
             NativeSlateDevice(), SlateJournal(lease_path(journal_path))
         )
-        display = WindowsDisplay(journal=Journal(journal_path), hardware_query=switch.query)
-        sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY))
+        sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY, include_orientation=True))
         resources.callback(sensor.close)
+        display = WindowsTabletDisplay(
+            journal=Journal(journal_path), hardware_query=switch.query,
+            orientation=sensor.orientation, mapping=SIMPLE_ORIENTATION_TRANSFORM,
+        )
         session = ScreenSession(store=store, instance=instance,
             sensor=sensor, switch=switch, display=display, context=context, slate=slate,
             device=DeviceInfo(id='windows-cfqv8-screen', vendor=vendor, product=product,

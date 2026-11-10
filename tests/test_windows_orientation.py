@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 
 from panasonic_posture.windows.sensor import WindowsSensor, IDENTITY
 
-from panasonic_posture.windows.orientation import OrientationTracker, OrientationReading, OrientationError, QuadrantPolicy
+from panasonic_posture.windows.orientation import (
+    OrientationTracker, OrientationReading, OrientationError, QuadrantPolicy,
+    SIMPLE_ORIENTATION_TRANSFORM,
+)
 
 
 def direction(value=0, **changes):
@@ -14,6 +17,9 @@ def direction(value=0, **changes):
 
 
 class OrientationTests(unittest.TestCase):
+    def test_simple_orientation_uses_one_explicit_clockwise_transform_table(self):
+        self.assertEqual(SIMPLE_ORIENTATION_TRANSFORM, (0, 3, 2, 1))
+
     def test_policy_requires_an_explicit_permutation_and_valid_timing(self):
         for mapping in (None, (0, 1, 2), (0, 0, 2, 3), (False, 1, 2, 3), (0, 1, 2, 4)):
             with self.assertRaises(ValueError): QuadrantPolicy(mapping=mapping)

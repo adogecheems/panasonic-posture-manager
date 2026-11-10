@@ -544,6 +544,14 @@ class SessionRuntime:
         self, state: StateSnapshot, generation: int, now: float
     ) -> bool:
         if self.ready:
+            # A new or expired readiness receipt must reach the service before
+            # another ongoing display write. Otherwise a refreshable backend
+            # can keep replacing the verified display task and never report the
+            # generation that its first write actually completed.
+            ready_feedback = (int(generation), True, self.error_code or "", self.error_detail or "")
+            if (self.last_feedback != ready_feedback or
+                    now - self.last_feedback_at >= contracts.AGENT_HEARTBEAT_SECONDS):
+                return True
             if (self._display_refresh is not None and state.session_connected and not state.error_code and
                     now >= self._refresh_at and self._display_refresh.needs_refresh(state.target)):
                 self._refresh_at = now + contracts.TICK_SECONDS

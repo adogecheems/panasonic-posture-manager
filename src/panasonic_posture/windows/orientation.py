@@ -12,6 +12,12 @@ import math
 from ..model import SensorInfo
 
 
+# SimpleOrientation reports counter-clockwise device rotation, while the
+# display transaction uses clockwise quarter turns.  Face-up/face-down values
+# are handled by QuadrantPolicy and never appear in this mapping.
+SIMPLE_ORIENTATION_TRANSFORM = (0, 3, 2, 1)
+
+
 class OrientationError(ValueError):
     pass
 

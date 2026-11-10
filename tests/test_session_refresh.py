@@ -30,7 +30,7 @@ class RefreshTests(unittest.TestCase):
         self.state = StateSnapshot(instance='fixture', generation=1, session_connected=True,
             supported=True, hardware=False, hardware_status=HardwareStatus.OK,
             target=Target(mode='tablet', tablet=True, rotation=None, disable_internal_input=False))
-        self.fail = False
+        self.refresh_fails = False
         self.update_error = None
         self.on_refresh = lambda: None
         def update(generation, ready, code, detail):
@@ -44,7 +44,7 @@ class RefreshTests(unittest.TestCase):
         def refresh(state):
             self.events.append(('refresh', state.generation))
             self.on_refresh()
-            if self.fail: raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'orientation-lost')
+            if self.refresh_fails: raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'orientation-lost')
         self.refresher = SimpleNamespace(needs_refresh=lambda target: target.mode == 'tablet', refresh=refresh)
         self.runtime = SessionRuntime(self.client, self.display, None,
             executor=InlineExecutor(), lease_executor=InlineExecutor(), display_refresh=self.refresher)
@@ -53,6 +53,7 @@ class RefreshTests(unittest.TestCase):
     def test_refresh_is_verified_and_rate_limited_on_the_existing_display_lane(self):
         self.runtime.tick(0.)
         self.assertTrue(self.runtime.ready)
+        self.runtime.tick(0.)
         self.assertEqual([e for e in self.events if e[0] == 'refresh'], [('refresh', 1)])
         self.assertIn(('feedback', 1, True), self.events)
         self.runtime.tick(0.)
@@ -73,13 +74,15 @@ class RefreshTests(unittest.TestCase):
         self.assertFalse(any(e[0] == 'refresh' for e in self.events))
 
     def test_failed_refresh_withdraws_success_before_restore_and_recovers_through_retry(self):
-        self.fail = True
+        self.refresh_fails = True
+        self.runtime.tick(0.)
         self.runtime.tick(0.)
         self.assertFalse(self.runtime.ready)
+        success = self.events.index(('feedback', 1, True))
         feedback = self.events.index(('feedback', 1, False))
+        self.assertGreater(feedback, success)
         self.assertGreater(self.events.index(('restore',)), feedback)
-        self.assertNotIn(('feedback', 1, True), self.events)
-        self.fail = False
+        self.refresh_fails = False
         self.runtime.tick(self.runtime.retry_at + .01)
         self.assertTrue(self.runtime.ready)
         self.assertIn(('feedback', 1, True), self.events)
@@ -87,17 +90,20 @@ class RefreshTests(unittest.TestCase):
     def test_target_changed_during_refresh_never_acknowledges_the_stale_generation(self):
         self.on_refresh = lambda: setattr(self, 'state', replace(self.state, generation=2, target=Target(mode='stand')))
         self.runtime.tick(0.)
-        self.assertNotIn(('feedback', 1, True), self.events)
+        self.runtime.tick(0.)
+        refresh = self.events.index(('refresh', 1))
+        self.assertNotIn(('feedback', 1, True), self.events[refresh + 1:])
         self.assertIn(('apply', 'stand'), self.events)
         self.assertIn(('feedback', 2, True), self.events)
 
     def test_retry_clears_echoed_error_before_the_next_qualified_refresh(self):
         self.runtime._display_refresh = QualifiedRefresh(self.refresher,
             SimpleNamespace(control_available=lambda: True), lambda: self.state)
-        self.fail = True
+        self.refresh_fails = True
+        self.runtime.tick(0.)
         self.runtime.tick(0.)
         self.assertEqual(self.state.error_code, ErrorCode.DISPLAY_UNAVAILABLE)
-        self.fail = False
+        self.refresh_fails = False
         now = self.runtime.retry_at + .01
         self.runtime.tick(now)
         self.assertTrue(self.runtime.ready)
@@ -125,6 +131,29 @@ class RefreshTests(unittest.TestCase):
         executor.run()
         self.runtime.drain_completed_tasks(1.3)
         self.assertTrue(self.runtime.ready)
+
+    def test_completed_apply_reports_readiness_before_a_new_refresh_can_replace_it(self):
+        executor = Deferred()
+        self.runtime._executor = executor
+        self.runtime.tick(0.)
+        # state -> apply -> verify
+        for now in (0., 0., 0.):
+            executor.run()
+            self.runtime.drain_completed_tasks(now)
+        executor.run()  # ready feedback precedes refresh
+        self.runtime.drain_completed_tasks(0.)
+
+        self.runtime.tick(.2)  # state -> queued refresh
+        executor.run()
+        self.runtime.drain_completed_tasks(.2)
+        self.assertEqual(self.runtime._tasks[0].kind, 'refresh')
+        executor.run()
+        self.runtime.drain_completed_tasks(.2)
+        executor.run()  # verify without another due refresh at the same time
+        self.runtime.drain_completed_tasks(.2)
+        self.assertEqual([event for event in self.events if event[0] == 'feedback'],
+                         [('feedback', 1, True)])
+        self.runtime._executor = InlineExecutor()
 
     def test_rejection_during_refresh_revokes_readiness_and_restores_after_the_inflight_write(self):
         self.runtime.tick(0.)

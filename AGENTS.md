@@ -53,7 +53,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 用户态真实显示与平板通知 | `windows/{screen_session,backend,client,display,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；真机脚本仍须相应授权，不能用隔离端口代替真机证据 |
+| Windows 用户态真实显示与平板通知 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；真机脚本仍须相应授权，不能用隔离端口代替真机证据 |
 | Windows 常驻、自启动与姿态通知 | `windows/{activation,startup,instance}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_screen_session`、`test_fluent`；实际注销登录和通知目视验收须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
@@ -960,3 +960,12 @@ make WERROR=1 check
 - 动机：折叠姿态中进程被强杀后，立即恢复启动值会在原生会话启动阶段产生 laptop→slate 闪变，与“先锁方向再通知”的成品行为冲突。
 - 约束：该协调不改变设备读回、日志原子性、方向先锁后通知、通知失败阻止确认或 shell 由 Windows 偏好决定的规则；日志 schema 仍为 v1。
 - 同步：slate 通知器、强杀恢复回归测试、真机烟测恢复步骤、README、MAINTENANCE 与本记录。本记录取代同日期「Windows 通过原生 CSM 指示器通知系统」中“下一次启动先幂等恢复该值”的描述。
+
+### 2026-11-10 - Windows 软件平板接入真实用户态入口
+
+- 变更：`--native-backend` 的已验证机型工厂改为同时采集 SimpleOrientation，并使用 `WindowsTabletDisplay` 执行手动软件平板的四向动态旋转。显示后端具备持续刷新能力时才在快照中开放 `tablet`，界面按能力显示选项；输入目标和能力仍为 False。使用固定表把系统简单方向的逆时针值转换为显示事务的顺时针象限。
+- 动机：让普通用户无需输入过滤驱动即可使用与 Linux 类似的软件平板旋转，同时保留物理平板优先、会话资格撤销、方向锁、写前日志和故障恢复。
+- 修复：共用 `SessionRuntime` 在刷新型后端完成首次或后续写入后，必须先发送当前代的成功回执，再开始下一轮持续刷新；就绪状态还需按心跳再次上报。此前每个刷新窗口都可能直接替换已完成的 verify，导致显示已写好但引擎始终得不到成功回执，软件平板永久停在未确认状态。
+- 约束：Linux 不传入持续刷新端口，行为不变。刷新仍与 apply/hold/restore 串行、受实例和代次复核、限速执行；方向失效、物理或原生接管、资格丢失仍撤销成功并走原恢复路径。原生 Windows 传输 v1 的能力白名单同时接受原有四模式和不含输入控制的五模式快照，不接受任意模式或输入声明。该记录取代 2026-11-09「Windows 普通用户真实显示链路」和同日期「Windows 软件平板旋转事务」中“真实工厂及界面能力尚未接入”的阶段描述。
+- 证据：隔离测试覆盖真实共享 Engine、四向象限、刷新前就绪回执、持续刷新、方向丢失、面板或方向设备替换、外部与物理接管、资格丢失恢复、生产工厂接线、原生能力校验和关闭期间鉴权句柄所有权。Windows 专项 222 项通过。尚未进行真实 CFQV8 四向摆放与显示联合验收，不能据此声明整机四向通过。
+- 同步：Windows 用户态会话、协议校验、共享会话刷新运行时、方向映射、回归测试、README、MAINTENANCE 与本手册。
