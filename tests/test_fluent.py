@@ -132,6 +132,29 @@ class DemoTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent preview dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def test_home_shows_stable_error_reasons_and_action_failures(self):
+        self.run_ui('''
+from concurrent.futures import Future
+from panasonic_posture.contracts import ErrorCode
+client = window.client
+client.state['error_code'] = ErrorCode.DISPLAY_TRANSFORM
+client.refresh()
+assert window.home.detail.text() == (
+    'Mode change failed: The screen rotation could not be applied. Please try again.'
+)
+client.state['error_code'] = None
+client.scenario('prompt')
+def fail(*args):
+    result = Future()
+    result.set_exception(RuntimeError(ErrorCode.DISPLAY_LOCK))
+    return result
+client.confirm_prompt = fail
+window.home.confirm()
+assert window.home.detail.text() == (
+    'Mode change failed: The rotation lock could not be changed. Please try again.'
+)
+''')
+
     def test_native_preflight_explains_session_and_machine_rejections(self):
         self.run_ui('''
 from panasonic_posture.fluent.app import native_start_failure

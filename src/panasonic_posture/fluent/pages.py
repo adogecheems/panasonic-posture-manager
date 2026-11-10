@@ -13,6 +13,7 @@ from qfluentwidgets import (
 )
 
 from .. import __version__
+from ..contracts import ALL_ERROR_CODES, ErrorCode
 from ..frontend.actions import ActionRunner, SettingsModel
 from ..frontend.ports import UIClient
 from ..frontend.state import PostureModel, Detail
@@ -27,13 +28,50 @@ def mode_labels(_):
             'stand': _('Stand'), 'tablet': _('Tablet')}
 
 
+def posture_error_text(code: str | None, _) -> str:
+    """Localize stable service failures without exposing diagnostic detail."""
+    messages = {
+        ErrorCode.INVALID_MODE: _('This mode is not available right now.'),
+        ErrorCode.ACCESS_DENIED: _('Please switch back to the local desktop and try again.'),
+        ErrorCode.UNSUPPORTED_MODEL: _('This model does not support automatic mode changes.'),
+        ErrorCode.HARDWARE_PRIORITY: _('The tablet switch currently controls the mode.'),
+        ErrorCode.EXPIRED_CONFIRMATION: _('The posture prompt has expired. Wait for it to appear again.'),
+        ErrorCode.CONFIG_WRITE: _('The setting could not be saved. Please try again.'),
+        ErrorCode.RELAY_START: _('The internal keyboard and touchpad could not be controlled. Please try again.'),
+        ErrorCode.RELAY_EXITED: _('Internal input control stopped. Please try again.'),
+        ErrorCode.RELAY_HEARTBEAT: _('Internal input control stopped responding. Please try again.'),
+        ErrorCode.RELAY_INPUT: _('The internal keyboard and touchpad could not be disabled. Please try again.'),
+        ErrorCode.NATIVE_RECOVERY: _('The tablet switch state could not be restored. Restart the service if input behaves unexpectedly.'),
+        ErrorCode.SENSOR_TIMEOUT: _('No posture data is available right now.'),
+        ErrorCode.CALIBRATION_NOT_READY: _('Place the device in laptop form on a flat desk and hold it still for about two seconds, then try again.'),
+        ErrorCode.DISPLAY_MIRRORED: _('This screen arrangement cannot be rotated. Please adjust the display settings.'),
+        ErrorCode.DISPLAY_LAYOUT: _('The external display arrangement does not allow this mode.'),
+        ErrorCode.DISPLAY_TRANSFORM: _('The screen rotation could not be applied. Please try again.'),
+        ErrorCode.DISPLAY_LOCK: _('The rotation lock could not be changed. Please try again.'),
+        ErrorCode.DISPLAY_UNAVAILABLE: _('Screen rotation is not available right now.'),
+        ErrorCode.DISPLAY_UNKNOWN_MODE: _('This display mode is not supported.'),
+        ErrorCode.DISPLAY_IDENTITY: _('The internal screen changed while applying the mode. Please try again.'),
+        ErrorCode.INTERNAL: _('Something went wrong. Please try again.'),
+    }
+    return messages.get(code, messages[ErrorCode.INTERNAL])
+
+
+def action_error_code(error: BaseException) -> str | None:
+    code = getattr(error, 'code', None)
+    if ((not isinstance(code, str) or code not in ALL_ERROR_CODES) and error.args and
+            isinstance(error.args[0], str) and error.args[0] in ALL_ERROR_CODES):
+        code = error.args[0]
+    return code if isinstance(code, str) and code in ALL_ERROR_CODES else None
+
+
 class Home(Page):
     def __init__(self, client: UIClient, _, notify, parent=None):
         super().__init__('posture', parent)
-        self._, self.client = _, client
+        self._, self.client, self.notify = _, client, notify
         self.model = PostureModel()
         self.labels = mode_labels(_)
-        self.actions = ActionRunner(self.sync_buttons, lambda error: notify(False), client.refresh)
+        self.action_detail = None
+        self.actions = ActionRunner(self.sync_buttons, self.action_failed, client.refresh)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
@@ -69,6 +107,7 @@ class Home(Page):
         self.box.addStretch()
 
     def update_state(self, state):
+        self.action_detail = None
         old_deadline = self.model.deadline
         self.model.update(state, time.monotonic())
         if old_deadline != self.model.deadline:
@@ -89,14 +128,21 @@ class Home(Page):
         _ = self._
         messages = {
             Detail.NONE: '', Detail.DISCONNECTED: _('Windows preview · The backend is not connected yet.'),
-            Detail.ERROR: _('Mode change failed'), Detail.SESSION: _('Waiting for the desktop to get ready…'),
+            Detail.SESSION: _('Waiting for the desktop to get ready…'),
             Detail.UNSUPPORTED: _('This model does not support automatic mode changes.'),
             Detail.SWITCH: _('The tablet switch is unavailable. Restart the background service if this continues.'),
             Detail.SENSOR: _('No posture data is available. Keep the device still; switching will resume automatically.'),
             Detail.SLOW: _('Switching is taking longer than usual. Please wait or choose another mode in Settings.'),
             Detail.COMPATIBLE: _('Compatibility mode: this model is supported but has not been individually validated.'),
         }
-        self.detail.setText(messages[self.model.detail])
+        if self.action_detail is not None:
+            text = self.action_detail
+        elif self.model.detail == Detail.ERROR:
+            code = self.model.state['error_code'] if self.model.state else None
+            text = f"{_('Mode change failed')}: {posture_error_text(code, _)}"
+        else:
+            text = messages[self.model.detail]
+        self.detail.setText(text)
         if self.model.state and self.model.state.get('sensor_source') == 'windows-unavailable':
             self.detail.setText(_('The background service is ready. Device control is not available yet.'))
         elif self.model.state and self.model.state.get('simulation') and self.model.detail == Detail.COMPATIBLE:
@@ -113,11 +159,21 @@ class Home(Page):
     def unavailable(self):
         self.timer.stop()
         self.actions.disconnect()
+        self.action_detail = None
         self.model.disconnect()
         self.render_detail()
         self.confirm_button.hide()
         self.retry_button.hide()
         self.auto_button.hide()
+
+    def action_failed(self, error):
+        _ = self._
+        self.action_detail = (
+            f"{_('Mode change failed')}: "
+            f"{posture_error_text(action_error_code(error), _)}"
+        )
+        self.render_detail()
+        self.notify(False)
 
     def sync_buttons(self):
         prompt = self.model.state and self.model.state['pending_prompt']
