@@ -249,17 +249,39 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertIsNone(journal.document)
         self.assertIsNone(restarted.owned)
 
-    def test_physical_unknown_or_takeover_before_write_cannot_start_a_fixed_mode(self):
-        for hardware, status in ((True, HardwareStatus.OK),
-                                 (None, HardwareStatus.AMBIGUOUS)):
-            api, journal = Api(), MemoryJournal()
-            display = self.make(api, journal, lambda: (hardware, status))
-            with self.assertRaises(DisplayError):
-                display.apply(dict(mode='tent', tablet=True, rotation=180,
-                                   disable_internal_input=False))
-            self.assertEqual(api.writes, [])
-            self.assertFalse(api.lock_writes)
-            self.assertIsNone(journal.document)
+    def test_physical_takeover_before_write_hands_off_and_unknown_state_fails(self):
+        api, journal = Api(), MemoryJournal()
+        display = self.make(api, journal, lambda: (True, HardwareStatus.OK))
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
+        self.assertEqual(api.writes, [])
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertIsNone(journal.document['written_transform'])
+
+        api, journal = Api(), MemoryJournal()
+        display = self.make(api, journal, lambda: (None, HardwareStatus.AMBIGUOUS))
+        with self.assertRaises(DisplayError):
+            display.apply(dict(mode='tent', tablet=True, rotation=180,
+                               disable_internal_input=False))
+        self.assertEqual(api.writes, [])
+        self.assertFalse(api.lock_writes)
+        self.assertIsNone(journal.document)
+
+    def test_physical_takeover_mid_apply_hands_off_without_an_error(self):
+        class Race(Api):
+            def rotate(self, *args):
+                super().rotate(*args)
+                physical[0] = True
+
+        api, journal = Race(), MemoryJournal()
+        physical = [False]
+        display = self.make(api, journal, lambda: (physical[0], HardwareStatus.OK))
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
+        self.assertEqual(api.current.transform, 2)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertIsNone(journal.document['written_transform'])
+        self.assertFalse(journal.document['written_lock'])
 
     def test_late_native_takeover_is_rolled_back_instead_of_confirmed(self):
         class Race(Api):

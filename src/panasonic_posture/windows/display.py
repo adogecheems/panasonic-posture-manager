@@ -359,10 +359,10 @@ class WindowsDisplay(SoftwareDisplay):
             raise DisplayError(ErrorCode.DISPLAY_LOCK, 'physical-tablet-took-over')
 
     def apply(self, target: Target | dict) -> None:
-        super().apply(target)
         mode = target.get('mode') if isinstance(target, dict) else target.mode
-        if mode in ('laptop', 'tent', 'stand'):
-            try:
+        try:
+            super().apply(target)
+            if mode in ('laptop', 'tent', 'stand'):
                 current = self._read_state()
                 self._require_software_ownership()
                 if not current.lock:
@@ -371,9 +371,18 @@ class WindowsDisplay(SoftwareDisplay):
                     raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
                 if current.transform != (2 if mode == 'tent' else 0):
                     raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'fixed-rotation-changed-before-receipt')
-            except (DisplayError, OSError, ValueError):
-                self._rollback()
-                raise
+        except (DisplayError, OSError, ValueError) as error:
+            self._rollback()
+            if (isinstance(error, DisplayError)
+                    and error.code == ErrorCode.DISPLAY_LOCK
+                    and error.detail == 'physical-tablet-took-over'):
+                # Hardware posture changed while an older fixed-mode
+                # transaction was finishing. The rollback relinquished the
+                # software journal; complete the same request as a hardware
+                # handoff so the session can verify the newer snapshot.
+                self._apply_hardware()
+                return
+            raise
 
     def restore(self, normal: bool = False, *, release_lock: bool = False,
                 keep_journal: bool = False) -> None:
