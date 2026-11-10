@@ -131,7 +131,8 @@ class Window(FluentWidget):
             setFont(label, 12 if caption else 24 if isinstance(label, TitleLabel) else 13,
                     QFont.Weight.Medium if isinstance(label, TitleLabel) else QFont.Weight.Normal)
         for button in (self.home.confirm_button, self.home.retry_button, self.home.auto_button, self.settings.calibrate_button,
-                       self.settings.reset_button, self.settings.findChild(ComboBox)):
+                       self.settings.reset_button,
+                       self.settings.findChild(ComboBox)):
             selector = type(button).__name__
             style = f'{selector} {{ border-radius: 10px; }}'
             if isinstance(button, PrimaryPushButton):

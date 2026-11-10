@@ -24,6 +24,7 @@ from panasonic_posture.windows.screen_session import (
 )
 from panasonic_posture.windows.simulation import SimulatedDisplay
 from panasonic_posture.windows.tablet_display import WindowsTabletDisplay
+from panasonic_posture.windows.touch_mode import WindowsTouchMode
 
 
 def screen_worker(path):
@@ -496,6 +497,7 @@ from panasonic_posture.windows.backend import Backend
         self.assertIsInstance(captured['session']['sensor'], ProfileSensor)
         self.assertIsInstance(captured['session']['display'], Display)
         self.assertIs(captured['session']['switch'], switch)
+        self.assertIsInstance(captured['session']['touch_mode'], WindowsTouchMode)
         self.assertNotIn('slate', captured['session'])
 
 

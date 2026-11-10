@@ -345,9 +345,45 @@ assert client.state['pending_notification'] == epoch + 1
 window.hide()
 resident.tray.messageClicked.emit()
 QTest.qWait(450)
-assert window.isVisible()
+assert not window.isVisible()
 assert client.state['manual'] == 'tent'
 assert window.home.heading.text() == 'Tent'
+resident.quit()
+QTest.qWait(50)
+''')
+
+    def test_one_notice_click_switches_without_opening_or_confirming_twice(self):
+        self.run_resident('''
+resident = ResidentTray(window, tray_factory=FakeTray)
+window.hide()
+client.scenario('prompt')
+events = []
+resident.show_window = lambda: events.append('show')
+window.home.confirm = lambda: events.append('confirm')
+resident.tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+resident.tray.messageClicked.emit()
+assert events == ['confirm']
+assert resident.notice is None
+assert not window.isVisible()
+QTest.qWait(800)
+resident.tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+assert events == ['confirm', 'show']
+resident.quit()
+QTest.qWait(50)
+''')
+
+    def test_notice_click_opens_the_window_while_another_action_is_busy(self):
+        self.run_resident('''
+resident = ResidentTray(window, tray_factory=FakeTray)
+window.hide()
+client.scenario('prompt')
+events = []
+resident.show_window = lambda: events.append('show')
+window.home.confirm = lambda: events.append('confirm')
+window.home.actions.busy = 'retry'
+resident.tray.messageClicked.emit()
+assert events == ['show']
+assert resident.notice is not None
 resident.quit()
 QTest.qWait(50)
 ''')

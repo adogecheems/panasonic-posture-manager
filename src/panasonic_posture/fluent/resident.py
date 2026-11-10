@@ -1,5 +1,6 @@
 """Native screen UI lifetime, tray entry and guarded posture notices."""
 import logging
+import time
 
 from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
@@ -21,6 +22,7 @@ class ResidentTray(QObject):
         self.quitting = False
         self.sent = set()
         self.notice = None
+        self._notice_click_until = 0.0
         self.instance = None
         self.timer = QTimer(self)
         self._ = window._
@@ -60,8 +62,13 @@ class ResidentTray(QObject):
         return super().eventFilter(watched, event)
 
     def activated(self, reason):
-        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
-            self.show_window()
+        if (reason == QSystemTrayIcon.ActivationReason.Trigger
+                and self._notice_confirmable()):
+            self.open_notice()
+        elif reason in (QSystemTrayIcon.ActivationReason.Trigger,
+                        QSystemTrayIcon.ActivationReason.DoubleClick):
+            if not self._notice_click_consumed():
+                self.show_window()
 
     def show_window(self):
         if self.quitting:
@@ -73,14 +80,29 @@ class ResidentTray(QObject):
 
     def open_notice(self):
         """Confirm only when the clicked notice still describes the current state."""
-        state = self.window.settings.model.state
-        if self.quitting or not notice_confirmable(state, self.notice):
+        if self.quitting or not self._notice_confirmable():
+            if self._notice_click_consumed():
+                return
             self.show_window()
             return
+        self.notice = None
+        # Windows can deliver a toast click as both messageClicked and a tray
+        # activation. Confirm once and suppress the paired signal; a separate
+        # later tray click still opens the window normally.
+        self._notice_click_until = time.monotonic() + 0.75
         # The page owns busy/error handling and rechecks the same snapshot before
         # sending the epoch-bound confirmation.
-        self.show_window()
         self.window.home.confirm()
+
+    def _notice_confirmable(self) -> bool:
+        # A local action already in flight cannot submit another confirmation.
+        # Treat that like any other temporarily unconfirmable notice so the
+        # click opens the window and leaves the prompt available for retry.
+        return (self.window.home.actions.busy is None
+                and notice_confirmable(self.window.settings.model.state, self.notice))
+
+    def _notice_click_consumed(self) -> bool:
+        return time.monotonic() < self._notice_click_until
 
     def check_activation(self):
         try:
@@ -114,12 +136,14 @@ class ResidentTray(QObject):
         self.sent = {old for old in self.sent if old[1] != prompt}
         self.sent.add(key)
         title = _('Tent mode is available') if prompt == 'tent' else _('Stand mode is available')
+        self._notice_click_until = 0.0
         self.notice = notice_token(state)
         self.tray.showMessage(title, _('Tap to enable the current posture.'),
-                              QSystemTrayIcon.MessageIcon.Information, 5000)
+                              QSystemTrayIcon.MessageIcon.Information, 15000)
 
     def unavailable(self):
         self.notice = None
+        self._notice_click_until = 0.0
         self.tray.setToolTip(self.window.windowTitle() + ' · ' + self._('Connecting to background service…'))
 
     def shutdown(self):

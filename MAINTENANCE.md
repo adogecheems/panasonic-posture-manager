@@ -112,11 +112,11 @@ packaging\windows\run.cmd --native-backend --language zh_CN
 
 原生界面启动前台会先核对普通用户本地控制台身份和 BIOS 机型，再启动私有后台。身份不符或机型不是已采集的 Panasonic Corporation / CFQV8-1L 时直接显示中文或英文原因，不创建后台、设置锁或用户状态文件；后台随后仍会重复核对身份、传感器、开关和显示能力，界面预检不能替代实际设备资格。
 
-原生入口不使用模拟端口、不启用输入过滤驱动，也不需要测试签名。只接受已采集 Windows 姿态证据的 Panasonic Corporation / CFQV8-1L、唯一且型号匹配的 WinRT 加速度计、原有 GPIO 开关与内屏选择检查，以及实例 `ACPI\INT33D3\2&DABA3FF&0`。生产入口只读 `SM_CONVERTIBLESLATEMODE`，不打开或写入该 PDO；一次软件写会污染后续物理笔记本／平板判定。绝不直接修改 `PriorityControl\ConvertibleSlateMode`、共享内存或用户 shell 偏好。当前开放自动、笔记本、帐篷、支架和校准；平板仅由物理折叠状态产生，不是手动模式。输入目标和能力始终为 False，键盘和触控板保持可用，这是产品范围，不是待补功能。
+原生入口不使用模拟端口、不启用输入过滤驱动，也不需要测试签名。只接受已采集 Windows 姿态证据的 Panasonic Corporation / CFQV8-1L、唯一且型号匹配的 WinRT 加速度计、原有 GPIO 开关与内屏选择检查，以及实例 `ACPI\INT33D3\2&DABA3FF&0`。生产入口只读 `SM_CONVERTIBLESLATEMODE`，不打开或写入该 PDO；一次软件写会污染后续物理笔记本／平板判定。绝不直接修改 `PriorityControl\ConvertibleSlateMode` 或共享内存。帐篷和支架期间，独立的临时 shell 交互模式会让 Windows 按其自身逻辑显示屏幕键盘；该状态不持久化，离开软件姿态时恢复进入前的模式。当前开放自动、笔记本、帐篷、支架和校准；平板仅由物理折叠状态产生，不是手动模式。输入目标和能力始终为 False，键盘和触控板保持可用，这是产品范围，不是待补功能。
 
 `windows/tablet_display.py` 和 SimpleOrientation 四向映射仅作为未接入生产入口的可选后端代码保留，供未来没有物理平板开关的机型评估；当前 CFQV8 原生工厂不采集方向，也不向原生快照声明 `tablet` 手动能力。
 
-原生偏好独立存于 `native-settings.json`。显示恢复日志固定为同目录 `screen-display.json`，并有独立的每用户控制器锁，换一个 `--settings` 文件也不能启动第二个原生显示写入者。显示仍走共用事务、写前日志、身份检查、回读和恢复，只拥有内屏方向与全局自动旋转锁。帐篷、支架和笔记本通过加速度计识别；完全折叠由只读实体开关交给 Windows。软件姿态不写 PDO，也不伪造 Windows 平板通知。物理折叠时显示事务把旋转交还 Windows；正常退出时恢复方向事务。
+原生偏好独立存于 `native-settings.json`。显示恢复日志固定为同目录 `screen-display.json`，并有独立的每用户控制器锁，换一个 `--settings` 文件也不能启动第二个原生显示写入者。显示仍走共用事务、写前日志、身份检查、回读和恢复，只拥有内屏方向与全局自动旋转锁。帐篷、支架和笔记本通过加速度计识别；完全折叠由只读实体开关交给 Windows。软件姿态不写 PDO；临时 shell 交互模式只由 `windows/touch_mode.py` 在帐篷/支架目标期间协调，锁屏、物理平板或退出时撤下。物理折叠时显示事务把旋转交还 Windows；正常退出时恢复方向事务。
 
 私有后台在设置文件旁写入同名 `.log`，例如 `native-settings.log`、`simulation.log`，达到 256 KiB 后滚动为 `.log.1`，只保留一份旧日志。日志在 Windows 后台通过本地非提权身份检查后创建，不记录输入内容、触摸坐标或触摸屏数据；启动身份检查本身失败时不会访问用户状态目录。使用 `--settings` 时日志同样跟随该文件，便于隔离测试。
 
@@ -126,7 +126,7 @@ packaging\windows\run.cmd --native-backend --language zh_CN
 
 「登录时启动」只在用户开启时写入 HKCU 的 `Software\Microsoft\Windows\CurrentVersion\Run` 中本项目的 `PanasonicPostureManager` 值；关闭时只删除与当前固定命令完全相同的值，发现其他内容则保留并显示冲突。不创建服务、计划任务或提权项，不更改 Windows 启动应用管理器的禁用选择。界面显示本项目启动登记是否存在，Windows 自身的启动管理或登录延迟仍可能阻止即时运行。命令使用绝对路径、正确引用与无控制台解释器，并拒绝超过 260 UTF-16 单元的命令；限制依据 [Microsoft Run 键说明](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)。移动便携文件夹前应先在旧位置关闭此项，移动后重新开启。使用 `--settings` 的独立测试实例不开放自启动。
 
-源码自启动由固定 `packaging/windows/launch-native.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --native-backend --background`。首次开发测试保持自启动关闭。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；点击通知时，仅当后台实例、epoch、提示类型和当前可确认条件仍完全匹配才经页面现有事务确认，否则只打开界面。实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
+源码自启动由固定 `packaging/windows/launch-native.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --native-backend --background`。首次开发测试保持自启动关闭。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；点击通知时，仅当后台实例、epoch、提示类型和当前可确认条件仍完全匹配才经页面现有事务确认并立即切换，不打开主窗口，否则只打开界面。Windows 可能同时交付通知点击和托盘激活，因此同一次点击只确认一次；实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
 
 授权真机可运行 `tests/windows_resident_smoke.py --exercise-resident --directory <新证据目录>`。CFQV8 已通过真实后台隐藏后继续运行、另一个进程用公开入口唤回同一窗口、无源码环境变量的后台登录入口，以及明确退出后的清理；验证没有改动本机登录启动登记，也没有注销登录或声称原生通知已目视验收。
 
@@ -218,7 +218,7 @@ python tests\windows_actuator_smoke.py --control-library build\windows-driver\po
 
 `windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。CFQV8-1L 以实体姿态与界面结果复核为 `0=折叠平板，1=笔记本电脑`；映射属于已验证机型适配，不能套用到未验证机型。当前仅识别已核对的 INT33D3 路径；SYSTEM 会话中的折叠变化和其他开关仍未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
 
-`windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。`windows/tablet_mode.py` 通过 ImmersiveShell COM 边界只读观察 Windows 桌面／平板模式；产品路径不调用强制 setter，旧版日志中的 shell 字段只作兼容读取并在恢复时丢弃。方向与方向锁保存在同一恢复日志，旧版日志缺少新增字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
+`windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。物理平板开关释放后的 `posture_pending` 窗口内，Windows 可能先完成一个平台方向交接；该窗口采纳这一结果，不再把第一次 hold 的旧方向写回，避免支架目标前出现多余的一次跳变。`windows/tablet_mode.py` 的观察器仍只读；独立 `WindowsShellModeController` 只由 `touch_mode.py` 在软件帐篷/支架会话中调用，并在目标离开、失败或退出时恢复原模式。旧版日志中的 shell 字段只作兼容读取并在恢复时丢弃。方向与方向锁保存在同一恢复日志，旧版日志缺少新增字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
 
 没有活动内屏、但有一个或多个活动外屏时，原生工厂使用只读的 `ExternalOnlyDisplay`。它记录并复核对活动外屏身份，姿态操作和持续刷新只验证拓扑稳定后返回，不取得旋转锁、不写 CCD、不创建显示日志；姿态和平板状态通知仍按共用链路处理。固定软件姿态由共用刷新通道限速复核，外屏拔出、替换或内屏重新出现时撤销成功并走恢复/重试。若设置目录已有未恢复的内屏显示日志，工厂拒绝进入只读外接模式，等待内屏恢复或用户按原恢复流程处理，不能静默丢弃旧所有权。内外屏同时存在仍要求内屏唯一且不镜像。
 
@@ -247,7 +247,7 @@ python tests\windows_physical_posture_smoke.py --exercise-physical --directory b
 
 操作者必须实际把设备折叠到平板形态，再按提示旋转并展开。脚本观察硬件开关、`hardware` 目标和显示回读，不使用手动平板模式。
 
-2026-11-09，CFQV8-1L、Windows 10 专业版 19045 x64 上取得笔记本、帐篷、支架和完全折叠的真实采样：笔记本 z 约 -9.8 m/s²，帐篷 y 约 -9.3 m/s²，支架 z 约 +9.9 m/s²。2026-11-10 以实体姿态和界面结果复核后确认该固件/驱动映射为 `0=折叠平板，1=笔记本电脑`；此前两次仅按数值变化推断方向的阶段结论均已作废。此证据确认当前采样的 y/z 方向与策略一致，不代表完整安装矩阵、持续会话控制或整机验收。2880×1920 内屏的倒转、回读、正常恢复和写入进程被结束后的日志恢复通过，最终方向与原方向一致。驱动反汇编和只读设备探测确认 `msgpiowin32` 接受一个字节时执行 toggle、读取返回当前字节，并发出 CSM 状态变化；设备仍处于独占时普通用户和 SYSTEM 都无法安全绕过该独占策略，因此通过可逆配置并要求重启。shell 选择为“不要切换”时保留桌面的结果属于 Windows 自己的策略，程序不调用强制 setter。
+2026-11-09，CFQV8-1L、Windows 10 专业版 19045 x64 上取得笔记本、帐篷、支架和完全折叠的真实采样：笔记本 z 约 -9.8 m/s²，帐篷 y 约 -9.3 m/s²，支架 z 约 +9.9 m/s²。2026-11-10 以实体姿态和界面结果复核后确认该固件/驱动映射为 `0=折叠平板，1=笔记本电脑`；此前两次仅按数值变化推断方向的阶段结论均已作废。此证据确认当前采样的 y/z 方向与策略一致，不代表完整安装矩阵、持续会话控制或整机验收。2880×1920 内屏的倒转、回读、正常恢复和写入进程被结束后的日志恢复通过，最终方向与原方向一致。驱动反汇编和只读设备探测确认 `msgpiowin32` 接受一个字节时执行 toggle、读取返回当前字节，并发出 CSM 状态变化；设备仍处于独占时普通用户和 SYSTEM 都无法安全绕过该独占策略，因此通过可逆配置并要求重启。物理姿态下 shell 是否切换仍由 Windows 自己的偏好决定；软件帐篷/支架只在临时会话桥中使用 shell 交互模式，不写 PDO，离开后恢复原模式。
 
 同机从 `C:\util2\drivers\SynTP_d20194747` 安装了签名有效、硬件 ID 精确匹配的厂商驱动；安装后为 Synaptics HID TouchPad / Synaptics HID Device 19.5.26.18，用户确认移动、点击、滚动正常。自研输入过滤驱动没有加载；用户选择保留启动安全配置，测试签名仍关闭。这些证据不提升 Windows 机型支持等级。
 

@@ -310,6 +310,7 @@ class WindowsDisplay(SoftwareDisplay):
             hardware_query = WindowsSwitch().query
         self.api = api if api is not None else NativeDisplay()
         self.hardware_query = hardware_query
+        self._adopt_native_handoff = False
         super().__init__(journal=journal)
 
     def _read_state(self):
@@ -360,6 +361,8 @@ class WindowsDisplay(SoftwareDisplay):
 
     def apply(self, target: Target | dict) -> None:
         mode = target.get('mode') if isinstance(target, dict) else target.mode
+        if mode != 'hardware':
+            self._adopt_native_handoff = False
         try:
             super().apply(target)
             if mode in ('laptop', 'tent', 'stand'):
@@ -381,11 +384,33 @@ class WindowsDisplay(SoftwareDisplay):
                 # software journal; complete the same request as a hardware
                 # handoff so the session can verify the newer snapshot.
                 self._apply_hardware()
+                self._adopt_native_handoff = True
                 return
             raise
+        else:
+            if mode == 'hardware':
+                self._adopt_native_handoff = True
+
+    def hold_orientation(self) -> None:
+        """Settle a post-hardware shell handoff before fixing direction."""
+
+        held = self._held_orientation
+        if self._adopt_native_handoff and held is not None:
+            current = self._read_state()
+            if current.identity == held.identity and current.transform != held.transform:
+                # The physical switch releases before Windows finishes moving
+                # between tablet and the settled posture. Adopting that one
+                # platform direction avoids rewinding to the first sample and
+                # producing a second visible rotation before the real target.
+                self._held_orientation = current
+                if self.owned is not None and self.owned.get('written_transform') is None:
+                    self.owned['original_transform'] = current.transform
+                    self._persist()
+        super().hold_orientation()
 
     def restore(self, normal: bool = False, *, release_lock: bool = False,
                 keep_journal: bool = False) -> None:
+        self._adopt_native_handoff = False
         if self.owned and any(
                 field in self.owned
                 for field in ('original_shell_mode', 'written_shell_mode',

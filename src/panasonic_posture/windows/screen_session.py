@@ -32,6 +32,7 @@ from .orientation import OrientationReading
 from .session_display import (
     QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture,
 )
+from .touch_mode import WindowsTouchMode
 
 SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
 
@@ -136,10 +137,12 @@ class ScreenSession:
     def __init__(self, *, store: SettingsBackend, instance: str, sensor: ManagedSensor,
                  switch: SlateSwitch, display: DisplayBackend, context: SessionContext,
                  device: DeviceInfo, slate: SlatePosture | None = None,
+                 touch_mode: WindowsTouchMode | None = None,
                  clock: Callable[[], float] = time.monotonic) -> None:
         self._stack = ExitStack()
         self.closed = False
         self.context = context
+        self.touch_mode = touch_mode
         self._stack.callback(context.close)
         self._stack.callback(sensor.close)
         if slate is not None:
@@ -164,6 +167,8 @@ class ScreenSession:
                 screen_locked=lambda: not context.control_available(), display_refresh=refresh)
             self._stack.callback(self.session.close)
             self._stack.callback(self.bridge.close)
+            if touch_mode is not None:
+                self._stack.callback(touch_mode.close)
             self.engine.start()
         except BaseException:
             self._stack.close()
@@ -178,6 +183,8 @@ class ScreenSession:
         self.bridge.drain(self.engine, self.owner)
         self.engine.tick()
         self.bridge.publish(self.engine.state)
+        if self.touch_mode is not None:
+            self.touch_mode.sync(self.engine.state)
         self.session.tick(now)
 
     def call(self, method: str, params: dict) -> None:
@@ -301,6 +308,8 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
     from .sensor import WindowsSensor, IDENTITY
     from .session_context import WindowsSessionContext
     from .switch import WindowsSwitch
+    from .tablet_mode import WindowsShellModeController
+    from .touch_mode import WindowsTouchMode
     require_native_user()
     vendor, product = verified_machine()
     with ExitStack() as resources:
@@ -314,9 +323,11 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
         display = select_native_display(
             api, journal, hardware_query=switch.query,
         )
+        touch_mode = WindowsTouchMode(WindowsShellModeController(), switch.query)
         session = ScreenSession(store=store, instance=instance,
             sensor=sensor, switch=switch,
             display=display, context=context,
+            touch_mode=touch_mode,
             device=DeviceInfo(id='windows-cfqv8-screen', vendor=vendor, product=product,
                               platform='windows', support_tier='compatible'))
         resources.pop_all()  # ScreenSession now owns all three resources.

@@ -1,14 +1,16 @@
-"""Read-only observation of the current Windows shell interaction mode.
+"""Observe and control the Windows shell interaction mode.
 
-Posture changes are reported through the laptop/slate GPIO indicator.  Windows
-owns the user's "ask / do not switch / switch automatically" choice, so this
-module never calls the ImmersiveShell mode setter.
+The physical slate indicator remains the source of truth for hardware posture.
+The optional controller is used only by the native touch-experience bridge for
+software tent/stand sessions; it does not write the indicator or persist a
+user preference.
 """
 from contextlib import contextmanager
 import ctypes as C
 from ctypes import wintypes
 import logging
 import sys
+import time
 import uuid
 
 DESKTOP = 0
@@ -124,18 +126,50 @@ def _controller():
 
 
 class WindowsShellMode:
-    """Observe the shell result; never force a desktop/tablet switch."""
+    """Observe the current shell result without changing it."""
 
     def read(self) -> int:
         with _controller() as (vtable, controller):
-            get_mode = _FUNCTYPE(C.c_long, C.c_void_p, C.POINTER(C.c_int))(vtable[3])
-            mode = C.c_int(-1)
-            result = get_mode(controller, C.byref(mode))
-            if not _succeeded(result) or mode.value not in VALID_MODES:
+            return _read_mode(vtable, controller)
+
+
+class WindowsShellModeController(WindowsShellMode):
+    """Apply the shell interaction mode for the software posture session."""
+
+    def __init__(self, *, sleep=time.sleep):
+        self._sleep = sleep
+
+    def set_mode(self, mode: int) -> None:
+        if mode not in VALID_MODES:
+            raise ValueError('invalid Windows shell mode')
+        with _controller() as (vtable, controller):
+            set_mode = _FUNCTYPE(
+                C.c_long, C.c_void_p, C.c_int, C.c_int
+            )(vtable[4])
+            result = set_mode(controller, mode, 4)
+            if not _succeeded(result):
                 raise TabletModeError(
-                    f'shell mode query failed: hr=0x{result & 0xffffffff:08x} mode={mode.value}'
+                    f'tablet mode switch failed: 0x{result & 0xffffffff:08x}'
                 )
-            return mode.value
+            for _ in range(20):
+                current = _read_mode(vtable, controller)
+                if current == mode:
+                    return
+                self._sleep(.05)
+        raise TabletModeError(
+            f'tablet mode readback failed: expected {mode}'
+        )
+
+
+def _read_mode(vtable, controller) -> int:
+    get_mode = _FUNCTYPE(C.c_long, C.c_void_p, C.POINTER(C.c_int))(vtable[3])
+    mode = C.c_int(-1)
+    result = get_mode(controller, C.byref(mode))
+    if not _succeeded(result) or mode.value not in VALID_MODES:
+        raise TabletModeError(
+            f'shell mode query failed: hr=0x{result & 0xffffffff:08x} mode={mode.value}'
+        )
+    return mode.value
 
 
 # Preserve the existing import name while making its read-only contract clear.
@@ -143,5 +177,5 @@ WindowsTabletMode = WindowsShellMode
 
 __all__ = [
     'DESKTOP', 'TABLET', 'TabletModeError', 'WindowsShellMode',
-    'WindowsTabletMode', 'read_prompt_preference',
+    'WindowsShellModeController', 'WindowsTabletMode', 'read_prompt_preference',
 ]

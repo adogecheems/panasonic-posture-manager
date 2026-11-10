@@ -233,6 +233,35 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
 
+    def test_hardware_release_adopts_the_platform_direction_without_rewinding(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
+        display.apply(dict(mode='hardware', tablet=True, rotation=None,
+                           disable_internal_input=False))
+
+        api.current = replace(api.current, transform=2)
+        display.hold_orientation()
+        self.assertEqual(api.current.transform, 2)
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+
+        # Leaving physical tablet mode may let the shell finish a direction
+        # handoff after the first hold reading. The bounded pending-posture
+        # window adopts that platform result instead of rotating back to 2 and
+        # then immediately rotating again for stand.
+        api.current = replace(api.current, transform=0)
+        api.writes.clear()
+        display.hold_orientation()
+        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.writes, [])
+        self.assertEqual(journal.document['original_transform'], 0)
+        self.assertIsNone(journal.document['written_transform'])
+
+        display.apply(dict(mode='stand', tablet=True, rotation=0,
+                           disable_internal_input=False))
+        self.assertEqual(api.current.transform, 0)
+        self.assertEqual(api.writes, [])
+
     def test_physical_takeover_during_restart_keeps_native_direction(self):
         api, journal = Api(), MemoryJournal()
         physical = [False]

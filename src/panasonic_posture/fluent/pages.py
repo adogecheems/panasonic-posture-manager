@@ -217,7 +217,6 @@ class Home(Page):
         if self.model.state:
             self.actions.run('retry', lambda: self.client.retry(self.model.state['manual']))
 
-
 class Settings(Page):
     def __init__(self, client: UIClient, _, notify, parent=None, *, startup=None):
         super().__init__('settings', parent)
