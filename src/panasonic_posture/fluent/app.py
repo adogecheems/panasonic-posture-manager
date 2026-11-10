@@ -141,11 +141,23 @@ class Window(FluentWidget):
                                    style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
         setFont(self.titleBar.titleLabel, 13)
         self.client.start(self.update_state, self.unavailable)
+        self._backend_poll_count = 0
         self.backend_timer = QTimer(self)
         if isinstance(self.client, (ProcessClient, HardwareUIClient)):
-            self.backend_timer.timeout.connect(self.client.poll)
+            self.backend_timer.timeout.connect(self.poll_backend)
             # Match the shared service cadence instead of waking twice as often.
             self.backend_timer.start(max(1, round(TICK_SECONDS * 1000)))
+
+    def poll_backend(self):
+        self.client.poll()
+        self._backend_poll_count += 1
+        interval = max(1, round(TICK_SECONDS * 1000))
+        if self._backend_poll_count * interval >= 1000:
+            self._backend_poll_count = 0
+            # Push delivery normally publishes changes immediately. A bounded
+            # read-only refresh repairs a single dropped state notification and
+            # keeps the visible result convergent with the backend.
+            self.client.refresh()
 
     def update_mark(self):
         name = 'lets-note-window-icon-dark.png' if isDarkTheme() else 'lets-note-window-icon.png'

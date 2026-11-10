@@ -585,6 +585,35 @@ assert 'not connected' in window.home.detail.text().lower()
 assert window.home.detail.isVisible()
 ''')
 
+    def test_backend_state_reconciles_once_per_second(self):
+        self.run_ui('''
+from pathlib import Path
+from panasonic_posture.contracts import TICK_SECONDS
+from panasonic_posture.windows.client import ProcessClient
+class PollingClient(ProcessClient):
+    def __init__(self):
+        super().__init__(Path('unused.json'))
+        self.polls = 0
+        self.refreshes = 0
+    def start(self, on_state, on_unavailable, on_connected=None):
+        pass
+    def poll(self):
+        self.polls += 1
+    def refresh(self):
+        self.refreshes += 1
+    def stop(self):
+        pass
+window.close()
+client = PollingClient()
+window = Window(client=client, language='en')
+ticks_per_second = max(1, round(1000 / max(1, round(TICK_SECONDS * 1000))))
+for _ in range(ticks_per_second):
+    window.poll_backend()
+assert client.polls == ticks_per_second
+assert client.refreshes == 1
+window.close()
+''')
+
     def test_native_slate_configuration_failure_has_actionable_message(self):
         self.run_ui('''
 client = UnavailableClient()
