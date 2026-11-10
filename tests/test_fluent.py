@@ -380,26 +380,11 @@ window = Window(native_backend=True, client=client, language='en')
 window.show()
 QTest.qWait(50)
 assert window.settings.radios['tent'].isEnabled()
-assert not window.settings.radios['tablet'].isEnabled()
+assert 'tablet' not in window.settings.radios
 assert window.settings.mode_cards['laptop'].contentLabel.text() == 'Reports laptop use and keeps Windows in control of the shell'
 assert window.settings.mode_cards['tent'].contentLabel.text() == 'Turns the screen upside down and reports slate use to Windows'
 assert window.settings.mode_cards['stand'].contentLabel.text() == 'Keeps the screen upright and reports slate use to Windows'
 assert any('Keyboard and touchpad stay enabled' in label.text() for label in window.findChildren(QLabel))
-''')
-
-    def test_software_tablet_is_enabled_only_when_the_native_backend_advertises_it(self):
-        self.run_ui('''
-from PyQt6.QtCore import QTimer
-from PyQt6.QtTest import QTest
-window.close()
-client = DemoClient(QTimer.singleShot)
-client.state.update(native_backend=True, input_control_available=False,
-                    available_modes=['auto', 'laptop', 'tent', 'stand', 'tablet'])
-window = Window(native_backend=True, client=client, language='en')
-window.show()
-QTest.qWait(50)
-assert window.settings.radios['tablet'].isEnabled()
-assert window.settings.mode_cards['tablet'].contentLabel.text() == 'Rotates with the screen and reports slate use to Windows'
 ''')
 
     def test_native_hardware_client_updates_widgets_via_the_wire_contract(self):

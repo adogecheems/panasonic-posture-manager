@@ -15,7 +15,6 @@ MODES = (
     ('laptop', _('Laptop'), _('Best for typing and precise work')),
     ('tent', _('Tent'), _('Turns the screen upside down and disables the built-in keyboard and touchpad')),
     ('stand', _('Stand'), _('Keeps the screen upright and disables the built-in keyboard and touchpad')),
-    ('tablet', _('Tablet'), _('Lets the screen rotate and disables the built-in keyboard and touchpad')),
 )
 PREVIOUS_KEYS = {Gdk.KEY_Up, Gdk.KEY_Left, Gdk.KEY_KP_Up, Gdk.KEY_KP_Left}
 NEXT_KEYS = {Gdk.KEY_Down, Gdk.KEY_Right, Gdk.KEY_KP_Down, Gdk.KEY_KP_Right}

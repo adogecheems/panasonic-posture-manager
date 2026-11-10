@@ -42,7 +42,7 @@ class OptionalInputTests(unittest.TestCase):
         self.engine.tick()
 
     def test_screen_modes_require_real_display_receipts_and_never_disable_input(self):
-        for mode, rotation in (('laptop', 0), ('tent', 2), ('stand', 0), ('tablet', 0)):
+        for mode, rotation in (('laptop', 0), ('tent', 2), ('stand', 0)):
             with self.subTest(mode=mode):
                 self.engine.set_mode(mode)
                 self.engine.tick()

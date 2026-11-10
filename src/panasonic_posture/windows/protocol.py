@@ -93,13 +93,12 @@ def validate_state(value: object, *, native: bool = False) -> dict:
         modes = value.get('available_modes')
         if (value.get('native_backend') is not True or value['simulation'] is not False or
                 value.get('input_control_available') is not False or
-                modes not in (['auto', 'laptop', 'tent', 'stand'],
-                              ['auto', 'laptop', 'tent', 'stand', 'tablet']) or
+                modes != ['auto', 'laptop', 'tent', 'stand'] or
                 state.support_tier != 'compatible' or
-                state.manual not in ('auto', 'laptop', 'tent', 'stand', 'tablet') or
-                state.target.mode not in ('unavailable', 'laptop', 'tent', 'stand', 'tablet', 'hardware') or
+                state.manual not in ('auto', 'laptop', 'tent', 'stand') or
+                state.target.mode not in ('unavailable', 'laptop', 'tent', 'stand', 'hardware') or
                 (state.applied is not None and state.applied.mode not in
-                 ('laptop', 'tent', 'stand', 'tablet', 'hardware')) or
+                 ('laptop', 'tent', 'stand', 'hardware')) or
                 state.target.disable_internal_input or
                 (state.applied is not None and state.applied.disable_internal_input)):
             raise ProtocolError('invalid native screen capability')

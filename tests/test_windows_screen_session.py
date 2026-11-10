@@ -160,8 +160,11 @@ class NativeScreenTests(unittest.TestCase):
         state = self.backend.snapshot()
         with self.assertRaises(ProtocolError): validate_state(state)
         for changes in ({'input_control_available': True}, {'native_backend': False},
-                        {'simulation': True}, {'available_modes': ['auto', 'tablet']},
+                        {'simulation': True},
+                        {'available_modes': ['auto', 'laptop', 'tent', 'stand', 'tablet']},
+                        {'available_modes': ['auto', 'tablet']}, {'manual': 'tablet'},
                         {'support_tier': 'validated'},
+                        {'target': dict(state['target'], mode='tablet')},
                         {'target': dict(state['target'], disable_internal_input=True)}):
             with self.subTest(changes=changes), self.assertRaises(ProtocolError):
                 validate_state(dict(state, **changes), native=True)
@@ -196,7 +199,7 @@ class TabletApi:
         self.current = replace(self.current, transform=transform)
 
 
-class SoftwareTabletScreenTests(unittest.TestCase):
+class ManualTabletRetirementTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -244,48 +247,18 @@ class SoftwareTabletScreenTests(unittest.TestCase):
     def applied(self):
         return (self.backend.snapshot()['applied'] or {}).get('mode')
 
-    def test_mode_follows_four_quadrants_and_restores_after_qualification_loss(self):
+    def test_refreshable_backend_never_advertises_or_accepts_manual_tablet(self):
         self.until(lambda: self.applied() == 'laptop')
         state = self.backend.snapshot()
         self.assertEqual(state['available_modes'],
-                         ['auto', 'laptop', 'tent', 'stand', 'tablet'])
+                         ['auto', 'laptop', 'tent', 'stand'])
         self.assertEqual(validate_state(state, native=True), state)
-
-        self.backend.call('set_mode', {'mode': 'tablet'})
-        self.until(lambda: self.applied() == 'tablet')
-        self.assertEqual(self.api.current.transform, 0)
-        for value, transform in ((1, 3), (2, 2), (3, 1), (0, 0)):
-            self.value = value
-            self.until(lambda transform=transform: self.api.current.transform == transform)
-            self.until(lambda: self.applied() == 'tablet')
-
-        self.context.available = False
-        self.advance()
-        self.assertIsNone(self.backend.snapshot()['applied'])
-        self.until(lambda: self.api.current.transform == 0)
-        self.assertIsNone(self.backend.screen.engine.state.applied)
-
-    def test_missing_direction_and_physical_switch_never_confirm_stale_rotation(self):
-        self.until(lambda: self.applied() == 'laptop')
-        self.backend.call('set_mode', {'mode': 'tablet'})
-        self.until(lambda: self.applied() == 'tablet')
-        self.value = 1
-        self.until(lambda: self.api.current.transform == 3)
-
-        self.missing = True
-        self.until(lambda: self.backend.snapshot()['error_code'])
-        self.assertIsNone(self.backend.snapshot()['applied'])
-        self.until(lambda: self.api.current.transform == 0)
-
-        self.missing = False
-        self.hardware = True
-        self.until(lambda: self.applied() == 'hardware')
-        self.assertEqual(self.api.current.transform, 0)
-        self.assertIs(self.backend.snapshot()['hardware'], True)
+        with self.assertRaises(BackendError):
+            self.backend.call('set_mode', {'mode': 'tablet'})
 
 
 class BridgeTests(unittest.TestCase):
-    def test_refreshable_read_only_display_does_not_advertise_software_tablet(self):
+    def test_refreshable_display_does_not_advertise_manual_tablet(self):
         refreshable = SimpleNamespace(
             needs_refresh=lambda target: True,
             refresh=lambda state: None,
@@ -296,7 +269,7 @@ class BridgeTests(unittest.TestCase):
             needs_refresh=lambda target: True,
             refresh=lambda state: None,
         )
-        self.assertEqual(available_screen_modes(tablet), SCREEN_MODES + ('tablet',))
+        self.assertEqual(available_screen_modes(tablet), SCREEN_MODES)
 
     def test_native_machine_preflight_requires_the_collected_exact_model(self):
         from unittest.mock import patch
@@ -326,14 +299,14 @@ class BridgeTests(unittest.TestCase):
         api = SimpleNamespace(panels=lambda: [external])
         missing = SimpleNamespace(load=lambda: None)
         selected = select_native_display(
-            api, missing, orientation=lambda: None, hardware_query=None,
+            api, missing, hardware_query=None,
         )
         self.assertEqual(selected.backend_name, 'windows-external-only')
         self.assertEqual(selected.api, api)
         pending = SimpleNamespace(load=lambda: {'version': 1})
         with self.assertRaises(DisplayError) as caught:
             select_native_display(
-                api, pending, orientation=lambda: None, hardware_query=None,
+                api, pending, hardware_query=None,
             )
         self.assertEqual(caught.exception.detail, 'external-only-display-recovery-pending')
 
@@ -464,7 +437,7 @@ from panasonic_posture.windows.backend import Backend
         self.assertTrue(port.reading().valid)
         self.assertIs(port.orientation(), direction)
 
-    def test_native_factory_wires_verified_orientation_and_tablet_display(self):
+    def test_native_factory_wires_fixed_display_without_orientation_capture(self):
         from unittest.mock import patch
         import panasonic_posture.windows.screen_session as module
         captured = {}
@@ -517,14 +490,14 @@ from panasonic_posture.windows.backend import Backend
                       return_value=Path(directory) / 'slate.json'), \
                 patch('panasonic_posture.windows.display.NativeDisplay', return_value=native_api), \
                 patch('panasonic_posture.windows.sensor.WindowsSensor', Sensor), \
-                patch('panasonic_posture.windows.tablet_display.WindowsTabletDisplay', Display), \
+                patch('panasonic_posture.windows.display.WindowsDisplay', Display), \
                 patch.object(module, 'ScreenSession', Session):
             result = module.native_screen_session(object(), 'fixture', Path(directory) / 'display.json')
 
         self.assertIsInstance(result, Session)
-        self.assertTrue(captured['sensor']['include_orientation'])
-        self.assertEqual(captured['display']['mapping'], SIMPLE_ORIENTATION_TRANSFORM)
-        self.assertTrue(callable(captured['display']['orientation']))
+        self.assertFalse(captured['sensor']['include_orientation'])
+        self.assertNotIn('mapping', captured['display'])
+        self.assertNotIn('orientation', captured['display'])
         self.assertIs(captured['display']['api'], native_api)
         self.assertIsInstance(captured['session']['sensor'], ProfileSensor)
         self.assertIsInstance(captured['session']['display'], Display)

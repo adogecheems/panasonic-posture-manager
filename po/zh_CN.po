@@ -148,9 +148,6 @@ msgstr "倒转屏幕，停用内置键盘和触控板"
 msgid "Keeps the screen upright and disables the built-in keyboard and touchpad"
 msgstr "保持屏幕正向，停用内置键盘和触控板"
 
-msgid "Lets the screen rotate and disables the built-in keyboard and touchpad"
-msgstr "允许屏幕自动旋转，停用内置键盘和触控板"
-
 msgid "About"
 msgstr "关于"
 
@@ -321,9 +318,6 @@ msgstr "将屏幕倒转，并向 Windows 报告为平板使用状态"
 
 msgid "Keeps the screen upright and reports slate use to Windows"
 msgstr "保持屏幕正向，并向 Windows 报告为平板使用状态"
-
-msgid "Rotates with the screen and reports slate use to Windows"
-msgstr "跟随屏幕方向旋转，并向 Windows 报告为平板使用状态"
 
 msgid "Open app"
 msgstr "打开应用"

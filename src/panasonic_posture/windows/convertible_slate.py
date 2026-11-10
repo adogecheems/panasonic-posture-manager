@@ -422,10 +422,19 @@ class SlateNotifier:
             if self.journal is not None:
                 self.journal.clear()
         else:
+            before = bool(self.device.read())
             if self.journal is not None:
                 self.journal.save(self.original, desired)
             changed = bool(self.device.set(desired))
-            self._mark_settle(desired)
+            if changed:
+                self._mark_settle(desired)
+            elif before == desired:
+                # The user already changed the physical indicator to this
+                # target. Adopt it as a new external baseline instead of
+                # claiming software ownership of a value we did not write.
+                self.original = desired
+                if self.journal is not None:
+                    self.journal.clear()
         self.last = desired
         return changed
 

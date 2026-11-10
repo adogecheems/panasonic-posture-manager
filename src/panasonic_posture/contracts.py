@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 STATE_VERSION = 2
-MODES = ("auto", "laptop", "tent", "stand", "tablet")
+MODES = ("auto", "laptop", "tent", "stand")
 TARGET_MODES = ("laptop", "tent", "stand", "tablet", "hardware", "unavailable")
 POSES = ("laptop", "tent", "stand", "tablet", "unknown")
 PROMPTS = ("tent", "stand")

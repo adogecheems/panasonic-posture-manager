@@ -261,10 +261,10 @@ class Engine:
             )
             raise ServiceError(code, message) from None
         self._bump_generation()
-        # A healthy relay already represents "software tablet"; orientation and
-        # lock changes are handled by the session display transaction.  Only a
-        # latched relay failure needs a full reset here, otherwise switching
-        # between tent/stand/tablet would release and re-grab the internal
+        # A healthy relay already represents the current software posture;
+        # orientation and lock changes are handled by the session transaction.
+        # Only a latched relay failure needs a full reset here, otherwise switching
+        # between tent/stand would release and re-grab the internal
         # input devices for no reason.
         if retry_actuator:
             self._queue_retry()
@@ -780,7 +780,7 @@ class Engine:
                     self._release_task is None
                     and self._last_release_key == key
                     and self._actuator.error_code is None
-                    and target.mode in ("laptop", "hardware", "tent", "stand", "tablet")
+                    and target.mode in ("laptop", "hardware", "tent", "stand")
                     and not target.disable_internal_input
                     and self._controller.applied != target
                     and self._prepared(self._lease_active(self._monotonic()), generation)

@@ -97,6 +97,14 @@ class SlateNotifierTests(unittest.TestCase):
         now[0] += 2.1
         self.assertIsNone(notifier.software_owned)
 
+    def test_external_physical_target_is_adopted_without_software_ownership(self):
+        device = FakeSlateDevice(True)
+        notifier = SlateNotifier(device)
+        self.assertFalse(notifier.sync_mode('hardware'))
+        self.assertTrue(notifier.original)
+        self.assertTrue(notifier.last)
+        self.assertIsNone(notifier.software_owned)
+
     def test_slate_aware_hardware_masks_only_the_owned_indicator_value(self):
         owned = [True]
         scoped = slate_qualified_hardware(

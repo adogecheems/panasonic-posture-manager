@@ -25,6 +25,7 @@
 - **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
   可选的持续显示刷新与 apply、hold、restore 共用同一串行工作线程，刷新后仍须核对实例和代次；不另起绕过事务或租约的显示写入循环。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接当前用户的独立软件后台，只允许保存偏好，硬件未接入时禁止模式控制和校准。`--demo` 使用内存数据，`--simulate-backend` 显式使用独立设置与模拟端口。两种预览都不操作真实设备或桌面，软件后台不能执行特权硬件写入。
+  两个平台的手动模式都只有自动、笔记本、帐篷、支架；平板只表示物理折叠/硬件姿态，不得重新加入可选手动模式。
   显式 `--native-backend` 可在已核对 Windows 安装方向的机器上，以普通用户读取真实传感器和开关、经共用显示事务操作当前用户内屏。前台启动先核对普通用户本地控制台和精确机型并给出可读拒绝原因，后台仍须重复完整资格检查。帐篷、支架和物理平板通过经核对的 `ACPI\INT33D3` PDO 报告平板使用状态，笔记本报告普通状态；Windows 按用户自己的选择决定 shell，程序不得调用 ImmersiveShell 强制模式接口。设备 PDO 的单字节写入是 toggle，必须先读、目标不同时至多写一次并回读。首次设备非独占配置由独立管理员脚本完成，需要重启且可逆。该入口不提供输入控制，能力、目标和界面必须如实说明；锁屏、挂起或失去活跃本地会话资格时撤销。该入口使用独立原生设置、每用户固定显示日志/控制器锁及同目录的原子 slate 租约日志，不复用或放宽 LocalSystem 硬件管道。
   原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。姿态通知的点击确认必须同时匹配已校验快照中的实例、提示代次、姿态类型和当前可确认条件，过期或不匹配时只能打开界面。私有后台在首个状态前失败时只能发送固定原因集的 `fatal` 回执；UI 不得展示自由文本或 traceback，设备配置原因应给出操作说明并停止该连接重连。私有后台在身份检查后向设置文件旁的同名滚动日志写入有界诊断，不得记录输入内容。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认不登记，仅在用户切换设置时操作当前用户的固定 Run 值，冲突内容须保留；不得隐式启用、改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
   `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
@@ -53,7 +54,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 用户态真实显示与平板通知 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py` 和 `windows_power_transition_smoke.py`，不能用隔离端口代替真机证据 |
+| Windows 用户态真实显示与平板通知 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py` 和 `windows_physical_posture_smoke.py`，不能用隔离端口代替真机证据 |
 | Windows 常驻、自启动与姿态通知 | `windows/{activation,startup,instance}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_screen_session`、`test_fluent`；实际注销登录和通知目视验收须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
@@ -1028,3 +1029,10 @@ make WERROR=1 check
 - 动机：真机验收复现平板指示器仍为独占时，后台只写日志并反复退出，UI 长期停留在“后台未连接”，用户无法判断需要一次性设备配置和重启。
 - 约束：fatal 帧不含实例、detail、路径或 traceback，不改变状态 schema、请求/响应格式、权限边界或设备写入。未知/畸形原因仍断开协议；配置修改与重启本身仍须单独授权。
 - 同步：Windows fatal 帧、后台错误分类、客户端处理和 UI 映射、协议/子进程/界面回归测试、README、MAINTENANCE、运行边界与本记录。
+
+### 2026-11-10 - 两平台弃用手动平板模式
+
+- 变更：Linux 和 Windows 的手动模式统一收窄为自动、笔记本、帐篷、支架。`SetMode("tablet")` 在共享协议、引擎和 Windows 私有快照中均拒绝；两个 UI 不再创建平板单选项。物理平板状态、硬件平板目标和桌面原生旋转保持不变。
+- 动机：物理折叠已经由硬件开关和桌面/Windows 原生旋转处理；手动软件平板只适用于展开后人为旋转，产品用途不明确，并引入 SimpleOrientation、持续刷新和额外真机验收复杂度。
+- 影响：`Mode.TABLET` 仅保留用于解码旧快照，不能由控制器选择；`TARGET_MODES` 继续兼容读取旧目标。Windows CFQV8 生产工厂不采集 SimpleOrientation，也不再实例化 `WindowsTabletDisplay`。可选后端代码和隔离测试保留，但不对用户开放。本记录取代 2026-11-10「Windows 软件平板接入真实用户态入口」中开放五模式和方向采集的生产装配说明。
+- 同步：共享模式常量、控制器、引擎、Linux/Fluent 设置页、前端能力判断、Windows 协议与原生工厂、回归测试、README、MAINTENANCE 与本记录。

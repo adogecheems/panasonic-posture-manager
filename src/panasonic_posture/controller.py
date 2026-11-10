@@ -33,7 +33,6 @@ AUTO_TARGET_MODES = {
 TARGET_LAPTOP = "laptop"
 TARGET_TENT = "tent"
 TARGET_STAND = "stand"
-TARGET_TABLET = "tablet"
 TARGET_HARDWARE = "hardware"
 TARGET_UNAVAILABLE = "unavailable"
 
@@ -140,6 +139,10 @@ class Controller:
             normalized = mode if isinstance(mode, Mode) else Mode(str(mode))
         except ValueError:
             raise ValueError(ErrorCode.INVALID_MODE) from None
+        if normalized == Mode.TABLET:
+            # Retained only to decode older snapshots. Manual tablet selection
+            # is intentionally unavailable on every platform.
+            raise ValueError(ErrorCode.INVALID_MODE)
         if self.hardware is True and normalized != Mode.AUTO:
             raise ValueError(ErrorCode.HARDWARE_PRIORITY)
         self.manual = normalized
@@ -281,11 +284,9 @@ class Controller:
                 rotation=0,
                 disable_internal_input=self._input_control,
             )
-        # Manual tablet mode keeps native rotation policy. Request input
-        # ownership only on platforms configured to provide that capability.
         return Target(
-            mode=TARGET_TABLET,
-            tablet=True,
-            rotation=None,
-            disable_internal_input=self._input_control,
+            mode=TARGET_LAPTOP,
+            tablet=False,
+            rotation=0,
+            disable_internal_input=False,
         )

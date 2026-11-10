@@ -408,6 +408,7 @@ page.close()
 
     def test_settings_coalesce_and_failure_resync(self):
         self.run_ui('''
+assert 'tablet' not in settings.radios
 settings.radios['tent'].set_active(True)
 settings.radios['stand'].set_active(True)
 assert len(service.calls) == 1

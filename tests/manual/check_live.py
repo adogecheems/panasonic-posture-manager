@@ -81,7 +81,7 @@ def main():
         stdin=subprocess.PIPE,
     )
     try:
-        for value in ("tent", "stand", "tablet", "auto"):
+        for value in ("tent", "stand", "auto"):
             current = mode(value)
             if value != "auto":
                 assert current["applied"]["tablet"] is True, current

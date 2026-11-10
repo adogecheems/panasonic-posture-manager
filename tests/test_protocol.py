@@ -78,7 +78,7 @@ class ContractTests(unittest.TestCase):
             self.assertIn(f'type="{arg}" direction="in"', section)
 
     def test_enum_validation_sets(self):
-        self.assertEqual(set(protocol.MODES), {"auto", "laptop", "tent", "stand", "tablet"})
+        self.assertEqual(set(protocol.MODES), {"auto", "laptop", "tent", "stand"})
         self.assertIn("hardware", protocol.TARGET_MODES)
         self.assertIn("unavailable", protocol.TARGET_MODES)
         self.assertIn("absent", protocol.HARDWARE_STATUSES)

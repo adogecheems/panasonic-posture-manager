@@ -29,7 +29,7 @@ from ..session.failures import DisplayError, FailureKind, ServiceError
 from ..session.runtime import SessionRuntime
 from ..session.ports import DisplayBackend
 from .display_only_input import DisplayOnlyInput
-from .orientation import SIMPLE_ORIENTATION_TRANSFORM, OrientationReading
+from .orientation import OrientationReading
 from .session_display import (
     QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture,
     slate_qualified_hardware,
@@ -39,12 +39,8 @@ SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
 
 
 def available_screen_modes(display: object) -> tuple[str, ...]:
-    refreshable = (callable(getattr(display, 'needs_refresh', None)) and
-                   callable(getattr(display, 'refresh', None)))
-    tablet_available = refreshable and bool(
-        getattr(display, 'supports_software_tablet', True)
-    )
-    return SCREEN_MODES + (('tablet',) if tablet_available else ())
+    del display
+    return SCREEN_MODES
 
 
 class ManagedSensor(SensorBackend, Protocol):
@@ -274,10 +270,9 @@ def verified_machine() -> tuple[str, str]:
     return vendor, product
 
 
-def select_native_display(api, journal, *, orientation, hardware_query):
+def select_native_display(api, journal, *, hardware_query):
     """Choose a write-capable internal transaction or a read-only docked layout."""
-    from .display import ExternalOnlyDisplay, select_external_only, select_panel
-    from .tablet_display import WindowsTabletDisplay
+    from .display import ExternalOnlyDisplay, WindowsDisplay, select_external_only, select_panel
 
     panels = api.panels()
     try:
@@ -296,9 +291,8 @@ def select_native_display(api, journal, *, orientation, hardware_query):
                 'external-only-display-recovery-pending',
             ) from panel_error
         return ExternalOnlyDisplay(api)
-    return WindowsTabletDisplay(
+    return WindowsDisplay(
         journal=journal, api=api, hardware_query=hardware_query,
-        orientation=orientation, mapping=SIMPLE_ORIENTATION_TRANSFORM,
     )
 
 
@@ -320,7 +314,7 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
         slate = SlateNotifier(
             NativeSlateDevice(), SlateJournal(lease_path(journal_path))
         )
-        sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY, include_orientation=True))
+        sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY, include_orientation=False))
         resources.callback(sensor.close)
         journal = Journal(journal_path)
         api = NativeDisplay()
@@ -329,7 +323,7 @@ def native_screen_session(store: SettingsBackend, instance: str, journal_path: P
             lambda: slate.software_settling,
         )
         display = select_native_display(
-            api, journal, orientation=sensor.orientation, hardware_query=hardware_query,
+            api, journal, hardware_query=hardware_query,
         )
         session = ScreenSession(store=store, instance=instance,
             sensor=sensor, switch=SimpleNamespace(query=hardware_query),

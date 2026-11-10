@@ -164,7 +164,7 @@ class SessionContextTests(ControllerTestCase):
 
 class ManualModeTests(ControllerTestCase):
     def test_hardware_overrides_every_manual_mode(self):
-        for mode in (Mode.LAPTOP, Mode.TENT, Mode.STAND, Mode.TABLET):
+        for mode in (Mode.LAPTOP, Mode.TENT, Mode.STAND):
             with self.subTest(mode=mode):
                 controller = Controller()
                 controller.set_manual(mode)
@@ -181,7 +181,6 @@ class ManualModeTests(ControllerTestCase):
             Mode.LAPTOP: ("laptop", False, 0, False),
             Mode.TENT: ("tent", True, 180, True),
             Mode.STAND: ("stand", True, 0, True),
-            Mode.TABLET: ("tablet", True, None, True),
         }
         for mode, expected in cases.items():
             with self.subTest(mode=mode):
@@ -210,9 +209,10 @@ class ManualModeTests(ControllerTestCase):
         self.assertEqual(self.controller.manual, Mode.AUTO)
 
     def test_invalid_mode_rejected_with_stable_code(self):
-        with self.assertRaises(ValueError) as caught:
-            self.controller.set_manual("shell-command")
-        self.assertEqual(str(caught.exception), ErrorCode.INVALID_MODE)
+        for mode in ("shell-command", "tablet", Mode.TABLET):
+            with self.subTest(mode=mode), self.assertRaises(ValueError) as caught:
+                self.controller.set_manual(mode)
+            self.assertEqual(str(caught.exception), ErrorCode.INVALID_MODE)
 
     def test_hardware_prevents_manual_override(self):
         self.controller.update(1.0, sample(0.0, stamp=1.0), True)
@@ -337,7 +337,7 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertIsNone(self.controller.pending_notification)
 
     def test_manual_non_laptop_modes_return_to_tent_without_prompt(self):
-        for mode in (Mode.TENT, Mode.STAND, Mode.TABLET):
+        for mode in (Mode.TENT, Mode.STAND):
             with self.subTest(mode=mode):
                 controller = Controller()
                 controller.set_manual(mode)
@@ -353,51 +353,6 @@ class AutomaticModeTests(ControllerTestCase):
                 self.assertEqual(target.mode, "tent")
                 self.assertIsNone(controller.pending_prompt)
                 self.assertIsNone(controller.pending_notification)
-
-    def test_manual_tablet_does_not_override_laptop_source(self):
-        self.controller.set_manual(Mode.TABLET)
-        self.controller.set_manual(Mode.AUTO)
-
-        self.hold(80.0)
-        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
-        self.assertEqual(self.controller.target.mode, "laptop")
-        self.assertEqual(self.controller.pending_prompt, "tent")
-        self.assertIsNotNone(self.controller.pending_notification)
-
-    def test_manual_tablet_with_recognized_stand_returns_to_tent_directly(self):
-        self.controller.set_manual(Mode.TABLET)
-        self.hold(175.0)
-        self.assertEqual(self.controller.policy.mode, MODE_STAND)
-        self.assertEqual(self.controller.target.mode, "tablet")
-        self.controller.set_manual(Mode.AUTO)
-
-        self.hold(80.0)
-        self.assertEqual(self.controller.policy.mode, MODE_TENT)
-        self.assertEqual(self.controller.target.mode, "tent")
-        self.assertIsNone(self.controller.pending_prompt)
-
-    def test_manual_tablet_then_tent_then_auto_has_no_stale_prompt(self):
-        self.controller.set_manual(Mode.TABLET)
-        self.hold(0.0)
-        self.hold(80.0)
-        self.assertEqual(self.controller.policy.mode, MODE_TENT)
-        self.assertEqual(self.controller.target.mode, "tablet")
-
-        self.controller.set_manual(Mode.AUTO)
-        self.step(80.0)
-        self.assertEqual(self.controller.policy.mode, MODE_TENT)
-        self.assertEqual(self.controller.target.mode, "tent")
-        self.assertIsNone(self.controller.pending_prompt)
-        self.assertIsNone(self.controller.pending_notification)
-
-    def test_manual_tablet_during_settled_laptop_keeps_prompt(self):
-        self.controller.set_manual(Mode.TABLET)
-        self.hold(0.0)
-        self.controller.set_manual(Mode.AUTO)
-
-        self.hold(80.0)
-        self.assertEqual(self.controller.policy.mode, MODE_TENT_PROMPT)
-        self.assertEqual(self.controller.pending_prompt, "tent")
 
     def test_manual_laptop_origin_still_prompts_for_tent(self):
         self.controller.set_manual(Mode.LAPTOP)
@@ -517,7 +472,7 @@ class AutomaticModeTests(ControllerTestCase):
 
 class UnknownHardwareTests(ControllerTestCase):
     def test_unknown_hardware_releases_software_takeover(self):
-        self.controller.set_manual(Mode.TABLET)
+        self.controller.set_manual(Mode.TENT)
         _, target = self.step(0.0, hardware=None)
         self.assertEqual(target.mode, "unavailable")
         self.assertIsNone(target.tablet)

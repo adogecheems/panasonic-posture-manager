@@ -13,7 +13,7 @@ from qfluentwidgets import (
 )
 
 from .. import __version__
-from ..contracts import ALL_ERROR_CODES, ErrorCode
+from ..contracts import ALL_ERROR_CODES, MODES, ErrorCode
 from ..frontend.actions import ActionRunner, SettingsModel
 from ..frontend.ports import UIClient
 from ..frontend.state import PostureModel, Detail
@@ -267,11 +267,12 @@ class Settings(Page):
             'laptop': _('Best for typing and precise work'),
             'tent': _('Turns the screen upside down and disables the built-in keyboard and touchpad'),
             'stand': _('Keeps the screen upright and disables the built-in keyboard and touchpad'),
-            'tablet': _('Lets the screen rotate and disables the built-in keyboard and touchpad'),
         }
         self.mode_cards = {}
         self.mode_descriptions = descriptions
-        for key, label in mode_labels(_).items():
+        labels = mode_labels(_)
+        for key in MODES:
+            label = labels[key]
             card = SettingRow(QIcon(), label, descriptions[key])
             self.mode_cards[key] = card
             radio = ModeRadio()
@@ -427,7 +428,6 @@ class Settings(Page):
                 laptop=_('Reports laptop use and keeps Windows in control of the shell'),
                 tent=_('Turns the screen upside down and reports slate use to Windows'),
                 stand=_('Keeps the screen upright and reports slate use to Windows'),
-                tablet=_('Rotates with the screen and reports slate use to Windows'),
             )
         for key, card in self.mode_cards.items():
             card.setContent(descriptions[key])
