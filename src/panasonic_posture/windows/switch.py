@@ -91,8 +91,8 @@ class WindowsSwitch:
             metric = self.native.metric()
             if type(metric) is not int or metric not in (0, 1):
                 return None, HardwareStatus.READ_ERROR
-            # Consecutive physical tests report 0 for laptop and 1 for slate.
-            return metric == 1, HardwareStatus.OK
+            # The verified CFQV8 laptop posture reports 1.
+            return metric == 0, HardwareStatus.OK
         except PermissionError:
             return None, HardwareStatus.PERMISSION
         except (OSError, ValueError, TypeError):

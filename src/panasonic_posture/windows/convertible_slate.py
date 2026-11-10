@@ -33,10 +33,10 @@ _DIGCF_PRESENT = 0x00000002
 _DIGCF_ALLCLASSES = 0x00000004
 _INVALID_HANDLE_VALUE = C.c_void_p(-1).value
 _ERROR_NO_MORE_ITEMS = 259
-# Consecutive user-labelled CFQV8 tests observed 0 while physically open in
-# laptop use and 1 after the device was completely folded to slate.
-_SLATE_RAW = 1
-_LAPTOP_RAW = 0
+# The verified CFQV8 laptop posture exposes 1. A slate value of 0 may also
+# belong to a software tent/stand transaction, which SlateNotifier masks.
+_SLATE_RAW = 0
+_LAPTOP_RAW = 1
 CSM_SETTLE_SECONDS = 2.0
 
 
