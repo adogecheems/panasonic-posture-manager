@@ -227,6 +227,15 @@ set PYTHONPATH=src
 python tests\windows_display_smoke.py --exercise-rotation --directory build\display-evidence-new
 ```
 
+不依赖平板指示器的独立内屏事务检查：
+
+```bat
+set PYTHONPATH=src
+python tests\windows_display_only_smoke.py --exercise-display --directory build\display-only-evidence-new
+```
+
+该检查验证帐篷倒转、完整回读、正常回正，以及强杀显示 worker 后由持久日志恢复。它不打开平板指示器、不修改 shell、不取得输入所有权。
+
 2026-11-09，CFQV8-1L、Windows 10 专业版 19045 x64 上取得笔记本、帐篷、支架和完全折叠的真实采样：笔记本 z 约 -9.8 m/s²，帐篷 y 约 -9.3 m/s²，支架 z 约 +9.9 m/s²；物理开关在折叠/展开时按 1→0→1 变化。此证据确认当前采样的 y/z 方向与策略一致，不代表完整安装矩阵、持续会话控制或整机验收。2880×1920 内屏的倒转、回读、正常恢复和写入进程被结束后的日志恢复通过，最终方向与原方向一致。驱动反汇编和只读设备探测确认 `msgpiowin32` 接受一个字节时执行 toggle、读取返回当前字节，并发出 CSM 状态变化；设备仍处于独占时普通用户和 SYSTEM 都无法安全绕过该独占策略，因此通过可逆配置并要求重启。shell 选择为“不要切换”时保留桌面的结果属于 Windows 自己的策略，程序不调用强制 setter。
 
 同机从 `C:\util2\drivers\SynTP_d20194747` 安装了签名有效、硬件 ID 精确匹配的厂商驱动；安装后为 Synaptics HID TouchPad / Synaptics HID Device 19.5.26.18，用户确认移动、点击、滚动正常。自研输入过滤驱动没有加载；用户选择保留启动安全配置，测试签名仍关闭。这些证据不提升 Windows 机型支持等级。
@@ -274,7 +283,18 @@ set PYTHONPATH=src
 python tests\windows_session_smoke.py --observe-only --directory build\session-evidence-new
 ```
 
-2026-11-09，CFQV8 / Windows 10 Pro 19045、普通非提权进程下已取得本地会话和当前显示关闭的真实回调，分别记录电源上下文及控制资格，退出后通知注册全部释放。另确认缺少硬件服务时，会话进程在构造显示后端之前退出。没有为了验证改变锁屏、电源或方向；解锁、亮屏和睡眠恢复的真实变化尚未主动验收。隔离测试覆盖这些变化、迟到查询、线程与回执顺序，以及共用 Engine 的输入释放，不能替代安装后的真实会话与内核输入验收。
+已授权的交互式锁屏和显示器电源切换检查会锁定本机并短暂关闭显示器，不会挂起系统：
+
+```bat
+set PYTHONPATH=src
+python tests\windows_power_transition_smoke.py --exercise-transitions --directory build\power-transition-evidence-new
+```
+
+运行时需要操作者完成解锁，随后脚本移动 1 像素唤醒显示器。结果分别记录锁屏时控制资格失效、解锁恢复，以及已知熄屏时控制资格保持。
+
+2026-11-10，CFQV8 / Windows 10 Pro 19045、普通非提权进程下主动完成锁屏→解锁和熄屏→亮屏转换：锁屏状态 `locked=true` 时控制资格为 false，解锁后恢复 true；已知熄屏时 `display_on=false`、控制资格仍为 true，指针移动后亮屏恢复。通知注册全部释放。未主动挂起系统，未运行完整原生后台，未修改平板指示器配置。
+
+同日只读传感器及方向采集、精确父进程退出清理、显示事务正常倒转/回正和强杀 worker 后恢复均通过，最终内屏回到原方向和方向锁，证据目录中的显示日志均已清除。完整原生后台仍因 `ACPI\INT33D3` 仍为独占访问而无法启动，错误提示需要 `LaptopSlateExclusiveAccess=0` 并重启；未执行管理员配置。
 
 同机的只读原生文件检查接受系统盘和 Program Files 的受保护祖先目录，拒绝用户拥有的源码目录作为特权运行时；普通用户临时创建的冒充停止事件也被实际拒绝。临时事件句柄已关闭，没有调整文件权限、安装服务、加载驱动或操作显示。
 

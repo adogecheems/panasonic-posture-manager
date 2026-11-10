@@ -53,7 +53,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 用户态真实显示与平板通知 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；真机脚本仍须相应授权，不能用隔离端口代替真机证据 |
+| Windows 用户态真实显示与平板通知 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py` 和 `windows_power_transition_smoke.py`，不能用隔离端口代替真机证据 |
 | Windows 常驻、自启动与姿态通知 | `windows/{activation,startup,instance}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_screen_session`、`test_fluent`；实际注销登录和通知目视验收须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
@@ -1013,3 +1013,11 @@ make WERROR=1 check
 - 动机：代码和隔离测试已覆盖已知熄屏直接切换，但 README、维护指南和运行边界仍使用早期阶段描述，容易把未完成真机电源验收与缺失功能混为一谈。
 - 影响：不改变会话回执、租约、显示事务或平台装配。Windows 保持键盘和触控板可用，因此不实现 Linux 输入禁用路径的专用软件触摸唤醒；真实锁屏、亮屏、睡眠恢复、LocalSystem 会话和服务安装仍是独立未验项。
 - 同步：原生屏幕会话回归测试、README、MAINTENANCE、运行边界和本记录。
+
+### 2026-11-10 - CFQV8 用户态真机验收节点
+
+- 变更：新增可复现的 Windows 独立显示事务烟测和锁屏/显示器电源交互烟测。前者验证正常倒转/回正及强杀 worker 后恢复，后者验证锁屏资格失效、解锁恢复、已知熄屏保留资格和指针唤醒。
+- 动机：完整原生后台受平板指示器独占配置阻塞时，仍需把可独立验证且不接触输入控制的内屏事务和电源上下文固化为可重复证据，而不是依赖临时脚本。
+- 证据：CFQV8-1L / Windows 10 Pro 19045 上，标准与方向传感器采集、精确父进程退出清理、5 秒会话电源观察、内屏正常事务、强杀恢复、锁屏/解锁、熄屏/亮屏均通过；最终内屏回到 transform 0 和原方向锁，证据日志清除。完整后台因 `ACPI\INT33D3` 仍为独占访问而拒绝打开，未执行管理员配置或重启。
+- 约束：显示烟测不打开平板指示器或输入设备；电源烟测不挂起系统，不证明完整姿态事务、通知可见性、四向平板、重新登录启动或内核输入。
+- 同步：两项真机烟测、MAINTENANCE 与维护验证表；后续完整验收等待平板指示器配置授权和重启。
