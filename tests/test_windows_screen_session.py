@@ -173,6 +173,11 @@ class NativeScreenTests(unittest.TestCase):
         self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'tent')
         self.assertIsNone(self.backend.snapshot()['pending_notification'])
         self.assertTrue(self.context.control_available())
+        self.context.screen_off = False
+        self.advance(30)
+        self.assertEqual((self.backend.snapshot()['applied'] or {}).get('mode'), 'tent')
+        self.assertIsNone(self.backend.snapshot()['pending_notification'])
+        self.assertTrue(self.context.control_available())
 
 
 class TabletApi:
