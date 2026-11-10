@@ -608,6 +608,7 @@ with TemporaryDirectory() as directory:
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from panasonic_posture.contracts import TICK_SECONDS
 from panasonic_posture.windows.client import ProcessClient
 import os, time
 with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=directory):
@@ -619,6 +620,7 @@ with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=dire
         while normal.settings.model.state is None and time.monotonic() < deadline:
             QTest.qWait(25)
         assert normal.settings.model.state is not None
+        assert normal.backend_timer.interval() == max(1, round(TICK_SECONDS * 1000))
         assert not normal.settings.model.state['supported']
         assert normal.settings.switches['tent_enabled'].isEnabled()
     else:

@@ -7,6 +7,7 @@ import threading
 import time
 from typing import BinaryIO
 
+from ..contracts import TICK_SECONDS
 from .backend import Backend, BackendError
 from .diagnostics import configure_logging
 from .protocol import (
@@ -53,7 +54,7 @@ def serve(source: BinaryIO, sink: BinaryIO, backend: Backend) -> int:
                 send({'type': 'state', 'state': state})
                 previous = state
             try:
-                request = inbox.get(timeout=.05)
+                request = inbox.get(timeout=TICK_SECONDS)
             except queue.Empty:
                 continue
             if request['method'] == 'shutdown' and request['params'] == {}:

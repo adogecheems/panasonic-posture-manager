@@ -11,6 +11,7 @@ from qfluentwidgets import (
     setThemeColor, isDarkTheme, qconfig, setCustomStyleSheet, setFont,
 )
 
+from ..contracts import TICK_SECONDS
 from ..frontend.ports import UIClient
 from .demo import DemoClient, UnavailableClient
 from ..windows.client import ProcessClient, settings_path as default_settings_path
@@ -127,7 +128,8 @@ class Window(FluentWidget):
         self.backend_timer = QTimer(self)
         if isinstance(self.client, (ProcessClient, HardwareUIClient)):
             self.backend_timer.timeout.connect(self.client.poll)
-            self.backend_timer.start(50)
+            # Match the shared service cadence instead of waking twice as often.
+            self.backend_timer.start(max(1, round(TICK_SECONDS * 1000)))
 
     def update_mark(self):
         name = 'lets-note-window-icon-dark.png' if isDarkTheme() else 'lets-note-window-icon.png'
