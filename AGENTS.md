@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-12）
 
-- **最新功能提交**：`d0992b0 fix: gate Windows display recovery on physical state`。它把提前启动会话的显示恢复接回已认证 ETW 查询：物理状态未知时失败关闭并保留 journal，不写旋转或锁；`e369f7d` 则先解决首次启动等待、首平板交接竞态，并加入固定 AUMID、多尺寸任务栏/快捷方式图标。`3f23442` 修复 MSI Windows 10 启动条件和程序菜单。
+- **最新功能提交**：`1d70d53 fix: run MSI setup actions without console windows`。MSI 设备和服务动作改为由 `WixQuietExec` 托管，不再闪控制台；`e35d8b3` 修复首事件前会话把 `unavailable` 误报成 ready 的租约循环，并在电源初始回调缺失时重新订阅。`d0992b0` 让提前启动的显示恢复通过 ETW 门禁，`e369f7d` 加入 AUMID 和多尺寸图标。
 - **唯一物理输入**：物理平板状态只来自 `windows/etw_switch.py` 消费的 Intel HID Event Filter Event 115 ACPI 通知。`0xCC` 是平板、`0xCD` 是笔记本，`0xCA/0xCB` 不产生状态。首个有效事件前保持未知；ETW 不读取 CSM、shell 模式或注册表作为基线，也没有 CSM 回退。
 - **CSM 纯输出**：`ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态。所有 CSM 写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁；状态未知或读取失败时拒绝写入并保留 journal。首个 ETW 事件前受信会话仍会先行启动、证明资格并装配显示后端，但发送的只有 `not-ready` 心跳；Windows 显示恢复也使用同一已认证物理查询，未知时失败关闭并保留 journal，不写旋转或锁。物理源从已观察状态转为失效时仍撤销租约。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal；已取得的后端若写入失败仍阻止姿态确认。崩溃恢复始终使用 `pending.original`，不把 CSM 当前值当成物理接管或新基线。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
@@ -18,8 +18,8 @@
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
 - **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。开始菜单、运行窗口和任务栏共享固定多尺寸 ICO 与 AppUserModelID。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首事件前 `hardware_status=absent`；当前源码会让已认证会话发送 `not-ready` 心跳，但仍拒绝显示回执。
-- **下一智能体优先动作**：完成并提交本轮源码后，在用户明确授权构建安装和真机姿态操作时，安装新 MSI 并重启。先确认首事件前会话代理已启动但只有 `not-ready`，再折叠/展开验证首个 ETW 事件、首次平板方向交接、显示/CSM 清理、ETW 中断后的租约撤销、恢复重建、任务栏图标/AUMID、MSI 升级和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
-- **验证基线**：2026-11-12 在实际运行时上源码编译 WiX 5.0.2 MSI 成功并通过 ICE；此前最终 MSI SHA-256 为 `7f6860dc4fa254378df50ff7a41e3a110a4edc87f9068c82291372b18dafeb20`。本机完成旧服务/程序/设备配置清理、MSI 首次安装、MSI 卸载、修正版同版本升级、服务 Running、`LaptopSlateExclusiveAccess=0`、64 位 Setup 记录、`NativeSlateDevice` 只读打开、程序菜单快捷方式、安装清单/Qt/IPC 自检和安装目录 UI 启动。已安装的旧 2.4.0 包在 ETW 首事件前为 `hardware=null`、`session_connected=false`，这是本轮修复前的现象。当前源码的 Windows 全套 280 项、后续显示门禁目标 43 项、Fluent 46 项、相关前端/显示/CSM/刷新 66 项、目标会话/打包 35 项和 i18n 109 个 msgid 已通过；新 MSI 尚未构建安装，真机首事件后的显示/CSM 行为仍需授权验证。
+- **下一智能体优先动作**：本轮新 MSI 已安装并启动。下一阶段需用户明确授权真机姿态操作，完整折叠、展开一次，验证首个 ETW 事件、首次平板方向交接、显示/CSM 清理、ETW 中断后的租约撤销、恢复重建、CSM 基线和第二个显示写入者隔离。不得用自动化 fixture 代替真机验收。
+- **验证基线**：2026-11-12 使用工作区内 .NET 8 SDK、WiX 5.0.2 和 PyWin32 3.14 依赖构建最终 MSI，文件为 `dist/windows/panasonic-posture-manager-2.4.0-windows-x64.msi`，SHA-256 `265B88BB9B324627E682BD62C85AF4215A41F1B8498821B04968771016BF4297`。MSI 同版本升级返回 `0`，服务 Running，UI 从安装目录启动；安装日志显示两个 PowerShell 动作均通过 `WixQuietExec`，无直接控制台动作。首事件前状态连续 60 次读取保持 `hardware=null`、`hardware_status=absent`、`session_connected=true`。Windows 全套 289 项、Fluent 47 项、i18n 114 个 msgid 通过。真机首个姿态事件和后续显示/CSM 事务仍未验收。
 - **本轮关于页验证**：新增 5 项 jsproxy 响应/版本比较单测、完整 Fluent 47 项、打包 2 项和 i18n 114 个 msgid 通过；当前安装的 Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer 通过，真实端点返回 `2.4.0 -> 2.4.0`。新 MSI 和已安装程序尚未包含本轮改动。
 - **未验证项**：GitHub Windows CI、Authenticode 签名、重启后的首次 MSI 安装链路、首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 - **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。会话代理新增有界 `native-display.log` 记录预锁和事务失败。退出物理平板时 Windows 仍可能覆盖方向锁并短暂回正，当前架构不能完全消除。
@@ -1264,12 +1264,12 @@ make WERROR=1 check
 
 ### 2026-11-12 - 首次桌面会话、首平板交接与任务栏身份
 
-- 变更：可信会话监管器不再等待首个 ETW 有效事件。服务启动后即按活跃、未锁定的本地控制台用户启动会话代理；物理状态未知时主机只接受 `not-ready` 心跳和续租，拒绝 ready 回执、显示写入和 CSM 写入。Windows 显示工厂同时把已验证 ETW 查询传入恢复事务，未知状态时恢复失败关闭、保留 journal 且不写旋转或锁。已从健康物理源转为失效时，主机仍撤销当前租约并拒绝心跳，恢复健康状态后重新开放。
-- 变更：主页的未知物理源提示改为指导用户完整折叠、展开一次。Windows 进程在创建 Qt 窗口前设置固定 AppUserModelID `work.mmoe.panasonic.PostureManager`，应用级窗口图标使用打包资源；MSI 开始菜单快捷方式引用同一 AUMID、显式多尺寸 ICO，Add/Remove Programs 也使用该图标。
+- 变更：可信会话监管器不再等待首个 ETW 有效事件。服务启动后即按活跃、未锁定的本地控制台用户启动会话代理；物理状态未知时主机只接受 `not-ready` 心跳和续租，拒绝 ready 回执、显示写入和 CSM 写入。`unavailable` 目标只完成显示恢复并续租，不再被会话运行时误报成 ready；电源初始显示回调缺失时会在 owner 线程有限频率重订阅。Windows 显示工厂同时把已验证 ETW 查询传入恢复事务，未知状态时恢复失败关闭、保留 journal 且不写旋转或锁。已从健康物理源转为失效时，主机仍撤销当前租约并拒绝心跳，恢复健康状态后重新开放。
+- 变更：主页的未知物理源提示改为指导用户完整折叠、展开一次。Windows 进程在创建 Qt 窗口前设置固定 AppUserModelID `work.mmoe.panasonic.PostureManager`，应用级窗口图标使用打包资源；MSI 开始菜单快捷方式引用同一 AUMID、显式多尺寸 ICO，Add/Remove Programs 也使用该图标。MSI 的两个提权 PowerShell 配置动作改用 `WixQuietExec`，消除安装时可见 cmd 窗口，同时保留有界输出到 MSI 日志。
 - 动机：真机首次启动时，代理只有在第一次翻到平板后才随 ETW 事件启动，界面因此长期显示“等待桌面功能就绪”；代理启动时的旧日志恢复又与 Windows 首次平板方向交接重叠，造成首次进入平板跳变。已安装快捷方式的 `IconLocation` 为空 `,0`，运行进程继承 `pythonw.exe` 的通用任务栏身份。
 - 影响：ETW 的唯一物理输入、CSM 纯输出、目标/结果分离、租约撤销和显示事务不变。首事件前会话连接不再等于姿态或写入已就绪；界面必须继续显示未知物理状态，任何显示/CSM 写入门禁不得放宽。ETW 已 open 后中断仍按失效撤销。任务栏身份配置失败只影响 shell 展示，不阻断本地设备控制。
-- 同步：`windows/{session_supervisor,hardware_runtime,hardware_host,session_agent,app_identity}.py`、`fluent/{app,pages}.py`、`ui/posture.py`、`data/assets/work.mmoe.panasonic.PostureManager.ico`、`packaging/windows/{build_msi.py,msi/Package.wxs}`、Windows/Fluent/MSI/打包/UI 契约测试、翻译、README、MAINTENANCE 与本交接状态。
-- 验证：Windows 全套 280 项、后续显示门禁 43 项、会话/主机/运行时目标 50 项、Windows AppIdentity/MSI/打包 8 项、共享前端/显示/CSM/刷新 66 项、Fluent 46 项和 i18n 109 个 msgid 通过。新 MSI 的 WiX 实际构建/ICE、更新安装和真机首次姿态尚未执行。
+- 同步：`windows/{session_supervisor,hardware_runtime,hardware_host,hardware_rpc,hardware_server,session_context,session_agent,app_identity}.py`、`session/runtime.py`、`fluent/{app,pages}.py`、`ui/posture.py`、`data/assets/work.mmoe.panasonic.PostureManager.ico`、`packaging/windows/{build_msi.py,msi/Package.wxs}`、Windows/Fluent/MSI/打包/UI 契约测试、翻译、README、MAINTENANCE 与本交接状态。
+- 验证：Windows 全套 289 项、Fluent 47 项、i18n 114 个 msgid 通过；最终 MSI 构建、ICE、同版本升级安装和 UI 启动通过，安装日志确认 `WixQuietExec`，首事件前会话连续 60 次状态读取均为 connected。真机首次姿态及后续显示/CSM 行为尚未执行。
 
 ### 2026-11-12 - Windows 关于页仓库入口与更新检查
 
