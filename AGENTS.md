@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-11）
 
-- **最新主线**：以 `e74df3d docs: refresh windows hardware handoff` 和 `e696de8 feat: compose windows hardware runtime` 为基线。`windows/hardware_runtime.py` 负责 ETW 物理源、WinRT 传感器、共用 Engine、无输入执行端口和可信会话生命周期；实体开关和硬件姿态查询保持只读、真实。
+- **最新主线**：`d4424f1 refactor: make ETW the sole physical tablet source`。它基于 `e74df3d docs: refresh windows hardware handoff` 和 `e696de8 feat: compose windows hardware runtime`，完成 ETW 单物理源、CSM 写入门禁、会话显示/CSM 同客户端装配和旧路径清理。`windows/hardware_runtime.py` 负责 ETW 物理源、WinRT 传感器、共用 Engine、无输入执行端口和可信会话生命周期。
 - **唯一物理输入**：物理平板状态只来自 `windows/etw_switch.py` 消费的 Intel HID Event Filter Event 115 ACPI 通知。`0xCC` 是平板、`0xCD` 是笔记本，`0xCA/0xCB` 不产生状态。首个有效事件前保持未知；ETW 不读取 CSM、shell 模式或注册表作为基线，也没有 CSM 回退。
 - **CSM 纯输出**：`ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态。所有 CSM 写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁；状态未知或读取失败时拒绝写入并保留 journal。崩溃恢复始终使用 `pending.original`，不把 CSM 当前值当成物理接管或新基线。
 - **会话装配**：会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。清理顺序为先释放显示/CSM 所有权，再关闭 CSM 设备。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
@@ -14,7 +14,7 @@
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
 - **下一智能体优先动作**：在用户明确授权后增加 `HardwareRuntime.installed()` 的服务安装/启动入口，并验证真实 ETW 启动、首个事件前拒绝会话、ETW 中断后的租约撤销、显示/CSM 清理、恢复重建和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
-- **验证基线**：本机使用 `dist\PanasonicPostureManager\runtime\python.exe`，临时在 `python314._pth` 中加入当前 `src`/`tests`，运行后恢复原字节。当前 Windows 与 Fluent 套件结果见本轮提交正文；未安装服务，未执行真机显示或 CSM 写入。
+- **验证基线**：本机使用 `dist\PanasonicPostureManager\runtime\python.exe`，临时在 `python314._pth` 中加入当前 `src`/`tests`，运行后恢复原字节。Windows 套件 252 项通过，i18n 109 个 msgid 全部翻译，Fluent 关键相关 7 项通过；完整 Fluent 套件曾出现不同演示用例的随机 30 秒子进程超时，单独复跑均通过。未安装服务，未执行真机显示或 CSM 写入。
 - **未验证项**：真实服务安装、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 
 ## 1. 工作流程
