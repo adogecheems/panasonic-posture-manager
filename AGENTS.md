@@ -12,6 +12,7 @@
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
 - **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。`hardware_ipc.py` 只保留兼容导出。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
 - **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。GitHub、版本和外观行的右侧控件统一垂直居中；「检查更新」和「校准」使用填充式强调按钮。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
+- **双端模式文案**：自动、笔记本、帐篷、支架四项目的名称与说明只定义在 `frontend/mode_copy.py`，Windows Fluent 与 Linux GTK 都调用同一翻译表；平板仍只作为物理状态，不进入手动模式列表。
 - **产品边界**：Windows 默认连接独立 LocalSystem 硬件服务，不再接受 `--native-backend`、`--hardware-backend` 或 `--simulate-backend`。`--backend` 仅保留为隔离软件预览，`--demo` 为内存演示。生产路径不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示屏幕键盘。
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
@@ -1286,3 +1287,11 @@ make WERROR=1 check
 - 影响：只改变 Fluent 控件类型和布局对齐，不改变检查更新网络边界、校准事务、设置保存、错误码、硬件行为或其他页面交互。
 - 同步：`fluent/pages.py`、`tests/test_fluent.py`、Windows 关于页离屏检查和本记录。
 - 验证：关于页更新、双主题文字对比和中文最小窗口 3 项目标测试及完整 Fluent 47 项通过；离屏中文截图确认链接垂直居中及两个强调按钮布局。
+
+### 2026-11-12 - 双端共用模式文案
+
+- 变更：新增 `frontend/mode_copy.py`，把自动、笔记本、帐篷、支架四种手动模式的标题和说明集中为单一翻译表；Windows Fluent 和 Linux GTK 设置页都从该表生成模式行。
+- 动机：两端此前虽然文案相同，但各自保存一份字符串，后续修改容易产生差异化。集中定义后，模式名称、顺序和说明只能在一处改变，并由现有 gettext 流程统一翻译。
+- 影响：用户可见文案保持现有英文 msgid 和中文译文不变；模式代码、能力判断、平板物理状态、默认值、设置写入和硬件行为均不改变。
+- 同步：`frontend/mode_copy.py`、`fluent/pages.py`、`ui/settings.py`、i18n 源文件扫描、`po/POTFILES.in`、前端回归测试与本记录。
+- 验证：共享模式文案与前端 14 项测试通过，i18n 114 个 msgid 全部翻译且无未引用项；Windows 关于页和模式能力目标测试通过。本轮完整 Fluent 套件复跑在外部中断前已通过的用例无失败，但未完成；GTK 完整套件需在 Linux 环境继续验证。

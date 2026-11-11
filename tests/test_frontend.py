@@ -6,6 +6,7 @@ import unittest
 
 from panasonic_posture.frontend.state import PostureModel, Detail, notice_confirmable, notice_token
 from panasonic_posture.frontend.actions import SettingsModel, ActionRunner
+from panasonic_posture.frontend.mode_copy import MODE_COPY, translated_mode_copy
 from panasonic_posture.model import StateSnapshot
 
 
@@ -39,6 +40,15 @@ class Client:
 
 
 class FrontendTests(unittest.TestCase):
+    def test_manual_mode_copy_is_shared_by_both_platform_interfaces(self):
+        self.assertEqual(MODE_COPY, (
+            ('auto', 'Automatic', 'Switch automatically with the current posture'),
+            ('laptop', 'Laptop', 'Best for typing and precise work'),
+            ('tent', 'Tent', 'Designed for use in tent form'),
+            ('stand', 'Stand', 'Designed for viewing in stand form'),
+        ))
+        self.assertEqual(translated_mode_copy(str), MODE_COPY)
+
     def test_platform_mode_capabilities_restrict_selection_without_changing_defaults(self):
         model = SettingsModel(Client(), lambda: None, lambda error: None)
         model.update(state())

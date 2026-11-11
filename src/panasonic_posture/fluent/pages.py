@@ -15,6 +15,7 @@ from qfluentwidgets import (
 from .. import __version__
 from ..contracts import ALL_ERROR_CODES, MODES, ErrorCode
 from ..frontend.actions import ActionRunner, SettingsModel
+from ..frontend.mode_copy import translated_mode_copy
 from ..frontend.ports import UIClient
 from ..frontend.state import PostureModel, Detail
 from .widgets import (
@@ -28,8 +29,9 @@ GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
 
 
 def mode_labels(_):
-    return {'auto': _('Automatic'), 'laptop': _('Laptop'), 'tent': _('Tent'),
-            'stand': _('Stand'), 'tablet': _('Tablet')}
+    labels = {key: title for key, title, _description in translated_mode_copy(_)}
+    labels['tablet'] = _('Tablet')
+    return labels
 
 
 def stable_error_text(code: str | None, _) -> str:
@@ -273,10 +275,8 @@ class Settings(Page):
         group = self.add_group(_('Mode selection'))
         self.group = QButtonGroup(self)
         descriptions = {
-            'auto': _('Switch automatically with the current posture'),
-            'laptop': _('Best for typing and precise work'),
-            'tent': _('Designed for use in tent form'),
-            'stand': _('Designed for viewing in stand form'),
+            key: description
+            for key, _title, description in translated_mode_copy(_)
         }
         self.mode_cards = {}
         self.mode_descriptions = descriptions
