@@ -51,6 +51,17 @@ def build_optional_slate(client, journal: Path) -> SlatePosture | None:
         return None
 
 
+def build_display(client, journal: Path) -> DisplayBackend:
+    """Create display recovery behind the same physical-state gate as apply."""
+    from ..session.journal import Journal
+    from .display import WindowsDisplay
+
+    return WindowsDisplay(
+        journal=Journal(journal),
+        hardware_query=SessionHardwareQuery(client.get_state),
+    )
+
+
 def _native_context() -> WindowsSessionContext:
     from .security import WindowsSecurity
     WindowsSecurity().require_unprivileged()
@@ -183,16 +194,13 @@ def main(argv=None) -> int:
     if sys.platform != 'win32':
         parser.error('native session agent requires Windows')
     from .diagnostics import configure_logging
-    from ..session.journal import Journal
-    from .display import WindowsDisplay
     from .instance import InstanceLock
     from .session_stop import NativeStopSignal
 
     configure_logging(options.journal)
 
     def display_factory(client):
-        del client
-        return WindowsDisplay(journal=Journal(options.journal))
+        return build_display(client, options.journal)
 
     def slate_factory(client):
         return build_optional_slate(client, options.journal)

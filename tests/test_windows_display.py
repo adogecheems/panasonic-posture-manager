@@ -177,6 +177,26 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertIsNone(journal.document)
         self.assertIsNone(restarted.owned)
 
+    def test_unknown_physical_source_keeps_crash_journal_without_a_recovery_write(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(transform=2, auto_rotation=1)
+        journal.document = {
+            'version': 1,
+            'backend': 'windows',
+            'spec': ['panel-1'],
+            'original_transform': 0,
+            'original_lock': False,
+            'written_lock': True,
+            'written_transform': 2,
+        }
+        display = self.make(
+            api, journal, lambda: (None, HardwareStatus.ABSENT)
+        )
+        self.assertEqual(api.writes, [])
+        self.assertEqual(api.lock_writes, [])
+        self.assertIsNotNone(journal.document)
+        self.assertIsNotNone(display.owned)
+
     def test_failed_rotation_rolls_back_rotation_and_lock(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)

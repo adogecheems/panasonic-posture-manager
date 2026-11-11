@@ -8,11 +8,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from panasonic_posture.model import StateSnapshot, Target
+from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
 from panasonic_posture.session.failures import ServiceError, FailureKind
 from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.windows.session_agent import (
     WindowsSessionAgent,
+    build_display,
     build_optional_slate,
     main,
 )
@@ -268,6 +269,16 @@ class SessionAgentTests(unittest.TestCase):
             result = build_optional_slate(self.client, Path(directory) / 'display.json')
         self.assertIsNone(result)
         self.assertIn('continuing without CSM', '\n'.join(logged.output))
+
+    def test_display_recovery_is_gated_by_the_authenticated_physical_query(self):
+        state = StateSnapshot(hardware=None, hardware_status=HardwareStatus.ABSENT)
+        client = SimpleNamespace(get_state=lambda: state)
+        with tempfile.TemporaryDirectory() as directory, patch(
+            'panasonic_posture.windows.display.WindowsDisplay'
+        ) as display:
+            build_display(client, Path(directory) / 'display.json')
+        query = display.call_args.kwargs['hardware_query']
+        self.assertEqual(query(), (None, HardwareStatus.ABSENT))
 
     def test_available_csm_receives_the_shared_hardware_query(self):
         created = {}
