@@ -7,33 +7,30 @@ This route never constructs privileged hardware ports or opens their pipe.
 from __future__ import annotations
 
 from collections.abc import Callable
-from concurrent.futures import Future, TimeoutError
 from contextlib import ExitStack
-from dataclasses import replace
-import queue
-import os
-import threading
 import time
 from typing import Protocol
 
-from ..contracts import ErrorCode
+from ..contracts import ErrorCode, MODES
 from ..controller import Controller
-from ..frontend.ports import PREFERENCES
-from ..model import DeviceInfo, HardwareStatus, SensorInfo, SensorReading, StateSnapshot
+from ..model import DeviceInfo, HardwareStatus
 from ..presentation import PosePresentation
 from ..service.engine import Engine
 from ..service.ports import SensorBackend, SessionOwner, SettingsBackend
-from ..session.failures import DisplayError, FailureKind, ServiceError
+from ..session.failures import DisplayError
 from ..session.runtime import SessionRuntime
 from ..session.ports import DisplayBackend
 from .display_only_input import DisplayOnlyInput
 from .hardware_release import HardwareReleaseCoordinator
-from .orientation import OrientationReading
+from .machine_profile import ProfileSensor, verified_machine
+from .native_preflight import require_native_user
+from .operations import dispatch_engine_operation
+from .session_bridge import SessionBridge
 from .session_display import (
     QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture,
 )
 
-SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
+SCREEN_MODES = MODES
 
 
 def available_screen_modes(display: object) -> tuple[str, ...]:
@@ -48,88 +45,6 @@ class ManagedSensor(SensorBackend, Protocol):
 
 class SlateSwitch(Protocol):
     def query(self) -> tuple[bool | None, HardwareStatus]: ...
-
-
-class SessionBridge:
-    """Private in-process capability, not an externally callable receipt API."""
-
-    def __init__(self, state: StateSnapshot, available: Callable[[], bool],
-                 unattended: Callable[[], bool] = lambda: False) -> None:
-        self._lock = threading.Lock()
-        self._state, self.available = state, available
-        self.unattended = unattended
-        self._requests: queue.Queue[tuple[Future[None], tuple[int, bool, str | None, str | None]]] = queue.Queue(maxsize=4)
-        self._accepted: list[Future[None]] = []
-        self._closed = False
-
-    @staticmethod
-    def rejected() -> ServiceError:
-        return ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'screen-session-unavailable', kind=FailureKind.REJECTED)
-
-    def publish(self, state: StateSnapshot) -> None:
-        with self._lock:
-            self._state = state
-            accepted, self._accepted = self._accepted, []
-        # SessionRuntime probes by reading immediately after a receipt. The
-        # response must not race ahead of the owner tick's accepted snapshot.
-        for future in accepted:
-            if not future.done():
-                future.set_result(None)
-
-    def get_state(self) -> StateSnapshot:
-        with self._lock:
-            if self._closed or not self.available():
-                raise self.rejected()
-            return self._state
-
-    def session_update(self, generation: int, ready: bool, error_code: str | None = None,
-                       error_detail: str | None = None) -> None:
-        future: Future[None] = Future()
-        with self._lock:
-            if self._closed or not self.available():
-                raise self.rejected()
-            try:
-                self._requests.put_nowait((future, (generation, ready, error_code, error_detail)))
-            except queue.Full as error:
-                raise self.rejected() from error
-        try:
-            future.result(timeout=1.)
-        except TimeoutError as error:
-            # Cancellation prevents an old queued receipt renewing a lease.
-            future.cancel()
-            raise self.rejected() from error
-
-    def drain(self, engine: Engine, owner: SessionOwner) -> None:
-        for _ in range(4):
-            try:
-                future, args = self._requests.get_nowait()
-            except queue.Empty:
-                return
-            if not future.set_running_or_notify_cancel():
-                continue
-            try:
-                if self._closed or not self.available() or not engine.session_update(
-                        *args, owner=owner, unattended=self.unattended()):
-                    raise self.rejected()
-            except Exception as error:
-                future.set_exception(error)
-            else:
-                self._accepted.append(future)
-
-    def close(self) -> None:
-        with self._lock:
-            self._closed = True
-            accepted, self._accepted = self._accepted, []
-            for future in accepted:
-                if not future.done():
-                    future.set_exception(self.rejected())
-            while True:
-                try:
-                    future, _ = self._requests.get_nowait()
-                except queue.Empty:
-                    break
-                if not future.done():
-                    future.set_exception(self.rejected())
 
 
 class ScreenSession:
@@ -188,35 +103,7 @@ class ScreenSession:
         self.hardware_release.prepare(self.engine.state, self.engine.hardware_release_pose)
 
     def call(self, method: str, params: dict) -> None:
-        if method == 'set_mode':
-            mode = params['mode']
-            if not isinstance(mode, str) or mode not in self.available_modes:
-                from ..service.engine import ServiceError as EngineError
-                raise EngineError(ErrorCode.INVALID_MODE, 'screen-mode-unavailable')
-            self.engine.set_mode(mode)
-        elif method == 'retry':
-            fallback = params['fallback_mode']
-            if fallback is not None:
-                if not isinstance(fallback, str) or fallback not in self.available_modes:
-                    raise ValueError('invalid fallback mode')
-                self.engine.set_mode(fallback)
-            self.engine.retry()
-        elif method == 'set_preference':
-            field, enabled = params['field'], params['enabled']
-            if not isinstance(field, str) or field not in PREFERENCES or type(enabled) is not bool:
-                raise ValueError('invalid preference')
-            getattr(self.engine, 'set_' + field)(enabled)
-        elif method == 'confirm_prompt':
-            prompt, epoch = params['prompt'], params['epoch']
-            if prompt not in ('tent', 'stand') or type(epoch) is not int or epoch < 0:
-                raise ValueError('invalid prompt')
-            getattr(self.engine, 'confirm_' + prompt)(epoch)
-        elif method == 'calibrate':
-            self.engine.calibrate_sensor()
-        elif method == 'reset_calibration':
-            self.engine.reset_sensor_calibration()
-        else:
-            raise ValueError('unknown method')
+        dispatch_engine_operation(self.engine, method, params)
         self.engine.tick()
         self.bridge.publish(self.engine.state)
 
@@ -225,54 +112,6 @@ class ScreenSession:
             self.closed = True
             self.engine.revoke_session(self.owner)
             self._stack.close()
-
-
-class ProfileSensor:
-    """Do not apply the known mount to a different sensor model."""
-
-    def __init__(self, sensor: ManagedSensor) -> None:
-        self.sensor = sensor
-
-    @property
-    def info(self) -> SensorInfo:
-        info = self.sensor.info
-        if ((info.ready or info.device) and
-                not info.device.casefold().startswith('\\\\?\\hid#vid_8087&pid_0ac2#')):
-            return replace(info, ready=False, error='sensor-mount-profile-mismatch')
-        return info
-
-    def reading(self) -> SensorReading:
-        return self.sensor.reading() if self.info.ready else SensorReading(source='windows-winrt')
-
-    def orientation(self) -> OrientationReading | None:
-        return self.sensor.orientation() if self.info.ready else None
-
-    def start(self) -> None:
-        self.sensor.start()
-
-    def close(self) -> None:
-        self.sensor.close()
-
-
-def require_native_user() -> None:
-    from .security import WindowsSecurity
-    security = WindowsSecurity()
-    security.require_unprivileged()
-    identity = security.process_identity(os.getpid())
-    console = security.kernel.WTSGetActiveConsoleSessionId()
-    if console in (0, 0xffffffff) or identity.session_id != console:
-        raise PermissionError('native screen control requires the local console session')
-
-
-def verified_machine() -> tuple[str, str]:
-    """Read identity only; capability checks stay in the native session factory."""
-    import winreg
-    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\BIOS') as key:
-        vendor = winreg.QueryValueEx(key, 'SystemManufacturer')[0]
-        product = winreg.QueryValueEx(key, 'SystemProductName')[0]
-    if (vendor, product) != ('Panasonic Corporation', 'CFQV8-1L'):
-        raise OSError('no verified Windows posture mount for this machine')
-    return vendor, product
 
 
 def select_native_display(api, journal, *, hardware_query):

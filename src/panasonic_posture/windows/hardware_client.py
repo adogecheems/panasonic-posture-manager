@@ -12,12 +12,15 @@ import threading
 import time
 
 from ..contracts import ErrorCode, LEASE_SECONDS, MODES
-from ..frontend.ports import Preference
 from ..model import StateSnapshot
 from .client import BackendUnavailable
-from .hardware_host import CHANNEL, SIGNATURES, validate_request
-from .hardware_ipc import HardwareConnection, HardwareOperationError, RPCConnection, validated_hardware_state
+from .hardware_protocol import CHANNEL, SIGNATURES, validate_request
+from .hardware_rpc import (
+    HardwareConnection, HardwareOperationError, RPCConnection, validated_hardware_state,
+)
+from .owner_loop import OwnerLoop
 from .protocol import MAX_PENDING, ProtocolError
+from .ui_operations import UIClientOperations
 
 
 @dataclass(frozen=True)
@@ -30,7 +33,7 @@ class _Result:
     lost: bool = False
 
 
-class HardwareUIClient:
+class HardwareUIClient(UIClientOperations):
     def __init__(self, *, factory: Callable[[], RPCConnection] | None = None, timeout: float = 5.,
                  clock: Callable[[], float] = time.monotonic) -> None:
         self.factory = factory or (lambda: HardwareConnection(timeout=timeout, clock=clock))
@@ -41,7 +44,7 @@ class HardwareUIClient:
         self._thread: threading.Thread | None = None
         self._active = False
         self._stopped = True
-        self._owner: int | None = None
+        self._loop = OwnerLoop()
         self._retry_at = 0.
         self._backoff = .5
         self._refresh_future: Future | None = None
@@ -50,15 +53,14 @@ class HardwareUIClient:
         self._connected = lambda: None
 
     def _check_owner(self) -> None:
-        if self._owner is not None and threading.get_ident() != self._owner:
-            raise RuntimeError('hardware UI client must run on its owner loop')
+        self._loop.check()
 
     def start(self, on_state: Callable[[dict], None], on_unavailable: Callable[[], None],
               on_connected: Callable[[], None] | None = None) -> None:
         self._check_owner()
         if not self._stopped or self._thread is not None and self._thread.is_alive():
             raise RuntimeError('hardware UI client is already running or stopping')
-        self._owner = threading.get_ident()
+        self._loop.bind()
         self._state, self._unavailable = on_state, on_unavailable
         self._connected = on_connected or (lambda: None)
         self._stopped = False
@@ -216,6 +218,9 @@ class HardwareUIClient:
         self.pending[self._serial] = future, self.clock() + self.timeout
         return future
 
+    def _operation(self, method: str, params: dict) -> Future:
+        return self._request(method, params)
+
     def refresh(self) -> None:
         self._check_owner()
         if self._refresh_future is None or self._refresh_future.done():
@@ -227,22 +232,7 @@ class HardwareUIClient:
             self._stopped = True
             self._lost()
 
-    def set_mode(self, mode: str) -> Future:
-        return self._request('set_mode', dict(mode=mode))
-
-    def set_preference(self, field: Preference, enabled: bool) -> Future:
-        return self._request('set_preference', dict(field=field, enabled=enabled))
-
-    def confirm_prompt(self, prompt: str | None, epoch: int) -> Future:
-        return self._request('confirm_prompt', dict(prompt=prompt or 'tent', epoch=epoch))
-
-    def calibrate(self) -> Future:
-        return self._request('calibrate', {})
-
-    def reset_calibration(self) -> Future:
-        return self._request('reset_calibration', {})
-
-    def retry(self, fallback_mode: str | None = None) -> Future:
+    def _retry(self, fallback_mode: str | None) -> Future:
         # Native v1 always has Retry. The legacy UI fallback must not introduce
         # an implicit mode write or replay across a reconnect.
         if fallback_mode is not None and fallback_mode not in MODES:

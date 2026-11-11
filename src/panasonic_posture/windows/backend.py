@@ -94,8 +94,6 @@ class Backend:
             return
         if method == 'set_preference':
             field, enabled = params['field'], params['enabled']
-            if not isinstance(field, str) or field not in PREFERENCES or type(enabled) is not bool:
-                raise ValueError('invalid preference')
             if self.simulation:
                 self._simulate(method, params)
                 return

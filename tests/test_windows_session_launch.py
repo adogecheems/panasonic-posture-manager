@@ -28,7 +28,7 @@ class Runtime:
     root = Path('C:/Program Files/PanasonicPostureManager')
     closed = False
     def agent_arguments(self, journal, *, stop_event):
-        return [str(self.root / 'runtime/pythonw.exe'), '-B', '-I', '-m',
+        return [str(self.root / 'runtime/python-hardware.exe'), '-B', '-I', '-m',
                 'panasonic_posture.windows.session_agent', '--journal', str(journal), '--stop-event', stop_event]
 
 
@@ -221,11 +221,14 @@ class NativeAPITests(unittest.TestCase):
             target._obj.process, target._obj.thread, target._obj.pid = 14, 15, 42
             return True
         api.advapi = SimpleNamespace(CreateProcessAsUserW=create)
-        args = [r'C:\Program Files\Posture\runtime\pythonw.exe', '-B', '-I', '-m', 'panasonic_posture.windows.session_agent']
+        args = [r'C:\Program Files\Posture\runtime\python-hardware.exe', '-B', '-I', '-m',
+                'panasonic_posture.windows.session_agent']
         result = api.start(11, args, 12, Path('C:/Program Files/Posture'))
         self.assertEqual(result, (14, 15, 42))
         self.assertEqual(seen[0][0], args[0])
-        self.assertTrue(seen[0][1].startswith('"C:\\Program Files\\Posture\\runtime\\pythonw.exe" '))
+        self.assertTrue(seen[0][1].startswith(
+            '"C:\\Program Files\\Posture\\runtime\\python-hardware.exe" '
+        ))
         self.assertEqual(seen[0][2], 12)
 
     def test_job_kills_on_last_handle_close_without_a_named_or_inherited_handle(self):

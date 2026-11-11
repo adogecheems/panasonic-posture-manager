@@ -50,6 +50,27 @@ assert process.poll() is not None
                                     env=env, cwd=directory, text=True, capture_output=True, timeout=40)
             if result.returncode:
                 raise RuntimeError(executable + ': ' + result.stdout + result.stderr)
+        restricted = '''
+import sys
+from panasonic_posture.windows.hardware_application import create_hardware_runtime
+assert create_hardware_runtime
+try:
+    import PyQt6
+except ModuleNotFoundError:
+    pass
+else:
+    raise AssertionError('hardware interpreter imported UI site packages')
+'''
+        result = subprocess.run(
+            [str(root / 'runtime/python-hardware.exe'), '-B', '-I', '-c', restricted],
+            env={key: value for key, value in env.items() if key != 'PYTHONPATH'},
+            cwd=directory,
+            text=True,
+            capture_output=True,
+            timeout=40,
+        )
+        if result.returncode:
+            raise RuntimeError('python-hardware.exe: ' + result.stdout + result.stderr)
     print('Extracted Windows runtime, Qt resources and backend IPC passed')
 
 

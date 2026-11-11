@@ -16,11 +16,11 @@ import time
 from typing import Callable, Protocol
 
 from ..model import HardwareStatus
+from .machine_identity import SUPPORTED_WINDOWS_MACHINE, read_machine_identity
 from .slate_journal import SlateJournal, SlateLease
 
 SUPPORTED_INSTANCE_ID = r"ACPI\INT33D3\2&DABA3FF&0"
-SUPPORTED_MANUFACTURER = "Panasonic Corporation"
-SUPPORTED_PRODUCT = "CFQV8-1L"
+SUPPORTED_MANUFACTURER, SUPPORTED_PRODUCT = SUPPORTED_WINDOWS_MACHINE
 
 _GENERIC_READ = 0x80000000
 _GENERIC_WRITE = 0x40000000
@@ -191,21 +191,13 @@ class NativeSlateDevice:
         )
 
     def _verify_machine(self) -> None:
-        import winreg
-
-        path = r"HARDWARE\DESCRIPTION\System\BIOS"
         try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path, 0,
-                                winreg.KEY_QUERY_VALUE) as key:
-                values = {
-                    name: winreg.QueryValueEx(key, name)[0]
-                    for name in ("SystemManufacturer", "SystemProductName")
-                }
+            actual = read_machine_identity()
         except OSError as error:
             raise SlateError("cannot identify the installed Windows machine") from error
-        actual = (values["SystemManufacturer"], values["SystemProductName"])
         if actual != self.expected_machine:
             raise SlateError("convertible-slate control is not verified for this machine")
+
     def _physical_device_object_name(self, instance_id: str) -> str:
         handle = self.SetupDiGetClassDevsW(
             None, None, None, _DIGCF_PRESENT | _DIGCF_ALLCLASSES

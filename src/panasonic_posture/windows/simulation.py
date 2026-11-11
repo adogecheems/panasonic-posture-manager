@@ -19,6 +19,7 @@ from ..session.runtime import SessionRuntime
 from ..session.transaction import DisplayState, SoftwareDisplay
 from ..session.failures import DisplayError
 from ..tasks import InlineExecutor
+from .operations import dispatch_engine_operation
 
 
 class MemoryJournal:
@@ -124,31 +125,12 @@ class Simulation:
         self.engine.tick()
 
     def call(self, method: str, params: dict):
-        if method == 'set_mode':
-            if not isinstance(params['mode'], str):
-                raise ValueError('mode must be a string')
-            self.engine.set_mode(params['mode'])
-        elif method == 'retry':
-            fallback = params['fallback_mode']
-            if fallback is not None and not isinstance(fallback, str):
-                raise ValueError('fallback mode must be a string or null')
-            self.display.fail = False
-            if fallback is not None:
-                self.engine.set_mode(fallback)
-            self.engine.retry()
-        elif method == 'confirm_prompt':
-            prompt, epoch = params['prompt'], params['epoch']
-            if prompt not in ('tent', 'stand') or type(epoch) is not int or epoch < 0:
-                raise ValueError('invalid prompt')
-            (self.engine.confirm_tent if prompt == 'tent' else self.engine.confirm_stand)(epoch)
-        elif method == 'calibrate':
-            self.engine.calibrate_sensor()
-        elif method == 'reset_calibration':
-            self.engine.reset_sensor_calibration()
-        elif method == 'set_preference':
-            getattr(self.engine, 'set_' + params['field'])(params['enabled'])
-        else:
-            raise ValueError('unknown method')
+        dispatch_engine_operation(
+            self.engine,
+            method,
+            params,
+            before_retry=lambda: setattr(self.display, 'fail', False),
+        )
         self.engine.tick()
 
     def close(self):

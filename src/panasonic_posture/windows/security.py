@@ -3,7 +3,7 @@ import ctypes as C
 import os
 import sys
 
-from .hardware_host import ConsoleIdentity
+from .console_identity import ConsoleIdentity
 
 U32, I32, HANDLE = C.c_uint32, C.c_int32, C.c_void_p
 

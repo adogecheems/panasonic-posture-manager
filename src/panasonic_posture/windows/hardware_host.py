@@ -5,57 +5,13 @@ Display receipts additionally require the exact session process registered by
 the service host, never a PID/SID supplied in an RPC request. This module has
 no device discovery, installation or arbitrary device-write operation.
 """
-from dataclasses import dataclass
 from collections.abc import Callable
 
 from ..contracts import ErrorCode
 from ..service.engine import Engine, ServiceError
-from ..service.ports import SessionOwner
-from .protocol import ProtocolError
-from .request_contract import HARDWARE_SIGNATURES, validate_operation
-
-CHANNEL = 'windows-hardware'
-CONTROL_VERSION = 1
-
-
-@dataclass(frozen=True)
-class ConsoleIdentity:
-    sid: str
-    logon_id: int
-    session_id: int
-    process_id: int
-    created_at: int
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.sid, str) or not self.sid.startswith('S-1-'):
-            raise ValueError('invalid Windows SID')
-        if any(type(value) is not int or value <= 0 for value in (
-                self.logon_id, self.session_id, self.process_id, self.created_at)):
-            raise ValueError('invalid Windows process or logon identity')
-
-    @property
-    def owner(self) -> SessionOwner:
-        return SessionOwner('windows-console',
-            f'{self.sid}:{self.logon_id}:{self.session_id}:{self.process_id}:{self.created_at}')
-
-
-SIGNATURES = HARDWARE_SIGNATURES
-
-
-def validate_request(value: object, instance: str) -> tuple[str, dict]:
-    if (not isinstance(value, dict) or set(value) != {
-            'version', 'channel', 'id', 'instance', 'method', 'params'} or
-            type(value['version']) is not int or value['version'] != CONTROL_VERSION or
-            value['channel'] != CHANNEL or type(value['id']) is not int or
-            not 0 < value['id'] < 2**63):
-        raise ProtocolError('invalid hardware request envelope')
-    method, params = value['method'], value['params']
-    if value['instance'] != instance and not (method == 'get_state' and value['instance'] is None):
-        raise ProtocolError('stale hardware service instance')
-    try:
-        return validate_operation(method, params, HARDWARE_SIGNATURES)
-    except ValueError as error:
-        raise ProtocolError(str(error)) from error
+from .console_identity import ConsoleIdentity
+from .hardware_protocol import CHANNEL, CONTROL_VERSION, SIGNATURES, validate_request
+from .operations import dispatch_engine_operation
 
 
 class HardwareHost:
@@ -81,18 +37,8 @@ class HardwareHost:
             accepted = self.engine.session_update(params['generation'], params['ready'],
                 params['error_code'], params['error_detail'], owner=peer.owner,
                 unattended=params['unattended'])
-        elif method == 'set_mode':
-            self.engine.set_mode(params['mode'])
-        elif method == 'set_preference':
-            getattr(self.engine, 'set_' + params['field'])(params['enabled'])
-        elif method == 'retry':
-            self.engine.retry()
-        elif method == 'confirm_prompt':
-            getattr(self.engine, 'confirm_' + params['prompt'])(params['epoch'])
-        elif method == 'calibrate':
-            self.engine.calibrate_sensor()
-        elif method == 'reset_calibration':
-            self.engine.reset_sensor_calibration()
+        elif method != 'get_state':
+            dispatch_engine_operation(self.engine, method, params)
         if method != 'get_state':
             self.engine.tick()
         return dict(version=CONTROL_VERSION, channel=CHANNEL, type='response',

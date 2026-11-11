@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -258,6 +259,19 @@ class ProcessTests(unittest.TestCase):
         self.assertIsNone(self.client.process.poll())
         self.until(lambda: log_path(self.path).is_file() and
                    'backend request rejected' in log_path(self.path).read_text(encoding='utf-8'))
+
+    def test_public_operations_reject_calls_from_another_thread(self):
+        self.until(lambda: bool(self.states))
+        errors = []
+        def wrong_thread():
+            try:
+                self.client.set_mode('tent')
+            except RuntimeError as error:
+                errors.append(error)
+        thread = threading.Thread(target=wrong_thread)
+        thread.start()
+        thread.join(timeout=3)
+        self.assertEqual(len(errors), 1)
 
     def test_queue_bound_and_timeout_fail_all_without_replay(self):
         self.until(lambda: bool(self.states))

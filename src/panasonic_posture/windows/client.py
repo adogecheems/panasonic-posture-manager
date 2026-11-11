@@ -18,6 +18,8 @@ from .protocol import (
     VERSION, MAX_FRAME, MAX_PENDING, STARTUP_REASONS, ProtocolError,
     encode, decode, validate_state,
 )
+from .owner_loop import OwnerLoop
+from .ui_operations import UIClientOperations
 
 
 class BackendUnavailable(RuntimeError):
@@ -32,7 +34,7 @@ def settings_path(*, simulate: bool = False) -> Path:
     return Path(root) / 'PanasonicPostureManager' / name
 
 
-class ProcessClient:
+class ProcessClient(UIClientOperations):
     def __init__(self, path: Path, *, simulate: bool = False, scenario: str = 'laptop',
                  timeout: float = 5.0, clock: Callable[[], float] = time.monotonic) -> None:
         self.path, self.simulate, self.scenario = Path(path), simulate, scenario
@@ -49,9 +51,11 @@ class ProcessClient:
         self._state = lambda state: None
         self._unavailable = lambda: None
         self._connected = lambda: None
+        self._loop = OwnerLoop()
 
     def start(self, on_state: Callable[[dict], None], on_unavailable: Callable[[], None],
               on_connected: Callable[[], None] | None = None) -> None:
+        self._loop.bind()
         if not self.stopped:
             raise RuntimeError('client already started')
         self._state, self._unavailable = on_state, on_unavailable
@@ -186,6 +190,7 @@ class ProcessClient:
         self.backoff = min(10.0, self.backoff * 2)
 
     def poll(self) -> None:
+        self._loop.check()
         if self.stopped:
             return
         if self.process is None:
@@ -251,6 +256,7 @@ class ProcessClient:
             self._lost()
 
     def request(self, method: str, params: dict) -> Future:
+        self._loop.check()
         future = Future()
         if self.stopped or self.process is None or self.instance is None or len(self.pending) >= MAX_PENDING:
             future.set_exception(BackendUnavailable('backend not ready or queue full'))
@@ -265,30 +271,17 @@ class ProcessClient:
         self.pending[self.serial] = (future, self.clock() + self.timeout)
         return future
 
+    def _operation(self, method: str, params: dict) -> Future:
+        return self.request(method, params)
+
     def refresh(self) -> None:
+        self._loop.check()
         if getattr(self, '_refresh', None) is None or self._refresh.done():
             self._refresh = self.request('get_state', {})
 
     def stop(self) -> None:
+        self._loop.check()
         if self.stopped:
             return
         self.stopped = True
         self._lost()
-
-    def set_mode(self, mode: str) -> Future:
-        return self.request('set_mode', {'mode': mode})
-
-    def set_preference(self, field: str, enabled: bool) -> Future:
-        return self.request('set_preference', {'field': field, 'enabled': enabled})
-
-    def confirm_prompt(self, prompt: str, epoch: int) -> Future:
-        return self.request('confirm_prompt', {'prompt': prompt, 'epoch': epoch})
-
-    def calibrate(self) -> Future:
-        return self.request('calibrate', {})
-
-    def reset_calibration(self) -> Future:
-        return self.request('reset_calibration', {})
-
-    def retry(self, fallback_mode: str | None = None) -> Future:
-        return self.request('retry', {'fallback_mode': fallback_mode})

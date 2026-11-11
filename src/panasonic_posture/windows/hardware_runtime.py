@@ -21,20 +21,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import time
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from ..controller import Controller
 from ..model import DeviceInfo, HardwareStatus
-from ..presentation import PosePresentation
 from ..service.engine import Engine
-from .display_only_input import DisplayOnlyInput
-from .etw_switch import AcpiPhysicalSwitch
-from .hardware_ipc import HardwareServer
-from .screen_session import ProfileSensor, verified_machine
-from .sensor import IDENTITY, WindowsSensor
-from .session_launch import NativeSessionLauncher
-from .session_supervisor import SessionSupervisor
-from .trusted_runtime import TrustedRuntime
+
+if TYPE_CHECKING:
+    from .hardware_server import HardwareServer
+    from .session_launch import NativeSessionLauncher
+    from .trusted_runtime import TrustedRuntime
 
 
 class ManagedSensor(Protocol):
@@ -55,6 +50,20 @@ class SessionLifecycle(Protocol):
     def close(self) -> None: ...
 
 
+class ServerLifecycle(Protocol):
+    def register_session_process(self, peer: object) -> None: ...
+    def poll(self) -> None: ...
+    def close(self) -> None: ...
+
+
+class LauncherLifecycle(Protocol):
+    def close(self) -> None: ...
+
+
+class RuntimeLifecycle(Protocol):
+    def close(self) -> None: ...
+
+
 class HardwareRuntime:
     """Own one hardware engine and its trusted session lifecycle."""
 
@@ -64,9 +73,9 @@ class HardwareRuntime:
         engine: Engine,
         switch: PhysicalSwitch,
         sensor: ManagedSensor,
-        runtime: TrustedRuntime,
-        server_factory: Callable[[Callable[[], bool]], HardwareServer],
-        launcher_factory: Callable[[], NativeSessionLauncher],
+        runtime: RuntimeLifecycle,
+        server_factory: Callable[[Callable[[], bool]], ServerLifecycle],
+        launcher_factory: Callable[[], LauncherLifecycle],
         supervisor_factory: Callable[..., SessionLifecycle] | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
@@ -82,7 +91,10 @@ class HardwareRuntime:
         self.runtime = runtime
         self.server_factory = server_factory
         self.launcher_factory = launcher_factory
-        self.supervisor_factory = supervisor_factory or SessionSupervisor
+        if supervisor_factory is None:
+            from .session_supervisor import SessionSupervisor
+            supervisor_factory = SessionSupervisor
+        self.supervisor_factory = supervisor_factory
         self.clock = clock
         self.sleep = sleep
         self.stop_timeout = float(stop_timeout)
@@ -202,43 +214,14 @@ class HardwareRuntime:
         stop_timeout: float = 12.,
     ) -> 'HardwareRuntime':
         """Build the production composition from the pinned installation."""
-        runtime = runtime or TrustedRuntime.current()
-        vendor, product = verified_machine()
-        switch = AcpiPhysicalSwitch()
-        sensor = ProfileSensor(WindowsSensor(
-            mount_matrix=IDENTITY,
-            include_orientation=False,
-        ))
-        engine = Engine(
-            controller=Controller(input_control=False),
-            sensor=sensor,
-            actuator=DisplayOnlyInput(),
-            presentation=PosePresentation(),
-            settings=settings,
-            device=device or DeviceInfo(
-                id='windows-cfqv8-hardware',
-                vendor=vendor,
-                product=product,
-                platform='windows',
-                support_tier='compatible',
-            ),
-            hardware_query=switch.query,
-            monotonic=clock,
-        )
+        from .hardware_application import create_hardware_runtime
 
-        def make_server(admission: Callable[[], bool]) -> HardwareServer:
-            return HardwareServer(engine, session_admission=admission)
-
-        def make_launcher() -> NativeSessionLauncher:
-            return NativeSessionLauncher(runtime)
-
-        return cls(
-            engine=engine,
-            switch=switch,
-            sensor=sensor,
+        return create_hardware_runtime(
             runtime=runtime,
-            server_factory=server_factory or make_server,
-            launcher_factory=launcher_factory or make_launcher,
+            settings=settings,
+            device=device,
+            server_factory=server_factory,
+            launcher_factory=launcher_factory,
             supervisor_factory=supervisor_factory,
             clock=clock,
             sleep=sleep,
@@ -246,4 +229,7 @@ class HardwareRuntime:
         )
 
 
-__all__ = ['HardwareRuntime', 'ManagedSensor', 'PhysicalSwitch', 'SessionLifecycle']
+__all__ = [
+    'HardwareRuntime', 'LauncherLifecycle', 'ManagedSensor', 'PhysicalSwitch',
+    'RuntimeLifecycle', 'ServerLifecycle', 'SessionLifecycle',
+]

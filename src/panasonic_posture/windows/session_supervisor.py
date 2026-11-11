@@ -10,14 +10,31 @@ from concurrent.futures import Executor, Future
 from dataclasses import dataclass
 import threading
 import time
+from typing import Protocol
 
 from ..tasks import thread_executor
-from .hardware_host import ConsoleIdentity
-from .session_launch import ConsoleUser, ManagedSession, NativeSessionLauncher
+from .console_identity import ConsoleIdentity, ConsoleUser
 
 PROBE_SECONDS = .5
 STOP_GRACE_SECONDS = 5.
 RESULT_MAX_AGE = 5.
+
+
+class ManagedChild(Protocol):
+    identity: ConsoleIdentity | None
+    resumed: bool
+    closed: bool
+
+    def resume(self) -> None: ...
+    def alive(self) -> bool: ...
+    def request_stop(self) -> None: ...
+    def close(self) -> None: ...
+
+
+class SessionLauncher(Protocol):
+    def probe(self) -> ConsoleUser | None: ...
+    def create(self, expected: ConsoleUser) -> ManagedChild: ...
+    def close(self) -> None: ...
 
 
 @dataclass
@@ -29,7 +46,7 @@ class _Task:
 
 
 class SessionSupervisor:
-    def __init__(self, launcher: NativeSessionLauncher,
+    def __init__(self, launcher: SessionLauncher,
                  register: Callable[[ConsoleIdentity | None], None], *,
                  clock: Callable[[], float] = time.monotonic, executor: Executor | None = None,
                  admit: Callable[[], bool] | None = None) -> None:
@@ -38,7 +55,7 @@ class SessionSupervisor:
         self.executor = executor if executor is not None else thread_executor('windows-session-launch')
         self._owned_executor = executor is None
         self._owner = threading.get_ident()
-        self.child: ManagedSession | None = None
+        self.child: ManagedChild | None = None
         self.user: ConsoleUser | None = None
         self.error: str | None = None
         self.closed = self.stopping = self._retiring = False

@@ -1,5 +1,6 @@
 """Hardware-service composition: ordering, physical gating and cleanup."""
 import unittest
+from unittest.mock import patch
 
 from panasonic_posture.model import HardwareStatus
 from panasonic_posture.windows.hardware_runtime import HardwareRuntime
@@ -205,6 +206,38 @@ class HardwareRuntimeTests(unittest.TestCase):
         self.assertTrue(sensor.closed)
         self.assertTrue(trusted_runtime.closed)
         self.assertEqual(engine.shutdowns, 1)
+
+    def test_installed_delegates_production_wiring_to_the_application_root(self):
+        result = object()
+        trusted_runtime = object()
+        def clock():
+            return 1.
+        def sleep(_seconds):
+            return None
+        with patch(
+            'panasonic_posture.windows.hardware_application.create_hardware_runtime',
+            return_value=result,
+        ) as create:
+            actual = HardwareRuntime.installed(
+                runtime=trusted_runtime,
+                settings='settings',
+                device='device',
+                clock=clock,
+                sleep=sleep,
+                stop_timeout=3,
+            )
+        self.assertIs(actual, result)
+        self.assertEqual(create.call_args.kwargs, dict(
+            runtime=trusted_runtime,
+            settings='settings',
+            device='device',
+            server_factory=None,
+            launcher_factory=None,
+            supervisor_factory=None,
+            clock=clock,
+            sleep=sleep,
+            stop_timeout=3,
+        ))
 
 
 if __name__ == '__main__':

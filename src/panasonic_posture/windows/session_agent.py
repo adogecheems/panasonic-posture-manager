@@ -12,66 +12,23 @@ import logging
 from pathlib import Path
 import sys
 import time
-from typing import Protocol
 
 from ..contracts import AGENT_HEARTBEAT_SECONDS, ErrorCode, TICK_SECONDS
-from ..model import StateSnapshot
 from ..session.failures import FailureKind, ServiceError
-from ..session.ports import DisplayBackend, SessionClient
+from ..session.ports import DisplayBackend
 from ..session.runtime import SessionRuntime
 from ..tasks import thread_executor
+from .hardware_release import HardwareReleaseCoordinator
 from .session_client import WindowsSessionClient
 from .session_context import WindowsSessionContext
 from .session_display import (
     QualifiedDisplay as _QualifiedDisplay, SessionContext, SlatePosture,
 )
-from .hardware_release import HardwareReleaseCoordinator
+from .session_qualification import (
+    ClosableSessionClient as ClosableClient, QualifiedSessionClient,
+)
 
 log = logging.getLogger(__name__)
-
-
-class ClosableClient(SessionClient, Protocol):
-    def close(self) -> None: ...
-
-
-class _QualifiedClient:
-    def __init__(self, client: ClosableClient, context: SessionContext) -> None:
-        self.client, self.context = client, context
-
-    @staticmethod
-    def _rejected() -> ServiceError:
-        return ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'native session control is unavailable', kind=FailureKind.REJECTED)
-
-    def get_state(self) -> StateSnapshot:
-        state = self.client.get_state()
-        if not self.context.control_available():
-            self.client.session_update(state.generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unavailable')
-            raise self._rejected()
-        return state
-
-    def session_update(self, generation: int, ready: bool, error_code: str | None = None,
-                       error_detail: str | None = None) -> None:
-        if not self.context.control_available():
-            self.client.session_update(generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unavailable')
-            raise self._rejected()
-        self.client.session_update(generation, ready, error_code, error_detail)
-        if not self.context.control_available():
-            raise self._rejected()
-
-    def confirm_tent(self, epoch: int) -> None:
-        if not self.context.control_available():
-            raise self._rejected()
-        self.client.confirm_tent(epoch)
-
-    def confirm_stand(self, epoch: int) -> None:
-        if not self.context.control_available():
-            raise self._rejected()
-        self.client.confirm_stand(epoch)
-
-    def wake_screen(self, generation: int, serial: int) -> None:
-        if not self.context.control_available():
-            raise self._rejected()
-        self.client.wake_screen(generation, serial)
 
 
 def _native_context() -> WindowsSessionContext:
@@ -112,38 +69,56 @@ class WindowsSessionAgent:
             raise RuntimeError('session agent already started or closed')
         self._started = True
         try:
-            self.context = self.context_factory()
-            self._stack.callback(self.context.close)
-            self.client = self.client_factory(self.context.control_available)
-            self._stack.callback(self.client.close)
-            if self.executor is None:
-                self.executor = thread_executor('windows-session-display')
-                self._stack.callback(self.executor.shutdown, wait=True, cancel_futures=True)
-            if self.lease_executor is None:
-                self.lease_executor = thread_executor('windows-session-lease')
-                self._stack.callback(self.lease_executor.shutdown, wait=True, cancel_futures=True)
-            # Reuse this worker, rather than consuming a third RPC channel.
+            self._create_process_boundary()
+            # Prove authority on the exact display worker that will later send
+            # receipts, rather than consuming an extra RPC channel on the main
+            # thread.
             self.executor.submit(self._prove_receipt_authority).result(timeout=20)
-            client = _QualifiedClient(self.client, self.context)
-            display = self.display_factory(client)
-            try:
-                slate = self.slate_factory(client) if self.slate_factory is not None else None
-            except BaseException:
-                display.restore()
-                raise
-            if slate is not None:
-                self._stack.callback(slate.close)
-            self._stack.callback(lambda: self.runtime.close() if self.runtime else display.restore())
-            qualified = _QualifiedDisplay(display, self.context, slate)
-            self._stack.callback(qualified.restore)
-            self.hardware_release = HardwareReleaseCoordinator(qualified)
-            self.runtime = SessionRuntime(client,
-                qualified, None,
-                screen_locked=lambda: not self.context.control_available(),
-                executor=self.executor, lease_executor=self.lease_executor)
+            self._create_runtime()
         except BaseException:
             self.close()
             raise
+
+    def _create_process_boundary(self) -> None:
+        self.context = self.context_factory()
+        self._stack.callback(self.context.close)
+        self.client = self.client_factory(self.context.control_available)
+        self._stack.callback(self.client.close)
+        if self.executor is None:
+            self.executor = thread_executor('windows-session-display')
+            self._stack.callback(self.executor.shutdown, wait=True, cancel_futures=True)
+        if self.lease_executor is None:
+            self.lease_executor = thread_executor('windows-session-lease')
+            self._stack.callback(self.lease_executor.shutdown, wait=True, cancel_futures=True)
+
+    def _create_runtime(self) -> None:
+        qualified_client = QualifiedSessionClient(self.client, self.context)
+        display = self.display_factory(qualified_client)
+        try:
+            slate = (self.slate_factory(qualified_client)
+                     if self.slate_factory is not None else None)
+        except BaseException:
+            display.restore()
+            raise
+        if slate is not None:
+            self._stack.callback(slate.close)
+        qualified = _QualifiedDisplay(display, self.context, slate)
+        self._stack.callback(qualified.restore)
+        # Register the runtime cleanup after the display fence, so LIFO close
+        # first drains runtime workers and then performs final restore/slate
+        # release. A failed runtime construction still restores the display.
+        self._stack.callback(
+            lambda: self.runtime.close() if self.runtime is not None else display.restore()
+        )
+        self.hardware_release = HardwareReleaseCoordinator(qualified)
+        self.runtime = SessionRuntime(
+            qualified_client,
+            qualified,
+            None,
+            screen_locked=lambda: not self.context.control_available(),
+            executor=self.executor,
+            lease_executor=self.lease_executor,
+        )
 
     def _qualification_heartbeat(self) -> None:
         state = self.client.get_state()

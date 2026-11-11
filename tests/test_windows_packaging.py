@@ -41,7 +41,8 @@ class WindowsPackagingTests(unittest.TestCase):
                 prefix = 'PanasonicPostureManager/'
                 names = set(bundle.namelist())
                 for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/python._pth',
-                             'runtime/pythonw._pth', 'runtime/python311._pth',
+                             'runtime/pythonw._pth', 'runtime/python-hardware.exe',
+                             'runtime/python-hardware._pth',
                              'app/panasonic_posture/windows/client.py', 'data/assets/lets-note-window-icon.png',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
                              'Panasonic Posture Manager.cmd', 'Hardware.cmd',
@@ -51,6 +52,7 @@ class WindowsPackagingTests(unittest.TestCase):
                     self.assertIn(prefix + name, names)
                 self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in names))
                 self.assertFalse(any('/qml/' in name for name in names))
+                self.assertNotIn(prefix + 'runtime/python311._pth', names)
                 self.assertLess(max(map(len, names)), 240)
                 native = bundle.read(prefix + 'Hardware.cmd').decode('utf-8')
                 self.assertIn('runtime\\pythonw.exe', native)
@@ -59,6 +61,9 @@ class WindowsPackagingTests(unittest.TestCase):
                 self.assertIn('-Action Install', configure)
                 self.assertIn('configure-slate-device.ps1', configure)
                 self.assertIn(b'../app', bundle.read(prefix + 'runtime/python._pth'))
+                self.assertIn(b'Lib/site-packages', bundle.read(prefix + 'runtime/python._pth'))
+                self.assertEqual(bundle.read(prefix + 'runtime/python-hardware._pth'),
+                                 b'Lib\nDLLs\n../app\n')
                 manifest = json.loads(bundle.read(prefix + 'MANIFEST.json'))
                 self.assertEqual(set(manifest), {name[len(prefix):] for name in names} - {'MANIFEST.json'})
                 for name, digest in manifest.items():

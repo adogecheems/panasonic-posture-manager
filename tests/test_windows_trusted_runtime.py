@@ -43,13 +43,18 @@ class RuntimeTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
-        for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/Lib/os.py',
+        for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/python-hardware.exe',
+                     'runtime/Lib/os.py',
                      'runtime/DLLs/dummy.dll', 'app/panasonic_posture/windows/session_agent.py'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'fixture')
-        for name in ('python._pth', 'pythonw._pth', 'python314._pth'):
-            (self.root / 'runtime' / name).write_text('Lib\nDLLs\n../app\n', encoding='utf-8')
+        (self.root / 'runtime/python._pth').write_text(
+            'Lib\nDLLs\nLib/site-packages\n../app\nimport site\n', encoding='utf-8')
+        (self.root / 'runtime/pythonw._pth').write_text(
+            'Lib\nDLLs\nLib/site-packages\n../app\nimport site\n', encoding='utf-8')
+        (self.root / 'runtime/python-hardware._pth').write_text(
+            'Lib\nDLLs\n../app\n', encoding='utf-8')
         self.guard = Guard()
 
     def runtime(self):
@@ -60,10 +65,10 @@ class RuntimeTests(unittest.TestCase):
     def test_fixed_program_and_isolated_arguments_are_derived_from_pinned_installation(self):
         runtime = self.runtime()
         journal = self.root.parent / 'user data' / 'display.json'
-        self.assertEqual(runtime.agent_arguments(journal), [str(self.root / 'runtime/pythonw.exe'),
+        self.assertEqual(runtime.agent_arguments(journal), [str(self.root / 'runtime/python-hardware.exe'),
             '-B', '-I', '-m', 'panasonic_posture.windows.session_agent', '--journal', str(journal)])
         paths = [path for path, _ in self.guard.paths]
-        self.assertIn(self.root / 'runtime/pythonw.exe', paths)
+        self.assertIn(self.root / 'runtime/python-hardware.exe', paths)
         self.assertIn(self.root / 'app/panasonic_posture/windows/session_agent.py', paths)
         stop = 'Global\\PanasonicPostureManager.Stop.' + 'a' * 32
         self.assertEqual(runtime.agent_arguments(journal, stop_event=stop)[-2:], ['--stop-event', stop])
@@ -76,14 +81,22 @@ class RuntimeTests(unittest.TestCase):
 
     def test_site_import_or_an_alternate_search_path_cannot_enter_privileged_runtime(self):
         for text in ('Lib\nDLLs\n../app\nimport site\n', 'Lib\nDLLs\n../app\nC:/user-code\n'):
-            (self.root / 'runtime/python314._pth').write_text(text, encoding='utf-8')
+            (self.root / 'runtime/python-hardware._pth').write_text(text, encoding='utf-8')
             guard = Guard()
             with self.assertRaises(ValueError):
                 TrustedRuntime(self.root, verifier=guard)
             self.assertTrue(guard.closed)
+        (self.root / 'runtime/python-hardware._pth').write_text(
+            'Lib\nDLLs\n../app\n', encoding='utf-8')
+        (self.root / 'runtime/python314._pth').write_text(
+            'Lib\nDLLs\n../app\n', encoding='utf-8')
+        guard = Guard()
+        with self.assertRaises(ValueError):
+            TrustedRuntime(self.root, verifier=guard)
+        self.assertTrue(guard.closed)
 
     def test_missing_program_and_guard_failure_do_not_leave_pins_open(self):
-        (self.root / 'runtime/pythonw.exe').unlink()
+        (self.root / 'runtime/python-hardware.exe').unlink()
         with self.assertRaises(ValueError):
             TrustedRuntime(self.root, verifier=self.guard)
         self.assertTrue(self.guard.closed)

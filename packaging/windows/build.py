@@ -43,22 +43,22 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
                     files[prefix + '/' + path.relative_to(source).as_posix()] = path
 
     add_tree(runtime, 'runtime', ('__pycache__', '*.pyc', 'site-packages', 'Scripts',
-                                 'Doc', 'Tools', 'include', 'libs', 'tcl', 'test', 'tests'))
+                                 'Doc', 'Tools', 'include', 'libs', 'tcl', 'test', 'tests',
+                                 'python*._pth'))
     add_tree(dependencies, 'runtime/Lib/site-packages', ('__pycache__', '*.pyc', 'qml'))
     add_tree(ROOT / 'src/panasonic_posture', 'app/panasonic_posture', ('__pycache__', '*.pyc'))
     add_tree(ROOT / 'data/assets', 'data/assets')
     files['po/zh_CN.po'] = ROOT / 'po/zh_CN.po'
     for name in ('LICENSE', 'README.md', 'MAINTENANCE.md'):
         files[name] = ROOT / name
-    # Isolate both parent and backend from registry/user-site/PYTHONPATH.
-    search_paths = 'Lib\nDLLs\nLib/site-packages\n../app\nimport site\n'
+    # UI interpreters need bundled Qt; the separately named hardware
+    # interpreter must never import site packages or process site hooks.
+    ui_search_paths = 'Lib\nDLLs\nLib/site-packages\n../app\nimport site\n'
+    hardware_search_paths = 'Lib\nDLLs\n../app\n'
+    files['runtime/python-hardware.exe'] = runtime / 'python.exe'
+    files['runtime/python-hardware._pth'] = hardware_search_paths.encode('utf-8')
     for executable in ('python', 'pythonw'):
-        files[f'runtime/{executable}._pth'] = search_paths.encode('utf-8')
-    # The DLL-specific file takes priority over executable-specific paths.
-    for library in runtime.glob('python3[0-9]*.dll'):
-        files['runtime/' + library.with_suffix('._pth').name] = search_paths.encode('utf-8')
-    for existing in runtime.glob('python[0-9]*._pth'):
-        files['runtime/' + existing.name] = search_paths.encode('utf-8')
+        files[f'runtime/{executable}._pth'] = ui_search_paths.encode('utf-8')
     files['launch.py'] = b'from panasonic_posture.fluent.__main__ import main\nraise SystemExit(main())\n'
     files['configure-slate-device.ps1'] = (
         ROOT / 'packaging/windows/configure-slate-device.ps1'

@@ -101,13 +101,15 @@ try {
             throw 'Staged source changed or copy was incomplete.'
         }
     }
-    foreach ($name in @('python._pth', 'pythonw._pth', 'python314._pth')) {
+    Copy-Item -LiteralPath (Join-Path $target 'runtime/python.exe') -Destination (Join-Path $target 'runtime/python-hardware.exe')
+    foreach ($name in @('python._pth', 'pythonw._pth')) {
         [IO.File]::WriteAllText((Join-Path $target ('runtime/' + $name)), "Lib`nDLLs`n../app`n", $utf8)
     }
+    [IO.File]::WriteAllText((Join-Path $target 'runtime/python-hardware._pth'), "Lib`nDLLs`n../app`n", $utf8)
     & "$env:SystemRoot\System32\icacls.exe" $target /setowner '*S-1-5-32-544' /T /C /Q | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Cannot set trusted ownership for the entire fixture.' }
     }
-    $python = Join-Path $target 'runtime/python.exe'
+    $python = Join-Path $target 'runtime/python-hardware.exe'
     # Validate the actual staged ACLs and isolated interpreter before SYSTEM
     # executes anything. This command only pins and reads the protected tree.
     & $python -B -I -c 'from panasonic_posture.windows.trusted_runtime import TrustedRuntime; r=TrustedRuntime.current(); r.close()' 2> (Join-Path $target 'validation/runtime-check.log')

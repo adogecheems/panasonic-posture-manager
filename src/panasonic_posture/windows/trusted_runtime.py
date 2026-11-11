@@ -16,6 +16,8 @@ from .security import WindowsSecurity, U32, I32, HANDLE
 SYSTEM = 'S-1-5-18'
 ADMINS = 'S-1-5-32-544'
 WRITE_RIGHTS = 0x500d0156
+HARDWARE_EXECUTABLE = 'runtime/python-hardware.exe'
+HARDWARE_PTH = 'runtime/python-hardware._pth'
 
 
 @dataclass(frozen=True)
@@ -169,16 +171,20 @@ class TrustedRuntime:
                     if count > 20000:
                         raise ValueError('runtime tree exceeds the inspection limit')
                     self.verifier.pin(Path(directory) / name)
-            for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/Lib/os.py',
-                         'app/panasonic_posture/windows/session_agent.py'):
+            for name in (HARDWARE_EXECUTABLE, 'runtime/Lib/os.py',
+                         HARDWARE_PTH, 'app/panasonic_posture/windows/session_agent.py'):
                 if not (self.root / name).is_file():
                     raise ValueError(f'incomplete installed runtime: {name}')
             paths = list((self.root / 'runtime').glob('python*._pth'))
-            if not {'python._pth', 'pythonw._pth'} <= {path.name for path in paths}:
-                raise ValueError('installed interpreters must have isolated search paths')
-            for path in paths:
-                if path.read_text(encoding='utf-8').splitlines() != ['Lib', 'DLLs', '../app']:
-                    raise ValueError('privileged runtime search path is not isolated')
+            unexpected = {
+                path.name for path in paths
+                if path.name not in {'python._pth', 'pythonw._pth', 'python-hardware._pth'}
+            }
+            if unexpected:
+                raise ValueError('a DLL-specific search path can override the hardware runtime')
+            hardware_pth = self.root / HARDWARE_PTH
+            if hardware_pth.read_text(encoding='utf-8').splitlines() != ['Lib', 'DLLs', '../app']:
+                raise ValueError('privileged runtime search path is not isolated')
         except BaseException:
             self.close()
             raise
@@ -186,7 +192,7 @@ class TrustedRuntime:
     @classmethod
     def current(cls) -> 'TrustedRuntime':
         root = Path(__file__).absolute().parents[3]
-        if (Path(sys.executable).absolute() not in (root / 'runtime/python.exe', root / 'runtime/pythonw.exe') or
+        if (Path(sys.executable).absolute() != root / HARDWARE_EXECUTABLE or
                 not sys.flags.isolated or not sys.dont_write_bytecode):
             raise PermissionError('hardware host requires its installed isolated interpreter')
         return cls(root)
@@ -196,7 +202,7 @@ class TrustedRuntime:
             raise OSError('installed runtime is closed')
         if not journal.is_absolute() or any(char in str(journal) for char in '\0\r\n'):
             raise ValueError('an absolute per-user journal path is required')
-        arguments = [str(self.root / 'runtime/pythonw.exe'), '-B', '-I', '-m',
+        arguments = [str(self.root / HARDWARE_EXECUTABLE), '-B', '-I', '-m',
                      'panasonic_posture.windows.session_agent', '--journal', str(journal)]
         if stop_event is not None:
             from .session_stop import validate_name

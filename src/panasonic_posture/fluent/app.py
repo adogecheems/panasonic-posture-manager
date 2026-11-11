@@ -223,7 +223,8 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
     startup = None
     hardware_ui = sys.platform == 'win32' and not (demo or backend)
     if hardware_ui:
-        from ..windows.screen_session import require_native_user, verified_machine
+        from ..windows.machine_profile import verified_machine
+        from ..windows.native_preflight import require_native_user
         try:
             require_native_user()  # UI activation/startup never runs with an elevated token.
             verified_machine()

@@ -15,29 +15,12 @@ import threading
 from typing import Protocol
 from uuid import UUID
 
-from .hardware_host import ConsoleIdentity
+from .console_identity import ConsoleIdentity, ConsoleUser
 from .security import WindowsSecurity, ExtendedInfo, U32, I32, HANDLE, AuthenticationError
 from .session_stop import NativeStopSignal
 from .trusted_runtime import TrustedRuntime
 
 CREATE_FLAGS = 0x08000404  # NO_WINDOW | UNICODE_ENVIRONMENT | SUSPENDED
-
-
-@dataclass(frozen=True)
-class ConsoleUser:
-    sid: str
-    logon_id: int
-    session_id: int
-    unlocked: bool
-
-    def __post_init__(self) -> None:
-        ConsoleIdentity(self.sid, self.logon_id, self.session_id, 1, 1)
-        if self.sid == 'S-1-5-18' or type(self.unlocked) is not bool:
-            raise ValueError('an ordinary console user is required')
-
-    @property
-    def key(self) -> tuple[str, int, int]:
-        return self.sid, self.logon_id, self.session_id
 
 
 class StartupInfo(C.Structure):

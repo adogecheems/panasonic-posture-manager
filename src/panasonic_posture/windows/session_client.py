@@ -13,7 +13,9 @@ import threading
 from ..contracts import ErrorCode, ALL_ERROR_CODES
 from ..model import StateSnapshot
 from ..session.failures import ServiceError, FailureKind
-from .hardware_ipc import HardwareConnection, HardwareOperationError, RPCConnection, validated_hardware_state
+from .hardware_rpc import (
+    HardwareConnection, HardwareOperationError, RPCConnection, validated_hardware_state,
+)
 from .protocol import ProtocolError
 from .state_contract import parse_hardware_release_pose
 
