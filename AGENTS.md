@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-11）
 
-- **最新主线**：本轮以 `f0a154a refactor: consolidate windows runtime contracts` 为基线，集中 Windows 请求契约、完整快照解析和物理释放协调；新增 `windows/hardware_runtime.py` 组合根，把 ETW 物理源、WinRT 传感器、共用引擎和无输入执行端口接入可信硬件主机。实体开关和硬件姿态查询继续保持只读、真实。
+- **最新主线**：当前提交为 `e696de8 feat: compose windows hardware runtime`；本轮以 `f0a154a refactor: consolidate windows runtime contracts` 为基线，集中 Windows 请求契约、完整快照解析和物理释放协调；新增 `windows/hardware_runtime.py` 组合根，把 ETW 物理源、WinRT 传感器、共用引擎和无输入执行端口接入可信硬件主机。实体开关和硬件姿态查询继续保持只读、真实。
 - **产品边界**：Windows 软件帐篷/支架的“让 Windows 知道平板状态”功能暂时停用。生产路径不写 `ACPI\INT33D3`、不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示 Windows 屏幕键盘。实体开关和硬件姿态查询必须保持只读、真实。
 - **无驱动 ETW 原型**：`windows/etw_switch.py` 由 LocalSystem 服务计划监听现有 Intel `HidEventFilter` 的 Event 115 ACPI 通知，区分软件 CSM 指示器事件。启动顺序已改为先建立 ETW 监听再读取洁净 CSM 基线，启动期间到达的有效物理事件优先于旧基线；基线缺失或读取失败会停止消费者并保持未知。`HardwareRuntime` 已把它接入组合根，但尚未安装或启动常驻服务；真机启动、停止和恢复验收仍未完成。
 - **ETW 真机探针结果**：2026-11-11 15:14–15:16 的临时 SYSTEM 计划任务成功完成。CSM 记录为 `1→0→1`，Event 115 同时收到 `0xCC` 和 `0xCD`；`0xCC` 确认为物理平板，`0xCD` 确认为笔记本，`0xCA/0xCB` 不作为物理状态。探针未写 CSM，临时任务已删除。该事件源可以进入硬件主机接线阶段，但在生产接线和失败恢复测试完成前仍不得宣称功能已启用。
