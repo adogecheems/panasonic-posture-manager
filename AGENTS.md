@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-12）
 
-- **最新功能提交**：`5593ad9 feat: ship windows msi as supported install`。它把 MSI 设为唯一受支持的 Windows 安装方式，便携 ZIP 降为诊断入口，并在 CSM 无法打开时允许仅显示降级；`windows/hardware_application.py` 是生产硬件组合根，`windows/hardware_runtime.py` 只负责启动顺序、轮询和清理，`windows/hardware_service.py` 只负责 SCM 状态和停止适配。
+- **最新功能提交**：`dfe787b fix: hold tent through physical tablet fold`。它把已确认帐篷到物理平板的中间角保留两秒，避免先发布笔记本目标；`windows/hardware_application.py` 是生产硬件组合根，`windows/hardware_runtime.py` 只负责启动顺序、轮询和清理，`windows/hardware_service.py` 只负责 SCM 状态和停止适配。
 - **唯一物理输入**：物理平板状态只来自 `windows/etw_switch.py` 消费的 Intel HID Event Filter Event 115 ACPI 通知。`0xCC` 是平板、`0xCD` 是笔记本，`0xCA/0xCB` 不产生状态。首个有效事件前保持未知；ETW 不读取 CSM、shell 模式或注册表作为基线，也没有 CSM 回退。
 - **CSM 纯输出**：`ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态。所有 CSM 写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁；状态未知或读取失败时拒绝写入并保留 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal；已取得的后端若写入失败仍阻止姿态确认。崩溃恢复始终使用 `pending.original`，不把 CSM 当前值当成物理接管或新基线。
 - **会话装配**：会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
