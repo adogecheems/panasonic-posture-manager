@@ -46,6 +46,9 @@ msgstr "重试"
 msgid "The tablet switch state is not available yet. Fold to tablet and back once; restart the background service if this continues."
 msgstr "尚未取得平板开关状态。请先折叠到平板再展开一次；若持续出现，请重启后台服务。"
 
+msgid "Tablet switch state is unavailable. Fold to tablet and back once."
+msgstr "尚未取得平板开关状态。请先折叠到平板再展开一次。"
+
 msgid "No posture data is available. Keep the device still; switching will resume automatically."
 msgstr "暂时没有姿态数据，请将设备静置，恢复后会自动继续切换。"
 
@@ -292,9 +295,6 @@ msgstr "自动识别帐篷模式"
 msgid "Settings saved"
 msgstr "设置已保存"
 
-msgid "The background service is ready. Device control is not available yet."
-msgstr "后台已就绪，设备控制功能尚未接入。"
-
 msgid "Open app"
 msgstr "打开应用"
 
@@ -316,11 +316,11 @@ msgstr "点击即可切换到当前姿态。"
 msgid "Hardware mode is unavailable"
 msgstr "硬件模式不可用"
 
-msgid "Hardware mode requires the active local desktop and a normal user account."
-msgstr "请从当前本地桌面使用普通用户账户运行硬件模式。"
+msgid "Run from the active local desktop with a normal user account."
+msgstr "请从当前活动的本地桌面使用普通用户账户运行。"
 
-msgid "This device does not have a verified Windows sensor and display configuration. Use preview mode or check the supported models in the maintenance guide."
-msgstr "此设备没有经过验证的 Windows 传感器和显示配置。请使用预览模式，并在维护指南中查看受支持机型。"
+msgid "This device is not verified for Windows hardware mode."
+msgstr "此设备尚未通过 Windows 硬件模式验证。"
 
 msgid "Background"
 msgstr "后台运行"
@@ -336,3 +336,18 @@ msgstr "当前位置不支持登录时启动。"
 
 msgid "Start in the system tray when you sign in. Keep this app in its current folder."
 msgstr "登录后在系统托盘运行。请将应用保留在当前文件夹。"
+
+msgid "Check for updates"
+msgstr "检查更新"
+
+msgid "Checking…"
+msgstr "正在检查…"
+
+msgid "New version available: {version}"
+msgstr "发现新版本：{version}"
+
+msgid "Up to date"
+msgstr "已是最新版本"
+
+msgid "Unable to check for updates. Try again later."
+msgstr "无法检查更新，请稍后再试。"

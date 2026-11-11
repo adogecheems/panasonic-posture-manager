@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QButtonGroup
 from qfluentwidgets import (
     FluentIcon as Icon, SettingCardGroup, SettingCard,
     TitleLabel, BodyLabel, CaptionLabel,
-    PrimaryPushButton, PushButton, ComboBox, MessageBox,
+    PrimaryPushButton, PushButton, ComboBox, MessageBox, HyperlinkButton,
     Theme, setTheme, isDarkTheme, qconfig, setCustomStyleSheet, setFont,
 )
 
@@ -21,6 +21,10 @@ from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     Illustration, Page, ModeRadio, SettingRow, SwitchRow, row_style,
 )
+from .update_check import UpdateChecker
+
+
+GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
 
 
 def mode_labels(_):
@@ -138,7 +142,7 @@ class Home(Page):
             Detail.NONE: '', Detail.DISCONNECTED: _('The background service is not connected yet.'),
             Detail.SESSION: _('Waiting for the desktop to get ready…'),
             Detail.UNSUPPORTED: _('This model does not support automatic mode changes.'),
-            Detail.SWITCH: _('The tablet switch state is not available yet. Fold to tablet and back once; restart the background service if this continues.'),
+            Detail.SWITCH: _('Tablet switch state is unavailable. Fold to tablet and back once.'),
             Detail.SENSOR: _('No posture data is available. Keep the device still; switching will resume automatically.'),
             Detail.SLOW: _('Switching is taking longer than usual. Please wait or choose another mode in Settings.'),
             Detail.COMPATIBLE: '',
@@ -151,9 +155,7 @@ class Home(Page):
         else:
             text = messages[self.model.detail]
         self.detail.setText(text)
-        if self.model.state and self.model.state.get('sensor_source') == 'windows-unavailable':
-            self.detail.setText(_('The background service is ready. Device control is not available yet.'))
-        elif self.model.state and self.model.state.get('simulation') and self.model.detail == Detail.COMPATIBLE:
+        if self.model.state and self.model.state.get('simulation') and self.model.detail == Detail.COMPATIBLE:
             self.detail.setText('')
         self.detail.setVisible(bool(self.detail.text()))
 
@@ -215,11 +217,18 @@ class Home(Page):
             self.actions.run('retry', lambda: self.client.retry(self.model.state['manual']))
 
 class Settings(Page):
-    def __init__(self, client: UIClient, _, notify, parent=None, *, startup=None):
+    def __init__(self, client: UIClient, _, notify, parent=None, *, startup=None,
+                 update_checker=None):
         super().__init__('settings', parent)
         self._, self.client, self.notify = _, client, notify
         self.model = SettingsModel(client, self.render, self.action_failed)
         self.calibration = ActionRunner(self.render_calibration, self.action_failed, self.calibrated)
+        self.update_checker = update_checker or UpdateChecker(
+            __version__, parent=self
+        )
+        self.update_checker.completed.connect(self.update_checked)
+        self.update_checker.failed.connect(self.update_failed)
+        self.update_checking = False
         self.switches, self.radios = {}, {}
         self.cards = []
         self.groups = []
@@ -292,8 +301,21 @@ class Settings(Page):
             self.add_card(group, self.startup_card, (self.startup_switch,))
             self.refresh_startup()
         group = self.add_group(_('About'))
-        self.add_card(group, SettingRow(QIcon(), _('Version'), __version__))
+        self.version_card = SettingRow(QIcon(), _('Version'), __version__)
+        self.update_button = PushButton(_('Check for updates'))
+        self.update_button.clicked.connect(self.check_updates)
+        self.version_card.hBoxLayout.addWidget(self.update_button)
+        self.version_card.hBoxLayout.addSpacing(16)
+        self.add_card(group, self.version_card, (self.update_button,))
         self.add_card(group, SettingRow(QIcon(), _('Author'), 'adogecheems'))
+        self.github_button = HyperlinkButton(GITHUB_URL, _('Visit repository'))
+        self.github_button.setAccessibleName(_('Visit repository'))
+        github = SettingRow(
+            QIcon(), _('GitHub'), 'github.com/adogecheems/panasonic-posture-manager'
+        )
+        github.hBoxLayout.addWidget(self.github_button)
+        github.hBoxLayout.addSpacing(16)
+        self.add_card(group, github, (self.github_button,))
         appearance = ComboBox()
         for text in (_('System'), _('Light'), _('Dark')):
             appearance.addItem(text)
@@ -385,6 +407,35 @@ class Settings(Page):
     def update_state(self, state):
         self.model.update(state)
         self.render()
+
+    def check_updates(self):
+        if self.update_checking:
+            return
+        self.update_checking = True
+        self.update_button.setText(self._('Checking…'))
+        self.update_button.setEnabled(False)
+        if not self.update_checker.check() and self.update_checking:
+            self.update_failed()
+
+    def update_checked(self, info):
+        self.update_checking = False
+        status = (self._('New version available: {version}').format(version=info.latest)
+                  if info.update_available else self._('Up to date'))
+        self.version_card.setContent(f'{__version__} · {status}')
+        self.update_button.setText(self._('Check for updates'))
+        self.update_button.setEnabled(True)
+        QTimer.singleShot(0, self.fit_cards)
+
+    def update_failed(self):
+        self.update_checking = False
+        status = self._('Unable to check for updates. Try again later.')
+        self.version_card.setContent(f'{__version__} · {status}')
+        self.update_button.setText(self._('Check for updates'))
+        self.update_button.setEnabled(True)
+        QTimer.singleShot(0, self.fit_cards)
+
+    def shutdown(self):
+        self.update_checker.shutdown()
 
     def refresh_startup(self):
         if self.startup_card is None:

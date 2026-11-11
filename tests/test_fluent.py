@@ -217,13 +217,12 @@ QMessageBox.critical = lambda parent, title, text: messages.append((title, text)
 assert hardware_start_failure('en', 'session') == 1
 assert messages[-1] == (
     'Hardware mode is unavailable',
-    'Hardware mode requires the active local desktop and a normal user account.',
+    'Run from the active local desktop with a normal user account.',
 )
 assert hardware_start_failure('en', 'machine') == 1
 assert messages[-1] == (
     'Hardware mode is unavailable',
-    'This device does not have a verified Windows sensor and display configuration. '
-    'Use preview mode or check the supported models in the maintenance guide.',
+    'This device is not verified for Windows hardware mode.',
 )
 try:
     hardware_start_failure('en', 'unknown')
@@ -231,6 +230,123 @@ except ValueError:
     pass
 else:
     raise AssertionError('unknown preflight failures must be rejected')
+''')
+
+    def test_about_repository_and_update_check_use_shared_user_copy(self):
+        self.run_ui('''
+from PyQt6.QtCore import QObject, QByteArray, QUrl, pyqtSignal
+from panasonic_posture.fluent.app import Window
+from panasonic_posture.fluent.update_check import UpdateChecker
+from panasonic_posture.windows.update_check import UpdateInfo
+
+class FakeChecker(QObject):
+    completed = pyqtSignal(object)
+    failed = pyqtSignal()
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+        self.closed = False
+    def check(self):
+        self.calls += 1
+        self.completed.emit(UpdateInfo('2.4.0', '2.5.0', True))
+        return True
+    def shutdown(self):
+        self.closed = True
+
+checker = FakeChecker()
+window.close()
+window = Window(demo=True, language='en', update_checker=checker)
+window.show()
+assert window.settings.github_button.getUrl().toString() == (
+    'https://github.com/adogecheems/panasonic-posture-manager'
+)
+window.settings.update_button.click()
+assert checker.calls == 1
+assert window.settings.version_card.contentLabel.text() == (
+    '2.4.0 · New version available: 2.5.0'
+)
+checker.failed.emit()
+assert window.settings.version_card.contentLabel.text() == (
+    '2.4.0 · Unable to check for updates. Try again later.'
+)
+checker.check = lambda: False
+window.settings.update_button.click()
+assert window.settings.update_button.isEnabled()
+assert window.settings.version_card.contentLabel.text() == (
+    '2.4.0 · Unable to check for updates. Try again later.'
+)
+window.close()
+assert checker.closed
+
+class Reply(QObject):
+    finished = pyqtSignal()
+    def __init__(self, status, payload, location=b''):
+        super().__init__()
+        self.status, self.payload, self.location = status, payload, location
+        self.closed = False
+    def attribute(self, attribute):
+        return self.status
+    def readAll(self):
+        return QByteArray(self.payload)
+    def rawHeader(self, name):
+        return QByteArray(self.location if name == b'--location' else b'')
+    def url(self):
+        return QUrl('https://proxy.mmoe.work/http/fallback')
+    def abort(self):
+        pass
+    def deleteLater(self):
+        self.closed = True
+
+class Manager:
+    def __init__(self, replies):
+        self.replies, self.requests, self.reply = replies, [], None
+    def get(self, request):
+        self.requests.append(request)
+        self.reply = self.replies.pop(0)
+        return self.reply
+
+manager = Manager([Reply(200, b'{"tag_name":"v2.5.0"}')])
+network_checker = UpdateChecker('2.4.0', manager=manager)
+results = []
+network_checker.completed.connect(results.append)
+assert network_checker.check()
+assert manager.requests[-1].url().toString() == (
+    'https://proxy.mmoe.work/http/'
+    'https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest'
+)
+assert bytes(manager.requests[-1].rawHeader(b'Referer')).decode() == (
+    'https://proxy.mmoe.work/'
+)
+manager.reply.finished.emit()
+assert results[-1].update_available
+assert results[-1].latest == '2.5.0'
+
+manager = Manager([
+    Reply(403, b'{"message":"rate limit"}'),
+    Reply(312, b'', b'https://github.com/adogecheems/panasonic-posture-manager/releases/tag/v2.5.1'),
+])
+network_checker = UpdateChecker('2.4.0', manager=manager)
+results = []
+network_checker.completed.connect(results.append)
+assert network_checker.check()
+manager.reply.finished.emit()
+assert len(manager.requests) == 2
+assert manager.requests[-1].url().toString() == (
+    'https://proxy.mmoe.work/http/'
+    'https://github.com/adogecheems/panasonic-posture-manager/releases/latest'
+)
+manager.reply.finished.emit()
+assert results[-1].latest == '2.5.1'
+
+failed = []
+manager = Manager([Reply(403, b''), Reply(403, b'')])
+network_checker = UpdateChecker('2.4.0', manager=manager)
+network_checker.failed.connect(lambda: failed.append(True))
+assert network_checker.check()
+manager.reply.finished.emit()
+manager.reply.finished.emit()
+assert failed == [True]
+network_checker.shutdown()
 ''')
 
     def run_resident(self, body):

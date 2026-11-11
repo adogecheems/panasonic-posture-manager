@@ -43,7 +43,10 @@ class WindowsPackagingTests(unittest.TestCase):
                 for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/python._pth',
                              'runtime/pythonw._pth', 'runtime/python-hardware.exe',
                              'runtime/python-hardware._pth',
-                             'app/panasonic_posture/windows/client.py', 'data/assets/lets-note-window-icon.png',
+                             'app/panasonic_posture/windows/client.py',
+                             'app/panasonic_posture/windows/update_check.py',
+                             'app/panasonic_posture/fluent/update_check.py',
+                             'data/assets/lets-note-window-icon.png',
                              'data/assets/work.mmoe.panasonic.PostureManager.ico',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
                              'Panasonic Posture Manager.cmd', 'Hardware.cmd'):

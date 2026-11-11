@@ -44,7 +44,7 @@ class Window(FluentWidget):
     connection_lost = pyqtSignal()
 
     def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None,
-                 backend=False, settings_path=None, startup=None):
+                 backend=False, settings_path=None, startup=None, update_checker=None):
         configure_application_font()
         super().__init__()
         _ = translator(language)
@@ -85,7 +85,10 @@ class Window(FluentWidget):
         if demo and client is None:
             self.client.scenario(scenario)
         self.home = Home(self.client, _, self.notify, self)
-        self.settings = Settings(self.client, _, self.notify, self, startup=startup)
+        self.settings = Settings(
+            self.client, _, self.notify, self, startup=startup,
+            update_checker=update_checker,
+        )
         self.stackedWidget = QStackedWidget(self)
         self.stackedWidget.addWidget(self.home)
         self.stackedWidget.addWidget(self.settings)
@@ -125,7 +128,7 @@ class Window(FluentWidget):
             setFont(label, 12 if caption else 24 if isinstance(label, TitleLabel) else 13,
                     QFont.Weight.Medium if isinstance(label, TitleLabel) else QFont.Weight.Normal)
         for button in (self.home.confirm_button, self.home.retry_button, self.home.auto_button, self.settings.calibrate_button,
-                       self.settings.reset_button,
+                       self.settings.reset_button, self.settings.update_button,
                        self.settings.findChild(ComboBox)):
             selector = type(button).__name__
             style = f'{selector} {{ border-radius: 10px; }}'
@@ -210,6 +213,7 @@ class Window(FluentWidget):
         self._stopped = True
         self.backend_timer.stop()
         self.unavailable()
+        self.settings.shutdown()
         self.client.stop()
 
     def closeEvent(self, event):
@@ -282,9 +286,9 @@ def hardware_start_failure(language, reason: str) -> int:
     if reason not in ('session', 'machine'):
         raise ValueError('unknown hardware startup failure')
     _ = translator(language)
-    detail = (_('Hardware mode requires the active local desktop and a normal user account.')
+    detail = (_('Run from the active local desktop with a normal user account.')
               if reason == 'session' else
-              _('This device does not have a verified Windows sensor and display configuration. Use preview mode or check the supported models in the maintenance guide.'))
+              _('This device is not verified for Windows hardware mode.'))
     app = QApplication.instance() or QApplication([sys.argv[0]])
     QMessageBox.critical(None, _('Hardware mode is unavailable'), detail)
     return 1

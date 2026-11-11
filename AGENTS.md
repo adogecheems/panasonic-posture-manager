@@ -11,6 +11,7 @@
 - **CSM 纯输出**：`ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态。所有 CSM 写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁；状态未知或读取失败时拒绝写入并保留 journal。首个 ETW 事件前受信会话仍会先行启动、证明资格并装配显示后端，但发送的只有 `not-ready` 心跳；Windows 显示恢复也使用同一已认证物理查询，未知时失败关闭并保留 journal，不写旋转或锁。物理源从已观察状态转为失效时仍撤销租约。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal；已取得的后端若写入失败仍阻止姿态确认。崩溃恢复始终使用 `pending.original`，不把 CSM 当前值当成物理接管或新基线。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
 - **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。`hardware_ipc.py` 只保留兼容导出。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
+- **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
 - **产品边界**：Windows 默认连接独立 LocalSystem 硬件服务，不再接受 `--native-backend`、`--hardware-backend` 或 `--simulate-backend`。`--backend` 仅保留为隔离软件预览，`--demo` 为内存演示。生产路径不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示屏幕键盘。
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
@@ -18,6 +19,7 @@
 - **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。开始菜单、运行窗口和任务栏共享固定多尺寸 ICO 与 AppUserModelID。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首事件前 `hardware_status=absent`；当前源码会让已认证会话发送 `not-ready` 心跳，但仍拒绝显示回执。
 - **下一智能体优先动作**：完成并提交本轮源码后，在用户明确授权构建安装和真机姿态操作时，安装新 MSI 并重启。先确认首事件前会话代理已启动但只有 `not-ready`，再折叠/展开验证首个 ETW 事件、首次平板方向交接、显示/CSM 清理、ETW 中断后的租约撤销、恢复重建、任务栏图标/AUMID、MSI 升级和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
 - **验证基线**：2026-11-12 在实际运行时上源码编译 WiX 5.0.2 MSI 成功并通过 ICE；此前最终 MSI SHA-256 为 `7f6860dc4fa254378df50ff7a41e3a110a4edc87f9068c82291372b18dafeb20`。本机完成旧服务/程序/设备配置清理、MSI 首次安装、MSI 卸载、修正版同版本升级、服务 Running、`LaptopSlateExclusiveAccess=0`、64 位 Setup 记录、`NativeSlateDevice` 只读打开、程序菜单快捷方式、安装清单/Qt/IPC 自检和安装目录 UI 启动。已安装的旧 2.4.0 包在 ETW 首事件前为 `hardware=null`、`session_connected=false`，这是本轮修复前的现象。当前源码的 Windows 全套 280 项、后续显示门禁目标 43 项、Fluent 46 项、相关前端/显示/CSM/刷新 66 项、目标会话/打包 35 项和 i18n 109 个 msgid 已通过；新 MSI 尚未构建安装，真机首事件后的显示/CSM 行为仍需授权验证。
+- **本轮关于页验证**：新增 5 项 jsproxy 响应/版本比较单测、完整 Fluent 47 项、打包 2 项和 i18n 114 个 msgid 通过；当前安装的 Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer 通过，真实端点返回 `2.4.0 -> 2.4.0`。新 MSI 和已安装程序尚未包含本轮改动。
 - **未验证项**：GitHub Windows CI、Authenticode 签名、重启后的首次 MSI 安装链路、首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 - **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。会话代理新增有界 `native-display.log` 记录预锁和事务失败。退出物理平板时 Windows 仍可能覆盖方向锁并短暂回正，当前架构不能完全消除。
 
@@ -1267,3 +1269,12 @@ make WERROR=1 check
 - 影响：ETW 的唯一物理输入、CSM 纯输出、目标/结果分离、租约撤销和显示事务不变。首事件前会话连接不再等于姿态或写入已就绪；界面必须继续显示未知物理状态，任何显示/CSM 写入门禁不得放宽。ETW 已 open 后中断仍按失效撤销。任务栏身份配置失败只影响 shell 展示，不阻断本地设备控制。
 - 同步：`windows/{session_supervisor,hardware_runtime,hardware_host,session_agent,app_identity}.py`、`fluent/{app,pages}.py`、`ui/posture.py`、`data/assets/work.mmoe.panasonic.PostureManager.ico`、`packaging/windows/{build_msi.py,msi/Package.wxs}`、Windows/Fluent/MSI/打包/UI 契约测试、翻译、README、MAINTENANCE 与本交接状态。
 - 验证：Windows 全套 280 项、后续显示门禁 43 项、会话/主机/运行时目标 50 项、Windows AppIdentity/MSI/打包 8 项、共享前端/显示/CSM/刷新 66 项、Fluent 46 项和 i18n 109 个 msgid 通过。新 MSI 的 WiX 实际构建/ICE、更新安装和真机首次姿态尚未执行。
+
+### 2026-11-12 - Windows 关于页仓库入口与更新检查
+
+- 变更：Fluent「关于」页新增 GitHub 仓库链接；版本卡片增加「检查更新」，首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest` 读取最新正式版本，GitHub 共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。请求使用 QtNetwork 异步执行并在 8 秒后中止，只接受 256 KiB 以内的 JSON `tag_name` 或固定仓库标签跳转，数字版本段比较后显示“已是最新”或“发现新版本”；失败只显示简短重试文案，不自动下载或安装。
+- 变更：删除 Windows 专用的“后台已就绪，设备控制尚未接入”覆盖提示，未知物理源提示缩短为折叠到平板再展开一次；硬件预检的账户和机型拒绝文案同步精简。
+- 动机：Windows 与 Linux 的关于页内容需要对齐仓库入口；版本信息需要可直接判断是否有更新，同时避免跨平台代理和 GitHub API 请求阻塞 UI。旧 Windows 专用提示与通用传感器/物理源状态重复，容易让用户误以为后台尚未连接。
+- 影响：更新检查是独立只读网络操作，不触碰硬件服务、姿态快照、设置、租约、显示事务或 CSM；GitHub 共享代理出口可能限流，失败时不会伪造“已是最新”。硬件模式的安全预检和拒绝行为不变，只精简展示文案。
+- 同步：`windows/update_check.py`、`fluent/{update_check,pages,app}.py`、`tests/{test_windows_update_check,test_fluent}.py`、`po/zh_CN.po`、README、MAINTENANCE 与本记录。
+- 验证：5 项纯逻辑更新检查、完整 Fluent 47 项、打包 2 项和 i18n 114 个 msgid 通过；安装运行时上的离屏 Qt 检查验证仓库链接、成功/失败状态、固定代理 URL、Referer、API 403 跳转后备和失败路径。真实端点完成 `2.4.0 -> 2.4.0` 只读检查。未构建或安装新 MSI。
