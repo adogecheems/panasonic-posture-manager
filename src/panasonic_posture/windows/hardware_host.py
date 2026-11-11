@@ -49,10 +49,13 @@ class HardwareHost:
         if method == 'session_update':
             if peer != self.session_process:
                 raise ServiceError(ErrorCode.ACCESS_DENIED, 'unregistered-session-process')
-            if not self._observe_admission() and (
-                    self._admission_lost or params['ready']):
-                raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE,
-                                   'physical-switch-unavailable')
+            if not self._observe_admission():
+                if self._admission_lost:
+                    raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE,
+                                       'physical-switch-lost')
+                if params['ready']:
+                    raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE,
+                                       'physical-switch-not-observed')
             accepted = self.engine.session_update(params['generation'], params['ready'],
                 params['error_code'], params['error_detail'], owner=peer.owner,
                 unattended=params['unattended'])
@@ -63,6 +66,7 @@ class HardwareHost:
         return dict(version=CONTROL_VERSION, channel=CHANNEL, type='response',
                     id=request['id'], instance=self.instance, accepted=accepted,
                     state=self.engine.state.to_dict(),
+                    error_detail=None,
                     hardware_release_pose=self.engine.hardware_release_pose)
 
     def tick(self) -> None:

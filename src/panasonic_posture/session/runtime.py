@@ -279,6 +279,18 @@ class SessionRuntime:
                 # state instead so the newer target wins.
                 self._handle_state(result, now)
                 return
+            if result.target.mode == "unavailable":
+                # No device target is ready yet. Commit the restore result but
+                # keep renewing the service lease with not-ready feedback.
+                self.ready = False
+                self.error_code = ""
+                self.error_detail = ""
+                self.apply_now = False
+                self._reset_display_retry()
+                self._queue_feedback(result, generation, now, _daemon_error)
+                return
+            # A supported target means the serialized display transaction is
+            # complete and can be reported to the service.
             self.ready = True
             self.error_code = ""
             self.error_detail = ""

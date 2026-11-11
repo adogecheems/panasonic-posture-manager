@@ -60,6 +60,38 @@ class ContextTests(unittest.TestCase):
         self.sources[-1].callback('display', 2)
         self.assertFalse(context.unattended())
 
+    def test_missing_initial_display_callback_is_recovered_by_resubscription(self):
+        sources = []
+
+        class NoInitialPower:
+            def __init__(self, callback):
+                self.callback, self.closed = callback, False
+
+            def close(self):
+                self.closed = True
+
+        def factory(callback):
+            source = NoInitialPower(callback)
+            sources.append(source)
+            if len(sources) == 2:
+                callback('display', 1)
+            return source
+
+        context = WindowsSessionContext(
+            query=lambda: self.presence,
+            power_factory=factory,
+            clock=lambda: self.now,
+            executor=InlineExecutor(),
+        )
+        self.addCleanup(context.close)
+        context.poll()
+        self.assertFalse(context.control_available())
+        self.now += 1.1
+        context.poll()
+        self.assertEqual(len(sources), 2)
+        self.assertTrue(sources[0].closed)
+        self.assertTrue(context.control_available())
+
     def test_query_failure_and_unknown_power_do_not_inherit_previous_readiness(self):
         context = self.context()
         context.poll()

@@ -29,9 +29,9 @@ def validated_hardware_state(value: object) -> StateSnapshot:
 class HardwareOperationError(ServiceError):
     """A validated operation failure with its authoritative state snapshot."""
 
-    def __init__(self, code: str, state: StateSnapshot, *,
+    def __init__(self, code: str, state: StateSnapshot, *, detail: str | None = None,
                  hardware_release_pose: str | None = None) -> None:
-        super().__init__(code)
+        super().__init__(code, detail)
         self.state = state
         self.hardware_release_pose = hardware_release_pose
 
@@ -72,7 +72,10 @@ class HardwareConnection:
                         type(reply.get('accepted')) is not bool or 'error' not in reply or
                         reply['error'] is not None and (
                             not isinstance(reply['error'], str) or
-                            reply['error'] not in ALL_ERROR_CODES)):
+                            reply['error'] not in ALL_ERROR_CODES) or
+                        reply.get('error_detail') is not None and (
+                            not isinstance(reply['error_detail'], str) or
+                            not 0 < len(reply['error_detail']) <= 512)):
                     raise ProtocolError('invalid hardware response')
                 if (reply['error'] is not None and reply['accepted'] or
                         reply['error'] is None and not reply['accepted'] and
@@ -89,7 +92,8 @@ class HardwareConnection:
                 self.instance = state.instance
                 if reply['error'] is not None:
                     raise HardwareOperationError(
-                        reply['error'], state, hardware_release_pose=release_pose,
+                        reply['error'], state, detail=reply.get('error_detail'),
+                        hardware_release_pose=release_pose,
                     )
                 return reply
             raise TimeoutError('hardware request timed out')

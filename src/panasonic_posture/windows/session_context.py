@@ -20,6 +20,7 @@ from .security import ExtendedInfo, U32, I32, HANDLE
 
 QUERY_INTERVAL = .5
 PRESENCE_MAX_AGE = 1.
+POWER_SUBSCRIBE_RETRY_SECONDS = 1.
 SESSION_DISPLAY_GUID = UUID('2b84c20e-ad23-4ddf-93db-05ffbd7efca5').bytes_le
 Callback = getattr(C, 'WINFUNCTYPE', C.CFUNCTYPE)(U32, HANDLE, U32, HANDLE)
 PowerCallback = Callable[[str, int | None], None]
@@ -202,6 +203,7 @@ class WindowsSessionContext:
         self._display: bool | None = None
         self._checked = float('-inf')
         self._revision = self._subscription = 0
+        self._power_retry_at = 0.
         self._pending: tuple[Future, float, int] | None = None
         self._poll_at = 0.
         self._power: PowerSource | None = None
@@ -227,6 +229,8 @@ class WindowsSessionContext:
             if old is not None:
                 old.close()
             self._power = self.power_factory(lambda kind, value: self._event(subscription, kind, value))
+            with self._lock:
+                self._power_retry_at = self.clock() + POWER_SUBSCRIBE_RETRY_SECONDS
         except (OSError, ValueError):
             with self._lock:
                 self._fatal = True
@@ -239,6 +243,8 @@ class WindowsSessionContext:
                 return
             if kind == 'display':
                 self._display = value != 0 if type(value) is int and value in (0, 1, 2) else None
+                if self._display is not None:
+                    self._power_retry_at = 0.
             else:
                 self._presence = None
                 self._revision += 1
@@ -287,6 +293,21 @@ class WindowsSessionContext:
             self._poll_at = 0.
         now = self.clock()
         self._collect(now)
+        with self._lock:
+            retry_power = (
+                not self._closed
+                and not self._fatal
+                and not self._suspended
+                and self._display is None
+                and now >= self._power_retry_at
+            )
+        if retry_power:
+            # UAC and other secure-desktop transitions can consume the initial
+            # display callback. Re-registering on the owner thread recovers
+            # once the normal desktop is active again without guessing the
+            # display state or restarting the session process.
+            self._subscribe()
+            self._poll_at = 0.
         if self._pending is not None:
             return  # One hung WTS query cannot create more workers/jobs.
         if now >= self._poll_at:

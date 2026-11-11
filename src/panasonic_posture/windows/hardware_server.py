@@ -194,6 +194,7 @@ class HardwareServer:
                         reply = dict(
                             version=1, channel=CHANNEL, type='response', id=request['id'],
                             instance=self.host.instance, accepted=False, error=error.code,
+                            error_detail=error.detail,
                             state=self.host.engine.state.to_dict(),
                             hardware_release_pose=self.host.engine.hardware_release_pose,
                         )

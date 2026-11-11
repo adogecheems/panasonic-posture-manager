@@ -109,6 +109,21 @@ class SessionAgentTests(unittest.TestCase):
         self.assertTrue(self.client.closed)
         self.assertTrue(self.context.closed)
 
+    def test_unavailable_target_renews_the_lease_without_reporting_ready(self):
+        self.client.state = replace(
+            self.client.state,
+            hardware=None,
+            target=Target(mode='unavailable'),
+            session_connected=False,
+        )
+        self.agent.start()
+        feedback_before = len(self.client.feedback)
+        for now in (10., 10.2, 10.6, 11.1):
+            self.agent.tick(now)
+        self.assertGreater(len(self.client.feedback), feedback_before)
+        self.assertTrue(all(not ready for _, ready, _, _ in self.client.feedback))
+        self.assertFalse(self.agent.runtime.ready)
+
     def test_physical_release_uses_cached_rpc_metadata_before_runtime_tick(self):
         self.agent.start()
         self.client.state = replace(self.client.state, hardware=True)
