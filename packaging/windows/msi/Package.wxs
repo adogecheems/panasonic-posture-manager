@@ -12,8 +12,18 @@
         DowngradeErrorMessage="A newer version of Panasonic Posture Manager is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
+    <Property Id="WINDOWS_BUILD">
+      <RegistrySearch
+          Id="SearchWindowsBuild"
+          Root="HKLM"
+          Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+          Name="CurrentBuildNumber"
+          Type="raw"
+          Bitness="always64" />
+    </Property>
+
     <Launch
-        Condition="VersionNT64 AND VersionNT64 &gt;= 1000"
+        Condition="VersionNT64 AND WINDOWS_BUILD &gt;= 10240"
         Message="Panasonic Posture Manager requires 64-bit Windows 10 or later." />
 
     <Property Id="ARPHELPLINK" Value="https://github.com/adogecheems/panasonic-posture-manager" />
@@ -31,7 +41,7 @@
     <CustomAction
         Id="SetPowerShellExe"
         Property="POWERSHELL_EXE"
-        Value="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe" />
+        Value="[System64Folder]WindowsPowerShell\v1.0\powershell.exe" />
     <CustomAction
         Id="ConfigureSlate"
         Property="POWERSHELL_EXE"
@@ -64,7 +74,7 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager" />
     </StandardDirectory>
-    <StandardDirectory Id="StartMenuFolder">
+    <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="ApplicationProgramsFolder" Name="Panasonic Posture Manager" />
     </StandardDirectory>
 
