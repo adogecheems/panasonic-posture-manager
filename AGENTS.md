@@ -6,15 +6,17 @@
 
 ## 当前交接状态（2026-11-11）
 
-- **最新主线**：`d4424f1 refactor: make ETW the sole physical tablet source`。它基于 `e74df3d docs: refresh windows hardware handoff` 和 `e696de8 feat: compose windows hardware runtime`，完成 ETW 单物理源、CSM 写入门禁、会话显示/CSM 同客户端装配和旧路径清理。`windows/hardware_runtime.py` 负责 ETW 物理源、WinRT 传感器、共用 Engine、无输入执行端口和可信会话生命周期。
+- **最新主线**：`7dad656 refactor: rebuild windows runtime boundaries`。它在 `d4424f1` 的 ETW 单物理源基础上，把 Windows 控制台身份、RPC 信封、命名管道、阻塞 RPC、鉴权服务器、会话资格、同步回执、私有后台进程和 UI 操作面拆成独立模块。`windows/hardware_application.py` 是生产硬件组合根，`windows/hardware_runtime.py` 只负责启动顺序、轮询和清理；`windows/session_agent.py` 只负责原生会话进程装配。
 - **唯一物理输入**：物理平板状态只来自 `windows/etw_switch.py` 消费的 Intel HID Event Filter Event 115 ACPI 通知。`0xCC` 是平板、`0xCD` 是笔记本，`0xCA/0xCB` 不产生状态。首个有效事件前保持未知；ETW 不读取 CSM、shell 模式或注册表作为基线，也没有 CSM 回退。
 - **CSM 纯输出**：`ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态。所有 CSM 写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁；状态未知或读取失败时拒绝写入并保留 journal。崩溃恢复始终使用 `pending.original`，不把 CSM 当前值当成物理接管或新基线。
-- **会话装配**：会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。清理顺序为先释放显示/CSM 所有权，再关闭 CSM 设备。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
+- **会话装配**：会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
+- **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。`hardware_ipc.py` 只保留兼容导出。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
 - **产品边界**：Windows 默认连接独立 LocalSystem 硬件服务，不再接受 `--native-backend`、`--hardware-backend` 或 `--simulate-backend`。`--backend` 仅保留为隔离软件预览，`--demo` 为内存演示。生产路径不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示屏幕键盘。
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
-- **下一智能体优先动作**：在用户明确授权后增加 `HardwareRuntime.installed()` 的服务安装/启动入口，并验证真实 ETW 启动、首个事件前拒绝会话、ETW 中断后的租约撤销、显示/CSM 清理、恢复重建和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
-- **验证基线**：本机使用 `dist\PanasonicPostureManager\runtime\python.exe`，临时在 `python314._pth` 中加入当前 `src`/`tests`，运行后恢复原字节。Windows 套件 252 项通过，i18n 109 个 msgid 全部翻译，Fluent 关键相关 7 项通过；完整 Fluent 套件曾出现不同演示用例的随机 30 秒子进程超时，单独复跑均通过。未安装服务，未执行真机显示或 CSM 写入。
+- **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
+- **下一智能体优先动作**：在用户明确授权后增加 `HardwareRuntime.installed()` 对应的服务安装/启动入口，并验证真实 ETW 启动、首个事件前拒绝会话、ETW 中断后的租约撤销、显示/CSM 清理、恢复重建和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
+- **验证基线**：本机使用 `dist\PanasonicPostureManager\runtime\python.exe`，临时在 `python314._pth` 中加入当前 `src`/`tests`，运行后恢复原字节。Windows 套件 264 项、会话刷新 9 项、共享前端 13 项和 Fluent 46 项通过；发布元数据 6 项中 5 项通过，UI 版本用例因当前 Windows 运行时缺少 PyGObject 无法导入。未安装服务，未执行真机显示或 CSM 写入。
 - **未验证项**：真实服务安装、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 
 ## 1. 工作流程
@@ -68,13 +70,13 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 显示、ETW 物理输入与 CSM 输出 | `windows/{screen_session,backend,client,display,orientation,convertible_slate,slate_journal,session_context,etw_switch,hardware_runtime}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_hardware_runtime`、`test_windows_screen_session`、`test_windows_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_etw_switch`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py`、`windows_launcher_smoke.py` 和 `windows_etw_switch_smoke.py`，不能用隔离端口代替真机证据 |
-| Windows 常驻、自启动、姿态通知与硬件服务界面 | `windows/{activation,startup,instance,screen_session,session_display,hardware_client}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_hardware_client`、`test_windows_screen_session`、`test_fluent`；实际注销登录、通知点击和屏幕键盘显示须单独记录，不能由 mock 或支持标志代替 |
-| Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
+| Windows 显示、ETW 物理输入与 CSM 输出 | `windows/{screen_session,session_bridge,backend,client,display,orientation,convertible_slate,slate_journal,session_context,etw_switch,operations,hardware_runtime}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_architecture`、`test_windows_hardware_runtime`、`test_windows_screen_session`、`test_windows_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_etw_switch`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py`、`windows_launcher_smoke.py` 和 `windows_etw_switch_smoke.py`，不能用隔离端口代替真机证据 |
+| Windows 常驻、自启动、姿态通知与硬件服务界面 | `windows/{activation,startup,instance,screen_session,session_display,hardware_client,hardware_protocol,owner_loop,ui_operations}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_hardware_client`、`test_windows_screen_session`、`test_windows_architecture`、`test_fluent`；实际注销登录、通知点击和屏幕键盘显示须单独记录，不能由 mock 或支持标志代替 |
+| Windows 软件后台、通信与便携包 | `windows/{backend,private_backend,protocol,request_contract,state_contract}.py`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_operations`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
-| Windows 硬件组合根与物理源准入 | `windows/{hardware_runtime,hardware_host,hardware_ipc,session_supervisor}.py` | `test_windows_hardware_runtime`、`test_windows_hardware`、`test_windows_session_supervisor` |
-| Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
-| Windows 可信启动与停止边界 | `windows/{trusted_runtime,session_stop,session_launch,session_supervisor,hardware_ipc}.py`、`windows/security.py` | `test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_launch`、`test_windows_session_supervisor`、`test_windows_session_agent`、`test_windows_hardware`；普通软件预览包不能作为特权运行时 |
+| Windows 硬件组合根与物理源准入 | `windows/{hardware_application,hardware_runtime,hardware_host,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server,session_supervisor}.py` | `test_windows_architecture`、`test_windows_hardware_runtime`、`test_windows_hardware`、`test_windows_session_supervisor` |
+| Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,session_qualification,session_bridge,hardware_rpc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_qualification`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
+| Windows 可信启动与停止边界 | `windows/{trusted_runtime,console_identity,session_stop,session_launch,session_supervisor,hardware_server}.py`、`windows/security.py` | `test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_launch`、`test_windows_session_supervisor`、`test_windows_session_agent`、`test_windows_hardware`、`test_windows_packaging`；普通软件预览包不能作为特权运行时 |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -1193,3 +1195,13 @@ make WERROR=1 check
 - 影响：取代“无驱动 ETW 物理平板状态原型”“修复释放证据、ETW 启动与显示回滚边界”和“Windows 硬件运行时组合根与物理源准入”中的 CSM 基线/只读回退说明。物理源未知或中断时服务保持只读、拒绝 CSM 写入并保留恢复日志；恢复后重新准入。Windows shell 平板发布、屏幕键盘自动出现和手动平板模式仍不在产品范围。
 - 同步：`windows/{etw_switch,convertible_slate,session_display,session_agent,display,backend,client,protocol,screen_session,startup,hardware_runtime}.py`、`fluent/{app,__main__,pages}.py`、`packaging/windows/{build.py,configure-slate-device.ps1,launch-hardware.py}`、相关 Windows/Fluent/打包测试、`po/zh_CN.po`、README、MAINTENANCE 与本记录。
 - 验证：目标 ETW、Slate、会话装配、硬件运行时和 Windows/Fluent 套件在本轮执行；未安装或启动服务，未执行真机 CSM 写入、显示事务或 SYSTEM 联合验收。
+
+### 2026-11-11 - Windows 运行时分层与受限解释器
+
+- 变更：把 OS 控制台身份、硬件 RPC 信封、命名管道、响应校验客户端、异步鉴权服务器、会话资格栅栏、进程内同步回执、私有后台循环和 UI 操作面拆为独立模块；`hardware_ipc.py` 只保留兼容导出。生产装配移至 `hardware_application.py`，`HardwareRuntime` 仅保留生命周期状态机，并通过端口协议隔离原生服务器、启动器、运行时和监管器。
+- 变更：普通屏幕会话不再承担机型 profile、原生用户预检或会话桥职责；硬件组合根不再导入屏幕会话。UI 命令映射、owner-loop 约束和机型号支持常量各自只有一个事实源。会话关闭顺序明确为先排空并关闭共享运行时，再恢复显示和释放 CSM。
+- 变更：便携包新增受限 `python-hardware.exe`/`python-hardware._pth`，硬件主机和原生会话代理由图外路径隔离的解释器启动；UI 继续使用带 Qt 站点目录的普通解释器。可信运行时拒绝 DLL 级 `_pth`，避免其覆盖硬件搜索路径。
+- 动机：Windows 实现长期把协议、身份、传输、状态机、UI 和原生 Win32 依赖混在少数大模块中，存在反向依赖、不同客户端线程契约不一致、命令映射漂移以及打包布局与可信运行时校验互相冲突的问题。
+- 影响：ETW 单物理源、CSM 健康门禁、租约撤销、显示事务、目标/结果分离、owner-loop 回调和清理失败语义保持不变。此记录不改变产品能力边界，也不把服务安装、真机 SYSTEM 启动、显示或 CSM 写入标记为已验证。
+- 同步：`windows/{console_identity,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server,hardware_application,hardware_runtime,operations,session_bridge,session_qualification,private_backend,owner_loop,ui_operations,machine_identity,machine_profile,native_preflight,trusted_runtime,session_supervisor,session_launch}.py`、`packaging/windows/build.py`、Windows/Fluent/打包测试、`AGENTS.md` 与 `MAINTENANCE.md`。
+- 验证：Windows 264 项、会话刷新 9 项、共享前端 13 项和 Fluent 46 项通过；发布元数据 6 项中 5 项通过，UI 版本用例因 Windows 运行时缺少 PyGObject 未执行到断言。未安装服务，未执行真机显示、CSM 写入或 SYSTEM 生命周期验收。
