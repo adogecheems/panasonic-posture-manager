@@ -45,7 +45,9 @@ class RuntimeTests(unittest.TestCase):
         self.root = Path(directory.name)
         for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/python-hardware.exe',
                      'runtime/Lib/os.py',
-                     'runtime/DLLs/dummy.dll', 'app/panasonic_posture/windows/session_agent.py'):
+                     'runtime/DLLs/dummy.dll',
+                     'app/panasonic_posture/windows/hardware_service.py',
+                     'app/panasonic_posture/windows/session_agent.py'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'fixture')

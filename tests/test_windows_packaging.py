@@ -48,7 +48,9 @@ class WindowsPackagingTests(unittest.TestCase):
                              'Panasonic Posture Manager.cmd', 'Hardware.cmd',
                              'Configure Slate Device.cmd', 'Slate Device Status.cmd',
                              'Remove Slate Device Configuration.cmd',
-                             'configure-slate-device.ps1'):
+                             'configure-slate-device.ps1',
+                             'Install Hardware Service.cmd', 'Hardware Service Status.cmd',
+                             'Remove Hardware Service.cmd', 'hardware-service.ps1'):
                     self.assertIn(prefix + name, names)
                 self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in names))
                 self.assertFalse(any('/qml/' in name for name in names))
@@ -60,6 +62,15 @@ class WindowsPackagingTests(unittest.TestCase):
                 configure = bundle.read(prefix + 'Configure Slate Device.cmd').decode('utf-8')
                 self.assertIn('-Action Install', configure)
                 self.assertIn('configure-slate-device.ps1', configure)
+                service = bundle.read(prefix + 'Install Hardware Service.cmd').decode('utf-8')
+                self.assertIn('-Action Install', service)
+                self.assertIn('hardware-service.ps1', service)
+                service_script = bundle.read(prefix + 'hardware-service.ps1').decode('utf-8')
+                self.assertIn('PanasonicPostureManagerHardware', service_script)
+                self.assertIn('LocalSystem', service_script)
+                self.assertIn('--verify', service_script)
+                self.assertIn("Join-Path $env:ProgramFiles 'PanasonicPostureManager'", service_script)
+                self.assertIn('Test-ProtectedRuntime', service_script)
                 self.assertIn(b'../app', bundle.read(prefix + 'runtime/python._pth'))
                 self.assertIn(b'Lib/site-packages', bundle.read(prefix + 'runtime/python._pth'))
                 self.assertEqual(bundle.read(prefix + 'runtime/python-hardware._pth'),

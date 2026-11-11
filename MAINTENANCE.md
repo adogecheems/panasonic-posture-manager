@@ -101,6 +101,16 @@ packaging\windows\run.cmd --language zh_CN
 
 若服务未安装或不可用，界面只显示断线，不回退到软件后台、模拟或 CSM 推断。隔离的软件后台预览使用 `--backend`，它不读取真实设备，也不能声明硬件支持。
 
+便携包或受保护安装目录中的服务入口为：
+
+```bat
+Install Hardware Service.cmd
+Hardware Service Status.cmd
+Remove Hardware Service.cmd
+```
+
+`Install Hardware Service.cmd` 会请求一次 UAC。它先验证当前包，若从普通用户目录启动，则把完整测试版本复制到 `%ProgramFiles%\PanasonicPostureManager`，更新时保留前一受保护目录；随后用受限 `runtime\python-hardware.exe` 验证整棵目录的 ACL、所有者、重解析点和搜索路径，再注册延迟自动启动的 `PanasonicPostureManagerHardware` 服务、配置失败重启并立即启动。服务固定以 LocalSystem 运行，不安装驱动、不修改 CSM 设备配置。状态和移除入口也请求管理员权限；移除服务不会删除受保护程序目录、用户设置或诊断日志。
+
 CFQV8-1L 的硬件服务配置入口为：
 
 ```bat
@@ -192,11 +202,11 @@ set PYTHONPATH=src
 
 共用控制器允许平台在构造时显式声明 `input_control=False`，此时软件姿态目标如实保持 `disable_internal_input=False`；Linux 和已有平台默认仍为 True。引擎对这些无需输入的目标仍要求释放事务完成、有效租约与同代次显示回执，不能仅凭选择模式就确认。`windows/display_only_input.py` 表示从未取得输入所有权，任何意外接管或唤醒请求都会失败，不提供模拟驱动就绪回执。Windows 硬件服务使用这条路径，软件预览仍只保存偏好。
 
-`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine。`hardware_runtime.py` 提供组合根：先启动 ETW 物理源，再把其只读查询注入 Engine，随后启动 WinRT 传感器，最后创建 RPC 端点并启动可信会话监管器；`HardwareServer.poll()` 负责唯一一次引擎 tick。当前没有注册常驻系统服务、安装自研输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。
+`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine。`hardware_runtime.py` 提供组合根：先启动 ETW 物理源，再把其只读查询注入 Engine，随后启动 WinRT 传感器，最后创建 RPC 端点并启动可信会话监管器；`HardwareServer.poll()` 负责唯一一次引擎 tick。`hardware_service.py` 把该运行时适配到 SCM，只有在 `runtime\python-hardware.exe -B -I` 和受保护安装目录校验通过后才注册运行。服务不安装自研输入驱动，也不由普通界面自动启用；除了 SCM 状态与停止通知，不提供任意文件路径、设备开关或执行命令接口。
 
-物理源准入是硬件主机的安全边界。首个有效 `0xCC/0xCD` 事件前物理值保持未知，CSM 写入、恢复和日志清理全部禁用。ETW 启动失败或运行中断时 `HardwareRuntime` 失败并完整清理，不把 CSM 当作回退；已有恢复日志保留，等待下次物理源可用时按原始值恢复。组合根没有自动安装入口，也没有把物理源失败回退成软件平板状态。
+物理源准入是硬件主机的安全边界。首个有效 `0xCC/0xCD` 事件前物理值保持未知，CSM 写入、恢复和日志清理全部禁用。ETW 启动失败或运行中断时服务保持只读、拒绝会话准入并记录诊断，不把 CSM 当作回退；已有恢复日志保留，等待下次物理源可用时按原始值恢复。组合根没有自动安装入口，也没有把物理源失败回退成软件平板状态。
 
-开发界面直接运行 `packaging\windows\run.cmd` 就连接 LocalSystem 所有的硬件端点。它不安装或启动系统服务；目前缺少完整的服务安装与可信会话启动流程。服务不可用时只显示断线，不回退到软件后台或 CSM 推断。
+开发界面直接运行 `packaging\windows\run.cmd` 就连接 LocalSystem 所有的硬件端点。界面不会隐式安装或启动系统服务；服务由便携包中的管理员入口显式安装。服务不可用时只显示断线，不回退到软件后台或 CSM 推断。
 
 `windows/hardware_client.py` 在一个有界工作线程中通信，每半秒请求状态，界面主循环先接收已校验快照再完成对应 Future；断线先使状态失效，再拒绝未完成请求。过期结果、服务实例变化、无效硬件能力声明都拒绝发布，重连不重放写入。UI 客户端不能提交显示回执。`windows/session_client.py` 供共用 SessionRuntime 的两个工作线程使用独立连接，防止显示/状态请求占用续租通道；所有连接绑定同一服务实例，实例变化使其他在途结果失效。回执仍由服务核对预登记的确切会话进程，客户端不能自行取得此资格。
 
@@ -248,7 +258,7 @@ set PYTHONPATH=src
 python tests\windows_etw_switch_smoke.py --directory build\etw-switch-evidence-new --seconds 30
 ```
 
-探针结果只证明事件源是否可用，不能替代生产服务装配。普通用户启动 ETW 必须被拒绝；事件缺失、权限失败或映射不确定时，生产路径不得写 CSM。`windows/etw_switch.py` 已接入 `HardwareRuntime` 组合根，但仍未安装或启动常驻服务。
+探针结果只证明事件源是否可用，不能替代生产服务装配。普通用户启动 ETW 必须被拒绝；事件缺失、权限失败或映射不确定时，生产路径不得写 CSM。`windows/etw_switch.py` 已接入 `HardwareRuntime`，并由显式安装的 LocalSystem 服务承载；首个真实服务事件和后续显示/CSM 事务仍需单独验收。
 
 2026-11-11 在 CFQV8-1L 上以临时 SYSTEM 计划任务执行该探针，物理折叠/展开期间 CSM 为 `1→0→1`，Event 115 收到 `0xCC` 和 `0xCD`；前者映射为平板、后者映射为笔记本，`0xCA/0xCB` 只作为通知序列而不改变物理状态。任务成功退出并删除，探针未写 CSM。该证据验证了 ETW 物理事件源，不等于生产后台已接线或完整姿态矩阵通过。
 
@@ -270,7 +280,7 @@ Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器�
 
 ### Windows 原生会话开发验证
 
-`windows/session_agent.py` 将原生会话观察、硬件客户端、共用 SessionRuntime 和 Windows 显示事务装配为独立的普通用户进程。它拒绝 SYSTEM、非交互和已提权令牌；必须先通过主机对确切进程身份的显示回执检查，才能创建显示后端或恢复日志事务。启动握手复用显示工作线程，不额外占用第三条 RPC 通道。普通 UI 不启动此进程；`hardware_runtime.py` 已提供硬件主机侧的显式组合，但服务安装、启动和真机 SYSTEM 联合验证仍未完成。
+`windows/session_agent.py` 将原生会话观察、硬件客户端、共用 SessionRuntime 和 Windows 显示事务装配为独立的普通用户进程。它拒绝 SYSTEM、非交互和已提权令牌；必须先通过主机对确切进程身份的显示回执检查，才能创建显示后端或恢复日志事务。启动握手复用显示工作线程，不额外占用第三条 RPC 通道。普通 UI 不启动此进程；`hardware_runtime.py` 和已安装的 SCM 主机在物理准入通过后负责信任启动，真实显示、CSM 和 SYSTEM 生命周期仍需单独验收。
 
 开发入口为 `python -m panasonic_posture.windows.session_agent --journal <当前用户的恢复日志路径>`；必须由可信硬件主机预登记该确切进程，手动运行不能自行取得回执资格。缺少服务或未获登记时在显示后端构造之前退出，不能把命令能运行当作安装成功。
 
@@ -325,7 +335,9 @@ python packaging\windows\build.py --dependencies build\windows-dependencies
 
 构建器从当前 Python 基础安装和独立依赖目录读取运行时、Qt/Fluent 及随包许可，连同源码、插画、翻译和维护说明直接流式写入 ZIP，同时计算逐文件校验，减少临时磁盘写入和内存占用。预览只使用 Qt Widgets，因此排除 PyQt6 自带但未使用的 QML 资源，避免 Windows 传统解压工具遗漏超长路径文件。完整归档生成后才替换已有包。`runtime/python._pth` 和 `runtime/pythonw._pth` 只服务 UI，隔离注册表和 `PYTHONPATH`，并显式包含随包 Qt 站点目录。硬件服务和会话代理使用额外的 `runtime/python-hardware.exe` 与 `runtime/python-hardware._pth`，搜索路径严格限制为 `Lib`、`DLLs` 和 `../app`，不处理 `site` 或 UI 包。构建器不再生成 DLL 级 `_pth`，避免它覆盖受限硬件解释器；参见 [Python Windows 搜索路径说明](https://docs.python.org/3.11/using/windows.html#finding-modules)。基础安装的第三方包、测试数据或配置不进入归档。
 
-输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Hardware.cmd` 或默认 `Panasonic Posture Manager.cmd` 都会连接 LocalSystem 硬件服务；服务未安装时只显示断线。`--backend` 是隔离软件预览，`--demo` 是内存演示。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`，Python 许可为 `runtime/LICENSE.txt`。更新时解压到新目录，用户设置继续位于 LocalAppData。
+输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Hardware.cmd` 或默认 `Panasonic Posture Manager.cmd` 都会连接 LocalSystem 硬件服务；`Install Hardware Service.cmd` 负责显式安装和启动，未安装时界面只显示断线。`--backend` 是隔离软件预览，`--demo` 是内存演示。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`、Python 许可为 `runtime/LICENSE.txt`。更新时服务入口保留前一受保护目录，用户设置继续位于 LocalAppData。
+
+2026-11-11，在 CFQV8-1L / Windows 10 Pro 19045 上从当前测试包实际安装 `PanasonicPostureManagerHardware`：服务为延迟自动启动、以 LocalSystem 运行，`sc qc` 显示受保护 `%ProgramFiles%` 解释器和固定 `--serve` 参数，失败动作配置为 5/15/60 秒重启。服务进入 Running，命名管道 `\\.\pipe\PanasonicPostureManager.Hardware.v1` 存在；普通用户再次执行 `GetState` 得到 `backend=ready`、`sensor_source=windows-winrt`、`supported=true`。受保护安装目录 3010 个清单文件全部一致，受限解释器预检通过。首次有效物理 ETW 事件前 `hardware_status=absent`，因此本轮未执行物理切换、显示写入、CSM 写入或会话准入验收。
 
 `.github/workflows/windows-preview.yml` 在 Windows 上运行 Python 3.11/3.13/3.14 的后台、界面、只读探针解析和翻译测试，构建 ZIP，再用解压包自带的 Python 验证 Qt、中文资源、模式事务和后台退出。流程仅保存构建制品，不发布 Release、不改版本或 AUR。提交这份流程不代表远端构建已执行。
 

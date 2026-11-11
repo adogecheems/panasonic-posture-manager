@@ -15,9 +15,10 @@
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
-- **下一智能体优先动作**：在用户明确授权后增加 `HardwareRuntime.installed()` 对应的服务安装/启动入口，并验证真实 ETW 启动、首个事件前拒绝会话、ETW 中断后的租约撤销、显示/CSM 清理、恢复重建和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
-- **验证基线**：本机使用 `dist\PanasonicPostureManager\runtime\python.exe`，临时在 `python314._pth` 中加入当前 `src`/`tests`，运行后恢复原字节。Windows 套件 264 项、会话刷新 9 项、共享前端 13 项和 Fluent 46 项通过；发布元数据 6 项中 5 项通过，UI 版本用例因当前 Windows 运行时缺少 PyGObject 无法导入。未安装服务，未执行真机显示或 CSM 写入。
-- **未验证项**：真实服务安装、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。Linux 全套 `make` 门槛未在当前 Windows 主机运行。
+- **硬件服务安装**：新增 `windows/hardware_service.py` 和 `packaging/windows/hardware-service.ps1`。安装入口会从普通解压目录自举到 `%ProgramFiles%\PanasonicPostureManager`，验证 ACL、所有者、重解析点和受限 `_pth`，注册延迟自动启动的 `PanasonicPostureManagerHardware` LocalSystem 服务，配置 5/15/60 秒失败重启并立即启动。2026-11-11 已在本机安装并进入 Running；命名管道存在，普通用户 `GetState` 返回 `backend=ready`、WinRT 传感器可用。首个有效 ETW 事件前仍保持 `hardware_status=absent` 并拒绝会话。
+- **下一智能体优先动作**：在用户明确授权真机姿态操作后，折叠/展开一次以验证运行中服务的首个 ETW 事件、会话进程启动、显示/CSM 清理、ETW 中断后的租约撤销、恢复重建和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
+- **验证基线**：当前测试包安装到 `%ProgramFiles%\PanasonicPostureManager`，服务与界面使用同一受保护构建；旧界面目录 `%LOCALAPPDATA%\Programs\PanasonicPostureManager` 保留备份性质。受保护安装 3010 个清单文件一致，硬件解释器预检通过；Windows 完整套件 343 项通过，最终 ZIP 自带 Python/Qt/后台 IPC 自检通过，SHA-256 为 `83a3912d57affd6edaab019e54ca065f5b2617231ba3fd3fea0d43591aca34fc`。Linux 全套 `make` 门槛未在当前 Windows 主机运行。
+- **未验证项**：首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 
 ## 1. 工作流程
 
@@ -76,7 +77,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
 | Windows 硬件组合根与物理源准入 | `windows/{hardware_application,hardware_runtime,hardware_host,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server,session_supervisor}.py` | `test_windows_architecture`、`test_windows_hardware_runtime`、`test_windows_hardware`、`test_windows_session_supervisor` |
 | Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,session_qualification,session_bridge,hardware_rpc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_qualification`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
-| Windows 可信启动与停止边界 | `windows/{trusted_runtime,console_identity,session_stop,session_launch,session_supervisor,hardware_server}.py`、`windows/security.py` | `test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_launch`、`test_windows_session_supervisor`、`test_windows_session_agent`、`test_windows_hardware`、`test_windows_packaging`；普通软件预览包不能作为特权运行时 |
+| Windows 可信启动、服务安装与停止边界 | `windows/{hardware_service,trusted_runtime,console_identity,session_stop,session_launch,session_supervisor,hardware_server}.py`、`windows/security.py`、`packaging/windows/hardware-service.ps1` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_launch`、`test_windows_session_supervisor`、`test_windows_session_agent`、`test_windows_hardware`、`test_windows_packaging`；普通软件预览包不能作为特权运行时 |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -1205,3 +1206,13 @@ make WERROR=1 check
 - 影响：ETW 单物理源、CSM 健康门禁、租约撤销、显示事务、目标/结果分离、owner-loop 回调和清理失败语义保持不变。此记录不改变产品能力边界，也不把服务安装、真机 SYSTEM 启动、显示或 CSM 写入标记为已验证。
 - 同步：`windows/{console_identity,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server,hardware_application,hardware_runtime,operations,session_bridge,session_qualification,private_backend,owner_loop,ui_operations,machine_identity,machine_profile,native_preflight,trusted_runtime,session_supervisor,session_launch}.py`、`packaging/windows/build.py`、Windows/Fluent/打包测试、`AGENTS.md` 与 `MAINTENANCE.md`。
 - 验证：Windows 264 项、会话刷新 9 项、共享前端 13 项和 Fluent 46 项通过；发布元数据 6 项中 5 项通过，UI 版本用例因 Windows 运行时缺少 PyGObject 未执行到断言。未安装服务，未执行真机显示、CSM 写入或 SYSTEM 生命周期验收。
+
+### 2026-11-11 - 可安装的 LocalSystem 硬件服务
+
+- 变更：新增 `windows/hardware_service.py`，用标准库 `ctypes` 实现 SCM 服务入口、启动/运行/停止状态、控制处理和 `HardwareRuntime` 优雅清理；ImagePath 固定为受保护目录中的 `runtime/python-hardware.exe -B -I -m ... --serve`。新增 `packaging/windows/hardware-service.ps1` 及安装、状态、移除入口：安装器从普通解压目录自举到 `%ProgramFiles%\PanasonicPostureManager`，更新前保留旧受保护目录，验证完整运行时后注册延迟自动启动的 `PanasonicPostureManagerHardware` LocalSystem 服务，配置 5/15/60 秒失败重启并立即启动。
+- 动机：`HardwareRuntime.installed()` 和可信运行时已经存在，但普通用户目录不能作为特权代码源，产品也缺少可重复的 SCM 注册与启动入口；用户无法只靠便携界面启用真实硬件链路。
+- 影响：服务只由显式管理员安装，界面和开发预览不隐式提权或自动注册。受保护安装路径、LocalSystem 身份、ETW 唯一物理输入、首个事件前拒绝会话、现有 RPC/鉴权/租约/显示事务和安全恢复边界均不变。服务不安装驱动、不修改 CSM 设备配置、不提供新 RPC 命令或任意路径入口。
+- 同步：`windows/{hardware_service,trusted_runtime}.py`、`packaging/windows/{hardware-service.ps1,build.py}`、`tests/{test_windows_hardware_service,test_windows_trusted_runtime,test_windows_packaging}.py`、README、MAINTENANCE、AGENTS 与 Windows 打包清单。
+- 证据：2026-11-11 在 CFQV8-1L 上从当前测试包实际安装。受保护目录 3010 个清单文件一致，受限解释器预检通过；`sc qc` 显示 `AUTO_START (DELAYED)`、LocalSystem、固定 `--serve` 命令，失败动作按 5/15/60 秒重启。服务进入 Running，命名管道存在，普通用户 `GetState` 返回 `backend=ready`、`sensor_source=windows-winrt`、`supported=true`。
+- 验证：Windows 完整套件 343 项通过；最终便携包解压后由自带 `python.exe`、`pythonw.exe` 和 `python-hardware.exe` 完成 Qt、中文资源、软件事务、后台回收及受限模块导入自检。
+- 未验证：首次真实服务 ETW 事件仍使 `hardware_status=absent`；会话准入、显示写入、CSM 输出、ETW 中断后的租约撤销、恢复重建、锁屏/电源切换与 SYSTEM 停止需另行真机验收。

@@ -172,7 +172,9 @@ class TrustedRuntime:
                         raise ValueError('runtime tree exceeds the inspection limit')
                     self.verifier.pin(Path(directory) / name)
             for name in (HARDWARE_EXECUTABLE, 'runtime/Lib/os.py',
-                         HARDWARE_PTH, 'app/panasonic_posture/windows/session_agent.py'):
+                         HARDWARE_PTH,
+                         'app/panasonic_posture/windows/hardware_service.py',
+                         'app/panasonic_posture/windows/session_agent.py'):
                 if not (self.root / name).is_file():
                     raise ValueError(f'incomplete installed runtime: {name}')
             paths = list((self.root / 'runtime').glob('python*._pth'))
