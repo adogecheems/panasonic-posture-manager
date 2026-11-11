@@ -247,6 +247,15 @@ python tests\windows_physical_posture_smoke.py --exercise-physical --directory b
 
 操作者必须实际把设备折叠到平板形态，再按提示旋转并展开。脚本观察硬件开关、`hardware` 目标和显示回读，不使用手动平板模式。
 
+无驱动 ETW 物理开关探针必须在 LocalSystem 会话中运行。它只监听现有 Intel HID Event Filter 的 ACPI 通知，不写 CSM、shell 或注册表；运行期间应实际折叠和展开一次，并检查事件 115 的 `0xCC/0xCD` 映射：
+
+```bat
+set PYTHONPATH=src
+python tests\windows_etw_switch_smoke.py --directory build\etw-switch-evidence-new --seconds 30
+```
+
+探针结果只证明事件源是否可用，不能替代生产服务装配。普通用户启动 ETW 必须被拒绝；事件缺失、权限失败或映射不确定时，生产路径不得写 CSM。当前新增的 `windows/etw_switch.py` 尚未接入生产后台，也没有安装服务。
+
 2026-11-09，CFQV8-1L、Windows 10 专业版 19045 x64 上取得笔记本、帐篷、支架和完全折叠的真实采样：笔记本 z 约 -9.8 m/s²，帐篷 y 约 -9.3 m/s²，支架 z 约 +9.9 m/s²。2026-11-10 以实体姿态和界面结果复核后确认该固件/驱动映射为 `0=折叠平板，1=笔记本电脑`；此前两次仅按数值变化推断方向的阶段结论均已作废。此证据确认当前采样的 y/z 方向与策略一致，不代表完整安装矩阵、持续会话控制或整机验收。2880×1920 内屏的倒转、回读、正常恢复和写入进程被结束后的日志恢复通过，最终方向与原方向一致。驱动反汇编和探测确认 `msgpiowin32` 接受一个字节时执行 toggle、读取返回当前字节，并发出 CSM 状态变化；软件姿态若写该设备会覆盖真实硬件状态，因此生产入口保持它只读。软件平板状态模拟当前暂停，屏幕键盘和壳层响应不作为可用能力声明。2026-11-11 时序实测在 `03:45:24.853` 开关释放并变为桌面方向，`03:45:25.757` 恢复帐篷方向，残余窗口约 0.9 秒。
 
 同机从 `C:\util2\drivers\SynTP_d20194747` 安装了签名有效、硬件 ID 精确匹配的厂商驱动；安装后为 Synaptics HID TouchPad / Synaptics HID Device 19.5.26.18，用户确认移动、点击、滚动正常。自研输入过滤驱动没有加载；用户选择保留启动安全配置，测试签名仍关闭。这些证据不提升 Windows 机型支持等级。

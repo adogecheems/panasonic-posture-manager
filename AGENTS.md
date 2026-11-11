@@ -8,11 +8,12 @@
 
 - **最新主线**：产品代码状态为 `927dd9d fix: shorten the Windows physical-slate release jump`；其后的提交只维护本交接记录。工作树除任务开始前已有的未跟踪 `$null` 外应保持干净；不要提交、删除或覆盖它。
 - **产品边界**：Windows 软件帐篷/支架的“让 Windows 知道平板状态”功能暂时停用。生产路径不写 `ACPI\INT33D3`、不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示 Windows 屏幕键盘。实体开关和硬件姿态查询必须保持只读、真实。
+- **无驱动 ETW 原型**：新增 `windows/etw_switch.py`，由 LocalSystem 服务计划监听现有 Intel `HidEventFilter` 的 Event 115 ACPI 通知，区分软件 CSM 指示器事件；启动初值仍取洁净 CSM。该模块尚未接入生产后台，也未在 SYSTEM 会话捕获真实折叠事件；必须先运行 `tests/windows_etw_switch_smoke.py` 验证 `0xCC/0xCD` 映射后才能启用。
 - **当前方向修复**：控制器在硬件开关仍为平板时，直接读取策略层原始重力几何；帐篷区候选持续 0.3 秒后会被缓存。`ScreenSession` 每 50 ms 重新锁定当前翻转方向，开关释放后的第一个目标直接使用缓存帐篷，不再等待原有两秒姿态窗口。
 - **真实时序**：2026-11-11 `03:45:24.853` 开关释放并从 `2` 变为 `0`，`03:45:25.757` 应用恢复为 `2`，残余跳变约 0.9 秒。更早的 03:12 时序为 `16.260` 释放、`16.358` 到 `0`、`17.981` 到 `2`，约 1.6 秒；本次将其缩短但不为零。
 - **剩余根因**：Windows 在 `SM_CONVERTIBLESLATEMODE` 从平板释放时自行切换显示方向并清除自动旋转锁；即使应用在硬件切换前持续重锁，Windows 仍会覆盖。当前产品按要求暂停向 Windows 发布软件平板状态，因此不能阻止这一段 `2→0→2`。不要继续靠延长等待或重复锁来声称消除。
-- **下一智能体优先动作**：若必须完全无跳变，只能重新设计“向 Windows 发布软件平板状态”的独立能力（并解决 PDO/硬件判断干扰），或在收到 CSM 设置变化时使用更底层的显示交接；纯 `SetAutoRotation`/`ChangeDisplaySettings` 已证明只能缩短窗口。若保持当前范围，应明确把它记录为平台限制，而不是未修复的算法缺陷。
-- **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`；当前记录时 275 项 Windows 测试、47 项 Fluent 测试通过。临时运行路径和探针必须在提交前恢复/删除。
+- **下一智能体优先动作**：先在 LocalSystem 会话运行 ETW 探针，物理折叠/展开一次，确认 `HidEventFilter` Event 115 的 `0xCC/0xCD` 映射和软件 CSM 写入不会产生该事件；通过后才把 `AcpiPhysicalSwitch` 接入硬件主机的 `hardware_query`。若必须完全无跳变，只能重新设计“向 Windows 发布软件平板状态”的独立能力（并解决 PDO/硬件判断干扰），或在收到 CSM 设置变化时使用更底层的显示交接；纯 `SetAutoRotation`/`ChangeDisplaySettings` 已证明只能缩短窗口。
+- **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`/`tests`；当前记录时 281 项 Windows 测试、47 项 Fluent 测试通过。临时运行路径和探针必须在提交前恢复/删除。
 - **未验证项**：`平板→支架` 的真机时序；软件帐篷/支架自动屏幕键盘已暂停；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 
 ## 1. 工作流程
@@ -66,7 +67,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
 | 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
 | 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 用户态真实显示与物理开关 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py` 和 `windows_physical_posture_smoke.py`，不能用隔离端口代替真机证据 |
+| Windows 用户态真实显示与物理开关 | `windows/{screen_session,backend,client,display,tablet_display,orientation,convertible_slate,slate_journal,tablet_mode,session_context,etw_switch}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_screen_session`、`test_windows_display`、`test_windows_tablet_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_tablet_mode`、`test_windows_etw_switch`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py`、`windows_physical_posture_smoke.py` 和 `windows_etw_switch_smoke.py`，不能用隔离端口代替真机证据 |
 | Windows 常驻、自启动、姿态通知与 shell 状态发布 | `windows/{activation,startup,instance,touch_mode,screen_session,session_display}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_touch_mode`、`test_windows_screen_session`、`test_fluent`；实际注销登录、通知点击和屏幕键盘显示须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
@@ -1156,3 +1157,10 @@ make WERROR=1 check
 - 动机：写 PDO 会覆盖真实硬件姿态；通过 shell setter 模拟平板又会在部分机器上强制切换交互模式。真机时序显示物理开关释放后 Windows 会先回正到桌面方向，随后应用再写入帐篷方向。暂停状态模拟并要求真实硬件状态只读是当前产品边界；预锁只解决方向竞争。
 - 影响：软件帐篷/支架不再声称具备 Windows 屏幕键盘能力，界面和文档必须如实说明该功能暂停。真机把跳变从约 1.6 秒缩短到约 0.9 秒，但 Windows 在 CSM 释放时仍会覆盖方向锁并短暂回到桌面方向；当前范围无法把窗口降为零。实体开关、硬件查询和姿态判断保持真实，稳定目标仍由共用显示事务核对。失败时记录警告并继续原有恢复路径。
 - 同步：`windows/screen_session.py`、`windows/display.py`、`windows/session_display.py`、`windows/touch_mode.py` 回归测试、README、MAINTENANCE 与运行边界。本记录取代“发布 shell 平板状态且保持实体开关只读”和“Windows 姿态交互与平台交接对齐 Linux”中自动发布软件平板状态的说明。
+
+### 2026-11-11 - 无驱动 ETW 物理平板状态原型
+
+- 变更：新增 `windows/etw_switch.py`，计划由 LocalSystem 服务实时消费现有 `HidEventFilter` 提供程序的 Event 115 ACPI 通知，`0xCC` 映射为平板、`0xCD` 映射为笔记本；启动时只用洁净 CSM 建立初值，此后物理状态只由该事件更新。新增同名单元测试和 `tests/windows_etw_switch_smoke.py` 只读探针。生产后台尚未接入该端口，也未安装或创建服务。
+- 动机：直接读取 CSM 无法区分用户物理切换与应用软件报告；ACPI `VGBS` 控制方法只能由驱动调用，而本机没有铰链角度传感器。现有 Intel HID Event Filter 已由签名驱动加载，可通过 ETW 提供独立物理通知，适合作为无新驱动的候选路径。
+- 影响：ETW 启动失败、权限不足、事件源丢失或状态未初始化时必须返回未知并禁止写 CSM；软件 CSM 写入不得被当作物理接管。当前原型不会改变生产行为，只有 LocalSystem 服务完成真机 `0xCC/0xCD` 映射和恢复验收后才可启用。
+- 同步：`windows/etw_switch.py`、`tests/test_windows_etw_switch.py`、`tests/windows_etw_switch_smoke.py`、`MAINTENANCE.md`、本交接状态与本记录。
