@@ -4,6 +4,8 @@ This is a new, Windows-only transport. Linux D-Bus and relay contracts stay
 unchanged. No network listener, shared pipe name or caller-supplied executable
 is exposed. The inherited standard pipes are the communication capability.
 """
+import json
+
 from .state_contract import parse_complete_snapshot
 
 VERSION = 1

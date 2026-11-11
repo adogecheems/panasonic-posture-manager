@@ -33,6 +33,22 @@ class HostFixture(unittest.TestCase):
 
 
 class HardwareHostTests(HostFixture):
+    def test_invalid_physical_source_blocks_receipts_and_revokes_the_owner(self):
+        admitted = [True]
+        self.host.session_admission = lambda: admitted[0]
+        self.engine.revoke_session(self.engine.session_owner)
+        receipt = self.request('session_update', generation=self.engine.state.generation,
+            ready=True, error_code=None, error_detail=None, unattended=False)
+        self.assertTrue(self.host.dispatch(AGENT, receipt)['accepted'])
+        admitted[0] = False
+        with self.assertRaisesRegex(Exception, 'display-unavailable'):
+            self.host.dispatch(AGENT, receipt)
+        self.host.tick()
+        self.assertIsNone(self.engine.session_owner)
+        self.assertIsNone(self.engine.state.applied)
+        admitted[0] = True
+        self.assertTrue(self.host.dispatch(AGENT, receipt)['accepted'])
+
     def test_ui_can_choose_mode_but_cannot_submit_display_receipts(self):
         self.host.dispatch(UI, self.request('set_mode', mode='tent'))
         self.engine.tick()

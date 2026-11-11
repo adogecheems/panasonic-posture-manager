@@ -31,8 +31,10 @@ class _Task:
 class SessionSupervisor:
     def __init__(self, launcher: NativeSessionLauncher,
                  register: Callable[[ConsoleIdentity | None], None], *,
-                 clock: Callable[[], float] = time.monotonic, executor: Executor | None = None) -> None:
+                 clock: Callable[[], float] = time.monotonic, executor: Executor | None = None,
+                 admit: Callable[[], bool] | None = None) -> None:
         self.launcher, self.register, self.clock = launcher, register, clock
+        self.admit = admit or (lambda: True)
         self.executor = executor if executor is not None else thread_executor('windows-session-launch')
         self._owned_executor = executor is None
         self._owner = threading.get_ident()
@@ -40,6 +42,7 @@ class SessionSupervisor:
         self.user: ConsoleUser | None = None
         self.error: str | None = None
         self.closed = self.stopping = self._retiring = False
+        self._admission = True
         self._stop_at = self._next = 0.
         self._task: _Task | None = None
 
@@ -65,6 +68,9 @@ class SessionSupervisor:
             self._stop_at = self.clock() + STOP_GRACE_SECONDS
             self.child.request_stop()  # SetEvent: immediate, no WTS or wait.
 
+    def _admitted(self) -> bool:
+        return bool(self.admit())
+
     def request_stop(self) -> None:
         self._owner_only()
         if self.closed or self.stopping:
@@ -77,18 +83,26 @@ class SessionSupervisor:
             # Retain even a late or stop-time child until it has been closed.
             self.child = task.future.result()
             self.user = task.user
-            if (self.stopping or not 0 <= self.clock() - task.started <= RESULT_MAX_AGE):
+            if (self.stopping or not self._admitted() or
+                    not 0 <= self.clock() - task.started <= RESULT_MAX_AGE):
                 self._retire()
                 return
             self.register(self.child.identity)
             self._submit('resume', self.child.resume)
         elif task.kind == 'resume':
             task.future.result()
+            if not self._admitted():
+                self._retire()
+                return
             self.error = None
             self._next = self.clock() + PROBE_SECONDS
         elif task.kind == 'probe':
             user = task.future.result()
             if self.stopping:
+                return
+            if not self._admitted():
+                self._retire()
+                self._next = self.clock() + PROBE_SECONDS
                 return
             if not 0 <= self.clock() - task.started <= RESULT_MAX_AGE:
                 raise OSError('console observation expired before dispatch')
@@ -113,6 +127,13 @@ class SessionSupervisor:
         self._owner_only()
         if self.closed:
             return
+        admitted = self._admitted()
+        if not admitted:
+            if self._admission:
+                self._admission = False
+                self._retire()
+        else:
+            self._admission = True
         if self._task is not None:
             if not self._task.future.done():
                 return
@@ -147,6 +168,8 @@ class SessionSupervisor:
                 self._retire()
             elif self.clock() >= self._next:
                 self._submit('shutdown', self.launcher.close)
+            return
+        if not admitted:
             return
         if self.clock() >= self._next:
             self._submit('probe', self.launcher.probe)

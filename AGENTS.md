@@ -6,17 +6,17 @@
 
 ## 当前交接状态（2026-11-11）
 
-- **最新主线**：本轮以 `1dc3615 docs: finalize the ETW handoff state` 为基线，修复硬件释放候选的证据计时、ETW 启动竞态和显示准备失败回滚。无驱动 ETW 原型仍未接入生产后台，实体开关和硬件姿态查询继续保持只读、真实。
+- **最新主线**：本轮以 `f0a154a refactor: consolidate windows runtime contracts` 为基线，集中 Windows 请求契约、完整快照解析和物理释放协调；新增 `windows/hardware_runtime.py` 组合根，把 ETW 物理源、WinRT 传感器、共用引擎和无输入执行端口接入可信硬件主机。实体开关和硬件姿态查询继续保持只读、真实。
 - **产品边界**：Windows 软件帐篷/支架的“让 Windows 知道平板状态”功能暂时停用。生产路径不写 `ACPI\INT33D3`、不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示 Windows 屏幕键盘。实体开关和硬件姿态查询必须保持只读、真实。
-- **无驱动 ETW 原型**：`windows/etw_switch.py` 由 LocalSystem 服务计划监听现有 Intel `HidEventFilter` 的 Event 115 ACPI 通知，区分软件 CSM 指示器事件。启动顺序已改为先建立 ETW 监听再读取洁净 CSM 基线，启动期间到达的有效物理事件优先于旧基线；基线缺失或读取失败会停止消费者并保持未知。该模块尚未接入生产后台，启用前仍须完成生产接线、失败恢复和真机验证。
+- **无驱动 ETW 原型**：`windows/etw_switch.py` 由 LocalSystem 服务计划监听现有 Intel `HidEventFilter` 的 Event 115 ACPI 通知，区分软件 CSM 指示器事件。启动顺序已改为先建立 ETW 监听再读取洁净 CSM 基线，启动期间到达的有效物理事件优先于旧基线；基线缺失或读取失败会停止消费者并保持未知。`HardwareRuntime` 已把它接入组合根，但尚未安装或启动常驻服务；真机启动、停止和恢复验收仍未完成。
 - **ETW 真机探针结果**：2026-11-11 15:14–15:16 的临时 SYSTEM 计划任务成功完成。CSM 记录为 `1→0→1`，Event 115 同时收到 `0xCC` 和 `0xCD`；`0xCC` 确认为物理平板，`0xCD` 确认为笔记本，`0xCA/0xCB` 不作为物理状态。探针未写 CSM，临时任务已删除。该事件源可以进入硬件主机接线阶段，但在生产接线和失败恢复测试完成前仍不得宣称功能已启用。
 - **当前方向修复**：控制器在硬件开关仍为平板时，直接读取策略层原始重力几何；帐篷区候选由新的有效传感器时间戳累计持续 0.3 秒后才会被缓存，无效、重复或过期样本不再推进候选，过期证据会清除缓存。`ScreenSession` 每 50 ms 重新锁定当前翻转方向，开关释放后的第一个目标直接使用有效缓存帐篷，不再等待原有两秒姿态窗口；显示准备或回读失败会恢复原方向锁并释放相关所有权。
 - **真实时序**：2026-11-11 `03:45:24.853` 开关释放并从 `2` 变为 `0`，`03:45:25.757` 应用恢复为 `2`，残余跳变约 0.9 秒。更早的 03:12 时序为 `16.260` 释放、`16.358` 到 `0`、`17.981` 到 `2`，约 1.6 秒；本次将其缩短但不为零。
 - **剩余根因**：Windows 在 `SM_CONVERTIBLESLATEMODE` 从平板释放时自行切换显示方向并清除自动旋转锁；即使应用在硬件切换前持续重锁，Windows 仍会覆盖。当前产品按要求暂停向 Windows 发布软件平板状态，因此不能阻止这一段 `2→0→2`。不要继续靠延长等待或重复锁来声称消除。
-- **下一智能体优先动作**：把 `AcpiPhysicalSwitch` 接入 LocalSystem 硬件主机的 `hardware_query`，先建立 ETW 监听再允许写 CSM；补服务启动失败、ETW 中断、物理切换、CSM 报告和崩溃恢复回归测试。仍须保留无事件源时的只读回退，不能把 CSM 指示器事件当成物理源。若必须完全无跳变，再评估是否需要更底层的显示交接；纯 `SetAutoRotation`/`ChangeDisplaySettings` 已证明只能缩短窗口。
-- **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`/`tests`。本轮 6 个新增/修改回归用例、四组目标套件 115 项、Windows 套件 285 项和 Fluent 套件 47 项通过；临时运行路径已恢复。完整 Python discover 运行 845 项，在 Windows 上仍有 Linux 专用 GI、relay、POSIX 权限/路径测试导致的 70 项错误和 7 项失败，不能记作完整门槛通过。
-- **清理状态**：任务开始前的 `$null` 和整个被忽略的 `build/` 已清理，当前 Git 工作树干净且没有遗留 ETW 计划任务。成功的真机映射已写入 `MAINTENANCE.md`；`dist/` 和源码保留。未来若重新尝试驱动构建，需要重新准备本地 WDK/SDK/Zig 工具。
-- **未验证项**：本轮未执行真机切换、SYSTEM 会话 ETW 探针或显示写入；`平板→支架` 的真机时序仍未验证。软件帐篷/支架自动屏幕键盘已暂停；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
+- **下一智能体优先动作**：在用户明确授权后，为 `HardwareRuntime` 增加服务安装/启动入口，并在真机上验证“ETW 启动→CSM 基线→传感器→RPC”的启动顺序、ETW 中断后的租约撤销、恢复重建和停止清理。仍须保留无事件源时的只读回退，不能把 CSM 指示器事件当成物理源。若必须完全无跳变，再评估是否需要更底层的显示交接；纯 `SetAutoRotation`/`ChangeDisplaySettings` 已证明只能缩短窗口。
+- **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`/`tests`。本轮在干净 `f0a154a` 基线上复核组合根、硬件主机准入和会话监管恢复共 30 项，全部通过；临时运行路径已恢复。工作树中的其他软件平板改动不作为本轮门槛。
+- **清理状态**：本轮已单独提交硬件组合根、准入和文档改动；工作树仍保留其他智能体尚未提交的软件平板相关改动，未清理、未纳入提交。没有遗留 ETW 计划任务。
+- **未验证项**：本轮未安装或启动服务，未执行真机 ETW、物理切换、显示写入或 SYSTEM 联合验收；`平板→支架` 的真机时序仍未验证。软件帐篷/支架自动屏幕键盘已暂停；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 
 ## 1. 工作流程
 
@@ -45,7 +45,7 @@
   原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。姿态通知的点击确认必须同时匹配已校验快照中的实例、提示代次、姿态类型和当前可确认条件；匹配时点击本身即明确切换，直接确认且不打开主窗口，过期、不匹配或不可确认时只能打开界面。Windows 可能同时交付通知点击与托盘激活，同一次点击不得重复确认或因配对信号打开窗口。软件帐篷/支架的自动屏幕键盘当前暂停，不得新增主页或托盘的“显示屏幕键盘”入口，也不得取得输入控制。私有后台在首个状态前失败时只能发送固定原因集的 `fatal` 回执；UI 不得展示自由文本或 traceback，设备配置原因应给出操作说明并停止该连接重连。私有后台在身份检查后向设置文件旁的同名滚动日志写入有界诊断，不得记录输入内容。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认不登记，仅在用户切换设置时操作当前用户的固定 Run 值，冲突内容须保留；不得隐式启用、改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
   `--hardware-backend` 显式连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，原生快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
-- **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
+- **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格或物理源失效时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
   原生会话进程须使用非提权交互令牌，并先核对回执资格再创建显示后端。锁屏、会话资格或电源观测失效时，经既有显示不可用错误回执释放软件输入并恢复方向事务；不能用无错误的未就绪心跳代表资格丢失。已知的单纯熄屏只属于电源上下文，普通原生入口复用共享直接姿态策略，不得被当作资格丢失或自动制造显示错误。旧未就绪心跳完成后才允许恢复就绪。Windows 产品保持系统输入可用，不要求 Linux 输入禁用场景的软件触摸唤醒；真实电源变化和特权会话链路仍须分别验收。
 
 **接入平台。** 姿态策略、服务引擎、会话运行时和显示事务可共用。实现 `service/ports.py` 和 `session/ports.py` 中的接口。共用层使用 `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`、`DeviceInfo` 和输入完成判定。Linux 在 `service/application.py` 和 `session/agent.py` 接入时钟、设备、设置、D-Bus 和桌面组件。平台负责配置和通信错误分类。显示事务必须显式传入恢复日志。
@@ -73,6 +73,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | Windows 常驻、自启动、姿态通知与 shell 状态发布 | `windows/{activation,startup,instance,touch_mode,screen_session,session_display}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_touch_mode`、`test_windows_screen_session`、`test_fluent`；实际注销登录、通知点击和屏幕键盘显示须单独记录，不能由 mock 或支持标志代替 |
 | Windows 软件后台、通信与便携包 | `windows/`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
 | Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
+| Windows 硬件组合根与物理源准入 | `windows/{hardware_runtime,hardware_host,hardware_ipc,session_supervisor}.py` | `test_windows_hardware_runtime`、`test_windows_hardware`、`test_windows_session_supervisor` |
 | Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,hardware_ipc}.py`、`fluent/`、`session/runtime.py` | `test_windows_hardware_client`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
 | Windows 可信启动与停止边界 | `windows/{trusted_runtime,session_stop,session_launch,session_supervisor,hardware_ipc}.py`、`windows/security.py` | `test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_launch`、`test_windows_session_supervisor`、`test_windows_session_agent`、`test_windows_hardware`；普通软件预览包不能作为特权运行时 |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
@@ -1175,3 +1176,11 @@ make WERROR=1 check
 - 影响：正常有效采样仍需连续 0.3 秒才缓存帐篷，硬件优先、失效撤销、目标/结果分离和只读实体开关不变。ETW 仍是未接入生产后台的原型，基线无效时保持未知并禁止依赖物理状态；显示失败保留原始异常，清理失败仍沿用有界日志和后续恢复。
 - 同步：`controller.py`、`windows/etw_switch.py`、`windows/display.py`、`windows/session_display.py` 及对应控制器、ETW、显示和会话回归测试；本交接状态与本记录。
 - 验证：6 个针对性回归用例先从 7 个断言失败转为全部通过；四组目标测试 115 项、Windows 测试 285 项、Fluent 测试 47 项通过。未执行真机或特权操作，Linux 全套门槛仍需在支持的 Linux 环境验证。
+
+### 2026-11-11 - Windows 硬件运行时组合根与物理源准入
+
+- 变更：新增 `windows/hardware_runtime.py`，按“ETW/CSM 物理源 → WinRT 传感器 → RPC → 可信会话监管器”的顺序装配 `AcpiPhysicalSwitch`、`ProfileSensor(WindowsSensor)`、共用 `Engine`、`HardwareServer`、`NativeSessionLauncher`、`SessionSupervisor` 和 `TrustedRuntime`；控制器固定 `input_control=False`，输入端口为 `DisplayOnlyInput`。硬件主机和监管器共享物理源准入：物理值非布尔或状态非 `HardwareStatus.OK` 时拒绝 `session_update`、撤销已登记会话并停止子进程，恢复后才允许重新探测和放行。组合根不自动安装服务、不打开输入设备。
+- 动机：此前硬件主机、物理开关、传感器和可信会话只有分散组件，缺少可验证的生产启动顺序和物理源失效后的统一停用路径；单独保护 `session_update` 不足以阻止监管器在失效期间重新创建会话。
+- 影响：物理源失败时仍可启动只读 RPC（状态和故障可见），但不会取得显示租约或确认模式；恢复需要重新通过物理准入。`HardwareServer.poll()` 仍是唯一引擎 tick 入口，组合根不重复 tick。停机保留有界监管轮询，未完成清理时显式报错。软件平板状态模拟边界不变。
+- 同步：`windows/{hardware_runtime,hardware_host,hardware_ipc,session_supervisor}.py`、`tests/{test_windows_hardware_runtime,test_windows_hardware,test_windows_session_supervisor}.py`、MAINTENANCE、README 与本交接状态。
+- 验证：组合根、主机准入和监管恢复的目标测试先于本记录执行；未安装或启动服务，未执行真机 ETW、显示写入或服务安装验收。

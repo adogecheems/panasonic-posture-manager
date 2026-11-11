@@ -60,9 +60,11 @@ def validate_request(value: object, instance: str) -> tuple[str, dict]:
 
 class HardwareHost:
     def __init__(self, engine: Engine, *, authorize: Callable[[ConsoleIdentity], bool],
-                 session_process: ConsoleIdentity | None = None) -> None:
+                 session_process: ConsoleIdentity | None = None,
+                 session_admission: Callable[[], bool] | None = None) -> None:
         self.engine, self.authorize = engine, authorize
         self.session_process = session_process
+        self.session_admission = session_admission or (lambda: True)
         self.instance = engine.state.instance
 
     def dispatch(self, peer: ConsoleIdentity, request: dict) -> dict:
@@ -73,6 +75,9 @@ class HardwareHost:
         if method == 'session_update':
             if peer != self.session_process:
                 raise ServiceError(ErrorCode.ACCESS_DENIED, 'unregistered-session-process')
+            if not self.session_admission():
+                raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE,
+                                   'physical-switch-unavailable')
             accepted = self.engine.session_update(params['generation'], params['ready'],
                 params['error_code'], params['error_detail'], owner=peer.owner,
                 unattended=params['unattended'])
@@ -96,7 +101,8 @@ class HardwareHost:
                     hardware_release_pose=self.engine.hardware_release_pose)
 
     def tick(self) -> None:
-        if self.session_process is not None and not self.authorize(self.session_process):
+        if self.session_process is not None and (
+                not self.authorize(self.session_process) or not self.session_admission()):
             self.engine.revoke_session(self.session_process.owner)
         self.engine.tick()
 

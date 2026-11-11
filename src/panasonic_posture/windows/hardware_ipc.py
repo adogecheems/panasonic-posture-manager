@@ -225,14 +225,16 @@ class HardwareServer:
     def __init__(self, engine: Engine, *, session_process: ConsoleIdentity | None = None,
                  security: WindowsSecurity | None = None, pipes: NativePipes | None = None,
                  pipe_name: str = PIPE_NAME, clock: Callable[[], float] = time.monotonic,
-                 executor=None, guard_executor=None) -> None:
+                 executor=None, guard_executor=None,
+                 session_admission: Callable[[], bool] | None = None) -> None:
         self.security = security or WindowsSecurity()
         self.security.require_system()
         self.pipes = pipes or NativePipes(self.security)
         self.clock = clock
         self.guard = ConsoleGuard(self.security.is_active, session_process,
                                   clock=clock, executor=guard_executor)
-        self.host = HardwareHost(engine, authorize=self.guard.allow, session_process=session_process)
+        self.host = HardwareHost(engine, authorize=self.guard.allow, session_process=session_process,
+                                 session_admission=session_admission)
         self.executor = executor or thread_executor('windows-request-auth')
         self.owned_executor = executor is None
         self.slots = []

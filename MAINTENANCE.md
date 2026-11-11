@@ -193,7 +193,9 @@ set PYTHONPATH=src
 
 共用控制器允许平台在构造时显式声明 `input_control=False`，此时软件姿态目标如实保持 `disable_internal_input=False`；Linux 和已有平台默认仍为 True。引擎对这些无需输入的目标仍要求释放事务完成、有效租约与同代次显示回执，不能仅凭选择模式就确认。`windows/display_only_input.py` 表示从未取得输入所有权，任何意外接管或唤醒请求都会失败，不提供模拟驱动就绪回执。这条路径由显式 `--native-backend` 接入，普通预览仍只保存偏好。
 
-`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine；当前没有注册常驻系统服务、安装自研输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。真正输入执行端口、可信物理开关和显示会话适配器未装配前，不得发布硬件支持或已应用模式。
+`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine。`hardware_runtime.py` 提供显式组合根：先启动 ETW 物理源和 CSM 基线，再启动 WinRT 传感器，最后创建 RPC 端点并启动可信会话监管器；`HardwareServer.poll()` 仍负责唯一一次引擎 tick。当前没有注册常驻系统服务、安装自研输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。
+
+物理源准入是硬件主机的安全边界：只有 `HardwareStatus.OK` 且物理值为布尔时才允许登记会话、提交 `session_update` 和确认显示回执。ETW 启动失败、事件源中断、CSM 基线无效或后续读取失败时，服务进入只读状态，拒绝显示回执、撤销现有租约并停止已登记会话；物理源恢复后监管器才重新探测并创建新的普通用户会话。组合根没有自动安装入口，也没有把物理源失败回退成软件平板状态。
 
 开发界面可用 `packaging\windows\run.cmd --hardware-backend` 显式连接 LocalSystem 所有的硬件端点，不能同时指定演示、软件后台、模拟场景或本地设置路径。它不安装或启动系统服务；目前缺少完整的服务安装与可信会话启动流程。服务不可用时只显示断线，不回退到软件或模拟后台。
 
@@ -276,7 +278,7 @@ Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器�
 
 ### Windows 原生会话开发验证
 
-`windows/session_agent.py` 将原生会话观察、硬件客户端、共用 SessionRuntime 和 Windows 显示事务装配为独立的普通用户进程。它拒绝 SYSTEM、非交互和已提权令牌；必须先通过主机对确切进程身份的显示回执检查，才能创建显示后端或恢复日志事务。启动握手复用显示工作线程，不额外占用第三条 RPC 通道。普通 UI 不启动此进程；可信启动组件已加入，完整服务装配、安装及 SYSTEM 联合验证仍未完成。
+`windows/session_agent.py` 将原生会话观察、硬件客户端、共用 SessionRuntime 和 Windows 显示事务装配为独立的普通用户进程。它拒绝 SYSTEM、非交互和已提权令牌；必须先通过主机对确切进程身份的显示回执检查，才能创建显示后端或恢复日志事务。启动握手复用显示工作线程，不额外占用第三条 RPC 通道。普通 UI 不启动此进程；`hardware_runtime.py` 已提供硬件主机侧的显式组合，但服务安装、启动和真机 SYSTEM 联合验证仍未完成。
 
 开发入口为 `python -m panasonic_posture.windows.session_agent --journal <当前用户的恢复日志路径>`；必须由可信硬件主机预登记该确切进程，手动运行不能自行取得回执资格。缺少服务或未获登记时在显示后端构造之前退出，不能把命令能运行当作安装成功。
 
