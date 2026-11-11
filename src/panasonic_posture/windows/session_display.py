@@ -103,14 +103,25 @@ class QualifiedDisplay:
             return
         self._require_available()
         try:
-            # Send the platform posture first and let Windows begin its native
-            # shell/orientation response without a competing rotation lock.
-            # The short handoff wait lets that response settle before the
-            # fixed target verifies or corrects the direction.
-            if self.slate is not None:
+            if self.slate is not None and target.mode == 'hardware':
+                # Physical tablet is the one case where Windows owns rotation.
+                # Publish the platform posture first and let the native
+                # handoff proceed before relinquishing the CCD lock.
                 self._sync_slate(target)
                 self._require_available()
-            self.display.apply(target)
+                self.display.apply(target)
+            else:
+                # Software modes must own the CCD rotation lock before CSM can
+                # make Windows start its own tablet-orientation response.
+                # Notifying first creates two competing rotation sources and
+                # visible multi-stage jumps.
+                self.display.apply(target)
+                if not self.context.control_available():
+                    raise DisplayError(
+                        ErrorCode.DISPLAY_UNAVAILABLE,
+                        'session changed before slate notification',
+                    )
+                self._sync_slate(target)
             if not self.context.control_available():
                 raise DisplayError(
                     ErrorCode.DISPLAY_UNAVAILABLE,
