@@ -6,6 +6,7 @@ mode.  A missing event after a physical movement means this provider is not a
 usable no-driver physical source on that machine.
 """
 import argparse
+import ctypes as C
 import json
 from pathlib import Path
 import sys
@@ -37,12 +38,19 @@ def main(argv=None):
         'event_id': 115,
         'provider': 'HidEventFilter',
         'samples': [],
+        'csm_changes': [],
     }
     lock = threading.Lock()
     backend = None
     try:
         WindowsSecurity().require_system()
         backend = WindowsHidEventFilterBackend(session_name=options.session_name)
+        user32 = C.WinDLL('user32')
+        user32.GetSystemMetrics.argtypes = [C.c_int]
+        user32.GetSystemMetrics.restype = C.c_int
+        csm = lambda: user32.GetSystemMetrics(0x2003)
+        current_csm = csm()
+        result['initial_csm'] = current_csm
 
         def received(data):
             sample = {
@@ -58,7 +66,16 @@ def main(argv=None):
         while time.monotonic() < deadline:
             if backend.failure is not None:
                 raise OSError('ETW consumer failed') from backend.failure
+            observed = csm()
+            if observed != current_csm:
+                current_csm = observed
+                with lock:
+                    result['csm_changes'].append({
+                        'observed_at': time.time(),
+                        'csm': observed,
+                    })
             time.sleep(.05)
+        result['final_csm'] = current_csm
         result['success'] = True
     except BaseException as error:
         result['error'] = str(error)

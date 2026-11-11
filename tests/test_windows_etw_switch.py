@@ -42,6 +42,22 @@ class PayloadTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 self.assertIsNone(parse_acpi_notification(payload))
 
+    def test_real_provider_message_prefix_is_not_mistaken_for_state(self):
+        tablet = (
+            'Received ACPI Notification\0\0'.encode('utf-16-le')
+            + struct.pack('<I', ACPI_TABLET_NOTIFY)
+        )
+        laptop = (
+            'Received ACPI Notification\0\0'.encode('utf-16-le')
+            + struct.pack('<I', ACPI_LAPTOP_NOTIFY)
+        )
+        self.assertTrue(parse_acpi_notification(tablet))
+        self.assertFalse(parse_acpi_notification(laptop))
+        for value in (0xCA, 0xCB):
+            self.assertIsNone(parse_acpi_notification(
+                'Received ACPI Notification\0\0'.encode('utf-16-le')
+                + struct.pack('<I', value)))
+
 
 class PhysicalSwitchTests(unittest.TestCase):
     def test_baseline_is_used_until_an_independent_etw_event_arrives(self):

@@ -9,12 +9,12 @@
 - **最新主线**：产品行为仍以 `927dd9d fix: shorten the Windows physical-slate release jump` 为基线；`bc3592f feat: add no-driver ETW physical switch prototype` 新增了尚未接入生产后台的无驱动 ETW 原型。工作树除任务开始前已有的未跟踪 `$null` 外应保持干净；不要提交、删除或覆盖它。
 - **产品边界**：Windows 软件帐篷/支架的“让 Windows 知道平板状态”功能暂时停用。生产路径不写 `ACPI\INT33D3`、不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示 Windows 屏幕键盘。实体开关和硬件姿态查询必须保持只读、真实。
 - **无驱动 ETW 原型**：新增 `windows/etw_switch.py`，由 LocalSystem 服务计划监听现有 Intel `HidEventFilter` 的 Event 115 ACPI 通知，区分软件 CSM 指示器事件；启动初值仍取洁净 CSM。该模块尚未接入生产后台，也未在 SYSTEM 会话捕获真实折叠事件；必须先运行 `tests/windows_etw_switch_smoke.py` 验证 `0xCC/0xCD` 映射后才能启用。
-- **ETW 真机探针结果**：2026-11-11 15:09 的临时 SYSTEM 计划任务成功启动，Python 退出码为 `0`，结果文件成功生成，但 `samples` 为空。Event 115 的物理折叠/展开映射尚未证实，可能是采集期间没有完成物理动作，也可能是该 provider 不向 SYSTEM ETW 会话转发事件；在生产路径中不得把空样本解释为可用。临时任务已删除，未写 CSM。
+- **ETW 真机探针结果**：2026-11-11 15:14–15:16 的临时 SYSTEM 计划任务成功完成。CSM 记录为 `1→0→1`，Event 115 同时收到 `0xCC` 和 `0xCD`；`0xCC` 确认为物理平板，`0xCD` 确认为笔记本，`0xCA/0xCB` 不作为物理状态。探针未写 CSM，临时任务已删除。该事件源可以进入硬件主机接线阶段，但在生产接线和失败恢复测试完成前仍不得宣称功能已启用。
 - **当前方向修复**：控制器在硬件开关仍为平板时，直接读取策略层原始重力几何；帐篷区候选持续 0.3 秒后会被缓存。`ScreenSession` 每 50 ms 重新锁定当前翻转方向，开关释放后的第一个目标直接使用缓存帐篷，不再等待原有两秒姿态窗口。
 - **真实时序**：2026-11-11 `03:45:24.853` 开关释放并从 `2` 变为 `0`，`03:45:25.757` 应用恢复为 `2`，残余跳变约 0.9 秒。更早的 03:12 时序为 `16.260` 释放、`16.358` 到 `0`、`17.981` 到 `2`，约 1.6 秒；本次将其缩短但不为零。
 - **剩余根因**：Windows 在 `SM_CONVERTIBLESLATEMODE` 从平板释放时自行切换显示方向并清除自动旋转锁；即使应用在硬件切换前持续重锁，Windows 仍会覆盖。当前产品按要求暂停向 Windows 发布软件平板状态，因此不能阻止这一段 `2→0→2`。不要继续靠延长等待或重复锁来声称消除。
-- **下一智能体优先动作**：在 LocalSystem 会话重复 ETW 探针并明确记录物理折叠/展开时间，若仍为空则改用全事件列表或 GPIO ClassExtension 事件验证 provider 路由；通过后才把 `AcpiPhysicalSwitch` 接入硬件主机的 `hardware_query`。若必须完全无跳变，只能重新设计“向 Windows 发布软件平板状态”的独立能力（并解决 PDO/硬件判断干扰），或在收到 CSM 设置变化时使用更底层的显示交接；纯 `SetAutoRotation`/`ChangeDisplaySettings` 已证明只能缩短窗口。
-- **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`/`tests`；当前记录时 281 项 Windows 测试、47 项 Fluent 测试通过。临时运行路径和探针必须在提交前恢复/删除。
+- **下一智能体优先动作**：把 `AcpiPhysicalSwitch` 接入 LocalSystem 硬件主机的 `hardware_query`，先建立 ETW 监听再允许写 CSM；补服务启动失败、ETW 中断、物理切换、CSM 报告和崩溃恢复回归测试。仍须保留无事件源时的只读回退，不能把 CSM 指示器事件当成物理源。若必须完全无跳变，再评估是否需要更底层的显示交接；纯 `SetAutoRotation`/`ChangeDisplaySettings` 已证明只能缩短窗口。
+- **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`/`tests`；当前记录时 282 项 Windows 测试、47 项 Fluent 测试通过。临时运行路径和探针必须在提交前恢复/删除。
 - **未验证项**：`平板→支架` 的真机时序；软件帐篷/支架自动屏幕键盘已暂停；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 
 ## 1. 工作流程
@@ -1165,4 +1165,4 @@ make WERROR=1 check
 - 动机：直接读取 CSM 无法区分用户物理切换与应用软件报告；ACPI `VGBS` 控制方法只能由驱动调用，而本机没有铰链角度传感器。现有 Intel HID Event Filter 已由签名驱动加载，可通过 ETW 提供独立物理通知，适合作为无新驱动的候选路径。
 - 影响：ETW 启动失败、权限不足、事件源丢失或状态未初始化时必须返回未知并禁止写 CSM；软件 CSM 写入不得被当作物理接管。当前原型不会改变生产行为，只有 LocalSystem 服务完成真机 `0xCC/0xCD` 映射和恢复验收后才可启用。
 - 同步：`windows/etw_switch.py`、`tests/test_windows_etw_switch.py`、`tests/windows_etw_switch_smoke.py`、`MAINTENANCE.md`、本交接状态与本记录。
-- 证据：2026-11-11 15:09 在 CFQV8-1L 上以临时 SYSTEM 计划任务运行探针，任务注册、启动、ETW 消费和退出码 `0` 均成功，但 Event 115 样本为空，物理映射未通过；临时任务已移除。该结果只证明 SYSTEM ETW 控制链路可运行，不证明事件源可用。
+- 证据：2026-11-11 15:14–15:16 在 CFQV8-1L 上以临时 SYSTEM 计划任务运行探针。CSM 从 `1` 变为 `0` 再回到 `1`；Event 115 收到 `0xCC`、`0xCB`、`0xCD`、`0xCA` 通知。`0xCC` 对应物理平板，`0xCD` 对应笔记本，`0xCA/0xCB` 不发布状态。Python 退出码 `0`，临时任务已移除；探针没有写 CSM。
