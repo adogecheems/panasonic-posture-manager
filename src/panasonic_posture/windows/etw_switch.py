@@ -302,22 +302,14 @@ class AcpiPhysicalSwitch:
         self._lock = threading.Lock()
         self._state = _SwitchState(None, HardwareStatus.ABSENT)
         self._started = False
+        self._event_sequence = 0
 
     def start(self) -> None:
         with self._lock:
             if self._started:
                 raise OSError('physical switch is already started')
-            try:
-                value, status = self.baseline()
-            except (OSError, ValueError, TypeError):
-                value, status = None, HardwareStatus.READ_ERROR
-            if type(value) is not bool:
-                value = None
-            if value is None:
-                self._state = _SwitchState(None, status)
-                return
-            self._state = _SwitchState(value, HardwareStatus.OK)
             self._started = True
+            baseline_sequence = self._event_sequence
         try:
             self.backend.start(self._ingest)
         except BaseException as error:
@@ -332,9 +324,27 @@ class AcpiPhysicalSwitch:
                     if isinstance(error, PermissionError) else HardwareStatus.READ_ERROR)
             log.warning('cannot start physical ETW switch: %s', error)
             return
+        try:
+            value, status = self.baseline()
+        except (OSError, ValueError, TypeError):
+            value, status = None, HardwareStatus.READ_ERROR
+        if type(value) is not bool:
+            value = None
+        stop = False
         with self._lock:
-            if self._started and self._state.value is not None:
-                self._state = _SwitchState(self._state.value, HardwareStatus.OK)
+            if not self._started:
+                return
+            if value is None:
+                self._started = False
+                self._state = _SwitchState(None, status)
+                stop = True
+            elif self._event_sequence == baseline_sequence:
+                self._state = _SwitchState(value, HardwareStatus.OK)
+        if stop:
+            try:
+                self.backend.close()
+            except (OSError, ValueError) as error:
+                log.warning('cannot close physical ETW switch after baseline failure: %s', error)
 
     def _ingest(self, payload: bytes) -> None:
         value = parse_acpi_notification(payload)
@@ -342,6 +352,7 @@ class AcpiPhysicalSwitch:
             return
         with self._lock:
             if self._started:
+                self._event_sequence += 1
                 self._state = _SwitchState(value, HardwareStatus.OK)
 
     def query(self) -> tuple[bool | None, HardwareStatus]:

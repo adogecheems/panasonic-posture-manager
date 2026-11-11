@@ -284,6 +284,28 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertEqual(api.current.transform, 2)
         self.assertTrue(bool(api.current.auto_rotation & 1))
 
+    def test_failed_physical_release_readback_restores_the_original_lock(self):
+        class ReadbackFailure(Api):
+            def __init__(self):
+                super().__init__()
+                self.reads = 0
+
+            def read(self):
+                self.reads += 1
+                if self.reads == 2:
+                    raise OSError('readback failed')
+                return super().read()
+
+        api, journal = ReadbackFailure(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
+        with self.assertRaisesRegex(OSError, 'readback failed'):
+            display.prepare_hardware_release()
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertEqual(api.lock_writes, [True, False])
+        self.assertIsNone(journal.document)
+        self.assertIsNone(display.owned)
+
     def test_physical_takeover_during_restart_keeps_native_direction(self):
         api, journal = Api(), MemoryJournal()
         physical = [False]

@@ -72,13 +72,28 @@ class PhysicalSwitchTests(unittest.TestCase):
         switch.close()
         self.assertTrue(backend.closed)
 
-    def test_missing_or_failed_baseline_never_starts_the_consumer(self):
+    def test_event_during_baseline_read_wins_over_the_stale_baseline(self):
+        backend = FakeBackend()
+        listening = []
+
+        def baseline():
+            listening.append(backend.started)
+            backend.emit(0xC0, ACPI_TABLET_NOTIFY)
+            return False, HardwareStatus.OK
+
+        switch = AcpiPhysicalSwitch(backend, baseline=baseline)
+        switch.start()
+        self.assertEqual(listening, [True])
+        self.assertEqual(switch.query(), (True, HardwareStatus.OK))
+
+    def test_missing_or_failed_baseline_stops_the_consumer(self):
         for value, status in ((None, HardwareStatus.ABSENT),
                               (None, HardwareStatus.READ_ERROR)):
             backend = FakeBackend()
             switch = AcpiPhysicalSwitch(backend, baseline=lambda value=value, status=status: (value, status))
             switch.start()
-            self.assertFalse(backend.started)
+            self.assertTrue(backend.started)
+            self.assertTrue(backend.closed)
             self.assertEqual(switch.query(), (None, status))
             switch.close()
 

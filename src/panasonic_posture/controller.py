@@ -246,7 +246,7 @@ class Controller:
             tent_prompt=bool(self.tent_prompt) and prompt_from_laptop,
             stand_prompt=bool(self.stand_prompt) and prompt_from_laptop,
         )
-        self._advance_release_candidate(now)
+        self._advance_release_candidate()
 
         if hardware is True:
             target = Target(
@@ -287,10 +287,16 @@ class Controller:
             self.error_detail = None
         return self.generation, self.target
 
-    def _advance_release_candidate(self, now: float) -> None:
+    def _advance_release_candidate(self) -> None:
         if self.hardware is not True:
             if self.hardware is False and self.policy.posture_pending:
                 return
+            self._release_pose = None
+            self._release_candidate = None
+            self._release_since = None
+            return
+        stamp = self.policy.last_stamp
+        if not self.policy.fresh or stamp is None:
             self._release_pose = None
             self._release_candidate = None
             self._release_since = None
@@ -305,9 +311,9 @@ class Controller:
         if candidate != self._release_candidate:
             self._release_pose = None
             self._release_candidate = candidate
-            self._release_since = now
+            self._release_since = stamp
             return
-        if self._release_since is not None and now - self._release_since >= 0.3:
+        if self._release_since is not None and stamp - self._release_since >= 0.3:
             self._release_pose = candidate
 
     # -- internals -----------------------------------------------------------

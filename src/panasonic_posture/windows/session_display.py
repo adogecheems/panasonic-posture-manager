@@ -139,7 +139,12 @@ class QualifiedDisplay:
         if prepare is None:
             return
         self._require_available()
-        prepare()
+        try:
+            prepare()
+        except BaseException:
+            self._restore_after_failed_transaction()
+            self._release_slate()
+            raise
 
     def restore(self, normal: bool = False) -> None:
         try:

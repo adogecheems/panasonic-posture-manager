@@ -309,6 +309,37 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertGreater(generation, 1)
         self.assertTrue(self.controller.policy.posture_pending)
 
+    def test_release_candidate_requires_new_valid_sensor_evidence(self):
+        for kind in ("invalid", "duplicate"):
+            with self.subTest(kind=kind):
+                self.reset_controller()
+                self.hold(0.0)
+                self.hold(80.0, hardware=True, seconds=0.2)
+                cached = sample(80.0, stamp=self.now)
+                for _ in range(8):
+                    self.now += 0.1
+                    reading = (
+                        sample(80.0, magnitude=0.0, stamp=self.now)
+                        if kind == "invalid" else cached
+                    )
+                    self.controller.update(self.now, reading, True)
+                self.assertIsNone(self.controller.hardware_release_pose)
+
+    def test_stale_sensor_clears_the_cached_release_pose(self):
+        self.controller = Controller(policy=Policy(PolicyConfig(stale_seconds=0.5)))
+        self.now = 0.0
+        self.hold(0.0)
+        self.hold(80.0, hardware=True, seconds=0.4)
+        for _ in range(8):
+            self.now += 0.1
+            self.controller.update(
+                self.now, sample(80.0, magnitude=0.0, stamp=self.now), True
+            )
+        self.assertFalse(self.controller.policy.fresh)
+        self.assertIsNone(self.controller.hardware_release_pose)
+        _, target = self.step(0.0, hardware=False, dt=0.01)
+        self.assertNotEqual(target.mode, "tent")
+
     def test_stand_prompt_waits_for_confirmation(self):
         self.controller.stand_prompt = True
         self.hold(175.0)

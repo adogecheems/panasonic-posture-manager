@@ -24,6 +24,7 @@ from panasonic_posture.windows.screen_session import (
     SCREEN_MODES, ScreenSession, SessionBridge, ProfileSensor, available_screen_modes,
     select_native_display, verified_machine,
 )
+from panasonic_posture.windows.session_display import QualifiedDisplay
 from panasonic_posture.windows.simulation import SimulatedDisplay
 from panasonic_posture.windows.tablet_display import WindowsTabletDisplay
 
@@ -260,6 +261,29 @@ class ManualTabletRetirementTests(unittest.TestCase):
 
 
 class HardwareReleasePreparationTests(unittest.TestCase):
+    def test_failed_preparation_restores_display_and_releases_slate(self):
+        class FailingDisplay:
+            def __init__(self):
+                self.restore_calls = 0
+
+            def prepare_hardware_release(self):
+                raise OSError('readback failed')
+
+            def restore(self):
+                self.restore_calls += 1
+
+        display = FailingDisplay()
+        releases = []
+        qualified = QualifiedDisplay(
+            display,
+            SimpleNamespace(control_available=lambda: True),
+            SimpleNamespace(release=lambda: releases.append(True)),
+        )
+        with self.assertRaisesRegex(OSError, 'readback failed'):
+            qualified.prepare_hardware_release()
+        self.assertEqual(display.restore_calls, 1)
+        self.assertEqual(releases, [True])
+
     def test_tent_pose_while_still_physically_folded_prepares_once(self):
         class Prepared:
             calls = 0

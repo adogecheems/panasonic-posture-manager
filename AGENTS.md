@@ -6,17 +6,17 @@
 
 ## 当前交接状态（2026-11-11）
 
-- **最新主线**：产品行为仍以 `927dd9d fix: shorten the Windows physical-slate release jump` 为基线；`bc3592f feat: add no-driver ETW physical switch prototype` 新增了尚未接入生产后台的无驱动 ETW 原型。工作树除任务开始前已有的未跟踪 `$null` 外应保持干净；不要提交、删除或覆盖它。
+- **最新主线**：本轮以 `1dc3615 docs: finalize the ETW handoff state` 为基线，修复硬件释放候选的证据计时、ETW 启动竞态和显示准备失败回滚。无驱动 ETW 原型仍未接入生产后台，实体开关和硬件姿态查询继续保持只读、真实。
 - **产品边界**：Windows 软件帐篷/支架的“让 Windows 知道平板状态”功能暂时停用。生产路径不写 `ACPI\INT33D3`、不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示 Windows 屏幕键盘。实体开关和硬件姿态查询必须保持只读、真实。
-- **无驱动 ETW 原型**：新增 `windows/etw_switch.py`，由 LocalSystem 服务计划监听现有 Intel `HidEventFilter` 的 Event 115 ACPI 通知，区分软件 CSM 指示器事件；启动初值仍取洁净 CSM。该模块尚未接入生产后台，也未在 SYSTEM 会话捕获真实折叠事件；必须先运行 `tests/windows_etw_switch_smoke.py` 验证 `0xCC/0xCD` 映射后才能启用。
+- **无驱动 ETW 原型**：`windows/etw_switch.py` 由 LocalSystem 服务计划监听现有 Intel `HidEventFilter` 的 Event 115 ACPI 通知，区分软件 CSM 指示器事件。启动顺序已改为先建立 ETW 监听再读取洁净 CSM 基线，启动期间到达的有效物理事件优先于旧基线；基线缺失或读取失败会停止消费者并保持未知。该模块尚未接入生产后台，启用前仍须完成生产接线、失败恢复和真机验证。
 - **ETW 真机探针结果**：2026-11-11 15:14–15:16 的临时 SYSTEM 计划任务成功完成。CSM 记录为 `1→0→1`，Event 115 同时收到 `0xCC` 和 `0xCD`；`0xCC` 确认为物理平板，`0xCD` 确认为笔记本，`0xCA/0xCB` 不作为物理状态。探针未写 CSM，临时任务已删除。该事件源可以进入硬件主机接线阶段，但在生产接线和失败恢复测试完成前仍不得宣称功能已启用。
-- **当前方向修复**：控制器在硬件开关仍为平板时，直接读取策略层原始重力几何；帐篷区候选持续 0.3 秒后会被缓存。`ScreenSession` 每 50 ms 重新锁定当前翻转方向，开关释放后的第一个目标直接使用缓存帐篷，不再等待原有两秒姿态窗口。
+- **当前方向修复**：控制器在硬件开关仍为平板时，直接读取策略层原始重力几何；帐篷区候选由新的有效传感器时间戳累计持续 0.3 秒后才会被缓存，无效、重复或过期样本不再推进候选，过期证据会清除缓存。`ScreenSession` 每 50 ms 重新锁定当前翻转方向，开关释放后的第一个目标直接使用有效缓存帐篷，不再等待原有两秒姿态窗口；显示准备或回读失败会恢复原方向锁并释放相关所有权。
 - **真实时序**：2026-11-11 `03:45:24.853` 开关释放并从 `2` 变为 `0`，`03:45:25.757` 应用恢复为 `2`，残余跳变约 0.9 秒。更早的 03:12 时序为 `16.260` 释放、`16.358` 到 `0`、`17.981` 到 `2`，约 1.6 秒；本次将其缩短但不为零。
 - **剩余根因**：Windows 在 `SM_CONVERTIBLESLATEMODE` 从平板释放时自行切换显示方向并清除自动旋转锁；即使应用在硬件切换前持续重锁，Windows 仍会覆盖。当前产品按要求暂停向 Windows 发布软件平板状态，因此不能阻止这一段 `2→0→2`。不要继续靠延长等待或重复锁来声称消除。
 - **下一智能体优先动作**：把 `AcpiPhysicalSwitch` 接入 LocalSystem 硬件主机的 `hardware_query`，先建立 ETW 监听再允许写 CSM；补服务启动失败、ETW 中断、物理切换、CSM 报告和崩溃恢复回归测试。仍须保留无事件源时的只读回退，不能把 CSM 指示器事件当成物理源。若必须完全无跳变，再评估是否需要更底层的显示交接；纯 `SetAutoRotation`/`ChangeDisplaySettings` 已证明只能缩短窗口。
-- **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`/`tests`；当前记录时 282 项 Windows 测试、47 项 Fluent 测试通过。临时运行路径和探针必须在提交前恢复/删除。
+- **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`/`tests`。本轮 6 个新增/修改回归用例、四组目标套件 115 项、Windows 套件 285 项和 Fluent 套件 47 项通过；临时运行路径已恢复。完整 Python discover 运行 845 项，在 Windows 上仍有 Linux 专用 GI、relay、POSIX 权限/路径测试导致的 70 项错误和 7 项失败，不能记作完整门槛通过。
 - **清理状态**：任务开始前的 `$null` 和整个被忽略的 `build/` 已清理，当前 Git 工作树干净且没有遗留 ETW 计划任务。成功的真机映射已写入 `MAINTENANCE.md`；`dist/` 和源码保留。未来若重新尝试驱动构建，需要重新准备本地 WDK/SDK/Zig 工具。
-- **未验证项**：`平板→支架` 的真机时序；软件帐篷/支架自动屏幕键盘已暂停；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
+- **未验证项**：本轮未执行真机切换、SYSTEM 会话 ETW 探针或显示写入；`平板→支架` 的真机时序仍未验证。软件帐篷/支架自动屏幕键盘已暂停；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 
 ## 1. 工作流程
 
@@ -1167,3 +1167,11 @@ make WERROR=1 check
 - 影响：ETW 启动失败、权限不足、事件源丢失或状态未初始化时必须返回未知并禁止写 CSM；软件 CSM 写入不得被当作物理接管。当前原型不会改变生产行为，只有 LocalSystem 服务完成真机 `0xCC/0xCD` 映射和恢复验收后才可启用。
 - 同步：`windows/etw_switch.py`、`tests/test_windows_etw_switch.py`、`tests/windows_etw_switch_smoke.py`、`MAINTENANCE.md`、本交接状态与本记录。
 - 证据：2026-11-11 15:14–15:16 在 CFQV8-1L 上以临时 SYSTEM 计划任务运行探针。CSM 从 `1` 变为 `0` 再回到 `1`；Event 115 收到 `0xCC`、`0xCB`、`0xCD`、`0xCA` 通知。`0xCC` 对应物理平板，`0xCD` 对应笔记本，`0xCA/0xCB` 不发布状态。Python 退出码 `0`，临时任务已移除；探针没有写 CSM。
+
+### 2026-11-11 - 修复释放证据、ETW 启动与显示回滚边界
+
+- 变更：硬件平板期间的帐篷释放候选改用有效传感器时间戳计时，样本过期时清除缓存；ETW 改为先启动监听再读取 CSM 基线，启动期间的新物理事件不会被旧基线覆盖，基线失败会关闭消费者；Windows 硬件释放准备的锁写入、回读或持久化失败时恢复原显示所有权，会话限定层同步执行显示恢复和 slate 释放。
+- 动机：墙钟会把无效或重复采样误算为稳定证据，并可能在传感器过期后复用旧帐篷目标；先读基线存在丢失启动窗口物理切换的竞态；准备阶段缺少回滚会遗留旋转锁或显示日志。
+- 影响：正常有效采样仍需连续 0.3 秒才缓存帐篷，硬件优先、失效撤销、目标/结果分离和只读实体开关不变。ETW 仍是未接入生产后台的原型，基线无效时保持未知并禁止依赖物理状态；显示失败保留原始异常，清理失败仍沿用有界日志和后续恢复。
+- 同步：`controller.py`、`windows/etw_switch.py`、`windows/display.py`、`windows/session_display.py` 及对应控制器、ETW、显示和会话回归测试；本交接状态与本记录。
+- 验证：6 个针对性回归用例先从 7 个断言失败转为全部通过；四组目标测试 115 项、Windows 测试 285 项、Fluent 测试 47 项通过。未执行真机或特权操作，Linux 全套门槛仍需在支持的 Linux 环境验证。
