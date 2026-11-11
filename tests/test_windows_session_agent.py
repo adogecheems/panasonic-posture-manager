@@ -308,6 +308,7 @@ class NativeAgentTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch('panasonic_posture.windows.session_agent.WindowsSessionAgent', return_value=agent), \
                  patch('panasonic_posture.windows.session_stop.NativeStopSignal.open', return_value=signal), \
+                 patch('panasonic_posture.windows.diagnostics.configure_logging'), \
                  patch('panasonic_posture.windows.session_agent.sys.platform', 'win32'), \
                  patch('panasonic_posture.windows.session_agent.time.sleep'):
                 result = main(['--journal', str(Path(directory) / 'display.json'), '--stop-event', 'fixture'])

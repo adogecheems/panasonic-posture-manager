@@ -235,7 +235,7 @@ class AutomaticModeTests(ControllerTestCase):
         self.assertTrue(self.controller.confirm_tent(old_epoch))
         self.step(80.0)
         self.assertEqual(self.controller.target.mode, "tent")
-        self.hold(0.0, seconds=1.2)
+        self.hold(0.0, seconds=self.controller.config.tent_leave_seconds + 0.2)
         self.assertEqual(self.controller.target.mode, "laptop")
         generation = self.controller.generation
         for _ in range(30):

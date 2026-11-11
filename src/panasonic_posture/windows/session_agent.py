@@ -182,10 +182,13 @@ def main(argv=None) -> int:
     options = parser.parse_args(argv)
     if sys.platform != 'win32':
         parser.error('native session agent requires Windows')
+    from .diagnostics import configure_logging
     from ..session.journal import Journal
     from .display import WindowsDisplay
     from .instance import InstanceLock
     from .session_stop import NativeStopSignal
+
+    configure_logging(options.journal)
 
     def display_factory(client):
         del client

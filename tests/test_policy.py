@@ -217,6 +217,24 @@ class SoftwareTransitionTests(PolicyTestCase):
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
         self.assertIsNone(self.policy.pending)
 
+    def test_tent_holds_through_a_physical_fold_until_hardware_takes_over(self):
+        self.hold(80.0)
+        self.assertTrue(self.policy.confirm(self.policy.epoch))
+        self.assertEqual(self.policy.mode, MODE_TENT)
+
+        modes = [self.step(0.0) for _ in range(15)]
+        self.assertEqual(set(modes), {MODE_TENT})
+
+        self.assertEqual(self.step(0.0, hardware=True), MODE_HARDWARE)
+        self.assertNotIn(MODE_LAPTOP, modes)
+
+    def test_tent_still_returns_to_a_settled_laptop_after_the_fold_grace(self):
+        self.hold(80.0)
+        self.assertTrue(self.policy.confirm(self.policy.epoch))
+        modes = [self.step(0.0) for _ in range(22)]
+        self.assertEqual(modes[-1], MODE_LAPTOP)
+        self.assertIn(MODE_TENT, modes)
+
     def test_pending_transfer_never_masks_hardware_or_sensor_loss(self):
         for hardware, expected in ((True, MODE_HARDWARE), (None, MODE_DISABLED)):
             with self.subTest(hardware=hardware):
@@ -760,7 +778,7 @@ class TentReentryTests(PolicyTestCase):
         self.assertEqual(self.policy.mode, MODE_TENT)
 
     def leave_tent(self):
-        self.hold(0.0, seconds=1.2)
+        self.hold(0.0, seconds=self.config.tent_leave_seconds + 0.2)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
 
     def test_recent_reentry_after_laptop_requires_new_confirmation(self):
@@ -776,7 +794,7 @@ class TentReentryTests(PolicyTestCase):
 
     def test_intermediate_exit_still_allows_direct_reentry(self):
         self.confirm_tent()
-        self.hold(-80.0, seconds=1.2)
+        self.hold(-80.0, seconds=self.config.tent_leave_seconds + 0.2)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
         modes = [self.step(80.0) for _ in range(30)]
         self.assertEqual(self.policy.mode, MODE_TENT)
@@ -785,7 +803,7 @@ class TentReentryTests(PolicyTestCase):
 
     def test_laptop_after_intermediate_exit_closes_reentry_window(self):
         self.confirm_tent()
-        self.hold(-80.0, seconds=1.2)
+        self.hold(-80.0, seconds=self.config.tent_leave_seconds + 0.2)
         self.assertEqual(self.policy.mode, MODE_LAPTOP)
         self.leave_tent()
         self.hold(80.0)

@@ -19,6 +19,7 @@
 - **下一智能体优先动作**：在用户明确授权真机姿态操作后，使用 MSI 安装并重启，验证首个 ETW 事件、会话进程启动、显示/CSM 清理、ETW 中断后的租约撤销、恢复重建、MSI 升级和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
 - **验证基线**：2026-11-12 在实际运行时上源码编译 WiX 5.0.2 MSI 成功，并通过 `wix msi validate -sice ICE61`；服务、开始菜单、CSM 安装/回滚/卸载动作和受限解释器均进入 MSI 表。MSI、会话降级和打包目标测试 22 项通过；发布工作流与元数据合计 36/37 项通过，唯一失败是 Windows 运行时缺少 PyGObject 导致 UI 版本用例无法导入。此前受保护安装 3010 个清单文件一致，Windows 完整套件 351 项、最终 ZIP 自检通过；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 - **未验证项**：MSI 在 CI/隔离机的实际安装、升级和卸载，首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。当前主机 `msiexec /a` 因 Windows Installer 环境返回 1619/1622，未将其视为 MSI 内容失败。
+- **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。会话代理新增有界 `native-display.log` 记录预锁和事务失败。退出物理平板时 Windows 仍可能覆盖方向锁并短暂回正，当前架构不能完全消除。
 
 ## 1. 工作流程
 
@@ -1237,3 +1238,11 @@ make WERROR=1 check
 - 同步：`packaging/windows/{build_msi.py,msi/Package.wxs,msi/LICENSE.rtf}`、`windows/session_agent.py`、Windows MSI/会话/打包/发布测试、`.github/workflows/{windows-preview,release}.yml`、README、MAINTENANCE 与本记录。
 - 验证：本机使用实际运行时与 Qt 依赖生成约 86 MiB 的 `panasonic-posture-manager-2.4.0-windows-x64.msi`，`wix msi validate -sice ICE61` 通过；反编译确认服务、开始菜单、CSM Install/Rollback/Remove 动作、重启条件和受保护解释器均进入 MSI 表。MSI、会话降级和打包目标测试 22 项通过；发布工作流与元数据合计 36/37 项通过，唯一失败是当前 Windows 运行时缺少 PyGObject。
 - 未验证：当前宿主的 Windows Installer 管理安装调用返回 1619/1622，未完成本机 MSI 安装/升级/卸载；GitHub Windows 构建、签名、隔离机安装和重启后的真机 ETW/显示/CSM 链路仍需执行。
+
+### 2026-11-12 - 帐篷折叠到物理平板的退出缓冲
+
+- 变更：新增 `PolicyConfig.tent_leave_seconds=2.0`，已确认帐篷离开姿态保持带后仍最多保留帐篷目标两秒；期间 ETW 进入物理平板会直接接管，真正稳定的笔记本姿态超过两秒仍按原规则释放。原生会话代理在 `native-display.json` 旁创建有界 `native-display.log`。
+- 动机：CFQV8 真机日志显示，从帐篷折向平板时几何先经过约 `1.2s` 的笔记本样中间角，随后 ETW 才发布 `0xCC`；旧的 `0.7s` 帐篷退出缓冲先应用笔记本，造成一次明显跳变。代理此前没有文件日志，无法核对退出时的显示预锁。
+- 影响：只改变已确认帐篷的软件退出去抖，不改变硬件优先、ETW 唯一物理输入、CSM 纯输出、lease/schema 或 prompt 规则。手动关闭帐篷仍立即释放；stand 保留自己的两秒去抖。退出物理平板时 Windows 可能仍覆盖旋转锁并短暂回正，预锁只能缩小窗口，不能在当前 CSM 架构中保证零跳变。
+- 同步：`policy.py`、`tests/{test_policy,test_controller}.py`、`windows/session_agent.py`、README、MAINTENANCE、AGENTS 与本记录。
+- 验证：策略 103 项和控制器 58 项目标测试通过；新增用例确认帐篷经过 1.5 秒笔记本样中间角仍未释放，ETW 接管后不出现 laptop；稳定超过 2 秒仍正常返回笔记本。真机退出时间窗仍待下一轮日志复核。

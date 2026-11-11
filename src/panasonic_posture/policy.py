@@ -106,6 +106,12 @@ class PolicyConfig:
     # IIO/sysfs source hand-off so a source change cannot look like a posture
     # change and restart the whole takeover.
     stand_leave_seconds: float = 2.0
+    # A confirmed tent can be on the way to physical tablet mode.  The ETW
+    # switch event arrives after the hinge geometry has already passed through
+    # a laptop-like intermediate angle (observed around 1.2 seconds on CFQV8).
+    # Keep the confirmed display in tent until the switch can take over; a
+    # genuinely settled laptop pose still releases after this bounded window.
+    tent_leave_seconds: float = 2.0
     # A confirmed tent mode may be restored without another prompt when the
     # device briefly leaves and re-enters the tent zone (for example while the
     # user adjusts the hinge).  A settled laptop pose cancels this grace;
@@ -126,6 +132,7 @@ class PolicyConfig:
             "enter_seconds",
             "leave_seconds",
             "stand_leave_seconds",
+            "tent_leave_seconds",
             "tent_reentry_seconds",
             "stale_seconds",
             "history_seconds",
@@ -641,6 +648,8 @@ class Policy:
             leave_seconds = (
                 self.config.stand_leave_seconds
                 if self.mode == MODE_STAND
+                else self.config.tent_leave_seconds
+                if self.mode == MODE_TENT
                 else self.config.leave_seconds
             )
             # A departure only counts after the sensor has produced a stable
