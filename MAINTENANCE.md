@@ -121,9 +121,9 @@ CFQV8-1L 的 `ACPI\INT33D3` 非独占配置由 MSI 自动执行：它把受保�
 
 硬件界面启动前台会先核对普通用户本地控制台身份和 BIOS 机型。身份不符或机型不是已采集的 Panasonic Corporation / CFQV8-1L 时直接显示中文或英文原因，不创建设置锁或用户状态文件；服务端仍会重复核对身份、传感器、开关和显示能力，界面预检不能替代实际设备资格。
 
-硬件入口不启用输入过滤驱动，也不需要测试签名。物理平板状态只来自 Intel HID Event Filter 的 ETW ACPI 事件（有效值为 `0xCC` 平板、`0xCD` 笔记本），不读取 CSM 作为输入。`ACPI\INT33D3` 只作为向 Windows 发布姿态的 CSM 输出；首个有效 ETW 事件前状态保持未知，所有姿态确认、CSM 写入、恢复和日志清理禁用。受信桌面代理不等待该事件才启动：它先完成本地会话和回执资格检查，只发送 `not-ready` 心跳，使主页能报告“尚未观察到平板开关”；首个有效事件后才允许显示回执。ETW 启动失败或运行中断时服务撤销租约并保留恢复日志，不回退 CSM。当前不发布 shell 平板模式，因此软件帐篷/支架不会自动触发 Windows 屏幕键盘。当前开放自动、笔记本、帐篷、支架和校准；平板仅由物理折叠状态产生，不是手动模式。输入目标和能力始终为 False，键盘和触控板保持可用。
+硬件入口不启用输入过滤驱动，也不需要测试签名。启动时先启动 ETW 和 WinRT 传感器，再建立一次初始物理布尔状态：没有未完成 slate journal 时只读 CSM；存在 journal 或陈旧 CSM 时，用稳定笔记本/帐篷几何确认非平板；最多五秒后以非平板安全基线完成启动。该行为对应 Linux 启动时读取当前 `SW_TABLET_MODE`，因此不需要用户先完整折叠一次。启动后，物理变化只来自 Intel HID Event Filter 的 ETW ACPI 事件（`0xCC` 平板、`0xCD` 笔记本），`ACPI\INT33D3` 仍只作为软件姿态输出；ETW 中断时撤销租约并保留恢复日志。当前不发布 shell 平板模式，因此软件帐篷/支架不会自动触发 Windows 屏幕键盘。当前开放自动、笔记本、帐篷、支架和校准；平板仅由物理折叠状态产生，不是手动模式。输入目标和能力始终为 False，键盘和触控板保持可用。
 
-硬件会话进程只负责当前用户显示；它先证明服务端登记的回执资格，再创建显示和 CSM 后端。物理状态从未观测时，主机只接受未就绪心跳，拒绝 ready 回执；代理和显示后端在第一次翻到平板前已经装配，但旧显示日志恢复仍通过同一已认证 ETW 查询失败关闭并保留 journal，绝不把未知状态当成笔记本。物理源已成功观测后再次失效时，主机立即撤销该会话租约。CSM 写入通过服务快照读取的 ETW 健康门禁，物理状态未知时拒绝写入。显示和 CSM 共用同一个已验证 RPC 客户端，清理顺序为先释放显示/CSM 所有权，再关闭 CSM 设备。
+硬件会话进程只负责当前用户显示；它先证明服务端登记的回执资格，再创建显示和 CSM 后端。启动基线完成后，会话可立即取得同代次的显示/CSM 回执；初始化阶段若本地会话资格尚不可读，显示恢复失败关闭并保留 journal，代理不退出。物理源在运行中失效时，主机立即撤销该会话租约。运行期 CSM 写入仍通过服务快照读取的 ETW 健康门禁。显示和 CSM 共用同一个已验证 RPC 客户端，清理顺序为先释放显示/CSM 所有权，再关闭 CSM 设备。
 
 会话代理把 CSM 作为可选后端。若 `NativeSlateDevice` 因尚未重启、权限或设备配置失败而无法打开，会话记录警告并继续创建仅显示事务；该模式不创建 `SlateNotifier`，因此不会写入、恢复或清理任何平板指示器状态。已经成功取得的 CSM 后端若随后写入失败，仍按原事务规则回滚显示和姿态确认，不能把部分写入报告为完整成功。
 
@@ -207,9 +207,9 @@ set PYTHONPATH=src
 
 共用控制器允许平台在构造时显式声明 `input_control=False`，此时软件姿态目标如实保持 `disable_internal_input=False`；Linux 和已有平台默认仍为 True。引擎对这些无需输入的目标仍要求释放事务完成、有效租约与同代次显示回执，不能仅凭选择模式就确认。`windows/display_only_input.py` 表示从未取得输入所有权，任何意外接管或唤醒请求都会失败，不提供模拟驱动就绪回执。Windows 硬件服务使用这条路径，软件预览仍只保存偏好。
 
-`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine。`hardware_runtime.py` 提供组合根：先启动 ETW 物理源，再把其只读查询注入 Engine，随后启动 WinRT 传感器，最后创建 RPC 端点并启动可信会话监管器；`HardwareServer.poll()` 负责唯一一次引擎 tick。监管器按本地用户和锁屏资格管理会话生命周期，物理准入由主机在回执路径上单独执行，避免首个 ETW 事件延迟整个桌面代理。`hardware_service.py` 把该运行时适配到 SCM，只有在 `runtime\python-hardware.exe -B -I` 和受保护安装目录校验通过后才注册运行。服务不安装自研输入驱动，也不由普通界面自动启用；除了 SCM 状态与停止通知，不提供任意文件路径、设备开关或执行命令接口。
+`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine。`hardware_runtime.py` 提供组合根：先启动 ETW 物理源和 WinRT 传感器，再在后续 poll 中建立有界启动基线，最后由 RPC 端点与可信会话监管器处理用户操作；`HardwareServer.poll()` 负责唯一一次引擎 tick。监管器按本地用户和锁屏资格管理会话生命周期，物理准入由主机在回执路径上执行。`hardware_service.py` 把该运行时适配到 SCM，只有在 `runtime\python-hardware.exe -B -I` 和受保护安装目录校验通过后才注册运行。服务不安装自研输入驱动，也不由普通界面自动启用；除了 SCM 状态与停止通知，不提供任意文件路径、设备开关或执行命令接口。
 
-物理源准入是硬件主机的安全边界。首个有效 `0xCC/0xCD` 事件前物理值保持未知；主机允许已认证会话发送 `ready=false` 心跳以证明连接和现场资格，但拒绝任何 ready 回执，CSM 写入、恢复和日志清理全部禁用。首个有效事件建立准入后，源再次中断会使主机标记准入丢失、撤销当前 owner 租约并拒绝后续心跳；恢复为健康布尔状态后才重新开放。CSM 从不作为物理状态回退，已有恢复日志保留，等待下次物理源可用时按原始值恢复。组合根没有自动安装入口，也没有把物理源失败回退成软件平板状态。
+物理源准入是硬件主机的安全边界。启动阶段优先使用无待恢复 journal 的 CSM 布尔值；有旧 journal 或 stale CSM 时，用稳定笔记本/帐篷几何确认；辅助源均不明确时，五秒后以非平板基线完成准入，不等待 ETW。启动完成后，ETW 是唯一运行期变化源；源中断会使主机标记准入丢失、撤销当前 owner 租约并拒绝后续心跳。组合根没有自动安装入口，也没有把 ETW 读取失败回退成运行期软件平板状态。
 
 开发界面直接运行 `packaging\windows\run.cmd` 就连接 LocalSystem 所有的硬件端点。界面不会隐式安装或启动系统服务；服务由便携包中的管理员入口显式安装。服务不可用时只显示断线，不回退到软件后台或 CSM 推断。
 
@@ -232,7 +232,7 @@ python tests\windows_actuator_smoke.py --control-library build\windows-driver\po
 
 ### Windows 原生显示与物理开关开发验证
 
-`windows/etw_switch.py` 只消费 Intel HID Event Filter 的 Event 115 ACPI 通知，`0xCC` 为物理平板、`0xCD` 为笔记本；`0xCA/0xCB` 和重复/歧义载荷不产生状态。首个有效事件前返回未知，不读取 CSM、shell 模式或注册表作为基线。ETW 启动失败或事件源中断时返回 `permission`/`read_error`，硬件运行时会撤销物理准入、停止会话并保持只读，不回退 CSM。
+`windows/etw_switch.py` 只消费 Intel HID Event Filter 的 Event 115 ACPI 通知来更新运行期变化，`0xCC` 为物理平板、`0xCD` 为笔记本；`0xCA/0xCB` 和重复/歧义载荷不产生状态。启动基线由 `slate_bootstrap.py` 独立完成，不使用 ETW 历史，也不会等待首个事件。ETW 启动失败或事件源中断时返回 `permission`/`read_error`，硬件运行时会撤销当前物理准入并保持只读。
 
 `windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。实体开关仍处于平板而传感器姿态已经开始展开时，`prepare_hardware_release()` 先记录并锁定当前翻转横屏，避免随后开关释放触发 `2→0→2`。等待期仍只读跟踪最终方向；稳定目标只在方向不一致时执行一次事务。实体 PDO 和硬件姿态查询保持独立，当前不发布软件 shell 平板状态。旧版日志中的 shell 字段只作兼容读取并在恢复时丢弃。方向与方向锁保存在同一恢复日志，旧版日志缺少新增字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
 

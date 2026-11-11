@@ -6,9 +6,9 @@
 
 ## 当前交接状态（2026-11-12）
 
-- **最新功能提交**：`1d70d53 fix: run MSI setup actions without console windows`。MSI 设备和服务动作改为由 `WixQuietExec` 托管，不再闪控制台；`e35d8b3` 修复首事件前会话把 `unavailable` 误报成 ready 的租约循环，并在电源初始回调缺失时重新订阅。`d0992b0` 让提前启动的显示恢复通过 ETW 门禁，`e369f7d` 加入 AUMID 和多尺寸图标。
-- **唯一物理输入**：物理平板状态只来自 `windows/etw_switch.py` 消费的 Intel HID Event Filter Event 115 ACPI 通知。`0xCC` 是平板、`0xCD` 是笔记本，`0xCA/0xCB` 不产生状态。首个有效事件前保持未知；ETW 不读取 CSM、shell 模式或注册表作为基线，也没有 CSM 回退。
-- **CSM 纯输出**：`ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态。所有 CSM 写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁；状态未知或读取失败时拒绝写入并保留 journal。首个 ETW 事件前受信会话仍会先行启动、证明资格并装配显示后端，但发送的只有 `not-ready` 心跳；Windows 显示恢复也使用同一已认证物理查询，未知时失败关闭并保留 journal，不写旋转或锁。物理源从已观察状态转为失效时仍撤销租约。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal；已取得的后端若写入失败仍阻止姿态确认。崩溃恢复始终使用 `pending.original`，不把 CSM 当前值当成物理接管或新基线。
+- **最新功能提交**：`eb17793 fix: bootstrap Windows posture without waiting for ETW`。Windows 启动像 Linux 一样自行取得初始物理布尔姿态，无需先完整折叠；`1d70d53` 用 `WixQuietExec` 消除 MSI 控制台窗口，`e35d8b3` 修复首个 ETW 事件前会话租约循环。
+- **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
+- **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。崩溃恢复始终使用 `pending.original`。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
 - **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。`hardware_ipc.py` 只保留兼容导出。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
 - **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。GitHub、版本和外观行的右侧控件统一垂直居中；「检查更新」和「校准」使用填充式强调按钮。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
@@ -18,8 +18,8 @@
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
 - **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。开始菜单、运行窗口和任务栏共享固定多尺寸 ICO 与 AppUserModelID。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首事件前 `hardware_status=absent`；当前源码会让已认证会话发送 `not-ready` 心跳，但仍拒绝显示回执。
-- **下一智能体优先动作**：本轮新 MSI 已安装并启动。下一阶段需用户明确授权真机姿态操作，完整折叠、展开一次，验证首个 ETW 事件、首次平板方向交接、显示/CSM 清理、ETW 中断后的租约撤销、恢复重建、CSM 基线和第二个显示写入者隔离。不得用自动化 fixture 代替真机验收。
-- **验证基线**：2026-11-12 使用工作区内 .NET 8 SDK、WiX 5.0.2 和 PyWin32 3.14 依赖构建最终 MSI，文件为 `dist/windows/panasonic-posture-manager-2.4.0-windows-x64.msi`，SHA-256 `265B88BB9B324627E682BD62C85AF4215A41F1B8498821B04968771016BF4297`。MSI 同版本升级返回 `0`，服务 Running，UI 从安装目录启动；安装日志显示两个 PowerShell 动作均通过 `WixQuietExec`，无直接控制台动作。首事件前状态连续 60 次读取保持 `hardware=null`、`hardware_status=absent`、`session_connected=true`。Windows 全套 289 项、Fluent 47 项、i18n 114 个 msgid 通过。真机首个姿态事件和后续显示/CSM 事务仍未验收。
+- **下一智能体优先动作**：当前 MSI 已安装，启动时 `hardware=false`、`hardware_status=ok`、目标为笔记本、`session_connected=true`，未依赖新 ETW 事件。下一阶段需用户明确授权真机姿态操作，验证进入平板后的 ETW 接管、首次方向交接、显示/CSM 清理、ETW 中断后的租约撤销与恢复。不得用自动化 fixture 代替真机验收。
+- **验证基线**：2026-11-12 最终 MSI SHA-256 为 `6735A30D420D13C60C1C1A5D9747886CBCBA92454A1D7E0D132F67FE9443EC8D`。本机完成 MSI 构建、ICE、同版本升级和 UI 启动；安装日志确认两个 PowerShell 动作均通过 `WixQuietExec`。启动无需新 ETW 事件即可得到 `hardware=false`、`target=laptop`、`session_connected=true`。Windows 全套 299 项、Fluent 47 项、i18n 113 个 msgid 通过；真机物理变化事务仍未验收。
 - **本轮关于页验证**：新增 5 项 jsproxy 响应/版本比较单测、完整 Fluent 47 项、打包 2 项和 i18n 114 个 msgid 通过；当前安装的 Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer 通过，真实端点返回 `2.4.0 -> 2.4.0`。新 MSI 和已安装程序尚未包含本轮改动。
 - **未验证项**：GitHub Windows CI、Authenticode 签名、重启后的首次 MSI 安装链路、首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 - **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。会话代理新增有界 `native-display.log` 记录预锁和事务失败。退出物理平板时 Windows 仍可能覆盖方向锁并短暂回正，当前架构不能完全消除。
@@ -47,7 +47,7 @@
   可选的持续显示刷新与 apply、hold、restore 共用同一串行工作线程，刷新后仍须核对实例和代次；不另起绕过事务或租约的显示写入循环。
 - **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接独立 LocalSystem 硬件服务；服务不可用时只显示断线，不回退软件、模拟或 CSM 推断。`--demo` 使用内存数据，`--backend` 是隔离软件预览。预览不操作真实设备或桌面，软件后台不能执行特权硬件写入。
   两个平台的手动模式都只有自动、笔记本、帐篷、支架；平板只表示物理折叠/硬件姿态，不得重新加入可选手动模式。
-  硬件服务以 LocalSystem 运行 `HardwareRuntime`：先启动 ETW，再把其查询注入共用 Engine，随后启动 WinRT 传感器、RPC 端点和可信会话监管器。界面启动前核对普通用户本地控制台和精确机型并给出可读拒绝原因。物理平板状态只来自 ETW；CSM `ACPI\INT33D3` 只作为输出，软件帐篷/支架写入前必须先取得健康 ETW 状态。首个有效事件前允许已认证会话发送 `not-ready` 心跳，但拒绝 ready 回执、CSM 写入并保留恢复 journal；源从已观察状态失效时撤销租约。当前不发布 shell 平板模式，软件帐篷/支架不会自动触发 Windows 屏幕键盘。正式 MSI 自动完成设备非独占配置并提示重启；便携包不得提供安装入口。CSM 设备无法打开时会话只降级显示控制，不伪造 CSM 成功。会话入口不提供输入控制，锁屏、挂起或失去本地会话资格时撤销。
+  硬件服务以 LocalSystem 运行 `HardwareRuntime`：先启动 ETW，再把其查询注入共用 Engine，随后启动 WinRT 传感器、RPC 端点和可信会话监管器。界面启动前核对普通用户本地控制台和精确机型并给出可读拒绝原因。启动阶段通过一次 CSM/journal 与稳定几何建立初始物理布尔状态，最多五秒后使用非平板安全基线，不等待 ETW；运行期物理变化只来自 ETW。软件帐篷/支架的 CSM 写入前必须先取得健康 ETW 状态。ETW 从启动基线后的健康状态失效时撤销租约。当前不发布 shell 平板模式，软件帐篷/支架不会自动触发 Windows 屏幕键盘。正式 MSI 自动完成设备非独占配置并提示重启；便携包不得提供安装入口。CSM 设备无法打开时会话只降级显示控制，不伪造 CSM 成功。会话入口不提供输入控制，锁屏、挂起或失去本地会话资格时撤销。
   原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。姿态通知的点击确认必须同时匹配已校验快照中的实例、提示代次、姿态类型和当前可确认条件；匹配时点击本身即明确切换，直接确认且不打开主窗口，过期、不匹配或不可确认时只能打开界面。Windows 可能同时交付通知点击与托盘激活，同一次点击不得重复确认或因配对信号打开窗口。软件帐篷/支架的自动屏幕键盘当前暂停，不得新增主页或托盘的“显示屏幕键盘”入口，也不得取得输入控制。私有后台在首个状态前失败时只能发送固定原因集的 `fatal` 回执；UI 不得展示自由文本或 traceback，设备配置原因应给出操作说明并停止该连接重连。私有后台在身份检查后向设置文件旁的同名滚动日志写入有界诊断，不得记录输入内容。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认不登记，仅在用户切换设置时操作当前用户的固定 Run 值，冲突内容须保留；不得隐式启用、改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
   Windows 默认连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，硬件快照校验后才决定控制是否可用。
 - **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
@@ -117,7 +117,9 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
    已有软件 relay 可在物理平板期间转为硬件转发，退出后独立保留最多两秒的桌面平板
    信号，心跳不得延长窗口。原始硬件状态始终如实上报；等待期间不确认已应用模式，
    软件输入重新接管仍须匹配代次的显示回执。原生平板启动不得为此新建 relay。
-   Windows 的 CSM 输出与显示事务相互独立：物理状态只来自 ETW。CSM 后端无法打开时允许
+   Windows 的 CSM 输出与显示事务相互独立：运行期物理变化只来自 ETW，启动只允许一次
+   CSM/journal 与稳定几何基线，并在有界时间后用非平板安全值收口，不能等待首个 ETW。
+   CSM 后端无法打开时允许
    仅显示降级且不得创建任何指标写入器；已取得后端后的写入失败仍阻止姿态确认。
    桌面会话代理不等待首个 ETW 事件才启动；物理状态未观测时只发送 `not-ready` 心跳，
    完成旧日志恢复和显示后端装配后再等待首个姿态事件，避免首次进入平板时发生启动竞态。
@@ -1295,3 +1297,12 @@ make WERROR=1 check
 - 影响：用户可见文案保持现有英文 msgid 和中文译文不变；模式代码、能力判断、平板物理状态、默认值、设置写入和硬件行为均不改变。
 - 同步：`frontend/mode_copy.py`、`fluent/pages.py`、`ui/settings.py`、i18n 源文件扫描、`po/POTFILES.in`、前端回归测试与本记录。
 - 验证：共享模式文案与前端 14 项测试通过，i18n 114 个 msgid 全部翻译且无未引用项；Windows 关于页和模式能力目标测试通过。本轮完整 Fluent 套件复跑在外部中断前已通过的用例无失败，但未完成；GTK 完整套件需在 Linux 环境继续验证。
+
+### 2026-11-12 - Windows 无需首个 ETW 即可启动
+
+- 变更：新增 `windows/slate_bootstrap.py`。服务启动后先启动 ETW 和传感器，再建立一次初始物理布尔状态：没有未完成 slate journal 时只读当前 CSM；有 journal、CSM 陈旧或辅助读取失败时，要求稳定的笔记本/帐篷重力几何；最多五秒仍不明确则以非平板安全值完成启动。启动完成后，运行期变化仍只接受 ETW。
+- 变更：`AcpiPhysicalSwitch` 拆分启动基线、事件监听和最终兜底；`HardwareRuntime.poll()` 在传感器启动后推进基线，不阻塞 RPC 或可信会话。Windows 会话在初始化资格暂不可读时把 `ServiceError` 映射为物理状态读错误，显示恢复保留 journal，不再退出代理。`unavailable` 目标只续租，不误报 ready；主页移除“先完整折叠一次”的提示。
+- 动机：Linux 启动直接读取当前 `SW_TABLET_MODE`，从不要求用户先触发一次状态变化；Windows 旧路径等待首个 ETW，导致从未折叠的设备长期不可用。单独读取 CSM 又会受旧软件输出影响，因此必须结合 journal 与独立几何，并设置有限安全兜底。
+- 影响：取代“ETW 成为唯一物理输入，CSM 降为纯输出”中“首事件前保持未知并拒绝会话”的部分，也取代“CSM 从不作为启动基线”的绝对表述。运行期仍不接受 CSM 回退；CSM 写入、恢复和 journal 清理仍受 ETW 健康门禁。五秒兜底只在辅助源均不明确时使用，默认非平板，之后首个 ETW 会纠正真实状态。
+- 同步：`windows/{etw_switch,slate_bootstrap,hardware_application,hardware_runtime,session_agent,session_display}.py`、`session/runtime.py`、`fluent/pages.py`、`ui/posture.py`、Windows/会话/UI 测试、`po/zh_CN.po`、README、MAINTENANCE 与本交接状态。
+- 验证：Windows 全套 299 项、Fluent 47 项和 i18n 113 个 msgid 通过。最终 MSI 构建、ICE、同版本安装和 UI 启动通过；当前未产生新 ETW 事件时真机状态为 `hardware=false`、`hardware_status=ok`、`target=laptop`、`session_connected=true`。真实进入物理平板后的 ETW 接管与显示/CSM 事务仍待授权验收。
