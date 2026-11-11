@@ -15,6 +15,7 @@ from ..model import StateSnapshot
 from ..session.failures import ServiceError, FailureKind
 from .hardware_ipc import HardwareConnection, HardwareOperationError, RPCConnection, validated_hardware_state
 from .protocol import ProtocolError
+from .state_contract import parse_hardware_release_pose
 
 
 @dataclass
@@ -34,6 +35,7 @@ class WindowsSessionClient:
         self._channels: list[_Channel] = []
         self._epoch = 0
         self._instance: str | None = None
+        self._hardware_release: tuple[StateSnapshot, str | None] | None = None
         self._closed = False
 
     def _channel(self) -> tuple[_Channel, int]:
@@ -51,6 +53,10 @@ class WindowsSessionClient:
 
     def _check(self, reply: dict, epoch: int) -> StateSnapshot:
         state = validated_hardware_state(reply.get('state'))
+        try:
+            release_pose = parse_hardware_release_pose(reply.get('hardware_release_pose'))
+        except ValueError as error:
+            raise ProtocolError(str(error)) from error
         if reply.get('instance') != state.instance or type(reply.get('accepted')) is not bool:
             raise ProtocolError('invalid session response identity')
         with self._lock:
@@ -62,7 +68,14 @@ class WindowsSessionClient:
                 self._epoch += 1
                 self._instance = None
                 raise ServiceError(ErrorCode.INTERNAL, 'hardware service restarted', kind=FailureKind.REJECTED)
+            self._hardware_release = state, release_pose
         return state
+
+    def hardware_release(self) -> tuple[StateSnapshot, str | None]:
+        with self._lock:
+            if self._closed or self._hardware_release is None:
+                raise OSError('hardware release state is unavailable')
+            return self._hardware_release
 
     @staticmethod
     def _drop(channel: _Channel) -> None:
@@ -98,7 +111,8 @@ class WindowsSessionClient:
             except HardwareOperationError as error:
                 try:
                     self._check(dict(state=error.state.to_dict(), instance=error.state.instance,
-                                     accepted=False), epoch)
+                                     accepted=False,
+                                     hardware_release_pose=error.hardware_release_pose), epoch)
                 except ServiceError:
                     self._drop(channel)
                     raise

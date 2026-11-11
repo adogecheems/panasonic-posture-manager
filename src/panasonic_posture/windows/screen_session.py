@@ -10,7 +10,6 @@ from collections.abc import Callable
 from concurrent.futures import Future, TimeoutError
 from contextlib import ExitStack
 from dataclasses import replace
-import logging
 import queue
 import os
 import threading
@@ -29,13 +28,13 @@ from ..session.failures import DisplayError, FailureKind, ServiceError
 from ..session.runtime import SessionRuntime
 from ..session.ports import DisplayBackend
 from .display_only_input import DisplayOnlyInput
+from .hardware_release import HardwareReleaseCoordinator
 from .orientation import OrientationReading
 from .session_display import (
     QualifiedDisplay, QualifiedRefresh, SessionContext, SlatePosture,
 )
 
 SCREEN_MODES = ('auto', 'laptop', 'tent', 'stand')
-log = logging.getLogger(__name__)
 
 
 def available_screen_modes(display: object) -> tuple[str, ...]:
@@ -149,7 +148,7 @@ class ScreenSession:
             self._stack.callback(slate.close)
         qualified = QualifiedDisplay(display, context, slate)
         self.qualified = qualified
-        self._hardware_release_key = None
+        self.hardware_release = HardwareReleaseCoordinator(qualified)
         self._stack.callback(qualified.restore)
         self.available_modes = available_screen_modes(display)
         refreshable = callable(getattr(display, 'needs_refresh', None)) and callable(
@@ -187,23 +186,7 @@ class ScreenSession:
         self.session.tick(now)
 
     def _prepare_hardware_release(self) -> None:
-        state = self.engine.state
-        pose = self.engine.hardware_release_pose
-        if state.hardware is True and pose in ('tent', 'stand'):
-            key = (state.instance, state.generation, pose)
-            try:
-                self.qualified.prepare_hardware_release()
-            except (DisplayError, OSError, ValueError) as error:
-                log.warning('cannot prepare for physical tablet release: %s', error)
-            else:
-                if key != self._hardware_release_key:
-                    log.warning(
-                        'pre-locked the physical tablet direction for pending %s',
-                        pose,
-                    )
-                self._hardware_release_key = key
-        elif state.hardware is not True:
-            self._hardware_release_key = None
+        self.hardware_release.prepare(self.engine.state, self.engine.hardware_release_pose)
 
     def call(self, method: str, params: dict) -> None:
         if method == 'set_mode':

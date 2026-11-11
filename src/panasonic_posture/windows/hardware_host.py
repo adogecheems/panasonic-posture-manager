@@ -8,11 +8,11 @@ no device discovery, installation or arbitrary device-write operation.
 from dataclasses import dataclass
 from collections.abc import Callable
 
-from ..contracts import ALL_ERROR_CODES, ErrorCode, MODES, PROMPTS
-from ..frontend.ports import PREFERENCES
+from ..contracts import ErrorCode
 from ..service.engine import Engine, ServiceError
 from ..service.ports import SessionOwner
 from .protocol import ProtocolError
+from .request_contract import HARDWARE_SIGNATURES, validate_operation
 
 CHANNEL = 'windows-hardware'
 CONTROL_VERSION = 1
@@ -39,12 +39,7 @@ class ConsoleIdentity:
             f'{self.sid}:{self.logon_id}:{self.session_id}:{self.process_id}:{self.created_at}')
 
 
-SIGNATURES = {
-    'get_state': (), 'set_mode': ('mode',), 'set_preference': ('field', 'enabled'),
-    'retry': (), 'calibrate': (), 'reset_calibration': (),
-    'confirm_prompt': ('prompt', 'epoch'),
-    'session_update': ('generation', 'ready', 'error_code', 'error_detail', 'unattended'),
-}
+SIGNATURES = HARDWARE_SIGNATURES
 
 
 def validate_request(value: object, instance: str) -> tuple[str, dict]:
@@ -55,31 +50,12 @@ def validate_request(value: object, instance: str) -> tuple[str, dict]:
             not 0 < value['id'] < 2**63):
         raise ProtocolError('invalid hardware request envelope')
     method, params = value['method'], value['params']
-    if not isinstance(method, str) or method not in SIGNATURES or not isinstance(params, dict):
-        raise ProtocolError('unknown hardware method')
-    if set(params) != set(SIGNATURES[method]):
-        raise ProtocolError('invalid hardware parameters')
     if value['instance'] != instance and not (method == 'get_state' and value['instance'] is None):
         raise ProtocolError('stale hardware service instance')
-    if method == 'set_mode' and (not isinstance(params['mode'], str) or params['mode'] not in MODES):
-        raise ProtocolError('invalid mode')
-    if method == 'set_preference' and (not isinstance(params['field'], str) or
-            params['field'] not in PREFERENCES or type(params['enabled']) is not bool):
-        raise ProtocolError('invalid preference')
-    if method == 'confirm_prompt' and (params['prompt'] not in PROMPTS or
-            type(params['epoch']) is not int or not 0 <= params['epoch'] < 2**63):
-        raise ProtocolError('invalid confirmation')
-    if method == 'session_update':
-        if (type(params['generation']) is not int or not 0 <= params['generation'] < 2**63 or
-                type(params['ready']) is not bool or type(params['unattended']) is not bool or
-                params['error_code'] is not None and (not isinstance(params['error_code'], str) or
-                                                     params['error_code'] not in ALL_ERROR_CODES) or
-                params['error_detail'] is not None and (not isinstance(params['error_detail'], str) or
-                                                       len(params['error_detail']) > 512) or
-                params['ready'] and (params['unattended'] or params['error_code'] is not None or
-                                     params['error_detail'] is not None)):
-            raise ProtocolError('invalid session receipt')
-    return method, params
+    try:
+        return validate_operation(method, params, HARDWARE_SIGNATURES)
+    except ValueError as error:
+        raise ProtocolError(str(error)) from error
 
 
 class HardwareHost:
@@ -116,7 +92,8 @@ class HardwareHost:
             self.engine.tick()
         return dict(version=CONTROL_VERSION, channel=CHANNEL, type='response',
                     id=request['id'], instance=self.instance, accepted=accepted,
-                    state=self.engine.state.to_dict())
+                    state=self.engine.state.to_dict(),
+                    hardware_release_pose=self.engine.hardware_release_pose)
 
     def tick(self) -> None:
         if self.session_process is not None and not self.authorize(self.session_process):

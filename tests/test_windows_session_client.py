@@ -224,14 +224,19 @@ class ConnectionReceiptTests(unittest.TestCase):
         class Pipes:
             closed = False
             serial = 0
+            pose = None
+            omit_pose = False
             def connect(self, name):
                 return 12
             def write(self, handle, value):
                 self.serial = value['id']
             def read(self, handle):
-                return dict(version=1, channel=CHANNEL, type='response', id=self.serial,
+                response = dict(version=1, channel=CHANNEL, type='response', id=self.serial,
                     instance='native-one', accepted=(code is None) if accepted is None else accepted,
-                    error=code, state=snapshot or state())
+                    error=code, state=snapshot or state(), hardware_release_pose=self.pose)
+                if self.omit_pose:
+                    del response['hardware_release_pose']
+                return response
             def close(self, handle):
                 self.closed = True
         pipes = Pipes()
@@ -240,11 +245,24 @@ class ConnectionReceiptTests(unittest.TestCase):
     def test_operation_failure_keeps_an_authenticated_connection_but_denial_closes_it(self):
         for code, closed in (('config-write-failed', False), ('access-denied', True)):
             connection, pipes = self.connection(code=code)
+            pipes.pose = 'tent'
             with self.assertRaises(HardwareOperationError) as caught:
                 connection.request('get_state', {})
             self.assertEqual(caught.exception.state.instance, 'native-one')
+            self.assertEqual(caught.exception.hardware_release_pose, 'tent')
             self.assertEqual(pipes.closed, closed)
             connection.close()
+
+    def test_release_pose_is_optional_but_must_be_known(self):
+        connection, pipes = self.connection()
+        pipes.omit_pose = True
+        self.assertIsNone(connection.request('get_state', {}).get('hardware_release_pose'))
+        connection.close()
+        connection, pipes = self.connection()
+        pipes.pose = 'tablet'
+        with self.assertRaises(ProtocolError):
+            connection.request('get_state', {})
+        self.assertTrue(pipes.closed)
 
     def test_invalid_capabilities_and_inconsistent_results_close_the_channel(self):
         for snapshot, code, accepted in ((dict(state(), sensor_source='iio'), None, True),

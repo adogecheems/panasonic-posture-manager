@@ -25,6 +25,7 @@ from panasonic_posture.windows.screen_session import (
     select_native_display, verified_machine,
 )
 from panasonic_posture.windows.session_display import QualifiedDisplay
+from panasonic_posture.windows.hardware_release import HardwareReleaseCoordinator
 from panasonic_posture.windows.simulation import SimulatedDisplay
 from panasonic_posture.windows.tablet_display import WindowsTabletDisplay
 
@@ -291,8 +292,8 @@ class HardwareReleasePreparationTests(unittest.TestCase):
                 self.calls += 1
 
         session = object.__new__(ScreenSession)
-        session._hardware_release_key = None
         session.qualified = Prepared()
+        session.hardware_release = HardwareReleaseCoordinator(session.qualified)
         session.engine = SimpleNamespace(state=StateSnapshot(
             instance='one', generation=3, hardware=True, pose='tablet',
             target=Target(mode='hardware'),

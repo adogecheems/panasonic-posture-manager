@@ -4,9 +4,7 @@ This is a new, Windows-only transport. Linux D-Bus and relay contracts stay
 unchanged. No network listener, shared pipe name or caller-supplied executable
 is exposed. The inherited standard pipes are the communication capability.
 """
-import json
-
-from ..snapshot_codec import parse_snapshot
+from .state_contract import parse_complete_snapshot
 
 VERSION = 1
 MAX_FRAME = 65536
@@ -67,19 +65,12 @@ def decode(frame: bytes) -> dict:
 
 
 def validate_state(value: object, *, native: bool = False) -> dict:
-    if not isinstance(value, dict):
-        raise ProtocolError('state must be an object')
     # These are complete snapshots, unlike the legacy Linux decoder's optional
     # fields. Missing data must never enable an action by way of a default.
-    from ..model import StateSnapshot
-    if not set(StateSnapshot().to_dict()) <= value.keys():
-        raise ProtocolError('incomplete state')
-    if type(value.get('version')) is not int:
-        raise ProtocolError('invalid state version')
     try:
-        state = parse_snapshot(json.dumps(value, allow_nan=False))
-    except (ValueError, TypeError, RecursionError) as error:
-        raise ProtocolError('invalid state fields') from error
+        state = parse_complete_snapshot(value)
+    except ValueError as error:
+        raise ProtocolError(str(error)) from error
     sources = ('windows-winrt',) if native else ('windows-unavailable', 'windows-simulation')
     if not state.instance or state.sensor_source not in sources:
         raise ProtocolError('invalid Windows state identity or source')

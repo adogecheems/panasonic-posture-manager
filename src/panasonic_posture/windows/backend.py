@@ -12,6 +12,7 @@ from ..contracts import ErrorCode
 from ..frontend.ports import PREFERENCES
 from ..model import StateSnapshot
 from ..service.settings_store import SettingsStore
+from .request_contract import SOFTWARE_SIGNATURES, validate_operation
 
 if TYPE_CHECKING:
     from .screen_session import ScreenSession
@@ -97,13 +98,7 @@ class Backend:
         return state
 
     def call(self, method: str, params: dict) -> None:
-        if not isinstance(params, dict):
-            raise ValueError('params must be an object')
-        signatures = {'get_state': (), 'set_preference': ('field', 'enabled'),
-                      'set_mode': ('mode',), 'retry': ('fallback_mode',),
-                      'confirm_prompt': ('prompt', 'epoch'), 'calibrate': (), 'reset_calibration': ()}
-        if method not in signatures or set(params) != set(signatures[method]):
-            raise ValueError('unknown method or parameters')
+        method, params = validate_operation(method, params, SOFTWARE_SIGNATURES)
         if method == 'get_state':
             return
         if self.screen:

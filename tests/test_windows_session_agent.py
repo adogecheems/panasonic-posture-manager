@@ -35,6 +35,7 @@ class Client:
         self.state = StateSnapshot(instance='native-fixture', hardware=False, sensor_source='windows-winrt',
             target=Target(mode='tent', tablet=True, rotation=180, disable_internal_input=True))
         self.feedback = []
+        self.release_pose = None
         self.closed = False
         self.deny = False
     def get_state(self):
@@ -46,6 +47,8 @@ class Client:
         self.state = replace(self.state, session_connected=True)
     def close(self):
         self.closed = True
+    def hardware_release(self):
+        return self.state, self.release_pose
 
 
 class Display:
@@ -62,6 +65,8 @@ class Display:
         self.writes.append(0)
     def hold_orientation(self):
         self.writes.append('hold')
+    def prepare_hardware_release(self):
+        self.writes.append('prepare')
 
 
 class SessionAgentTests(unittest.TestCase):
@@ -97,6 +102,13 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(self.display.current, 0)
         self.assertTrue(self.client.closed)
         self.assertTrue(self.context.closed)
+
+    def test_physical_release_uses_cached_rpc_metadata_before_runtime_tick(self):
+        self.agent.start()
+        self.client.state = replace(self.client.state, hardware=True)
+        self.client.release_pose = 'tent'
+        self.agent.tick(10.)
+        self.assertEqual(self.display.writes[0], 'prepare')
 
     def test_screen_off_is_context_and_does_not_reject_valid_display_control(self):
         self.context.screen_off = True

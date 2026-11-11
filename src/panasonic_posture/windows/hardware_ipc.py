@@ -7,18 +7,17 @@ open an input device. The host loop never waits for token/WTS authentication.
 import ctypes as C
 from collections.abc import Callable
 from dataclasses import dataclass
-import json
 import time
 from typing import Protocol
 
 from ..contracts import ALL_ERROR_CODES, ErrorCode
 from ..model import StateSnapshot
 from ..service.engine import Engine, ServiceError
-from ..snapshot_codec import parse_snapshot
 from ..tasks import thread_executor
 from .hardware_host import ConsoleIdentity, HardwareHost, CHANNEL
 from .protocol import MAX_FRAME, encode, decode, ProtocolError
 from .security import WindowsSecurity, SecurityAttributes, U32, I32, HANDLE, AuthenticationError
+from .state_contract import parse_complete_snapshot, parse_hardware_release_pose
 
 PIPE_NAME = r'\\.\pipe\PanasonicPostureManager.Hardware.v1'
 # FILE_GENERIC_READ | FILE_GENERIC_WRITE minus FILE_CREATE_PIPE_INSTANCE (4).
@@ -31,13 +30,10 @@ CLIENT_TIMEOUT = 5.0
 
 
 def validated_hardware_state(value: object) -> StateSnapshot:
-    if (not isinstance(value, dict) or not set(StateSnapshot().to_dict()) <= value.keys() or
-            type(value.get('version')) is not int):
-        raise ProtocolError('incomplete hardware state')
     try:
-        state = parse_snapshot(json.dumps(value, allow_nan=False))
-    except (ValueError, TypeError, RecursionError) as error:
-        raise ProtocolError('invalid hardware state fields') from error
+        state = parse_complete_snapshot(value, incomplete='incomplete hardware state')
+    except ValueError as error:
+        raise ProtocolError(str(error)) from error
     if (not state.instance or state.sensor_source not in ('starting', 'windows-unavailable', 'windows-winrt') or
             state.supported != (state.support_tier != 'unsupported') or
             state.supported and state.sensor_source != 'windows-winrt' or
@@ -49,9 +45,11 @@ def validated_hardware_state(value: object) -> StateSnapshot:
 class HardwareOperationError(ServiceError):
     """A validated operation failure with its authoritative state snapshot."""
 
-    def __init__(self, code: str, state: StateSnapshot) -> None:
+    def __init__(self, code: str, state: StateSnapshot, *,
+                 hardware_release_pose: str | None = None) -> None:
         super().__init__(code)
         self.state = state
+        self.hardware_release_pose = hardware_release_pose
 
 
 class RPCConnection(Protocol):
@@ -316,7 +314,8 @@ class HardwareServer:
                     except ServiceError as error:
                         reply = dict(version=1, channel=CHANNEL, type='response', id=request['id'],
                             instance=self.host.instance, accepted=False, error=error.code,
-                            state=self.host.engine.state.to_dict())
+                            state=self.host.engine.state.to_dict(),
+                            hardware_release_pose=self.host.engine.hardware_release_pose)
                     self.pipes.write(slot.handle, reply)
                     slot.request = None
                     slot.touched = self.clock()
@@ -391,11 +390,16 @@ class HardwareConnection:
                         reply['error'] is None and not reply['accepted'] and method != 'session_update'):
                     raise ProtocolError('inconsistent hardware operation result')
                 state = validated_hardware_state(reply.get('state'))
+                try:
+                    release_pose = parse_hardware_release_pose(reply.get('hardware_release_pose'))
+                except ValueError as error:
+                    raise ProtocolError(str(error)) from error
                 if not state.instance or state.instance != reply.get('instance') or self.instance not in (None, state.instance):
                     raise ProtocolError('hardware instance changed')
                 self.instance = state.instance
                 if reply['error'] is not None:
-                    raise HardwareOperationError(reply['error'], state)
+                    raise HardwareOperationError(reply['error'], state,
+                                                 hardware_release_pose=release_pose)
                 return reply
             raise TimeoutError('hardware request timed out')
         except HardwareOperationError as error:

@@ -23,6 +23,7 @@ from ..tasks import thread_executor
 from .session_client import WindowsSessionClient
 from .session_context import WindowsSessionContext
 from .session_display import SessionContext, QualifiedDisplay as _QualifiedDisplay
+from .hardware_release import HardwareReleaseCoordinator
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ class WindowsSessionAgent:
         self._started = self._closed = False
         self._qualification_task: Future | None = None
         self._heartbeat_at = float('-inf')
+        self.hardware_release: HardwareReleaseCoordinator | None = None
 
     def _prove_receipt_authority(self) -> None:
         state = self.client.get_state()
@@ -120,8 +122,10 @@ class WindowsSessionAgent:
             self.executor.submit(self._prove_receipt_authority).result(timeout=20)
             display = self.display_factory()
             self._stack.callback(lambda: self.runtime.close() if self.runtime else display.restore())
+            qualified = _QualifiedDisplay(display, self.context)
+            self.hardware_release = HardwareReleaseCoordinator(qualified)
             self.runtime = SessionRuntime(_QualifiedClient(self.client, self.context),
-                _QualifiedDisplay(display, self.context), None,
+                qualified, None,
                 screen_locked=lambda: not self.context.control_available(),
                 executor=self.executor, lease_executor=self.lease_executor)
         except BaseException:
@@ -151,6 +155,10 @@ class WindowsSessionAgent:
         if unavailable and self._qualification_task is None and now >= self._heartbeat_at:
             self._heartbeat_at = now + AGENT_HEARTBEAT_SECONDS
             self._qualification_task = self.lease_executor.submit(self._qualification_heartbeat)
+        if self.hardware_release is not None:
+            cached = getattr(self.client, 'hardware_release', None)
+            if cached is not None:
+                self.hardware_release.prepare(*cached())
         self.runtime.tick(now)
 
     def close(self) -> None:
