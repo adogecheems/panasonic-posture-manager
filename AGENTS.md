@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-12）
 
-- **最新功能提交**：`eb17793 fix: bootstrap Windows posture without waiting for ETW`。Windows 启动像 Linux 一样自行取得初始物理布尔姿态，无需先完整折叠；`1d70d53` 用 `WixQuietExec` 消除 MSI 控制台窗口，`e35d8b3` 修复首个 ETW 事件前会话租约循环。
+- **最新功能提交**：`1f547ad fix: avoid competing rotations on Windows software postures`。软件笔记本/帐篷/支架现在先锁定并写入 CCD，再发布 CSM，消除 Windows 原生旋转与应用事务的双重方向变化；物理平板仍保持 CSM/原生优先。`eb17793` 让启动不等待 ETW，`1d70d53` 消除 MSI 控制台窗口。
 - **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
 - **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。崩溃恢复始终使用 `pending.original`。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
@@ -19,7 +19,7 @@
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
 - **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。开始菜单、运行窗口和任务栏共享固定多尺寸 ICO 与 AppUserModelID。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首事件前 `hardware_status=absent`；当前源码会让已认证会话发送 `not-ready` 心跳，但仍拒绝显示回执。
 - **下一智能体优先动作**：当前 MSI 已安装，启动时 `hardware=false`、`hardware_status=ok`、目标为笔记本、`session_connected=true`，未依赖新 ETW 事件。下一阶段需用户明确授权真机姿态操作，验证进入平板后的 ETW 接管、首次方向交接、显示/CSM 清理、ETW 中断后的租约撤销与恢复。不得用自动化 fixture 代替真机验收。
-- **验证基线**：2026-11-12 最终 MSI SHA-256 为 `6735A30D420D13C60C1C1A5D9747886CBCBA92454A1D7E0D132F67FE9443EC8D`。本机完成 MSI 构建、ICE、同版本升级和 UI 启动；安装日志确认两个 PowerShell 动作均通过 `WixQuietExec`。启动无需新 ETW 事件即可得到 `hardware=false`、`target=laptop`、`session_connected=true`。Windows 全套 299 项、Fluent 47 项、i18n 113 个 msgid 通过；真机物理变化事务仍未验收。
+- **验证基线**：2026-11-12 新 MSI 已构建并通过 ICE，SHA-256 为 `6E2551FC58A0BB9A4B72DA45E3CAD983AF32C50A6D26CE4C806BA45174899729`。Windows 全套 300 项通过；此前安装版本完成同版本升级、启动基线、`WixQuietExec` 和 UI 启动验证。新显示顺序 MSI 尚未安装，真机跳变改善仍需更新后观察。
 - **本轮关于页验证**：新增 5 项 jsproxy 响应/版本比较单测、完整 Fluent 47 项、打包 2 项和 i18n 114 个 msgid 通过；当前安装的 Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer 通过，真实端点返回 `2.4.0 -> 2.4.0`。新 MSI 和已安装程序尚未包含本轮改动。
 - **未验证项**：GitHub Windows CI、Authenticode 签名、重启后的首次 MSI 安装链路、首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 - **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。会话代理新增有界 `native-display.log` 记录预锁和事务失败。退出物理平板时 Windows 仍可能覆盖方向锁并短暂回正，当前架构不能完全消除。
@@ -1306,3 +1306,11 @@ make WERROR=1 check
 - 影响：取代“ETW 成为唯一物理输入，CSM 降为纯输出”中“首事件前保持未知并拒绝会话”的部分，也取代“CSM 从不作为启动基线”的绝对表述。运行期仍不接受 CSM 回退；CSM 写入、恢复和 journal 清理仍受 ETW 健康门禁。五秒兜底只在辅助源均不明确时使用，默认非平板，之后首个 ETW 会纠正真实状态。
 - 同步：`windows/{etw_switch,slate_bootstrap,hardware_application,hardware_runtime,session_agent,session_display}.py`、`session/runtime.py`、`fluent/pages.py`、`ui/posture.py`、Windows/会话/UI 测试、`po/zh_CN.po`、README、MAINTENANCE 与本交接状态。
 - 验证：Windows 全套 299 项、Fluent 47 项和 i18n 113 个 msgid 通过。最终 MSI 构建、ICE、同版本安装和 UI 启动通过；当前未产生新 ETW 事件时真机状态为 `hardware=false`、`hardware_status=ok`、`target=laptop`、`session_connected=true`。真实进入物理平板后的 ETW 接管与显示/CSM 事务仍待授权验收。
+
+### 2026-11-12 - 软件姿态避免 Windows 双重旋转
+
+- 变更：`QualifiedDisplay` 对软件笔记本、帐篷和支架先调用显示事务，完成旋转锁、CCD 方向写入与回读后，再调用 `SlateNotifier.sync_mode()`。物理 `hardware` 目标仍先发布 CSM，再 relinquish CCD 锁并交给 Windows 原生旋转。
+- 动机：Windows 同时存在系统平板方向响应和应用 CCD 事务。旧顺序先写 CSM，可能让 Windows 原生旋转器开始运动，随后应用又为相同目标写一次方向，表现为一次姿态出现多段跳变；Linux 只有应用事务，不存在这个额外旋转源。
+- 影响：不改变姿态区间、硬件优先、CSM 健康门禁、目标/结果分离、journal 或租约。软件模式在显示事务失败时不再提前改变 CSM；CSM 发布失败会恢复已取得的显示方向。物理平板入口仍由 Windows 主持原生方向交接。
+- 同步：`windows/session_display.py`、`tests/test_windows_convertible_slate.py`、README、MAINTENANCE 与本记录。
+- 验证：Windows 全套 300 项通过；新 MSI 构建与 ICE 通过。安装到本机后的真实多姿态跳变观察仍未执行。
