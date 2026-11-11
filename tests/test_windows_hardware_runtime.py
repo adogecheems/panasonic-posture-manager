@@ -149,6 +149,14 @@ class HardwareRuntimeTests(unittest.TestCase):
         ])
         runtime.close()
 
+    def test_first_event_is_required_before_a_session_may_publish_state(self):
+        runtime, _, switch, _, _, _ = self.make(value=None, status=HardwareStatus.ABSENT)
+        runtime.start()
+        self.assertFalse(runtime.supervisor.admission())
+        switch.value, switch.status = False, HardwareStatus.OK
+        self.assertTrue(runtime.supervisor.admission())
+        runtime.close()
+
     def test_physical_source_failure_is_read_only_and_recovery_reopens_admission(self):
         runtime, events, switch, _, _, _ = self.make(value=None, status=HardwareStatus.READ_ERROR)
         runtime.start()

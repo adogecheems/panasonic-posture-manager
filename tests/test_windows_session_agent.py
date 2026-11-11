@@ -73,7 +73,8 @@ class SessionAgentTests(unittest.TestCase):
     def setUp(self):
         self.context, self.client, self.display = Context(), Client(), Display()
         self.created = []
-        def display():
+        def display(client):
+            self.assertIsNotNone(client)
             self.created.append(True)
             self.assertTrue(self.client.feedback)
             self.assertFalse(self.client.feedback[0][1])
@@ -202,6 +203,35 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(self.display.current, 0)
         self.assertFalse(self.agent.runtime.ready)
         self.assertTrue(all(not ready for _, ready, _, _ in self.client.feedback))
+
+    def test_slate_receives_the_qualified_client_and_closes_after_display_release(self):
+        events = []
+        class Slate:
+            def sync_mode(self, mode):
+                events.append(('sync', mode))
+                return True
+            def release(self):
+                events.append(('release', None))
+            def close(self):
+                events.append(('close', None))
+        display = self.display
+        restore = display.restore
+        def ordered_restore(normal=False):
+            restore(normal)
+            events.append(('display-restore', normal))
+        display.restore = ordered_restore
+        agent = WindowsSessionAgent(context_factory=lambda: self.context,
+            client_factory=lambda unattended: self.client,
+            display_factory=lambda client: display,
+            slate_factory=lambda client: Slate(),
+            executor=InlineExecutor(), lease_executor=InlineExecutor())
+        agent.start()
+        agent.tick(10.)
+        self.assertIn(('sync', 'tent'), events)
+        agent.close()
+        self.assertEqual(events[-3:], [
+            ('display-restore', False), ('release', None), ('close', None),
+        ])
 
 
 class NativeAgentTokenTests(unittest.TestCase):

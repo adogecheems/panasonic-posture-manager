@@ -158,15 +158,9 @@ class ProtocolTests(unittest.TestCase):
             encode_startup_failure('private-detail')
 
     def test_backend_startup_errors_map_to_stable_user_safety_reasons(self):
-        self.assertEqual(startup_failure_reason(
-            SlateError('configure LaptopSlateExclusiveAccess=0 and restart Windows'), native=True),
-            'slate-configuration-required')
-        self.assertEqual(startup_failure_reason(
-            PermissionError('remote session'), native=True), 'native-session-unavailable')
-        self.assertEqual(startup_failure_reason(
-            OSError('fixture'), native=True), 'native-startup-failed')
-        self.assertEqual(startup_failure_reason(
-            OSError('fixture'), native=False), 'backend-startup-failed')
+        for error in (SlateError('private detail'), PermissionError('private detail'),
+                      OSError('private detail')):
+            self.assertEqual(startup_failure_reason(error), 'backend-startup-failed')
 
     def test_windows_host_imports_without_linux_or_gui_dependencies(self):
         result = subprocess.run([sys.executable, '-S', '-c', '''
@@ -297,10 +291,10 @@ class ProcessTests(unittest.TestCase):
         self.client.inbox.put({
             'version': 1,
             'type': 'fatal',
-            'reason': 'slate-configuration-required',
+            'reason': 'backend-startup-failed',
         })
         self.client.poll()
-        self.assertEqual(self.client.startup_failure, 'slate-configuration-required')
+        self.assertEqual(self.client.startup_failure, 'backend-startup-failed')
         self.assertIsNone(self.client.process)
         self.assertIsNotNone(process.poll())
         self.until(lambda: bool(self.unavailable))

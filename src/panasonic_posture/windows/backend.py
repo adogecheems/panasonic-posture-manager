@@ -26,15 +26,9 @@ class BackendError(RuntimeError):
 
 class Backend:
     def __init__(self, path: Path, *, simulate: bool = False, scenario: str = 'laptop',
-                 native: bool = False,
                  screen_factory: Callable[[SettingsStore, str, Path], ScreenSession] | None = None) -> None:
-        if native and simulate:
-            raise ValueError('native and simulation backends are mutually exclusive')
-        if screen_factory is not None and not native:
-            raise ValueError('screen_factory requires native mode')
-        if native and screen_factory is None:
-            from .screen_session import require_native_user
-            require_native_user()  # Before even loading/quarantining user files.
+        if screen_factory is not None and simulate:
+            raise ValueError('screen_factory cannot be combined with simulation')
         self._resources = ExitStack()
         self.store = SettingsStore(path)
         self.settings = self.store.load()
@@ -44,20 +38,10 @@ class Backend:
         if simulate:
             from .simulation import Simulation
             self.simulation = Simulation(self.store, self.instance, scenario)
-        if native:
-            from .screen_session import native_screen_session
+        if screen_factory is not None:
             try:
-                if screen_factory is None:
-                    from .client import settings_path
-                    from .instance import InstanceLock
-                    root = settings_path().parent
-                    # A different --settings file must not create a second
-                    # writer for the same user's physical display journal.
-                    self._resources.enter_context(InstanceLock(root / 'screen-controller'))
-                    journal = root / 'screen-display.json'
-                else:
-                    journal = path.with_suffix('.display.json')
-                self.screen = (screen_factory or native_screen_session)(self.store, self.instance, journal)
+                journal = path.with_suffix('.display.json')
+                self.screen = screen_factory(self.store, self.instance, journal)
                 self._resources.callback(self.screen.close)
             except BaseException:
                 self._resources.close()
@@ -80,7 +64,7 @@ class Backend:
     def snapshot(self) -> dict:
         if self.screen:
             state = self.screen.engine.state.to_dict()
-            state.update(preferences_available=True, simulation=False, native_backend=True,
+            state.update(preferences_available=True, simulation=False,
                          input_control_available=False,
                          available_modes=list(self.screen.available_modes))
             return state

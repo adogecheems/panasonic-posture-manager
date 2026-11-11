@@ -20,9 +20,11 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtTest import QTest
 from panasonic_posture.fluent.app import Window
+from panasonic_posture.windows.client import ProcessClient
 app = QApplication([])
 assert QFontDatabase.families(), 'Bundle verification requires installed system fonts'
-window = Window(backend=True, simulate_backend=True, language='zh_CN', settings_path=Path(sys.argv[1]))
+client = ProcessClient(Path(sys.argv[1]), simulate=True)
+window = Window(backend=True, client=client, language='zh_CN', settings_path=Path(sys.argv[1]))
 window.show()
 deadline = time.monotonic() + 10
 while window.settings.model.state is None and time.monotonic() < deadline:

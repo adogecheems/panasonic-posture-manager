@@ -60,11 +60,12 @@ class PayloadTests(unittest.TestCase):
 
 
 class PhysicalSwitchTests(unittest.TestCase):
-    def test_baseline_is_used_until_an_independent_etw_event_arrives(self):
+    def test_state_is_unknown_until_an_independent_etw_event_arrives(self):
         backend = FakeBackend()
-        switch = AcpiPhysicalSwitch(backend, baseline=lambda: (False, HardwareStatus.OK))
+        switch = AcpiPhysicalSwitch(backend)
         switch.start()
-        self.assertEqual(switch.query(), (False, HardwareStatus.OK))
+        self.assertTrue(backend.started)
+        self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
         backend.emit(0xC0, ACPI_TABLET_NOTIFY)
         self.assertEqual(switch.query(), (True, HardwareStatus.OK))
         backend.emit(0xC0, ACPI_LAPTOP_NOTIFY)
@@ -72,35 +73,20 @@ class PhysicalSwitchTests(unittest.TestCase):
         switch.close()
         self.assertTrue(backend.closed)
 
-    def test_event_during_baseline_read_wins_over_the_stale_baseline(self):
+    def test_unknown_or_duplicate_payloads_do_not_publish_a_state(self):
         backend = FakeBackend()
-        listening = []
-
-        def baseline():
-            listening.append(backend.started)
-            backend.emit(0xC0, ACPI_TABLET_NOTIFY)
-            return False, HardwareStatus.OK
-
-        switch = AcpiPhysicalSwitch(backend, baseline=baseline)
+        switch = AcpiPhysicalSwitch(backend)
         switch.start()
-        self.assertEqual(listening, [True])
-        self.assertEqual(switch.query(), (True, HardwareStatus.OK))
-
-    def test_missing_or_failed_baseline_stops_the_consumer(self):
-        for value, status in ((None, HardwareStatus.ABSENT),
-                              (None, HardwareStatus.READ_ERROR)):
-            backend = FakeBackend()
-            switch = AcpiPhysicalSwitch(backend, baseline=lambda value=value, status=status: (value, status))
-            switch.start()
-            self.assertTrue(backend.started)
-            self.assertTrue(backend.closed)
-            self.assertEqual(switch.query(), (None, status))
-            switch.close()
+        for words in ((0xC0, 0xCF), (0xC0, ACPI_TABLET_NOTIFY, ACPI_LAPTOP_NOTIFY)):
+            backend.emit(*words)
+            self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+        switch.close()
 
     def test_backend_failure_degrades_to_unknown(self):
         backend = FakeBackend()
-        switch = AcpiPhysicalSwitch(backend, baseline=lambda: (False, HardwareStatus.OK))
+        switch = AcpiPhysicalSwitch(backend)
         switch.start()
+        backend.emit(0xC0, ACPI_LAPTOP_NOTIFY)
         backend.failure = OSError('lost')
         self.assertEqual(switch.query(), (None, HardwareStatus.READ_ERROR))
         switch.close()
@@ -111,7 +97,7 @@ class PhysicalSwitchTests(unittest.TestCase):
                 raise PermissionError('not LocalSystem')
 
         backend = Denied()
-        switch = AcpiPhysicalSwitch(backend, baseline=lambda: (False, HardwareStatus.OK))
+        switch = AcpiPhysicalSwitch(backend)
         switch.start()
         self.assertEqual(switch.query(), (None, HardwareStatus.PERMISSION))
 

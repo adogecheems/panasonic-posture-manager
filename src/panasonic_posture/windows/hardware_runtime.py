@@ -8,13 +8,14 @@ touching a real console or display.
 
 Startup order is part of the safety contract:
 
-1. start the physical ETW consumer and establish its clean CSM baseline;
+1. start the physical ETW consumer;
 2. start the WinRT sensor worker;
 3. only then create the RPC endpoint and the trusted-session supervisor.
 
-If the physical source is absent or read-only, the host still starts in a
-read-only state.  It must not accept display receipts or launch a trusted
-session until a valid boolean physical observation is available again.
+The CSM is an output only.  Before the first valid ETW event the physical
+state is unknown, so admission stays closed and no session may publish a
+display or CSM transition.  A later ETW failure revokes admission again; the
+host retries the source instead of reading the indicator it may have written.
 """
 from __future__ import annotations
 
@@ -103,8 +104,8 @@ class HardwareRuntime:
             raise RuntimeError('hardware runtime already started or closed')
         self.started = True
         try:
-            # The ETW listener must be live before the CSM baseline is read.
-            # AcpiPhysicalSwitch.start() enforces that ordering internally.
+            # ETW is the only physical input.  It must be live before the
+            # sensor, RPC endpoint or any session display writer exists.
             self.switch.start()
             self.engine.start()
             self.server = self.server_factory(self.admitted)

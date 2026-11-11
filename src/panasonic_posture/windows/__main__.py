@@ -83,13 +83,9 @@ def serve(source: BinaryIO, sink: BinaryIO, backend: Backend) -> int:
     return 0
 
 
-def startup_failure_reason(error: OSError, *, native: bool) -> str:
-    text = str(error)
-    if 'LaptopSlateExclusiveAccess=0' in text:
-        return 'slate-configuration-required'
-    if isinstance(error, PermissionError):
-        return 'native-session-unavailable'
-    return 'native-startup-failed' if native else 'backend-startup-failed'
+def startup_failure_reason(error: OSError) -> str:
+    del error
+    return 'backend-startup-failed'
 
 
 def main(argv=None):
@@ -98,28 +94,20 @@ def main(argv=None):
     parser.add_argument('--stdio', action='store_true', required=True)
     parser.add_argument('--settings', type=Path, required=True)
     parser.add_argument('--simulate', action='store_true')
-    parser.add_argument('--native', action='store_true', help='real user-session screen control; no input disabling')
     parser.add_argument('--scenario', choices=('laptop', 'prompt', 'hardware', 'slow', 'error'), default='laptop')
     options = parser.parse_args(argv)
-    if options.native and options.simulate:
-        parser.error('--native cannot be combined with --simulate')
-    if options.native and sys.platform != 'win32':
-        parser.error('--native requires Windows')
     if options.scenario != 'laptop' and not options.simulate:
         parser.error('--scenario requires --simulate')
     try:
-        if options.native:
-            from .screen_session import require_native_user
-            require_native_user()  # Do not open a caller-selected lock while elevated.
         configure_logging(options.settings)
         with InstanceLock(options.settings):
             return serve(sys.stdin.buffer, sys.stdout.buffer,
-                         Backend(options.settings, simulate=options.simulate, scenario=options.scenario, native=options.native))
+                         Backend(options.settings, simulate=options.simulate, scenario=options.scenario))
     except OSError as error:
         logging.exception('cannot start private user backend')
         try:
             sys.stdout.buffer.write(encode_startup_failure(
-                startup_failure_reason(error, native=options.native)))
+                startup_failure_reason(error)))
             sys.stdout.buffer.flush()
         except (OSError, ProtocolError):
             pass

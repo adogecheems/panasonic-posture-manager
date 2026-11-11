@@ -44,12 +44,7 @@ class Window(FluentWidget):
     connection_lost = pyqtSignal()
 
     def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None,
-                 backend=False, simulate_backend=False, settings_path=None, hardware_backend=False, native_backend=False,
-                 startup=None):
-        if hardware_backend and (demo or backend or simulate_backend or native_backend or settings_path is not None):
-            raise ValueError('hardware backend cannot be combined with software backend options')
-        if native_backend and (demo or backend or simulate_backend):
-            raise ValueError('native backend cannot be combined with preview backend options')
+                 backend=False, settings_path=None, startup=None):
         configure_application_font()
         super().__init__()
         _ = translator(language)
@@ -73,18 +68,18 @@ class Window(FluentWidget):
         self.titleBar.titleLabel.setContentsMargins(0, 1, 0, 4)
         self.update_mark()
         qconfig.themeChangedFinished.connect(self.update_mark)
-        self.simulating = demo or simulate_backend
+        self.simulating = demo
         self.memory_demo = demo
         self._stopped = False
         if client is not None:
             self.client = client
         elif demo:
             self.client = DemoClient(QTimer.singleShot)
-        elif hardware_backend:
+        elif backend:
+            path = settings_path if settings_path is not None else default_settings_path()
+            self.client = ProcessClient(path, scenario=scenario)
+        elif sys.platform == 'win32':
             self.client = HardwareUIClient()
-        elif backend or simulate_backend or native_backend or sys.platform == 'win32':
-            path = settings_path if settings_path is not None else default_settings_path(simulate=simulate_backend, native=native_backend)
-            self.client = ProcessClient(path, simulate=simulate_backend, scenario=scenario, native=native_backend)
         else:
             self.client = UnavailableClient()
         if demo and client is None:
@@ -118,9 +113,8 @@ class Window(FluentWidget):
         footer.addWidget(self.navigation)
         footer.addStretch()
         layout.addLayout(footer)
-        if demo or simulate_backend:
-            note = CaptionLabel(_('Demo preview · Changes stay in this window.') if demo else
-                                _('Simulation · Preferences are saved separately.'))
+        if demo:
+            note = CaptionLabel(_('Demo preview · Changes stay in this window.'))
             note.setWordWrap(True)
             note.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(note)
@@ -203,8 +197,7 @@ class Window(FluentWidget):
         _ = self._
         if success:
             title = _('Preview updated') if self.simulating else _('Settings saved')
-            message = (_('Demo preview · Changes stay in this window.') if self.memory_demo else
-                       _('Simulation · Preferences are saved separately.') if self.simulating else '')
+            message = _('Demo preview · Changes stay in this window.') if self.memory_demo else ''
             InfoBar.success(title, message, duration=3500,
                             position=InfoBarPosition.TOP, parent=self)
         else:
@@ -225,21 +218,22 @@ class Window(FluentWidget):
 
 
 def run(*, demo=False, language=None, scenario='laptop', backend=False,
-        simulate_backend=False, settings_path=None, hardware_backend=False, native_backend=False, background=False) -> int:
+        settings_path=None, background=False) -> int:
     activation = None
     startup = None
-    if native_backend:
+    hardware_ui = sys.platform == 'win32' and not (demo or backend)
+    if hardware_ui:
         from ..windows.screen_session import require_native_user, verified_machine
         try:
             require_native_user()  # UI activation/startup never runs with an elevated token.
             verified_machine()
         except PermissionError:
-            return native_start_failure(language, 'session')
+            return hardware_start_failure(language, 'session')
         except OSError:
-            return native_start_failure(language, 'machine')
+            return hardware_start_failure(language, 'machine')
         from ..windows.activation import WindowActivation
         from ..windows.startup import LoginStartup, startup_command, UnavailableStartup
-        activation = WindowActivation(default_settings_path(native=True).parent)
+        activation = WindowActivation(default_settings_path().parent)
         if not activation.acquire(background=background):
             return 0
         try:
@@ -253,11 +247,10 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
         setTheme(Theme.AUTO)
         setThemeColor('#0051f2')
         window = Window(demo=demo, language=language, scenario=scenario, backend=backend,
-                        simulate_backend=simulate_backend, settings_path=settings_path, hardware_backend=hardware_backend,
-                        native_backend=native_backend, startup=startup)
+                        settings_path=settings_path, startup=startup)
         resident = None
         try:
-            if native_backend:
+            if hardware_ui:
                 from .resident import ResidentTray
                 resident = ResidentTray(window, activation=activation)
             if not background or resident is None or not resident.enabled:
@@ -276,14 +269,14 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
             activation.close()
 
 
-def native_start_failure(language, reason: str) -> int:
+def hardware_start_failure(language, reason: str) -> int:
     """Explain a preflight rejection without starting a backend or touching state."""
     if reason not in ('session', 'machine'):
-        raise ValueError('unknown native startup failure')
+        raise ValueError('unknown hardware startup failure')
     _ = translator(language)
-    detail = (_('Native mode requires the active local desktop and a normal user account.')
+    detail = (_('Hardware mode requires the active local desktop and a normal user account.')
               if reason == 'session' else
               _('This device does not have a verified Windows sensor and display configuration. Use preview mode or check the supported models in the maintenance guide.'))
     app = QApplication.instance() or QApplication([sys.argv[0]])
-    QMessageBox.critical(None, _('Native mode is unavailable'), detail)
+    QMessageBox.critical(None, _('Hardware mode is unavailable'), detail)
     return 1

@@ -13,8 +13,9 @@ import ctypes as C
 from ctypes import wintypes
 import sys
 import time
-from typing import Protocol
+from typing import Callable, Protocol
 
+from ..model import HardwareStatus
 from .slate_journal import SlateJournal, SlateLease
 
 SUPPORTED_INSTANCE_ID = r"ACPI\INT33D3\2&DABA3FF&0"
@@ -33,11 +34,10 @@ _DIGCF_PRESENT = 0x00000002
 _DIGCF_ALLCLASSES = 0x00000004
 _INVALID_HANDLE_VALUE = C.c_void_p(-1).value
 _ERROR_NO_MORE_ITEMS = 259
-# The verified CFQV8 laptop posture exposes 1. A slate value of 0 may also
-# belong to a software tent/stand transaction, which SlateNotifier masks.
+# The verified CFQV8 laptop posture exposes 1. SlateNotifier may also write 0
+# to publish a software tent/stand posture to Windows.
 _SLATE_RAW = 0
 _LAPTOP_RAW = 1
-CSM_SETTLE_SECONDS = 2.0
 
 
 class SlateError(OSError):
@@ -341,23 +341,21 @@ class SlateDevice(Protocol):
 
 
 class SlateNotifier:
-    """Apply app posture independently from the display transaction."""
+    """Publish app posture through the CSM, gated by the physical ETW source."""
 
     def __init__(
         self,
         device: SlateDevice,
         journal: SlateJournal | None = None,
         *,
-        clock=time.monotonic,
+        hardware_query: Callable[[], tuple[bool | None, HardwareStatus]],
     ) -> None:
         self.device = device
         self.journal = journal
-        self.clock = clock
+        self.hardware_query = hardware_query
         self.original: bool | None = None
         self.last: bool | None = None
         self.pending: SlateLease | None = None
-        self._expected: bool | None = None
-        self._settle_until = float('-inf')
         self.closed = False
         try:
             self.pending = journal.load() if journal is not None else None
@@ -381,44 +379,26 @@ class SlateNotifier:
             return False
         return None
 
-    @property
-    def software_owned(self) -> bool | None:
-        """Return the slate value changed by this notifier, if any."""
-        if self.pending is not None:
-            # Recovery has not reconciled the interrupted write yet, so its
-            # current CSM cannot establish software ownership.
-            return None
-        if self._expected is not None and self.clock() < self._settle_until:
-            # Device readback is synchronous, but Windows' CSM notification is
-            # asynchronous. Keep the just-written value authoritative for a
-            # bounded handoff window.
-            return self._expected
-        self._expected = None
+    def _require_hardware(self) -> None:
         try:
-            observed = bool(self.device.read())
-        except (OSError, ValueError):
-            observed = self.last
-        if self.last is not None and observed != self.last:
-            # The physical indicator changed while software owned the previous
-            # value. Treat that as a hardware takeover and relinquish the lease
-            # immediately; otherwise hardware qualification stays ambiguous and
-            # the display transaction can never return to laptop.
-            self.original = observed
-            self.last = observed
-            if self.journal is not None:
-                self.journal.clear()
-            return None
-        if self.original is None or self.last is None or self.last == self.original:
-            return None
-        return self.last
+            hardware, status = self.hardware_query()
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            raise SlateError('physical tablet state is unavailable') from error
+        if type(hardware) is not bool or status != HardwareStatus.OK:
+            raise SlateError('physical tablet state is unavailable')
 
-    @property
-    def software_settling(self) -> bool:
-        return self._expected is not None and self.clock() < self._settle_until
-
-    def _mark_settle(self, desired: bool) -> None:
-        self._expected = desired
-        self._settle_until = self.clock() + CSM_SETTLE_SECONDS
+    def _recover(self) -> bool:
+        """Restore the journal's startup value before applying a new posture."""
+        if self.pending is None:
+            return False
+        original = self.pending.original
+        changed = bool(self.device.set(original))
+        if self.journal is not None:
+            self.journal.clear()
+        self.pending = None
+        self.original = original
+        self.last = original
+        return changed
 
     def sync_mode(self, mode: str) -> bool:
         if self.closed:
@@ -426,61 +406,17 @@ class SlateNotifier:
         desired = self.desired(mode)
         if desired is None:
             return False
-        if self.pending is not None:
-            return self._coordinate_recovery(desired)
-        if desired == self.last:
-            return False
+        self._require_hardware()
+        self._recover()
         if self.original is None:
             self.original = bool(self.device.read())
-        if desired == self.original:
-            changed = bool(self.device.set(desired))
-            self._mark_settle(desired)
-            if self.journal is not None:
-                self.journal.clear()
-        else:
-            before = bool(self.device.read())
-            if self.journal is not None:
-                self.journal.save(self.original, desired)
-            changed = bool(self.device.set(desired))
-            if changed:
-                self._mark_settle(desired)
-            elif before == desired:
-                # The user already changed the physical indicator to this
-                # target. Adopt it as a new external baseline instead of
-                # claiming software ownership of a value we did not write.
-                self.original = desired
-                if self.journal is not None:
-                    self.journal.clear()
-        self.last = desired
-        return changed
-
-    def _coordinate_recovery(self, desired: bool) -> bool:
-        """Reconcile a prior lease only once the current posture is known."""
-
-        pending = self.pending
-        if pending is None:
-            return False
-        current = bool(self.device.read())
-        retain_lease = False
-        if current == desired:
-            # A restart in the posture whose notification was interrupted
-            # adopts the observable state. Replaying the old startup value
-            # here would produce a false laptop-to-slate flash.
-            self.original = current
-            changed = False
-        else:
-            self.original = pending.original
-            retain_lease = desired != self.original
-            if retain_lease and self.journal is not None:
-                # The user may have changed posture before the first request
-                # after a crash. Persist the new destination before one toggle.
-                self.journal.save(self.original, desired)
-            changed = bool(self.device.set(desired))
-            self._mark_settle(desired)
-        self.last = desired
-        self.pending = None
-        if self.journal is not None and not retain_lease:
+        temporary = desired != self.original
+        if temporary and self.journal is not None:
+            self.journal.save(self.original, desired)
+        changed = bool(self.device.set(desired))
+        if not temporary and self.journal is not None:
             self.journal.clear()
+        self.last = desired
         return changed
 
     def release(self) -> None:
@@ -488,20 +424,13 @@ class SlateNotifier:
 
         if self.closed:
             return
-        if self.pending is not None:
-            original = self.pending.original
-            self.device.set(original)
-            self._mark_settle(original)
-            self.pending = None
-            self.original = original
-            self.last = original
-            if self.journal is not None:
-                self.journal.clear()
+        if self.original is None and self.pending is None:
             return
-        if self.original is None:
+        self._require_hardware()
+        if self.pending is not None:
+            self._recover()
             return
         self.device.set(self.original)
-        self._mark_settle(self.original)
         if self.journal is not None:
             self.journal.clear()
         self.last = self.original

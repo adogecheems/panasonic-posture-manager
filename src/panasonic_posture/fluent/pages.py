@@ -66,9 +66,6 @@ def action_error_code(error: BaseException) -> str | None:
 
 def startup_failure_text(reason: str | None, _) -> str | None:
     messages = {
-        'slate-configuration-required': _('The convertible-slate indicator is still exclusive. Run the device configuration for this app, then restart Windows.'),
-        'native-session-unavailable': _('Native mode requires the active local desktop and a normal user account.'),
-        'native-startup-failed': _('Native device control could not start. Check the device configuration and try again.'),
         'backend-startup-failed': _('The background service could not start. Please try again.'),
     }
     return messages.get(reason)

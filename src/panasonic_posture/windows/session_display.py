@@ -22,28 +22,33 @@ class SlatePosture(Protocol):
     """Bounded notification of a convertible posture; the OS owns response."""
 
     def sync_mode(self, mode: str) -> bool: ...
-    def wait_for_display_handoff(self) -> None: ...
     def release(self) -> None: ...
     def close(self) -> None: ...
 
 
-def slate_qualified_hardware(query: Callable[[], tuple[bool | None, str]],
-                             owned: Callable[[], bool | None],
-                             settling: Callable[[], bool] = lambda: False):
-    """Separate our slate notification from an independent physical change."""
-    def qualified():
-        hardware, status = query()
-        if settling():
-            return False, HardwareStatus.OK
-        target = owned()
-        if target is None or status != HardwareStatus.OK or type(hardware) is not bool:
-            return hardware, status
-        if hardware != target:
-            return None, HardwareStatus.AMBIGUOUS
-        # The raw CSM currently reflects our own notification, not a physical
-        # takeover. An external change to the opposite state fails above.
-        return False, HardwareStatus.OK
-    return qualified
+class SessionHardwareQuery:
+    """Read the physical switch state from the authenticated session service.
+
+    The hardware host derives this field only from ETW/GPIO observations.  A
+    missing value, a stale snapshot or a failed RPC keeps CSM writes disabled
+    instead of falling back to the indicator this process may have written.
+    """
+
+    def __init__(self, state_loader: Callable[[], StateSnapshot]) -> None:
+        self.state_loader = state_loader
+
+    def __call__(self) -> tuple[bool | None, HardwareStatus]:
+        try:
+            state = self.state_loader()
+            hardware = getattr(state, 'hardware', None)
+            status = getattr(state, 'hardware_status', None)
+        except (OSError, RuntimeError, ValueError, TypeError):
+            return None, HardwareStatus.READ_ERROR
+        if hardware is None:
+            return None, status if isinstance(status, HardwareStatus) else HardwareStatus.ABSENT
+        if type(hardware) is not bool or status != HardwareStatus.OK:
+            return None, HardwareStatus.READ_ERROR
+        return hardware, HardwareStatus.OK
 
 
 class QualifiedDisplay:
@@ -104,10 +109,6 @@ class QualifiedDisplay:
             # fixed target verifies or corrects the direction.
             if self.slate is not None:
                 self._sync_slate(target)
-                self._require_available()
-                wait = getattr(self.slate, 'wait_for_display_handoff', None)
-                if wait is not None:
-                    wait()
                 self._require_available()
             self.display.apply(target)
             if not self.context.control_available():

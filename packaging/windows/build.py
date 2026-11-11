@@ -73,8 +73,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
             f'-File "%~dp0configure-slate-device.ps1" -Action {action}\r\n'
         ).encode('utf-8')
     for name, arguments in (('Panasonic Posture Manager.cmd', ''),
-                             ('Native.cmd', '--native-backend'),
-                             ('Simulation.cmd', '--simulate-backend')):
+                             ('Hardware.cmd', '')):
         files[name] = (
             '@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'
             f'"%~dp0runtime\\pythonw.exe" -I "%~dp0launch.py" {arguments} %*\r\n').encode('utf-8')

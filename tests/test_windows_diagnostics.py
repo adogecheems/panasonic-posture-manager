@@ -21,11 +21,10 @@ class DiagnosticsTests(unittest.TestCase):
     def test_log_is_adjacent_to_the_exact_settings_file(self):
         root = Path(self.directory.name)
         self.assertEqual(log_path(root / 'settings.json'), root / 'settings.log')
-        self.assertEqual(log_path(root / 'native-settings.json'), root / 'native-settings.log')
         self.assertEqual(log_path(root / 'custom'), root / 'custom.log')
 
     def test_private_backend_log_rotates_with_one_bounded_backup(self):
-        settings = Path(self.directory.name) / 'native-settings.json'
+        settings = Path(self.directory.name) / 'settings.json'
         path = log_path(settings)
         path.write_text('old-entry\n', encoding='utf-8')
         handler = create_handler(settings, limit=16)

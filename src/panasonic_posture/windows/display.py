@@ -305,9 +305,6 @@ class WindowsDisplay(SoftwareDisplay):
     lock_is_global = True
 
     def __init__(self, *, journal, api=None, hardware_query=None):
-        if api is None and hardware_query is None:
-            from .switch import WindowsSwitch
-            hardware_query = WindowsSwitch().query
         self.api = api if api is not None else NativeDisplay()
         self.hardware_query = hardware_query
         self._adopt_native_handoff = False

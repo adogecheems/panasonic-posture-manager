@@ -1,4 +1,4 @@
-"""Verified convertible-slate access and independent posture notification."""
+"""Verified convertible-slate access and ETW-gated posture notification."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,7 +11,7 @@ from panasonic_posture.windows.convertible_slate import (
     SlateError,
     SlateNotifier,
 )
-from panasonic_posture.windows.session_display import QualifiedDisplay, slate_qualified_hardware
+from panasonic_posture.windows.session_display import QualifiedDisplay, SessionHardwareQuery
 from panasonic_posture.windows.slate_journal import SlateJournal, lease_path
 
 
@@ -62,7 +62,7 @@ class FakeDisplay:
     def apply(self, target):
         self.calls.append(('apply', target.mode))
         if self.fail:
-            raise DisplayError('display' + '-transform-rejected')
+            raise DisplayError('display-transform-rejected')
 
     def hold_orientation(self):
         self.calls.append(('hold', None))
@@ -71,162 +71,131 @@ class FakeDisplay:
         self.calls.append(('restore', normal))
 
 
+def healthy(value=False):
+    return lambda: (value, HardwareStatus.OK)
+
+
 class SlateNotifierTests(unittest.TestCase):
-    def test_postures_set_only_when_the_desired_slate_state_changes(self):
-        now = [10.0]
+    def test_postures_call_an_idempotent_set_and_track_the_temporary_lease(self):
         device = FakeSlateDevice(False)
-        notifier = SlateNotifier(device, clock=lambda: now[0])
+        notifier = SlateNotifier(device, hardware_query=healthy())
         self.assertTrue(notifier.sync_mode('tent'))
         self.assertFalse(notifier.sync_mode('stand'))
         self.assertFalse(notifier.sync_mode('hardware'))
         self.assertTrue(notifier.sync_mode('laptop'))
         self.assertFalse(notifier.sync_mode('unavailable'))
-        self.assertIs(notifier.software_owned, False)
-        now[0] += 2.1
-        self.assertIsNone(notifier.software_owned)
-        self.assertEqual(device.sets, [True, False])
+        self.assertEqual(device.sets, [True, True, True, False])
+        self.assertFalse(notifier.original)
+        self.assertFalse(notifier.last)
 
-    def test_notifier_exposes_only_the_slate_value_it_changed(self):
-        now = [10.0]
-        notifier = SlateNotifier(FakeSlateDevice(False), clock=lambda: now[0])
-        self.assertIsNone(notifier.software_owned)
-        notifier.sync_mode('tent')
-        self.assertIs(notifier.software_owned, True)
-        notifier.sync_mode('laptop')
-        self.assertIs(notifier.software_owned, False)
-        now[0] += 2.1
-        self.assertIsNone(notifier.software_owned)
-
-    def test_external_change_during_software_ownership_releases_the_lease(self):
-        now = [10.0]
-        with tempfile.TemporaryDirectory() as directory:
-            journal = SlateJournal(Path(directory) / 'slate.json')
-            device = FakeSlateDevice(False)
-            notifier = SlateNotifier(device, journal, clock=lambda: now[0])
-            self.assertTrue(notifier.sync_mode('stand'))
-            self.assertTrue(journal.path.exists())
-            now[0] += 2.1
-            self.assertIs(notifier.software_owned, True)
-
-            # Moving out of tent/stand changes the physical indicator while the
-            # app still owns the previous slate value.
-            device.state = False
-            self.assertIsNone(notifier.software_owned)
-            self.assertIs(notifier.original, False)
-            self.assertIs(notifier.last, False)
-            self.assertIsNone(journal.load())
-
-    def test_external_physical_target_is_adopted_without_software_ownership(self):
-        device = FakeSlateDevice(True)
-        notifier = SlateNotifier(device)
-        self.assertFalse(notifier.sync_mode('hardware'))
-        self.assertTrue(notifier.original)
-        self.assertTrue(notifier.last)
-        self.assertIsNone(notifier.software_owned)
-
-    def test_slate_aware_hardware_masks_only_the_owned_indicator_value(self):
-        owned = [True]
-        scoped = slate_qualified_hardware(
-            lambda: (True, HardwareStatus.OK), lambda: owned[0]
-        )
-        self.assertEqual(scoped(), (False, HardwareStatus.OK))
-        owned[0] = None
-        self.assertEqual(scoped(), (True, HardwareStatus.OK))
-        owned[0] = False
-        self.assertEqual(scoped(), (None, HardwareStatus.AMBIGUOUS))
-        error = slate_qualified_hardware(
-            lambda: (None, HardwareStatus.READ_ERROR), lambda: True
-        )
-        self.assertEqual(error(), (None, HardwareStatus.READ_ERROR))
-        settling = slate_qualified_hardware(
-            lambda: (False, HardwareStatus.OK), lambda: True,
-            lambda: True,
-        )
-        self.assertEqual(settling(), (False, HardwareStatus.OK))
-
-    def test_release_restores_startup_state_and_keeps_the_lease_reusable(self):
-        device = FakeSlateDevice(True)
-        notifier = SlateNotifier(device)
-        notifier.sync_mode('tablet')
-        notifier.release()
-        self.assertTrue(device.state)
-        self.assertFalse(device.closed)
-        notifier.sync_mode('stand')
-        self.assertTrue(device.state)
-        notifier.close()
-        self.assertTrue(device.closed)
-        self.assertTrue(device.state)
-
-    def test_journal_restart_in_the_target_posture_adopts_it_without_a_toggle(self):
-        with tempfile.TemporaryDirectory() as directory:
-            journal = SlateJournal(Path(directory) / 'slate.json')
-            device = FakeSlateDevice(False)
-            first = SlateNotifier(device, journal)
-            self.assertTrue(first.sync_mode('tent'))
-            self.assertTrue(device.state)
-            self.assertTrue(journal.path.exists())
-
-            second = SlateNotifier(device, journal)
-            self.assertTrue(device.state)
-            self.assertEqual(device.sets, [True])
-            self.assertTrue(journal.path.exists())
-            self.assertFalse(second.sync_mode('tent'))
-            self.assertTrue(device.state)
-            self.assertEqual(device.sets, [True])
-            self.assertIsNone(journal.load())
-            self.assertTrue(second.original)
-            second.close()
-            self.assertTrue(device.state)
-
-    def test_deferred_recovery_returns_to_the_baseline_for_a_different_posture(self):
-        with tempfile.TemporaryDirectory() as directory:
-            journal = SlateJournal(Path(directory) / 'slate.json')
-            device = FakeSlateDevice(False)
-            first = SlateNotifier(device, journal)
-            self.assertTrue(first.sync_mode('tent'))
-            self.assertTrue(journal.path.exists())
-
-            second = SlateNotifier(device, journal)
-            self.assertEqual(device.sets, [True])
-            self.assertTrue(second.sync_mode('laptop'))
-            self.assertFalse(device.state)
-            self.assertEqual(device.sets, [True, False])
-            self.assertIsNone(journal.load())
-            self.assertFalse(second.original)
-            second.close()
-            self.assertFalse(device.state)
-
-    def test_deferred_recovery_into_a_new_target_retains_the_lease(self):
-        with tempfile.TemporaryDirectory() as directory:
-            journal = SlateJournal(Path(directory) / 'slate.json')
-            journal.save(False, True)
-            device = FakeSlateDevice(False)
-            notifier = SlateNotifier(device, journal)
-            self.assertTrue(notifier.sync_mode('tent'))
-            self.assertTrue(device.state)
-            self.assertIsNotNone(journal.load())
-            self.assertIsNone(notifier.pending)
-            self.assertFalse(notifier.sync_mode('tent'))
-            self.assertIsNotNone(journal.load())
-            notifier.close()
-            self.assertFalse(device.state)
-            self.assertIsNone(journal.load())
-
-    def test_failed_deferred_recovery_retains_the_journal(self):
+    def test_every_write_and_clear_is_blocked_until_the_physical_source_is_healthy(self):
         with tempfile.TemporaryDirectory() as directory:
             journal = SlateJournal(Path(directory) / 'slate.json')
             journal.save(False, True)
             device = FakeSlateDevice(True)
+            notifier = SlateNotifier(device, journal, hardware_query=lambda: (None, HardwareStatus.ABSENT))
+            for action in (lambda: notifier.sync_mode('laptop'), notifier.release):
+                with self.assertRaises(SlateError):
+                    action()
+            self.assertEqual(device.sets, [])
+            self.assertIsNotNone(journal.load())
+            self.assertIsNotNone(notifier.pending)
+            notifier.closed = True
+
+    def test_crash_recovery_restores_the_journal_original_before_a_new_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            journal.save(False, True)
+            device = FakeSlateDevice(True)
+            notifier = SlateNotifier(device, journal, hardware_query=healthy())
+            self.assertTrue(notifier.sync_mode('tent'))
+            self.assertEqual(device.sets, [False, True])
+            self.assertFalse(notifier.original)
+            self.assertTrue(notifier.last)
+            notifier.close()
+            self.assertFalse(device.state)
+            self.assertIsNone(journal.load())
+
+    def test_recovery_for_laptop_restores_and_clears_without_an_extra_flash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            journal.save(False, True)
+            device = FakeSlateDevice(True)
+            notifier = SlateNotifier(device, journal, hardware_query=healthy())
+            self.assertFalse(notifier.sync_mode('laptop'))
+            self.assertEqual(device.sets, [False, False])
+            self.assertFalse(device.state)
+            self.assertIsNone(journal.load())
+            self.assertIsNone(notifier.pending)
+
+    def test_failed_set_keeps_the_journal_and_never_advances_the_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            device = FakeSlateDevice(False)
             device.fail_set = True
-            notifier = SlateNotifier(device, journal)
+            notifier = SlateNotifier(device, journal, hardware_query=healthy())
             with self.assertRaises(SlateError):
-                notifier.sync_mode('laptop')
-            self.assertTrue(journal.path.exists())
+                notifier.sync_mode('tent')
+            self.assertFalse(notifier.original)
+            self.assertFalse(notifier.last)
+            self.assertIsNotNone(journal.load())
+            device.fail_set = False
+            notifier.close()
+            self.assertIsNone(journal.load())
+
+    def test_an_unchanged_set_result_does_not_adopt_a_new_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            device = FakeSlateDevice(False)
+            notifier = SlateNotifier(device, journal, hardware_query=healthy())
+            device.state = True  # External state already matches the next target.
+            self.assertFalse(notifier.sync_mode('tent'))
+            self.assertFalse(notifier.original)
+            self.assertTrue(notifier.last)
+            self.assertEqual(journal.load().original, False)
+            notifier.release()
+            self.assertFalse(device.state)
+            self.assertIsNone(journal.load())
+
+    def test_release_restores_startup_state_and_keeps_the_device_open(self):
+        device = FakeSlateDevice(True)
+        notifier = SlateNotifier(device, hardware_query=healthy(True))
+        notifier.sync_mode('tablet')
+        notifier.release()
+        self.assertTrue(device.state)
+        self.assertFalse(device.closed)
+        notifier.close()
+        self.assertTrue(device.closed)
+
+    def test_failed_release_keeps_the_journal_for_the_next_startup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            device = FakeSlateDevice(False)
+            notifier = SlateNotifier(device, journal, hardware_query=healthy())
+            notifier.sync_mode('tent')
+            device.fail_set = True
+            with self.assertRaises(SlateError):
+                notifier.release()
+            self.assertIsNotNone(journal.load())
+            self.assertTrue(notifier.last)
             device.fail_set = False
             notifier.close()
             self.assertFalse(device.state)
             self.assertIsNone(journal.load())
-            self.assertTrue(device.closed)
+
+    def test_session_query_accepts_only_a_known_healthy_boolean(self):
+        from panasonic_posture.model import StateSnapshot
+        query = SessionHardwareQuery(lambda: StateSnapshot(hardware=True, hardware_status=HardwareStatus.OK))
+        self.assertEqual(query(), (True, HardwareStatus.OK))
+        for state in (StateSnapshot(hardware=None, hardware_status=HardwareStatus.ABSENT),
+                      StateSnapshot(hardware=None, hardware_status=HardwareStatus.READ_ERROR),
+                      StateSnapshot(hardware=1, hardware_status=HardwareStatus.OK)):
+            self.assertEqual(SessionHardwareQuery(lambda state=state: state)(),
+                             (None, HardwareStatus.READ_ERROR if state.hardware_status == HardwareStatus.OK
+                              else state.hardware_status))
+        def broken():
+            raise OSError('service unavailable')
+        self.assertEqual(SessionHardwareQuery(broken)(), (None, HardwareStatus.READ_ERROR))
 
     def test_journal_path_is_a_sibling_of_the_display_journal(self):
         self.assertEqual(
@@ -234,14 +203,15 @@ class SlateNotifierTests(unittest.TestCase):
             Path('state/native-display-slate.json'),
         )
 
+
+class NativeSlateDeviceTests(unittest.TestCase):
     def test_device_toggle_is_conditional_and_read_back(self):
         device = object.__new__(NativeSlateDevice)
         state = [1]
         writes = []
-        sleeps = []
         device.handle = 1
         device._raw_read = lambda: state[0]
-        device.sleep = sleeps.append
+        device.sleep = lambda _: None
 
         def write(handle, data, size, count, overlapped):
             del handle, data, size, overlapped
@@ -283,11 +253,12 @@ class SlateNotifierTests(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertEqual(len(sleeps), 10)
 
-    def test_slate_notification_precedes_display_apply_without_a_rotation_lock(self):
+
+class QualifiedDisplayTests(unittest.TestCase):
+    def test_slate_notification_precedes_display_apply(self):
         events = []
         slate = mock.Mock()
         slate.sync_mode.side_effect = lambda mode: events.append(('notify', mode))
-        slate.wait_for_display_handoff.side_effect = lambda: events.append(('settle', None))
         display, context = FakeDisplay(), FakeContext()
         original_apply = display.apply
 
@@ -297,45 +268,16 @@ class SlateNotifierTests(unittest.TestCase):
 
         display.apply = apply
         QualifiedDisplay(display, context, slate).apply(Target(mode='tent'))
-        self.assertEqual(events, [
-            ('notify', 'tent'), ('settle', None), ('apply', 'tent'),
-        ])
+        self.assertEqual(events, [('notify', 'tent'), ('apply', 'tent')])
 
-    def test_windows_handoff_can_reach_the_target_without_an_extra_write(self):
-        class Display(FakeDisplay):
-            def __init__(self):
-                super().__init__()
-                self.transform = 0
-                self.writes = []
-
-            def apply(self, target):
-                self.calls.append(('apply', target.mode))
-                want = 2 if target.mode == 'tent' else 0
-                if self.transform != want:
-                    self.writes.append(want)
-
-        display, context = Display(), FakeContext()
-        slate = mock.Mock()
-        def notify(mode):
-            # Windows handles the platform transition in response to the
-            # published slate state before the fixed display transaction.
-            display.transform = 2 if mode == 'tent' else 0
-            return True
-        slate.sync_mode.side_effect = notify
-        QualifiedDisplay(display, context, slate).apply(Target(mode='tent'))
-        self.assertEqual(display.transform, 2)
-        self.assertEqual(display.writes, [])
-
-    def test_notification_failure_restores_hold_and_releases_slate(self):
+    def test_notification_failure_restores_display_and_releases_slate(self):
         slate = mock.Mock()
         slate.sync_mode.side_effect = SlateError('device unavailable')
         display, context = FakeDisplay(), FakeContext()
         proxy = QualifiedDisplay(display, context, slate)
         with self.assertRaises(DisplayError) as caught:
             proxy.apply(Target(mode='tent'))
-        self.assertEqual(
-            caught.exception.detail, 'convertible-slate-notification-failed'
-        )
+        self.assertEqual(caught.exception.detail, 'convertible-slate-notification-failed')
         self.assertEqual(display.calls, [('restore', False)])
         slate.release.assert_called_once_with()
 
@@ -346,29 +288,19 @@ class SlateNotifierTests(unittest.TestCase):
         proxy = QualifiedDisplay(display, context, slate)
         with self.assertRaises(DisplayError):
             proxy.apply(Target(mode='tent'))
-        self.assertEqual(display.calls, [
-            ('apply', 'tent'), ('restore', False),
-        ])
+        self.assertEqual(display.calls, [('apply', 'tent'), ('restore', False)])
         slate.sync_mode.assert_called_once_with('tent')
         slate.release.assert_called_once_with()
-
-    def test_successful_hold_does_not_release_the_notification(self):
-        slate = mock.Mock()
-        display, context = FakeDisplay(), FakeContext()
-        QualifiedDisplay(display, context, slate).hold_orientation()
-        self.assertEqual(display.calls, [('hold', None)])
-        slate.release.assert_not_called()
 
     def test_restore_releases_slate_even_if_display_restore_fails(self):
         class Display(FakeDisplay):
             def restore(self, normal=False):
                 super().restore(normal)
-                raise DisplayError('display' + '-identity-changed')
+                raise DisplayError('display-identity-changed')
 
         slate = mock.Mock()
-        proxy = QualifiedDisplay(Display(), FakeContext(), slate)
         with self.assertRaises(DisplayError):
-            proxy.restore()
+            QualifiedDisplay(Display(), FakeContext(), slate).restore()
         slate.release.assert_called_once_with()
 
 

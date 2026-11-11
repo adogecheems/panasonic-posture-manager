@@ -106,8 +106,8 @@ def startup_command(*, executable: Path | None = None, root: Path | None = None)
     if not pythonw.is_file():
         raise StartupError('startup-windowless-runtime-unavailable')
     if executable.parent == root / 'runtime' and (root / 'launch.py').is_file():
-        return str(pythonw), '-I', str(root / 'launch.py'), '--native-backend', '--background'
-    source = root / 'packaging/windows/launch-native.py'
+        return str(pythonw), '-I', str(root / 'launch.py'), '--background'
+    source = root / 'packaging/windows/launch-hardware.py'
     if not source.is_file() or not (root / 'src/panasonic_posture').is_dir():
         raise StartupError('startup-source-entry-unavailable')
     return str(pythonw), str(source)

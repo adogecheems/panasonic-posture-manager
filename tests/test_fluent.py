@@ -79,25 +79,20 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn('--scenario requires --demo', result.stderr)
 
-    def test_native_hardware_cli_rejects_software_options_before_loading_qt(self):
-        for arguments in (['--demo'], ['--simulate-backend'], ['--settings', 'settings.json']):
-            result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
-                '--hardware-backend', *arguments], text=True, capture_output=True, timeout=10)
-            self.assertEqual(result.returncode, 2, result.stderr)
-            self.assertIn('cannot be combined', result.stderr)
+    def test_retired_backend_selector_options_are_not_accepted(self):
+        for option in ('--native-backend', '--hardware-backend', '--simulate-backend'):
+            with self.subTest(option=option):
+                result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
+                    option], text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn('unrecognized arguments', result.stderr)
 
-    def test_native_screen_cli_rejects_preview_options_before_loading_qt(self):
-        for arguments in (['--demo'], ['--backend'], ['--simulate-backend'], ['--hardware-backend']):
-            result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
-                '--native-backend', *arguments], text=True, capture_output=True, timeout=10)
-            self.assertEqual(result.returncode, 2, result.stderr)
-            self.assertIn('cannot be combined', result.stderr)
-
-    def test_background_requires_native_before_loading_qt(self):
-        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent', '--background'],
+    def test_background_rejects_preview_selection_before_loading_qt(self):
+        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
+                                 '--background', '--demo'],
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 2)
-        self.assertIn('--background requires --native-backend', result.stderr)
+        self.assertIn('--background cannot be combined', result.stderr)
 
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
@@ -213,25 +208,25 @@ assert errors[-1] == (
 assert all('PRIVATE' not in content for _, content in errors)
 ''')
 
-    def test_native_preflight_explains_session_and_machine_rejections(self):
+    def test_hardware_preflight_explains_session_and_machine_rejections(self):
         self.run_ui('''
-from panasonic_posture.fluent.app import native_start_failure
+from panasonic_posture.fluent.app import hardware_start_failure
 from PyQt6.QtWidgets import QMessageBox
 messages = []
 QMessageBox.critical = lambda parent, title, text: messages.append((title, text))
-assert native_start_failure('en', 'session') == 1
+assert hardware_start_failure('en', 'session') == 1
 assert messages[-1] == (
-    'Native mode is unavailable',
-    'Native mode requires the active local desktop and a normal user account.',
+    'Hardware mode is unavailable',
+    'Hardware mode requires the active local desktop and a normal user account.',
 )
-assert native_start_failure('en', 'machine') == 1
+assert hardware_start_failure('en', 'machine') == 1
 assert messages[-1] == (
-    'Native mode is unavailable',
+    'Hardware mode is unavailable',
     'This device does not have a verified Windows sensor and display configuration. '
     'Use preview mode or check the supported models in the maintenance guide.',
 )
 try:
-    native_start_failure('en', 'unknown')
+    hardware_start_failure('en', 'unknown')
 except ValueError:
     pass
 else:
@@ -262,9 +257,9 @@ class FakeTray(QObject):
     def showMessage(self, *args): self.messages.append(args)
 window.close()
 client = DemoClient(QTimer.singleShot)
-client.state.update(native_backend=True, input_control_available=False,
+client.state.update(input_control_available=False,
                     available_modes=['auto', 'laptop', 'tent', 'stand'])
-window = Window(native_backend=True, client=client, language='en')
+window = Window(client=client, language='en')
 window.show()
 ''' + body)
 
@@ -423,7 +418,7 @@ class Registry:
 registry = Registry()
 startup = LoginStartup([sys.executable, 'fixed-entry.py'], registry=registry)
 window.close()
-window = Window(native_backend=True, client=UnavailableClient(), language='en', startup=startup)
+window = Window(client=UnavailableClient(), language='en', startup=startup)
 window.show()
 assert window.settings.startup_switch.isEnabled()
 window.settings.startup_switch.setChecked(True)
@@ -441,15 +436,15 @@ window.unavailable()
 assert window.settings.startup_switch.isEnabled()
 ''')
 
-    def test_native_screen_mode_descriptions_and_capabilities_are_truthful(self):
+    def test_hardware_mode_descriptions_and_capabilities_are_truthful(self):
         self.run_ui('''
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QLabel
 window.close()
 client = DemoClient(QTimer.singleShot)
-client.state.update(native_backend=True, input_control_available=False,
+client.state.update(input_control_available=False,
                     available_modes=['auto', 'laptop', 'tent', 'stand'])
-window = Window(native_backend=True, client=client, language='en')
+window = Window(client=client, language='en')
 window.show()
 QTest.qWait(50)
 assert window.settings.radios['tent'].isEnabled()
@@ -496,7 +491,7 @@ with TemporaryDirectory() as directory:
         def close(self, handle):
             pass
     client = HardwareUIClient(factory=lambda: HardwareConnection(pipes=Pipes()))
-    window = Window(hardware_backend=True, client=client, language='en')
+    window = Window(client=client, language='en')
     window.show()
     deadline = time.monotonic() + 8
     while window.settings.model.state is None and time.monotonic() < deadline:
@@ -669,16 +664,15 @@ assert client.refreshes == 1
 window.close()
 ''')
 
-    def test_native_slate_configuration_failure_has_actionable_message(self):
+    def test_hardware_backend_failure_has_actionable_message(self):
         self.run_ui('''
 client = UnavailableClient()
-client.startup_failure = 'slate-configuration-required'
-native = Window(native_backend=True, client=client, language='en')
-assert native.home.detail.text() == (
-    'The convertible-slate indicator is still exclusive. '
-    'Run the device configuration for this app, then restart Windows.'
+client.startup_failure = 'backend-startup-failed'
+hardware = Window(client=client, language='en')
+assert hardware.home.detail.text() == (
+    'The background service could not start. Please try again.'
 )
-native.close()
+hardware.close()
 ''')
 
     def test_private_backend_persists_preferences_and_disables_device_controls(self):
@@ -717,20 +711,16 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from panasonic_posture.contracts import TICK_SECONDS
-from panasonic_posture.windows.client import ProcessClient
+from panasonic_posture.windows.hardware_client import HardwareUIClient
+from panasonic_posture.fluent.demo import UnavailableClient
 import os, time
 with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=directory):
     normal = Window(language='en')
     normal.show()
     if sys.platform == 'win32':
-        assert isinstance(normal.client, ProcessClient)
-        deadline = time.monotonic() + 8
-        while normal.settings.model.state is None and time.monotonic() < deadline:
-            QTest.qWait(25)
-        assert normal.settings.model.state is not None
+        assert isinstance(normal.client, HardwareUIClient)
+        assert normal.settings.model.state is None
         assert normal.backend_timer.interval() == max(1, round(TICK_SECONDS * 1000))
-        assert not normal.settings.model.state['supported']
-        assert normal.settings.switches['tent_enabled'].isEnabled()
     else:
         assert isinstance(normal.client, UnavailableClient)
         assert normal.settings.model.state is None

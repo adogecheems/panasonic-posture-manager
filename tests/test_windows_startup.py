@@ -30,7 +30,7 @@ class Registry:
 class LoginStartupTests(unittest.TestCase):
     def setUp(self):
         self.registry = Registry()
-        self.command = [str(Path(sys.executable).resolve()), 'launch file.py', '--native-backend', '--background']
+        self.command = [str(Path(sys.executable).resolve()), 'launch file.py', '--background']
         self.startup = LoginStartup(self.command, registry=self.registry)
 
     def test_opt_in_write_readback_disable_and_idempotence(self):
@@ -81,11 +81,11 @@ class LoginStartupTests(unittest.TestCase):
             (runtime / 'pythonw.exe').touch()
             (root / 'launch.py').touch()
             self.assertEqual(startup_command(executable=runtime / 'python.exe', root=root),
-                (str(runtime / 'pythonw.exe'), '-I', str(root / 'launch.py'), '--native-backend', '--background'))
+                (str(runtime / 'pythonw.exe'), '-I', str(root / 'launch.py'), '--background'))
             (root / 'launch.py').unlink()
             with self.assertRaises(StartupError): startup_command(executable=runtime / 'python.exe', root=root)
             (root / 'src/panasonic_posture').mkdir(parents=True)
-            entry = root / 'packaging/windows/launch-native.py'
+            entry = root / 'packaging/windows/launch-hardware.py'
             entry.parent.mkdir(parents=True)
             entry.touch()
             self.assertEqual(startup_command(executable=runtime / 'python.exe', root=root),

@@ -1,6 +1,6 @@
 """Explicit fake ports running the real engine and display transaction pipeline.
 
-Only imported for --simulate-backend. None of these ports opens a host device
+Only imported by isolated tests and the in-memory demo fixture. None of these ports opens a host device
 or calls a desktop API. Applied receipts come from the shared engine after
 the simulated display and input adapters have both completed.
 """

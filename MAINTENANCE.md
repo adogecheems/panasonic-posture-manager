@@ -93,66 +93,65 @@ packaging\windows\preview.cmd --language zh_CN
 - **场景**　例如 `packaging\windows\preview.cmd --scenario prompt` 打开确认提示。还可选择 `laptop`（笔记本）、`hardware`（物理平板）、`slow`（切换缓慢）、`error`（故障）或 `disconnected`（断线）。
 - **资源**　默认从 `data/assets/` 加载，可用 `PANASONIC_POSTURE_DATA_DIR` 指定数据目录。源码预览优先使用 `locale/` 中已编译的翻译，也可直接读取 `po/zh_CN.po`。
 
-要连接独立软件后台，运行以下命令；在 Windows 直接启动模块也会使用软件后台。
+Windows 默认连接独立、以 LocalSystem 运行的硬件服务；直接启动界面无需额外参数。
 
 ```bat
 packaging\windows\run.cmd --language zh_CN
 ```
 
-普通启动允许保存自动模式偏好，设备控制和校准保持禁用。后台是当前用户的子进程，不注册 Windows 系统服务、不要求管理员权限；未来的特权硬件控制须另行设计，不能直接加入此用户进程。
+若服务未安装或不可用，界面只显示断线，不回退到软件后台、模拟或 CSM 推断。隔离的软件后台预览使用 `--backend`，它不读取真实设备，也不能声明硬件支持。
 
-CFQV8-1L 的真实用户态开发入口为：
+CFQV8-1L 的硬件服务配置入口为：
 
 ```bat
 packaging\windows\configure-slate-device.cmd -Action Install
-packaging\windows\run.cmd --native-backend --language zh_CN
+packaging\windows\run.cmd --language zh_CN
 ```
 
 第一条命令需要管理员权限，只把已核对的 `ACPI\INT33D3` 驱动配置设为 `LaptopSlateExclusiveAccess=0`，并在首次设置时记录安装前值；必须重启一次才会生效。`-Action Remove` 恢复安装前配置，`-Action Status` 只报告当前状态。便携包的同样操作由 `Configure Slate Device.cmd`、`Remove Slate Device Configuration.cmd` 和 `Slate Device Status.cmd` 提供。
 
-原生界面启动前台会先核对普通用户本地控制台身份和 BIOS 机型，再启动私有后台。身份不符或机型不是已采集的 Panasonic Corporation / CFQV8-1L 时直接显示中文或英文原因，不创建后台、设置锁或用户状态文件；后台随后仍会重复核对身份、传感器、开关和显示能力，界面预检不能替代实际设备资格。
+硬件界面启动前台会先核对普通用户本地控制台身份和 BIOS 机型。身份不符或机型不是已采集的 Panasonic Corporation / CFQV8-1L 时直接显示中文或英文原因，不创建设置锁或用户状态文件；服务端仍会重复核对身份、传感器、开关和显示能力，界面预检不能替代实际设备资格。
 
-原生入口不使用模拟端口、不启用输入过滤驱动，也不需要测试签名。只接受已采集 Windows 姿态证据的 Panasonic Corporation / CFQV8-1L、唯一且型号匹配的 WinRT 加速度计、原有 GPIO 开关与内屏选择检查，以及实例 `ACPI\INT33D3\2&DABA3FF&0`。`ACPI\INT33D3` 始终只读，描述真实物理笔记本/平板状态。当前版本暂停软件平板状态模拟：不写 PDO、不发布 shell 平板模式、不读取 `ConvertibleSlateModePromptPreference`，也不修改 `PriorityControl\ConvertibleSlateMode` 或共享内存。因此软件帐篷/支架不会自动触发 Windows 屏幕键盘，该能力暂不作为可用功能。当前开放自动、笔记本、帐篷、支架和校准；平板仅由物理折叠状态产生，不是手动模式。输入目标和能力始终为 False，键盘和触控板保持可用，这是产品范围，不是待补功能。
+硬件入口不启用输入过滤驱动，也不需要测试签名。物理平板状态只来自 Intel HID Event Filter 的 ETW ACPI 事件（有效值为 `0xCC` 平板、`0xCD` 笔记本），不读取 CSM 作为输入。`ACPI\INT33D3` 只作为向 Windows 发布姿态的 CSM 输出；首个有效 ETW 事件前状态保持未知，所有 CSM 写入、恢复和日志清理禁用。ETW 启动失败或运行中断时服务失败并保留恢复日志，不回退 CSM。当前不发布 shell 平板模式，因此软件帐篷/支架不会自动触发 Windows 屏幕键盘。当前开放自动、笔记本、帐篷、支架和校准；平板仅由物理折叠状态产生，不是手动模式。输入目标和能力始终为 False，键盘和触控板保持可用。
 
-`windows/tablet_display.py` 和 SimpleOrientation 四向映射仅作为未接入生产入口的可选后端代码保留，供未来没有物理平板开关的机型评估；当前 CFQV8 原生工厂不采集方向，也不向原生快照声明 `tablet` 手动能力。
+硬件会话进程只负责当前用户显示；它先证明服务端登记的回执资格，再创建显示和 CSM 后端。CSM 写入通过服务快照读取的 ETW 健康门禁，物理状态未知时拒绝写入。显示和 CSM 共用同一个已验证 RPC 客户端，清理顺序为先释放显示/CSM 所有权，再关闭 CSM 设备。
 
-原生偏好独立存于 `native-settings.json`。显示恢复日志固定为同目录 `screen-display.json`，并有独立的每用户控制器锁，换一个 `--settings` 文件也不能启动第二个原生显示写入者。显示仍走共用事务、写前日志、身份检查、回读和恢复，只拥有内屏方向与全局自动旋转锁。帐篷、支架和笔记本通过加速度计识别；完全折叠由实体开关交给 Windows。实体开关仍为平板而原始重力几何已稳定进入帐篷区时，`screen_session.py` 每周期重新锁定当前翻转横屏，并在开关释放首周期直接发布缓存帐篷目标。真机时序显示 Windows 仍会在 CSM 释放时短暂写入桌面方向，当前实现把这段窗口从约 1.6 秒缩短到约 0.9 秒；完全消除需要重新设计 Windows 状态发布，不能继续依赖显示锁。
+显示恢复日志固定为每用户 `screen-display.json`，CSM 恢复日志为相邻的 `screen-display-slate.json`。显示仍走共用事务、写前日志、身份检查、回读和恢复，只拥有内屏方向与全局自动旋转锁。帐篷、支架和笔记本通过加速度计识别；完全折叠由实体开关交给 Windows。CSM 恢复始终采用 journal 中记录的原始值；写入或恢复失败时保留日志，不推进内部基线。
 
-私有后台在设置文件旁写入同名 `.log`，例如 `native-settings.log`、`simulation.log`，达到 256 KiB 后滚动为 `.log.1`，只保留一份旧日志。日志在 Windows 后台通过本地非提权身份检查后创建，不记录输入内容、触摸坐标或触摸屏数据；启动身份检查本身失败时不会访问用户状态目录。使用 `--settings` 时日志同样跟随该文件，便于隔离测试。
+私有软件后台在设置文件旁写入同名 `.log`，达到 256 KiB 后滚动为 `.log.1`，只保留一份旧日志。日志在通过本地非提权身份检查后创建，不记录输入内容、触摸坐标或触摸屏数据。
 
-恢复旧日志时若发现 Windows 原生自动旋转已接管，或唯一 GPIO 开关确认处于物理平板，即使当前方向恰好等于程序过去的写入，也先持久化撤销完成/待写方向所有权，再恢复用户方向锁并清理日志，不把旧软件方向覆盖回去。旧版日志中的 shell 所有权字段只作兼容读取并丢弃，恢复不会改写当前 shell。转交保存失败则保留原日志与内存记录，等待重试；物理状态不明且未能证明原生接管时拒绝恢复写入。固定模式在写入前和回执前重查物理资格与原生旋转，未发生实际方向写入也必须复核，不能因方向恰好相同就确认成功。
+恢复旧日志时若发现 Windows 原生自动旋转已接管，或 ETW 确认处于物理平板，即使当前方向恰好等于程序过去的写入，也先持久化撤销完成/待写方向所有权，再恢复用户方向锁并清理日志，不把旧软件方向覆盖回去。CSM 指示值不能证明物理姿态；物理状态未知且未能证明原生接管时拒绝恢复写入。固定模式在写入前和回执前重查 ETW 资格与原生旋转，未发生实际方向写入也必须复核，不能因方向恰好相同就确认成功。
 
-真实后台入口默认常驻：关闭窗口只隐藏界面，托盘提供打开与退出；`--native-backend --background` 初次启动直接留在托盘。没有系统托盘时显示窗口与说明，保留可见的退出路径。每用户另有固定 UI 锁，再次启动只更新时间戳提示唤回旧窗口；该空文件只表达显示窗口，不读取内容或接收硬件回执、命令与设置。原生 UI 和后台在触碰用户状态文件前核对非提权本地控制台身份，不能让远程或提权实例抢占本地 UI；锁屏的本地会话可启动，控制仍等待原有资格检查。托盘生命周期使用 [Qt 系统托盘 API](https://doc.qt.io/qt-6/qsystemtrayicon.html)。
+硬件界面默认常驻：关闭窗口只隐藏界面，托盘提供打开与退出；`--background` 初次启动直接留在托盘。没有系统托盘时显示窗口与说明，保留可见的退出路径。每用户另有固定 UI 锁，再次启动只更新时间戳提示唤回旧窗口；该空文件只表达显示窗口，不读取内容或接收硬件回执、命令与设置。界面在触碰用户状态文件前核对非提权本地控制台身份，不能让远程或提权实例抢占本地 UI。托盘生命周期使用 [Qt 系统托盘 API](https://doc.qt.io/qt-6/qsystemtrayicon.html)。
 
 「登录时启动」只在用户开启时写入 HKCU 的 `Software\Microsoft\Windows\CurrentVersion\Run` 中本项目的 `PanasonicPostureManager` 值；关闭时只删除与当前固定命令完全相同的值，发现其他内容则保留并显示冲突。不创建服务、计划任务或提权项，不更改 Windows 启动应用管理器的禁用选择。界面显示本项目启动登记是否存在，Windows 自身的启动管理或登录延迟仍可能阻止即时运行。命令使用绝对路径、正确引用与无控制台解释器，并拒绝超过 260 UTF-16 单元的命令；限制依据 [Microsoft Run 键说明](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)。移动便携文件夹前应先在旧位置关闭此项，移动后重新开启。使用 `--settings` 的独立测试实例不开放自启动。
 
-源码自启动由固定 `packaging/windows/launch-native.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --native-backend --background`。首次开发测试保持自启动关闭。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；点击通知时，仅当后台实例、epoch、提示类型和当前可确认条件仍完全匹配才经页面现有事务确认并立即切换，不打开主窗口，否则只打开界面。Windows 可能同时交付通知点击和托盘激活，因此同一次点击只确认一次；实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
+源码自启动由固定 `packaging/windows/launch-hardware.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --background`。首次开发测试保持自启动关闭。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；点击通知时，仅当服务实例、epoch、提示类型和当前可确认条件仍完全匹配才经页面现有事务确认并立即切换，不打开主窗口，否则只打开界面。Windows 可能同时交付通知点击和托盘激活，因此同一次点击只确认一次；实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
 
-授权真机可运行 `tests/windows_resident_smoke.py --exercise-resident --directory <新证据目录>`。CFQV8 已通过真实后台隐藏后继续运行、另一个进程用公开入口唤回同一窗口、无源码环境变量的后台登录入口，以及明确退出后的清理；验证没有改动本机登录启动登记，也没有注销登录或声称原生通知已目视验收。
+授权真机可运行 `tests/windows_etw_switch_smoke.py` 和 `tests/windows_launcher_smoke.py`。前者只读 ETW 事件，后者验证受保护运行时、会话启动和回收；两者都不能替代安装后的服务、真实显示或通知验收。
 
-只有显式原生客户端接受真实来源与能力字段，普通和模拟客户端仍拒绝这些快照。内部显示回执由有界队列交回引擎线程处理，过期、锁屏及失去本地会话资格的回执不能续租；原有 LocalSystem 管道和鉴权完全不变。正常关闭先请求后台恢复，最多等待六秒，失去响应再终止；重新启动先恢复残留日志，不重放手动选择。WinRT 辅助进程核对父进程 PID 和创建时间，父进程被强制终止后自行退出。
+只有硬件客户端接受真实来源与能力字段；软件预览客户端继续拒绝这些快照。显示回执由服务端核对登记进程、代次和租约，过期、锁屏及失去本地会话资格的回执不能续租。正常关闭先请求会话恢复，再等待回收；重新启动先恢复残留日志，不重放手动选择。
 
-原生验证脚本 `tests/windows_screen_smoke.py --exercise-screen --directory <新证据目录>` 会实际倒转内屏、测试正常退出与强制退出后的恢复，仅在获授权且已解锁的真机运行；`--locked-session` 验证锁屏拒绝与正常退出。`tests/windows_sensor_parent_smoke.py --directory <新证据目录>` 只读采样，并验证强制终止采样父进程后辅助进程退出。2026-11-10，CFQV8 已通过完整真实后台的笔记本、帐篷倒转、支架回正、偏好保存、校准及重置、正常退出恢复、强制退出重连恢复，以及 slate 通知和旋转/slate worker 强杀恢复；最终内屏回读为原有正常方向，恢复日志已清除。此次未改变物理折叠姿态或禁用输入，不能据此宣称物理折叠矩阵已完成。
+`tests/windows_sensor_parent_smoke.py --directory <新证据目录>` 只读采样，并验证强制终止采样父进程后辅助进程退出。2026-11-11 的 ETW 真机探针已确认 `0xCC/0xCD` 映射；尚未完成接入服务后的真实显示、CSM 写入与姿态矩阵验收。
 
-需要验证完整软件事务时显式打开后台模拟模式：
+需要验证私有软件事务时显式打开软件预览后台：
 
 ```bat
-packaging\windows\run.cmd --simulate-backend --language zh_CN
-packaging\windows\run.cmd --simulate-backend --scenario prompt
+packaging\windows\run.cmd --backend --language zh_CN
 ```
 
-后台模拟通过共用姿态策略、服务引擎、会话运行时和显示事务执行，输入和显示端口仅修改模拟状态。`slow` 暂缓显示回执，`error` 注入显示失败，`hardware` 模拟物理开关优先；`disconnected` 仅供原有 `--demo` 使用。模拟结果不代表真实设备已应用。
+内存演示仍使用 `--demo`，关闭窗口即清空。内部 Simulation 只作为隔离测试夹具，不再对用户开放，也不能声明真实设备已应用。
 
-普通设置存于 `%LOCALAPPDATA%\PanasonicPostureManager\settings.json`，模拟设置为同目录下的 `simulation.json`；`--settings` 可指定独立测试文件。只保存偏好与校准矩阵，不保存手动模式、已应用结果或旧会话。沿用设置 v1、原子替换和 `.corrupt-<timestamp>` 损坏隔离。每个设置文件只允许一个后台实例。
+软件预览设置存于 `%LOCALAPPDATA%\PanasonicPostureManager\settings.json`；`--settings` 可指定独立测试文件。只保存偏好与校准矩阵，不保存手动模式、已应用结果或旧会话。沿用设置 v1、原子替换和 `.corrupt-<timestamp>` 损坏隔离。每个设置文件只允许一个后台实例。
 
-界面通过子进程继承的私有标准管道通信，无网络监听或共享管道名。消息限制为 64 KiB，最多 32 个未完成请求，默认五秒超时。状态与完成回调在界面线程处理。断线立即使旧请求失效，重连采用有上限的退避，不重放写入；普通与模拟预览关闭窗口会回收后台，真实入口从托盘退出才回收。此通信能力只授予父进程，不替代未来系统服务的会话鉴权。管道继承与句柄关闭依据 [Python 子进程文档](https://docs.python.org/3.11/library/subprocess.html)。
+软件预览通过子进程继承的私有标准管道通信，无网络监听或共享管道名。消息限制为 64 KiB，最多 32 个未完成请求，默认五秒超时。状态与完成回调在界面线程处理。断线立即使旧请求失效，重连采用有上限的退避，不重放写入。此通信能力只授予父进程，不替代硬件服务的会话鉴权。管道继承与句柄关闭依据 [Python 子进程文档](https://docs.python.org/3.11/library/subprocess.html)。
 
-后台在产生首个状态前因启动条件失败退出时，可向父进程发送一个无实例、无自由文本的 `fatal` 回执。父进程只接受固定原因集，已知设备配置原因会直接显示可操作说明并停止该连接的重连；未知或畸形原因仍按协议错误断开。技术 traceback 只进入后台日志，不进入界面。
+软件后台在产生首个状态前因启动条件失败退出时，可向父进程发送一个无实例、无自由文本的 `fatal` 回执。父进程只接受固定原因集 `backend-startup-failed`；未知或畸形原因仍按协议错误断开。技术 traceback 只进入后台日志，不进入界面。
 
-在非 Windows 开发环境中，必须显式指定测试设置路径；默认不启动软件后台：
+在非 Windows 开发环境中，必须显式指定测试设置路径；默认不启动后台：
 
 ```sh
-PYTHONPATH=src .venv-windows/bin/python -m panasonic_posture.fluent --simulate-backend --settings /tmp/posture-preview/simulation.json --language zh_CN
+PYTHONPATH=src .venv-windows/bin/python -m panasonic_posture.fluent --backend --settings /tmp/posture-preview/settings.json --language zh_CN
 ```
 
 ### Windows 加速度计只读检查
@@ -179,7 +178,7 @@ set PYTHONPATH=src
 
 此命令输出逐行 JSON，时间换算至 Python 单调时钟，单位为 m/s²，`mount_verified=false` 表示仍沿用传感器原始轴向，不能当作机型姿态校验。它逐次枚举 Standard 加速度计，只接受唯一且与默认传感器标识一致的设备，不设置 ReportInterval 或 ReadingTransform。WinRT 在刚打开时可能先返回很久以前的缓存；旧帧不会发布，启动最多等待 20 秒，新鲜样本间隔不能超过两秒。重复时间戳不更新样本时间。断线后间隔两秒重试，保持原设备身份和最后的原始时间戳；更换设备必须重新建立并验证安装方向。
 
-`windows.sensor.WindowsSensor` 实现共用 SensorBackend 的只读接口，构造时要求显式传入安装方向矩阵。它校验采样与接收时间、墙钟和单调时钟的相对变化，遇到时钟跳变重新连接并建立时间基准；错误或过期时立即返回无效读数。普通软件后台不启用该端口；显式 `--native-backend` 的已验证机型工厂会附带方向采集，设备支持等级仍以运行时探针和机型配置为准。传感器接口与固定坐标系见 [Microsoft Accelerometer 文档](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.accelerometer)。
+`windows.sensor.WindowsSensor` 实现共用 SensorBackend 的只读接口，构造时要求显式传入安装方向矩阵。它校验采样与接收时间、墙钟和单调时钟的相对变化，遇到时钟跳变重新连接并建立时间基准；错误或过期时立即返回无效读数。普通软件后台不启用该端口；硬件服务组合根用 `ProfileSensor` 包装它，不采集 SimpleOrientation。传感器接口与固定坐标系见 [Microsoft Accelerometer 文档](https://learn.microsoft.com/en-us/uwp/api/windows.devices.sensors.accelerometer)。
 
 `--orientation` 显式附加系统 SimpleOrientationSensor 的四象限/朝上/朝下快照，默认采样路径保持不变。方向源同样要求唯一、身份固定且 ReadingTransform 为原始值 0；不修改该属性或采样配置。方向快照有独立的观察时间，使用已经校验的时钟基准换算到单调时钟，不能把较早的加速度测量时间冒充方向观察时间，也不把观察时间当成方向变更事件时间；只有加速度计出现不同的有效采样时间时才发布，缓存不能续期。方向失败只使方向端口失效，不破坏仍正常的重力姿态采样。接口语义见 [Microsoft 简单方向说明](https://learn.microsoft.com/en-us/windows/uwp/devices-sensors/use-the-orientation-sensor)。
 
@@ -191,15 +190,15 @@ set PYTHONPATH=src
 
 这套特权主机及驱动链路保留为可选输入扩展。当前交付优先完成普通用户会话中的姿态与显示功能，允许暂不禁用内置键盘和触控板；不能因输入驱动或签名未就绪而阻塞其余用户态功能，也不能伪造输入完成回执来绕过现有引擎。
 
-共用控制器允许平台在构造时显式声明 `input_control=False`，此时软件姿态目标如实保持 `disable_internal_input=False`；Linux 和已有平台默认仍为 True。引擎对这些无需输入的目标仍要求释放事务完成、有效租约与同代次显示回执，不能仅凭选择模式就确认。`windows/display_only_input.py` 表示从未取得输入所有权，任何意外接管或唤醒请求都会失败，不提供模拟驱动就绪回执。这条路径由显式 `--native-backend` 接入，普通预览仍只保存偏好。
+共用控制器允许平台在构造时显式声明 `input_control=False`，此时软件姿态目标如实保持 `disable_internal_input=False`；Linux 和已有平台默认仍为 True。引擎对这些无需输入的目标仍要求释放事务完成、有效租约与同代次显示回执，不能仅凭选择模式就确认。`windows/display_only_input.py` 表示从未取得输入所有权，任何意外接管或唤醒请求都会失败，不提供模拟驱动就绪回执。Windows 硬件服务使用这条路径，软件预览仍只保存偏好。
 
-`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine。`hardware_runtime.py` 提供显式组合根：先启动 ETW 物理源和 CSM 基线，再启动 WinRT 传感器，最后创建 RPC 端点并启动可信会话监管器；`HardwareServer.poll()` 仍负责唯一一次引擎 tick。当前没有注册常驻系统服务、安装自研输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。
+`windows/hardware_host.py`、`hardware_ipc.py` 和 `security.py` 是独立硬件主机的请求分发、通信与身份校验组件，沿用共用 Engine。`hardware_runtime.py` 提供组合根：先启动 ETW 物理源，再把其只读查询注入 Engine，随后启动 WinRT 传感器，最后创建 RPC 端点并启动可信会话监管器；`HardwareServer.poll()` 负责唯一一次引擎 tick。当前没有注册常驻系统服务、安装自研输入驱动，也不由普通预览自动启用。它们不提供任意文件路径、设备开关或执行命令接口。
 
-物理源准入是硬件主机的安全边界：只有 `HardwareStatus.OK` 且物理值为布尔时才允许登记会话、提交 `session_update` 和确认显示回执。ETW 启动失败、事件源中断、CSM 基线无效或后续读取失败时，服务进入只读状态，拒绝显示回执、撤销现有租约并停止已登记会话；物理源恢复后监管器才重新探测并创建新的普通用户会话。组合根没有自动安装入口，也没有把物理源失败回退成软件平板状态。
+物理源准入是硬件主机的安全边界。首个有效 `0xCC/0xCD` 事件前物理值保持未知，CSM 写入、恢复和日志清理全部禁用。ETW 启动失败或运行中断时 `HardwareRuntime` 失败并完整清理，不把 CSM 当作回退；已有恢复日志保留，等待下次物理源可用时按原始值恢复。组合根没有自动安装入口，也没有把物理源失败回退成软件平板状态。
 
-开发界面可用 `packaging\windows\run.cmd --hardware-backend` 显式连接 LocalSystem 所有的硬件端点，不能同时指定演示、软件后台、模拟场景或本地设置路径。它不安装或启动系统服务；目前缺少完整的服务安装与可信会话启动流程。服务不可用时只显示断线，不回退到软件或模拟后台。
+开发界面直接运行 `packaging\windows\run.cmd` 就连接 LocalSystem 所有的硬件端点。它不安装或启动系统服务；目前缺少完整的服务安装与可信会话启动流程。服务不可用时只显示断线，不回退到软件后台或 CSM 推断。
 
-`windows/hardware_client.py` 在一个有界工作线程中通信，每半秒请求状态，界面主循环先接收已校验快照再完成对应 Future；断线先使状态失效，再拒绝未完成请求。过期结果、服务实例变化、无效原生能力声明都拒绝发布，重连不重放写入。UI 客户端不能提交显示回执。`windows/session_client.py` 供共用 SessionRuntime 的两个工作线程使用独立连接，防止显示/状态请求占用续租通道；所有连接绑定同一服务实例，实例变化使其他在途结果失效。回执仍由服务核对预登记的确切会话进程，客户端不能自行取得此资格。
+`windows/hardware_client.py` 在一个有界工作线程中通信，每半秒请求状态，界面主循环先接收已校验快照再完成对应 Future；断线先使状态失效，再拒绝未完成请求。过期结果、服务实例变化、无效硬件能力声明都拒绝发布，重连不重放写入。UI 客户端不能提交显示回执。`windows/session_client.py` 供共用 SessionRuntime 的两个工作线程使用独立连接，防止显示/状态请求占用续租通道；所有连接绑定同一服务实例，实例变化使其他在途结果失效。回执仍由服务核对预登记的确切会话进程，客户端不能自行取得此资格。
 
 隔离联测覆盖界面到硬件消息契约，以及硬件客户端、共用会话运行时、Windows 显示事务、恢复日志和 Engine 的链路。系统 API 与输入端口使用 fake；测试确认显示提交后才发送就绪回执、显示失败不获取输入、会话资格被拒绝后释放输入并恢复方向。这些结果不代表安装后的真实会话或内核输入验收。
 
@@ -218,20 +217,13 @@ python tests\windows_actuator_smoke.py --control-library build\windows-driver\po
 
 ### Windows 原生显示与物理开关开发验证
 
-`windows/switch.py` 先核对唯一、已启动的 GPIO 指示器、系统驱动和内部 ACPI 总线，才读取 `SM_CONVERTIBLESLATEMODE`。不存在、歧义、设备替换或读取错误时返回未知状态；不写入该物理状态。CFQV8-1L 以实体姿态与界面结果复核为 `0=折叠平板，1=笔记本电脑`；映射属于已验证机型适配，不能套用到未验证机型。当前仅识别已核对的 INT33D3 路径；SYSTEM 会话中的折叠变化和其他开关仍未验证。接口依据：[GetSystemMetrics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics)。
+`windows/etw_switch.py` 只消费 Intel HID Event Filter 的 Event 115 ACPI 通知，`0xCC` 为物理平板、`0xCD` 为笔记本；`0xCA/0xCB` 和重复/歧义载荷不产生状态。首个有效事件前返回未知，不读取 CSM、shell 模式或注册表作为基线。ETW 启动失败或事件源中断时返回 `permission`/`read_error`，硬件运行时会撤销物理准入、停止会话并保持只读，不回退 CSM。
 
 `windows/display.py` 通过 CCD 识别唯一内屏，拒绝镜像或输出身份变化，复用 `session/transaction.py` 和显式恢复日志执行方向写入、回读与恢复。写入先用 `CDS_TEST` 验证，不持久化显示注册表配置。固定方向会在取得并回读全局方向锁后写入；`NativeDisplay.lock()` 在相关 shell 导出不可用或回读失败时拒绝确认。实体开关仍处于平板而传感器姿态已经开始展开时，`prepare_hardware_release()` 先记录并锁定当前翻转横屏，避免随后开关释放触发 `2→0→2`。等待期仍只读跟踪最终方向；稳定目标只在方向不一致时执行一次事务。实体 PDO 和硬件姿态查询保持独立，当前不发布软件 shell 平板状态。旧版日志中的 shell 字段只作兼容读取并在恢复时丢弃。方向与方向锁保存在同一恢复日志，旧版日志缺少新增字段时仍兼容读取。`SetDisplayAutoRotationPreferences` 仅作用于当前进程，不能替代这里的系统方向锁；参见 [Microsoft API 文档](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setdisplayautorotationpreferences)。
 
 没有活动内屏、但有一个或多个活动外屏时，原生工厂使用只读的 `ExternalOnlyDisplay`。它记录并复核对活动外屏身份，姿态操作和持续刷新只验证拓扑稳定后返回，不取得旋转锁、不写 CCD、不创建显示日志；姿态和平板状态通知仍按共用链路处理。固定软件姿态由共用刷新通道限速复核，外屏拔出、替换或内屏重新出现时撤销成功并走恢复/重试。若设置目录已有未恢复的内屏显示日志，工厂拒绝进入只读外接模式，等待内屏恢复或用户按原恢复流程处理，不能静默丢弃旧所有权。内外屏同时存在仍要求内屏唯一且不镜像。
 
-已授权的真机可显式运行以下检查，屏幕会短暂倒转。检查保留恢复日志，另启恢复进程，并验证写入进程被强制结束后的恢复；每次使用新的证据目录：
-
-```bat
-set PYTHONPATH=src
-python tests\windows_display_smoke.py --exercise-rotation --directory build\display-evidence-new
-```
-
-不依赖平板指示器的独立内屏事务检查：
+已授权的真机可显式运行独立内屏事务检查，屏幕会短暂倒转。检查保留恢复日志，另启恢复进程，并验证写入进程被强制结束后的恢复；每次使用新的证据目录：
 
 ```bat
 set PYTHONPATH=src
@@ -240,14 +232,14 @@ python tests\windows_display_only_smoke.py --exercise-display --directory build\
 
 该检查验证帐篷倒转、完整回读、正常回正，以及强杀显示 worker 后由持久日志恢复。它不打开平板指示器、不修改 shell、不取得输入所有权。
 
-物理折叠主路径检查：
+ETW 物理源检查：
 
 ```bat
 set PYTHONPATH=src
-python tests\windows_physical_posture_smoke.py --exercise-physical --directory build\physical-posture-evidence-new
+python tests\windows_etw_switch_smoke.py --directory build\etw-evidence-new
 ```
 
-操作者必须实际把设备折叠到平板形态，再按提示旋转并展开。脚本观察硬件开关、`hardware` 目标和显示回读，不使用手动平板模式。
+操作者必须实际折叠和展开一次。脚本只读 Event 115，不写 CSM、shell 或注册表；它不能替代硬件服务接入后的显示与 CSM 写入验收。
 
 无驱动 ETW 物理开关探针必须在 LocalSystem 会话中运行。它只监听现有 Intel HID Event Filter 的 ACPI 通知，不写 CSM、shell 或注册表；运行期间应实际折叠和展开一次，并检查事件 115 的 `0xCC/0xCD` 映射：
 
@@ -256,7 +248,7 @@ set PYTHONPATH=src
 python tests\windows_etw_switch_smoke.py --directory build\etw-switch-evidence-new --seconds 30
 ```
 
-探针结果只证明事件源是否可用，不能替代生产服务装配。普通用户启动 ETW 必须被拒绝；事件缺失、权限失败或映射不确定时，生产路径不得写 CSM。当前新增的 `windows/etw_switch.py` 尚未接入生产后台，也没有安装服务。
+探针结果只证明事件源是否可用，不能替代生产服务装配。普通用户启动 ETW 必须被拒绝；事件缺失、权限失败或映射不确定时，生产路径不得写 CSM。`windows/etw_switch.py` 已接入 `HardwareRuntime` 组合根，但仍未安装或启动常驻服务。
 
 2026-11-11 在 CFQV8-1L 上以临时 SYSTEM 计划任务执行该探针，物理折叠/展开期间 CSM 为 `1→0→1`，Event 115 收到 `0xCC` 和 `0xCD`；前者映射为平板、后者映射为笔记本，`0xCA/0xCB` 只作为通知序列而不改变物理状态。任务成功退出并删除，探针未写 CSM。该证据验证了 ETW 物理事件源，不等于生产后台已接线或完整姿态矩阵通过。
 
@@ -333,7 +325,7 @@ python packaging\windows\build.py --dependencies build\windows-dependencies
 
 构建器从当前 Python 基础安装和独立依赖目录读取运行时、Qt/Fluent 及随包许可，连同源码、插画、翻译和维护说明直接流式写入 ZIP，同时计算逐文件校验，减少临时磁盘写入与内存占用。预览只使用 Qt Widgets，因此排除 PyQt6 自带但未使用的 QML 资源，避免 Windows 传统解压工具遗漏超长路径文件。完整归档生成后才替换已有包。`runtime/python._pth` 隔离用户站点、注册表和 `PYTHONPATH`；参见 [Python Windows 搜索路径说明](https://docs.python.org/3.11/using/windows.html#finding-modules)。基础安装的第三方包、测试数据或配置不进入归档。
 
-输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Native.cmd` 使用真实传感器、物理开关和内屏事务；普通 `Panasonic Posture Manager.cmd` 保持不接触硬件的软件后台预览，`Simulation.cmd` 启动后台模拟。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`，Python 许可为 `runtime/LICENSE.txt`。更新时解压到新目录，用户设置继续位于 LocalAppData。
+输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Hardware.cmd` 或默认 `Panasonic Posture Manager.cmd` 都会连接 LocalSystem 硬件服务；服务未安装时只显示断线。`--backend` 是隔离软件预览，`--demo` 是内存演示。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`，Python 许可为 `runtime/LICENSE.txt`。更新时解压到新目录，用户设置继续位于 LocalAppData。
 
 `.github/workflows/windows-preview.yml` 在 Windows 上运行 Python 3.11/3.13/3.14 的后台、界面、只读探针解析和翻译测试，构建 ZIP，再用解压包自带的 Python 验证 Qt、中文资源、模式事务和后台退出。流程仅保存构建制品，不发布 Release、不改版本或 AUR。提交这份流程不代表远端构建已执行。
 

@@ -64,7 +64,7 @@ if ($Action -eq 'Install') {
     }
     New-ItemProperty -LiteralPath $controlPath -Name $valueName `
         -PropertyType DWord -Value 0 -Force | Out-Null
-    Write-Output 'Convertible-slate non-exclusive access configured. Restart Windows before Native.cmd can use it.'
+    Write-Output 'Convertible-slate non-exclusive access configured. Restart Windows before Hardware.cmd can use it.'
     exit 0
 }
 

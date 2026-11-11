@@ -44,7 +44,7 @@ class WindowsPackagingTests(unittest.TestCase):
                              'runtime/pythonw._pth', 'runtime/python311._pth',
                              'app/panasonic_posture/windows/client.py', 'data/assets/lets-note-window-icon.png',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
-                             'Panasonic Posture Manager.cmd', 'Native.cmd', 'Simulation.cmd',
+                             'Panasonic Posture Manager.cmd', 'Hardware.cmd',
                              'Configure Slate Device.cmd', 'Slate Device Status.cmd',
                              'Remove Slate Device Configuration.cmd',
                              'configure-slate-device.ps1'):
@@ -52,9 +52,9 @@ class WindowsPackagingTests(unittest.TestCase):
                 self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in names))
                 self.assertFalse(any('/qml/' in name for name in names))
                 self.assertLess(max(map(len, names)), 240)
-                native = bundle.read(prefix + 'Native.cmd').decode('utf-8')
+                native = bundle.read(prefix + 'Hardware.cmd').decode('utf-8')
                 self.assertIn('runtime\\pythonw.exe', native)
-                self.assertIn('--native-backend', native)
+                self.assertNotIn('--hardware-backend', native)
                 configure = bundle.read(prefix + 'Configure Slate Device.cmd').decode('utf-8')
                 self.assertIn('-Action Install', configure)
                 self.assertIn('configure-slate-device.ps1', configure)

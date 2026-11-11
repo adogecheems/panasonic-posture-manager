@@ -22,7 +22,9 @@ from ..session.runtime import SessionRuntime
 from ..tasks import thread_executor
 from .session_client import WindowsSessionClient
 from .session_context import WindowsSessionContext
-from .session_display import SessionContext, QualifiedDisplay as _QualifiedDisplay
+from .session_display import (
+    QualifiedDisplay as _QualifiedDisplay, SessionContext, SlatePosture,
+)
 from .hardware_release import HardwareReleaseCoordinator
 
 log = logging.getLogger(__name__)
@@ -79,12 +81,14 @@ def _native_context() -> WindowsSessionContext:
 
 
 class WindowsSessionAgent:
-    def __init__(self, *, display_factory: Callable[[], DisplayBackend],
+    def __init__(self, *, display_factory: Callable[[ClosableClient], DisplayBackend],
+                 slate_factory: Callable[[ClosableClient], SlatePosture] | None = None,
                  context_factory: Callable[[], SessionContext] = _native_context,
                  client_factory: Callable[[Callable[[], bool]], ClosableClient] = (
                      lambda available: WindowsSessionClient(unavailable=lambda: not available())),
                  executor: Executor | None = None, lease_executor: Executor | None = None) -> None:
-        self.display_factory, self.context_factory, self.client_factory = display_factory, context_factory, client_factory
+        self.display_factory, self.slate_factory = display_factory, slate_factory
+        self.context_factory, self.client_factory = context_factory, client_factory
         self.executor, self.lease_executor = executor, lease_executor
         self.runtime: SessionRuntime | None = None
         self.context: SessionContext | None = None
@@ -120,11 +124,20 @@ class WindowsSessionAgent:
                 self._stack.callback(self.lease_executor.shutdown, wait=True, cancel_futures=True)
             # Reuse this worker, rather than consuming a third RPC channel.
             self.executor.submit(self._prove_receipt_authority).result(timeout=20)
-            display = self.display_factory()
+            client = _QualifiedClient(self.client, self.context)
+            display = self.display_factory(client)
+            try:
+                slate = self.slate_factory(client) if self.slate_factory is not None else None
+            except BaseException:
+                display.restore()
+                raise
+            if slate is not None:
+                self._stack.callback(slate.close)
             self._stack.callback(lambda: self.runtime.close() if self.runtime else display.restore())
-            qualified = _QualifiedDisplay(display, self.context)
+            qualified = _QualifiedDisplay(display, self.context, slate)
+            self._stack.callback(qualified.restore)
             self.hardware_release = HardwareReleaseCoordinator(qualified)
-            self.runtime = SessionRuntime(_QualifiedClient(self.client, self.context),
+            self.runtime = SessionRuntime(client,
                 qualified, None,
                 screen_locked=lambda: not self.context.control_available(),
                 executor=self.executor, lease_executor=self.lease_executor)
@@ -175,10 +188,25 @@ def main(argv=None) -> int:
     if sys.platform != 'win32':
         parser.error('native session agent requires Windows')
     from ..session.journal import Journal
+    from .convertible_slate import NativeSlateDevice, SlateNotifier
     from .display import WindowsDisplay
     from .instance import InstanceLock
+    from .session_display import SessionHardwareQuery
     from .session_stop import NativeStopSignal
-    agent = WindowsSessionAgent(display_factory=lambda: WindowsDisplay(journal=Journal(options.journal)))
+    from .slate_journal import SlateJournal, lease_path
+
+    def display_factory(client):
+        del client
+        return WindowsDisplay(journal=Journal(options.journal))
+
+    def slate_factory(client):
+        return SlateNotifier(
+            NativeSlateDevice(),
+            SlateJournal(lease_path(options.journal)),
+            hardware_query=SessionHardwareQuery(client.get_state),
+        )
+
+    agent = WindowsSessionAgent(display_factory=display_factory, slate_factory=slate_factory)
     try:
         with ExitStack() as stack:
             stop = NativeStopSignal.open(options.stop_event) if options.stop_event is not None else None

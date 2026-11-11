@@ -5,37 +5,26 @@ from pathlib import Path
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description='Windows Fluent UI with explicit preview and native screen backends.')
+    parser = argparse.ArgumentParser(description='Windows Fluent UI with the hardware service by default.')
     parser.add_argument('--demo', action='store_true', help='enable in-memory interaction demo')
-    parser.add_argument('--backend', action='store_true', help='start a private software backend (default on Windows)')
-    parser.add_argument('--simulate-backend', action='store_true', help='simulate devices in the private backend')
-    parser.add_argument('--hardware-backend', action='store_true', help='connect to the separate authenticated hardware service')
-    parser.add_argument('--native-backend', action='store_true', help='real user-session posture and screen control; leaves input enabled')
-    parser.add_argument('--background', action='store_true', help='start the native screen UI in the system tray')
+    parser.add_argument('--backend', action='store_true', help='start the private software backend preview')
+    parser.add_argument('--background', action='store_true', help='start the default hardware UI in the system tray')
     parser.add_argument('--settings', type=Path, help='explicit backend settings file')
     parser.add_argument('--language', choices=('en', 'zh_CN'), help='interface language')
     parser.add_argument('--scenario', choices=('laptop', 'prompt', 'hardware', 'slow', 'error', 'disconnected'),
-                        help='initial simulation scenario (requires --demo or --simulate-backend)')
+                        help='initial demo scenario (requires --demo)')
     options = parser.parse_args(argv)
-    if options.background and not options.native_backend:
-        parser.error('--background requires --native-backend')
-    if options.demo and (options.backend or options.simulate_backend or options.hardware_backend or options.native_backend or options.settings):
+    if options.background and (options.demo or options.backend or options.settings or options.scenario):
+        parser.error('--background cannot be combined with preview backend options')
+    if options.background and sys.platform != 'win32':
+        parser.error('--background requires Windows')
+    if options.demo and (options.backend or options.settings):
         parser.error('--demo cannot be combined with backend options')
-    if options.hardware_backend and (options.backend or options.simulate_backend or options.native_backend or options.settings or options.scenario):
-        parser.error('--hardware-backend cannot be combined with software backend options')
-    if options.hardware_backend and sys.platform != 'win32':
-        parser.error('--hardware-backend requires Windows')
-    if options.native_backend and (options.backend or options.simulate_backend or options.scenario):
-        parser.error('--native-backend cannot be combined with preview backend options')
-    if options.native_backend and sys.platform != 'win32':
-        parser.error('--native-backend requires Windows')
-    if options.scenario and not (options.demo or options.simulate_backend):
-        parser.error('--scenario requires --demo or --simulate-backend')
-    if options.scenario == 'disconnected' and options.simulate_backend:
-        parser.error('disconnected scenario is only available with --demo')
-    if options.settings and not (options.backend or options.simulate_backend or sys.platform == 'win32'):
+    if options.scenario and not options.demo:
+        parser.error('--scenario requires --demo')
+    if options.settings and not options.backend:
         parser.error('--settings requires --backend')
-    if (options.backend or options.simulate_backend) and not options.settings and sys.platform != 'win32':
+    if options.backend and not options.settings and sys.platform != 'win32':
         parser.error('outside Windows, use --settings with an explicit test directory')
     try:
         from .app import run
@@ -45,9 +34,7 @@ def main(argv=None) -> int:
             return 2
         raise
     return run(demo=options.demo, language=options.language, scenario=options.scenario or 'laptop',
-               backend=options.backend, simulate_backend=options.simulate_backend, settings_path=options.settings,
-               hardware_backend=options.hardware_backend, native_backend=options.native_backend,
-               background=options.background)
+               backend=options.backend, settings_path=options.settings, background=options.background)
 
 
 if __name__ == '__main__':

@@ -405,7 +405,7 @@ class NativeSessionRuntimeTests(unittest.TestCase):
         self.engine.set_mode('tent')
         self.engine.tick()
         agent = WindowsSessionAgent(context_factory=lambda: context,
-            client_factory=lambda unattended: self.client, display_factory=lambda: self.display)
+            client_factory=lambda unattended: self.client, display_factory=lambda client: self.display)
         self.addCleanup(agent.close)
         agent.start()
         def until(predicate):

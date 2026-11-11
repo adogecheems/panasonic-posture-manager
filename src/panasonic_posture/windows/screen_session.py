@@ -14,7 +14,6 @@ import queue
 import os
 import threading
 import time
-from pathlib import Path
 from typing import Protocol
 
 from ..contracts import ErrorCode
@@ -300,32 +299,3 @@ def select_native_display(api, journal, *, hardware_query):
     return WindowsDisplay(
         journal=journal, api=api, hardware_query=hardware_query,
     )
-
-
-def native_screen_session(store: SettingsBackend, instance: str, journal_path: Path) -> ScreenSession:
-    """Select only the machine/mount with collected Windows pose evidence."""
-    from ..session.journal import Journal
-    from .display import NativeDisplay
-    from .sensor import WindowsSensor, IDENTITY
-    from .session_context import WindowsSessionContext
-    from .switch import WindowsSwitch
-    require_native_user()
-    vendor, product = verified_machine()
-    with ExitStack() as resources:
-        context = WindowsSessionContext()
-        resources.callback(context.close)
-        switch = WindowsSwitch()
-        sensor = ProfileSensor(WindowsSensor(mount_matrix=IDENTITY, include_orientation=False))
-        resources.callback(sensor.close)
-        journal = Journal(journal_path)
-        api = NativeDisplay()
-        display = select_native_display(
-            api, journal, hardware_query=switch.query,
-        )
-        session = ScreenSession(store=store, instance=instance,
-            sensor=sensor, switch=switch,
-            display=display, context=context,
-            device=DeviceInfo(id='windows-cfqv8-screen', vendor=vendor, product=product,
-                              platform='windows', support_tier='compatible'))
-        resources.pop_all()  # ScreenSession now owns all three resources.
-        return session

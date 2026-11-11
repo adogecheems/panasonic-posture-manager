@@ -280,12 +280,6 @@ msgstr "操作未能完成"
 msgid "The background service is not connected yet."
 msgstr "后台服务尚未连接。"
 
-msgid "The convertible-slate indicator is still exclusive. Run the device configuration for this app, then restart Windows."
-msgstr "平板指示器仍处于独占状态。请为本应用运行设备配置，然后重启 Windows。"
-
-msgid "Native device control could not start. Check the device configuration and try again."
-msgstr "原生设备控制未能启动。请检查设备配置后重试。"
-
 msgid "The background service could not start. Please try again."
 msgstr "后台服务未能启动，请重试。"
 
@@ -294,9 +288,6 @@ msgstr "返回自动"
 
 msgid "Detect tent mode automatically"
 msgstr "自动识别帐篷模式"
-
-msgid "Simulation · Preferences are saved separately."
-msgstr "模拟模式 · 偏好设置单独保存。"
 
 msgid "Settings saved"
 msgstr "设置已保存"
@@ -322,11 +313,11 @@ msgstr "可以切换到支架模式"
 msgid "Tap to enable the current posture."
 msgstr "点击即可切换到当前姿态。"
 
-msgid "Native mode is unavailable"
-msgstr "原生模式不可用"
+msgid "Hardware mode is unavailable"
+msgstr "硬件模式不可用"
 
-msgid "Native mode requires the active local desktop and a normal user account."
-msgstr "请从当前本地桌面使用普通用户账户运行原生模式。"
+msgid "Hardware mode requires the active local desktop and a normal user account."
+msgstr "请从当前本地桌面使用普通用户账户运行硬件模式。"
 
 msgid "This device does not have a verified Windows sensor and display configuration. Use preview mode or check the supported models in the maintenance guide."
 msgstr "此设备没有经过验证的 Windows 传感器和显示配置。请使用预览模式，并在维护指南中查看受支持机型。"
