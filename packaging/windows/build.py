@@ -60,30 +60,6 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
     for executable in ('python', 'pythonw'):
         files[f'runtime/{executable}._pth'] = ui_search_paths.encode('utf-8')
     files['launch.py'] = b'from panasonic_posture.fluent.__main__ import main\nraise SystemExit(main())\n'
-    files['configure-slate-device.ps1'] = (
-        ROOT / 'packaging/windows/configure-slate-device.ps1'
-    )
-    files['hardware-service.ps1'] = (
-        ROOT / 'packaging/windows/hardware-service.ps1'
-    )
-    for name, action in (
-            ('Configure Slate Device.cmd', 'Install'),
-            ('Slate Device Status.cmd', 'Status'),
-            ('Remove Slate Device Configuration.cmd', 'Remove')):
-        files[name] = (
-            '@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'
-            'powershell.exe -NoProfile -ExecutionPolicy Bypass '
-            f'-File "%~dp0configure-slate-device.ps1" -Action {action}\r\n'
-        ).encode('utf-8')
-    for name, action in (
-            ('Install Hardware Service.cmd', 'Install'),
-            ('Hardware Service Status.cmd', 'Status'),
-            ('Remove Hardware Service.cmd', 'Remove')):
-        files[name] = (
-            '@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'
-            'powershell.exe -NoProfile -ExecutionPolicy Bypass '
-            f'-File "%~dp0hardware-service.ps1" -Action {action}\r\n'
-        ).encode('utf-8')
     for name, arguments in (('Panasonic Posture Manager.cmd', ''),
                              ('Hardware.cmd', '')):
         files[name] = (

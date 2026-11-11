@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Install', 'Start', 'Stop', 'Status', 'Remove')]
+    [ValidateSet('Configure', 'Install', 'Start', 'Stop', 'Status', 'Remove')]
     [string]$Action = 'Install',
     [switch]$Force
 )
@@ -81,6 +81,20 @@ if ($Action -eq 'Status') {
         account = $record.StartName
         image_path = $record.PathName
     } | ConvertTo-Json
+    exit 0
+}
+
+if ($Action -eq 'Configure') {
+    if ($null -eq (Get-ServiceRecord)) {
+        throw 'Hardware service is not installed.'
+    }
+    & sc.exe config $ServiceName start= delayed-auto obj= LocalSystem | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot configure the hardware service startup.' }
+    & sc.exe failure $ServiceName reset= 86400 `
+        actions= restart/5000/restart/15000/restart/60000 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot configure hardware service recovery.' }
+    Protect-ServiceLogs
+    Write-Output 'Hardware service configuration updated.'
     exit 0
 }
 

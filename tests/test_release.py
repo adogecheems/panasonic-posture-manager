@@ -76,6 +76,9 @@ class ReleaseMetadataTests(unittest.TestCase):
             "packaging/aur/PKGBUILD",
             "packaging/aur/.SRCINFO",
             "packaging/aur/panasonic-posture-manager.install",
+            "packaging/windows/build_msi.py",
+            "packaging/windows/msi/Package.wxs",
+            "packaging/windows/msi/LICENSE.rtf",
             "MAINTENANCE.md",
         ):
             with self.subTest(relative=relative):

@@ -1,0 +1,90 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+      Name="Panasonic Posture Manager"
+      Manufacturer="adogecheems"
+      Version="$(var.ProductVersion)"
+      UpgradeCode="7C0319E4-768D-4C48-A41C-25F0D677EA89"
+      Scope="perMachine"
+      Compressed="yes">
+    <MajorUpgrade
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of Panasonic Posture Manager is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Launch
+        Condition="VersionNT64 AND VersionNT64 &gt;= 1000"
+        Message="Panasonic Posture Manager requires 64-bit Windows 10 or later." />
+
+    <Property Id="ARPHELPLINK" Value="https://github.com/adogecheems/panasonic-posture-manager" />
+    <Property Id="ARPCOMMENTS" Value="Panasonic convertible posture, direction and hardware service." />
+    <Property Id="SLATE_CONFIGURED_BY_PRODUCT">
+      <RegistrySearch
+          Id="SearchConfiguredSlate"
+          Root="HKLM"
+          Key="SOFTWARE\PanasonicPostureManager\Setup"
+          Name="SlateExclusiveConfigured"
+          Type="raw"
+          Bitness="always64" />
+    </Property>
+
+    <CustomAction
+        Id="SetPowerShellExe"
+        Property="POWERSHELL_EXE"
+        Value="[SystemFolder]WindowsPowerShell\v1.0\powershell.exe" />
+    <CustomAction
+        Id="ConfigureSlate"
+        Property="POWERSHELL_EXE"
+        ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Install"
+        Execute="deferred"
+        Impersonate="no"
+        Return="check" />
+    <CustomAction
+        Id="ConfigureHardwareService"
+        Property="POWERSHELL_EXE"
+        ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[#HardwareServiceScript]&quot; -Action Configure"
+        Execute="deferred"
+        Impersonate="no"
+        Return="check" />
+    <CustomAction
+        Id="RollbackSlate"
+        Property="POWERSHELL_EXE"
+        ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Remove"
+        Execute="rollback"
+        Impersonate="no"
+        Return="ignore" />
+    <CustomAction
+        Id="RestoreSlate"
+        Property="POWERSHELL_EXE"
+        ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Remove"
+        Execute="deferred"
+        Impersonate="no"
+        Return="check" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager" />
+    </StandardDirectory>
+    <StandardDirectory Id="StartMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Panasonic Posture Manager" />
+    </StandardDirectory>
+
+    <Feature Id="Complete" Title="Panasonic Posture Manager" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="PayloadComponents" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectRoot)/packaging/windows/msi/LICENSE.rtf" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetPowerShellExe" After="InstallInitialize" />
+      <Custom Action="RollbackSlate" Before="ConfigureSlate" Condition="NOT REMOVE" />
+      <Custom Action="ConfigureSlate" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="ConfigureHardwareService" After="InstallServices" Condition="NOT REMOVE" />
+      <Custom Action="RestoreSlate" Before="RemoveFiles"
+              Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <ScheduleReboot
+          After="InstallFinalize"
+          Condition="(NOT REMOVE AND SLATE_CONFIGURED_BY_PRODUCT &lt;&gt; &quot;#1&quot;) OR (REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE)" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

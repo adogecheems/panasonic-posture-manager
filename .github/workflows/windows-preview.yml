@@ -71,6 +71,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_windows_trusted_runtime.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_windows_hardware_service.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_windows_session_launch.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_windows_session_supervisor.py -v
@@ -87,12 +89,29 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_windows_packaging.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_windows_msi.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tests/check_i18n.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Stage third-party packages with licenses
         run: python -m pip install --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
+      - name: Install WiX
+        if: matrix.python == '3.13'
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+          $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:PATH = "$tools;$env:PATH"
+          wix extension add -g WixToolset.UI.wixext/5.0.2
       - name: Build portable preview
         run: python packaging/windows/build.py --dependencies build/windows-dependencies
+      - name: Build MSI
+        if: matrix.python == '3.13'
+        run: |
+          $version = python packaging/scripts/release_version.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Verify extracted bundle with its own Python
         run: |
           Expand-Archive dist/windows/panasonic-posture-windows-preview.zip -DestinationPath build/unpacked
@@ -100,6 +119,22 @@ jobs:
           $env:POSTURE_BUNDLE = (Resolve-Path build/unpacked/PanasonicPostureManager).Path
           python tests/windows_bundle_smoke.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Verify MSI administrative payload
+        if: matrix.python == '3.13'
+        run: |
+          $package = Get-Item dist/windows/*.msi | Select-Object -First 1
+          $target = Join-Path $env:RUNNER_TEMP 'posture-msi-admin'
+          $process = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            '/a', "`"$($package.FullName)`"", '/qn', "TARGETDIR=`"$target`""
+          )
+          if ($process.ExitCode -notin 0, 3010) { exit $process.ExitCode }
+          $service = Get-ChildItem $target -Recurse -File -Filter hardware_service.py |
+            Select-Object -First 1
+          $runtime = Get-ChildItem $target -Recurse -File -Filter python-hardware.exe |
+            Select-Object -First 1
+          if ($null -eq $service -or $null -eq $runtime) {
+            throw 'MSI administrative payload is incomplete.'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-software-preview-python-${{ matrix.python }}

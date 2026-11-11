@@ -226,7 +226,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             "github.sha || github.ref_name }}",
             self.workflow,
         )
-        self.assertEqual(self.workflow.count("ref: ${{ env.SOURCE_REF }}"), 4)
+        self.assertEqual(self.workflow.count("ref: ${{ env.SOURCE_REF }}"), 5)
 
     def test_arch_build_uses_checkout_and_exports_tag_pinned_aur_metadata(self) -> None:
         arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
@@ -261,6 +261,17 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('rpm_files=$(rpm -qlp "$package")', rpm)
         self.assertNotIn('rpm -qlp "$package" | grep', rpm)
 
+    def test_windows_msi_is_a_release_package(self) -> None:
+        windows = self.workflow.split("  package-windows:", 1)[1].split("  release:", 1)[0]
+        self.assertIn("runs-on: windows-latest", windows)
+        self.assertIn("dotnet tool install --global wix --version 5.0.2", windows)
+        self.assertIn("WixToolset.UI.wixext/5.0.2", windows)
+        self.assertIn("python packaging/windows/build_msi.py", windows)
+        self.assertIn("name: windows-package", windows)
+        self.assertIn("dist/windows/*.msi", windows)
+        self.assertIn("files=(*.deb *.rpm *.pkg.tar.zst *.msi)", self.workflow)
+        self.assertIn("expected four package files", self.workflow)
+
     def test_arch_job_installs_python_cairo_for_ui_checks(self) -> None:
         arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
         install = arch.split("pacman -Syu --noconfirm --needed", 1)[1].split(
@@ -272,7 +283,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
     def test_release_waits_for_all_packages_and_writes_assets(self) -> None:
         release = self.workflow.split("  release:", 1)[1].split("  aur:", 1)[0]
-        for dependency in ("package-arch", "package-deb", "package-rpm"):
+        for dependency in ("package-arch", "package-deb", "package-rpm", "package-windows"):
             self.assertIn(f"      - {dependency}", release)
         self.assertIn("contents: write", release)
         self.assertIn("gh release upload", release)

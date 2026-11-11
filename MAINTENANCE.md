@@ -21,8 +21,10 @@ sha256sum --ignore-missing --check SHA256SUMS
 | Arch Linux | `sudo pacman -U ./panasonic-posture-manager-2.4.0-1-x86_64.pkg.tar.zst` |
 | Ubuntu / Debian | `sudo apt install ./panasonic-posture-manager_2.4.0-1_amd64.deb` |
 | Fedora | `sudo dnf install ./panasonic-posture-manager-2.4.0-1.x86_64.rpm` |
+| Windows 10/11 x64 | 双击 `panasonic-posture-manager-2.4.0-windows-x64.msi`，完成安装后重启 |
 
 Ubuntu 和 Debian 包需要 GTK 4.12+ 和 libadwaita 1.4+，由 apt 安装依赖。
+Windows MSI 会自动安装硬件服务和平板指示器配置；首次安装后必须按提示重启，不能只启动界面来判断安装是否完整。
 
 ### AUR
 
@@ -77,7 +79,7 @@ systemctl --user stop panasonic-posture-manager-session.service
 - `/var/lib/panasonic-posture-manager/settings.json` 保存系统偏好和传感器校准。
 - `${XDG_STATE_HOME:-$HOME/.local/state}/panasonic-posture-manager/` 保存当前用户的显示恢复记录。
 
-## Windows 界面预览
+## Windows
 
 在 Windows 的命令提示符中进入仓库根目录，使用 64 位 Python 3.11 或更高版本运行：
 
@@ -88,6 +90,18 @@ packaging\windows\preview.cmd --language zh_CN
 ```
 
 `preview.cmd` 加上 `--demo`，用于原有的内存演示。关闭窗口后设置清空，不操作真实设备，不能作为真机验证。
+
+### MSI 安装
+
+正式安装包为 `panasonic-posture-manager-<版本>-windows-x64.msi`。双击安装或运行：
+
+```bat
+msiexec /i panasonic-posture-manager-2.4.0-windows-x64.msi
+```
+
+MSI 按机器安装到 `%ProgramFiles%\PanasonicPostureManager`，创建开始菜单入口，注册 LocalSystem 硬件服务，并由提升权限的安装动作执行 `ACPI\INT33D3` 的 `LaptopSlateExclusiveAccess=0` 配置。安装动作会保留原值并提供卸载恢复；首次安装结束会请求重启。重启后无需再运行服务或设备配置脚本。
+
+升级使用同版本或更高版本的 MSI。修复安装会重新验证并恢复设备配置；卸载会停止服务、恢复原平板指示器配置并提示重启。不得在 MSI 已安装时再用便携脚本管理同一服务。
 
 - **语言**　`--language en` 切换为英文，省略该参数则跟随环境语言。
 - **场景**　例如 `packaging\windows\preview.cmd --scenario prompt` 打开确认提示。还可选择 `laptop`（笔记本）、`hardware`（物理平板）、`slow`（切换缓慢）、`error`（故障）或 `disconnected`（断线）。
@@ -101,30 +115,17 @@ packaging\windows\run.cmd --language zh_CN
 
 若服务未安装或不可用，界面只显示断线，不回退到软件后台、模拟或 CSM 推断。隔离的软件后台预览使用 `--backend`，它不读取真实设备，也不能声明硬件支持。
 
-便携包或受保护安装目录中的服务入口为：
+便携式安装已弃用。便携 ZIP 不再包含 `Install Hardware Service.cmd`、设备配置命令或独立服务卸载入口，只用于开发、诊断和连接已经由 MSI 安装的服务。未安装 MSI 时 `Hardware.cmd` 只显示断线，不得再复制到 `%ProgramFiles%` 或手工注册服务。
 
-```bat
-Install Hardware Service.cmd
-Hardware Service Status.cmd
-Remove Hardware Service.cmd
-```
-
-`Install Hardware Service.cmd` 会请求一次 UAC。它先验证当前包，若从普通用户目录启动，则把完整测试版本复制到 `%ProgramFiles%\PanasonicPostureManager`，更新时保留前一受保护目录；随后用受限 `runtime\python-hardware.exe` 验证整棵目录的 ACL、所有者、重解析点和搜索路径，再注册延迟自动启动的 `PanasonicPostureManagerHardware` 服务、配置失败重启并立即启动。服务固定以 LocalSystem 运行，不安装驱动、不修改 CSM 设备配置。状态和移除入口也请求管理员权限；移除服务不会删除受保护程序目录、用户设置或诊断日志。
-
-CFQV8-1L 的硬件服务配置入口为：
-
-```bat
-packaging\windows\configure-slate-device.cmd -Action Install
-packaging\windows\run.cmd --language zh_CN
-```
-
-第一条命令需要管理员权限，只把已核对的 `ACPI\INT33D3` 驱动配置设为 `LaptopSlateExclusiveAccess=0`，并在首次设置时记录安装前值；必须重启一次才会生效。`-Action Remove` 恢复安装前配置，`-Action Status` 只报告当前状态。便携包的同样操作由 `Configure Slate Device.cmd`、`Remove Slate Device Configuration.cmd` 和 `Slate Device Status.cmd` 提供。
+CFQV8-1L 的 `ACPI\INT33D3` 非独占配置由 MSI 自动执行：它把受保护流程中的 `LaptopSlateExclusiveAccess=0` 设为安装状态，首次记录安装前值，卸载时恢复，并提示重启。开发维护仍可直接审阅 `packaging/windows/configure-slate-device.ps1`，但该脚本不是用户安装入口。
 
 硬件界面启动前台会先核对普通用户本地控制台身份和 BIOS 机型。身份不符或机型不是已采集的 Panasonic Corporation / CFQV8-1L 时直接显示中文或英文原因，不创建设置锁或用户状态文件；服务端仍会重复核对身份、传感器、开关和显示能力，界面预检不能替代实际设备资格。
 
 硬件入口不启用输入过滤驱动，也不需要测试签名。物理平板状态只来自 Intel HID Event Filter 的 ETW ACPI 事件（有效值为 `0xCC` 平板、`0xCD` 笔记本），不读取 CSM 作为输入。`ACPI\INT33D3` 只作为向 Windows 发布姿态的 CSM 输出；首个有效 ETW 事件前状态保持未知，所有 CSM 写入、恢复和日志清理禁用。ETW 启动失败或运行中断时服务失败并保留恢复日志，不回退 CSM。当前不发布 shell 平板模式，因此软件帐篷/支架不会自动触发 Windows 屏幕键盘。当前开放自动、笔记本、帐篷、支架和校准；平板仅由物理折叠状态产生，不是手动模式。输入目标和能力始终为 False，键盘和触控板保持可用。
 
 硬件会话进程只负责当前用户显示；它先证明服务端登记的回执资格，再创建显示和 CSM 后端。CSM 写入通过服务快照读取的 ETW 健康门禁，物理状态未知时拒绝写入。显示和 CSM 共用同一个已验证 RPC 客户端，清理顺序为先释放显示/CSM 所有权，再关闭 CSM 设备。
+
+会话代理把 CSM 作为可选后端。若 `NativeSlateDevice` 因尚未重启、权限或设备配置失败而无法打开，会话记录警告并继续创建仅显示事务；该模式不创建 `SlateNotifier`，因此不会写入、恢复或清理任何平板指示器状态。已经成功取得的 CSM 后端若随后写入失败，仍按原事务规则回滚显示和姿态确认，不能把部分写入报告为完整成功。
 
 显示恢复日志固定为每用户 `screen-display.json`，CSM 恢复日志为相邻的 `screen-display-slate.json`。显示仍走共用事务、写前日志、身份检查、回读和恢复，只拥有内屏方向与全局自动旋转锁。帐篷、支架和笔记本通过加速度计识别；完全折叠由实体开关交给 Windows。CSM 恢复始终采用 journal 中记录的原始值；写入或恢复失败时保留日志，不推进内部基线。
 
@@ -335,11 +336,21 @@ python packaging\windows\build.py --dependencies build\windows-dependencies
 
 构建器从当前 Python 基础安装和独立依赖目录读取运行时、Qt/Fluent 及随包许可，连同源码、插画、翻译和维护说明直接流式写入 ZIP，同时计算逐文件校验，减少临时磁盘写入和内存占用。预览只使用 Qt Widgets，因此排除 PyQt6 自带但未使用的 QML 资源，避免 Windows 传统解压工具遗漏超长路径文件。完整归档生成后才替换已有包。`runtime/python._pth` 和 `runtime/pythonw._pth` 只服务 UI，隔离注册表和 `PYTHONPATH`，并显式包含随包 Qt 站点目录。硬件服务和会话代理使用额外的 `runtime/python-hardware.exe` 与 `runtime/python-hardware._pth`，搜索路径严格限制为 `Lib`、`DLLs` 和 `../app`，不处理 `site` 或 UI 包。构建器不再生成 DLL 级 `_pth`，避免它覆盖受限硬件解释器；参见 [Python Windows 搜索路径说明](https://docs.python.org/3.11/using/windows.html#finding-modules)。基础安装的第三方包、测试数据或配置不进入归档。
 
-输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Hardware.cmd` 或默认 `Panasonic Posture Manager.cmd` 都会连接 LocalSystem 硬件服务；`Install Hardware Service.cmd` 负责显式安装和启动，未安装时界面只显示断线。`--backend` 是隔离软件预览，`--demo` 是内存演示。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`、Python 许可为 `runtime/LICENSE.txt`。更新时服务入口保留前一受保护目录，用户设置继续位于 LocalAppData。
+输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Hardware.cmd` 或默认 `Panasonic Posture Manager.cmd` 都会连接 MSI 已安装的 LocalSystem 硬件服务；ZIP 不提供服务安装、设备配置或独立卸载入口，未安装 MSI 时界面只显示断线。`--backend` 是隔离软件预览，`--demo` 是内存演示。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`、Python 许可为 `runtime/LICENSE.txt`。用户设置继续位于 LocalAppData。
+
+同一依赖目录也用于构建正式 MSI：
+
+```bat
+dotnet tool install --global wix --version 5.0.2
+wix extension add -g WixToolset.UI.wixext/5.0.2
+python packaging\windows\build_msi.py --dependencies build\windows-dependencies
+```
+
+输出为 `dist/windows/panasonic-posture-manager-<版本>-windows-x64.msi` 和 SHA-256。构建器直接引用运行时与依赖文件，不复制完整暂存树；MSI 包含设备与服务配置 PowerShell、完整应用、`MANIFEST.json`、界面入口和硬件服务。生成后先运行 WiX ICE 验证，再原子替换已有 MSI。MSI 以每机器安装、同版本升级和回滚自定义动作交付；`LaptopSlateExclusiveAccess` 的安装前值由现有可逆配置脚本保存。
 
 2026-11-11，在 CFQV8-1L / Windows 10 Pro 19045 上从当前测试包实际安装 `PanasonicPostureManagerHardware`：服务为延迟自动启动、以 LocalSystem 运行，`sc qc` 显示受保护 `%ProgramFiles%` 解释器和固定 `--serve` 参数，失败动作配置为 5/15/60 秒重启。服务进入 Running，命名管道 `\\.\pipe\PanasonicPostureManager.Hardware.v1` 存在；普通用户再次执行 `GetState` 得到 `backend=ready`、`sensor_source=windows-winrt`、`supported=true`。受保护安装目录 3010 个清单文件全部一致，受限解释器预检通过。首次有效物理 ETW 事件前 `hardware_status=absent`，因此本轮未执行物理切换、显示写入、CSM 写入或会话准入验收。
 
-`.github/workflows/windows-preview.yml` 在 Windows 上运行 Python 3.11/3.13/3.14 的后台、界面、只读探针解析和翻译测试，构建 ZIP，再用解压包自带的 Python 验证 Qt、中文资源、模式事务和后台退出。流程仅保存构建制品，不发布 Release、不改版本或 AUR。提交这份流程不代表远端构建已执行。
+`.github/workflows/windows-preview.yml` 在 Windows 上运行 Python 3.11/3.13/3.14 的后台、界面、只读探针解析、MSI 组装和翻译测试，构建 ZIP，并在 Python 3.13 上构建和验证 MSI。解压后的 ZIP 继续由自带 Python 验证 Qt、中文资源、模式事务和后台退出。正式发布工作流另行运行 Windows MSI 套件并把同一个 MSI 加入 Release 资产和 SHA-256 清单。
 
 Windows 主页和设置页把已校验快照中的稳定错误码映射为与 Linux 相同的简短用户文案；用户点击确认、返回自动、重试、切换设置或校准时的失败 Future 也只在错误对象携带已知稳定码时显示对应原因，未知异常和技术 detail 不进入界面。原始错误保留在诊断日志中。离屏验证使用已安装的系统字体：测试辅助函数将 `QT_QPA_FONTDIR` 指向 `%SystemRoot%\Fonts`，避免通用离屏插件找不到字体，导致文字、导航宽度与原生窗口不同。界面测试会检查字体确实已加载，保留布局与操作断言。源码检查明确按 UTF-8 读取文件，不依赖 Windows 系统区域编码。
 
@@ -368,6 +379,7 @@ PYTHONPATH=src QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -p
 | Arch | `(cd packaging/aur && makepkg --cleanbuild)` | 从 `pkgver` 对应的发布标签构建 |
 | Ubuntu / Debian | `make package-deb` | 输出到 `dist/packages/` |
 | Fedora | `make package-rpm` | 从干净工作树的 `HEAD` 构建，输出到 `dist/packages/` |
+| Windows | `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | 输出到 `dist/windows/`，需要 WiX 5.0.2 |
 
 各发行版需要的工具见[发布工作流](.github/workflows/release.yml)。在 Arch 构建环境中，可先检查源码配方生成的包。将示例路径替换为实际文件名：
 
@@ -380,10 +392,10 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 ## 发布
 
 1. 对齐项目、运行时、UI、AUR、翻译文件头和 README 的版本号。用待发布标签运行检查，例如 `/usr/bin/python3 packaging/scripts/release_version.py --tag v2.4.0`。
-2. 推送版本标签。工作流从标签对应的提交构建 Arch、Deb 和 RPM 包，生成 `SHA256SUMS`，上传至 GitHub Release，再更新两个 AUR 包。
+2. 推送版本标签。工作流从标签对应的提交构建 Arch、Deb、RPM 和 Windows MSI，生成覆盖四个安装包的 `SHA256SUMS`，上传至 GitHub Release，再更新两个 AUR 包。
 3. 重建已有版本时，手动运行工作流，选择要构建的提交，并在 `tag` 填写要更新的发布标签。同名附件会被替换。AUR 源码包仍从原标签构建，二进制包使用新上传的 Arch 包。
 
-Windows 便携包必须包含 Python、PyQt6、Qt、Fluent Widgets 及其传递依赖的许可。构建时拒绝缺少许可元数据的依赖目录。
+Windows MSI 和便携包必须包含 Python、PyQt6、Qt、Fluent Widgets 及其传递依赖的许可。构建时拒绝缺少许可元数据的依赖目录。
 
 ## 平台适配
 

@@ -22,13 +22,33 @@ from .hardware_release import HardwareReleaseCoordinator
 from .session_client import WindowsSessionClient
 from .session_context import WindowsSessionContext
 from .session_display import (
-    QualifiedDisplay as _QualifiedDisplay, SessionContext, SlatePosture,
+    QualifiedDisplay as _QualifiedDisplay, SessionContext, SessionHardwareQuery,
+    SlatePosture,
 )
 from .session_qualification import (
     ClosableSessionClient as ClosableClient, QualifiedSessionClient,
 )
 
 log = logging.getLogger(__name__)
+
+
+def build_optional_slate(client, journal: Path) -> SlatePosture | None:
+    """Open CSM output when available without making display control depend on it."""
+    from .convertible_slate import NativeSlateDevice, SlateNotifier
+    from .slate_journal import SlateJournal, lease_path
+
+    try:
+        return SlateNotifier(
+            NativeSlateDevice(),
+            SlateJournal(lease_path(journal)),
+            hardware_query=SessionHardwareQuery(client.get_state),
+        )
+    except (OSError, ValueError) as error:
+        # CSM configuration belongs to the MSI install. If the device is still
+        # unavailable, keep direction control usable and never attempt a write
+        # against an unverified indicator.
+        log.warning('convertible-slate output unavailable; continuing without CSM: %s', error)
+        return None
 
 
 def _native_context() -> WindowsSessionContext:
@@ -163,23 +183,16 @@ def main(argv=None) -> int:
     if sys.platform != 'win32':
         parser.error('native session agent requires Windows')
     from ..session.journal import Journal
-    from .convertible_slate import NativeSlateDevice, SlateNotifier
     from .display import WindowsDisplay
     from .instance import InstanceLock
-    from .session_display import SessionHardwareQuery
     from .session_stop import NativeStopSignal
-    from .slate_journal import SlateJournal, lease_path
 
     def display_factory(client):
         del client
         return WindowsDisplay(journal=Journal(options.journal))
 
     def slate_factory(client):
-        return SlateNotifier(
-            NativeSlateDevice(),
-            SlateJournal(lease_path(options.journal)),
-            hardware_query=SessionHardwareQuery(client.get_state),
-        )
+        return build_optional_slate(client, options.journal)
 
     agent = WindowsSessionAgent(display_factory=display_factory, slate_factory=slate_factory)
     try:

@@ -235,12 +235,96 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  package-windows:
+    name: Windows MSI
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: src
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: x64
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install application and WiX dependencies
+        run: |
+          python -m pip install -r packaging/windows/requirements-ui.txt
+          python -m pip install --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
+          dotnet tool install --global wix --version 5.0.2
+          $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
+          $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:PATH = "$tools;$env:PATH"
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+
+      - name: Run Windows checks
+        run: |
+          python -m unittest discover -s tests -p 'test_windows*.py' -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_frontend.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_fluent.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_session_refresh.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_optional_input.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tests/check_i18n.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Build and inspect MSI
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          $version = python packaging/scripts/release_version.py --tag $env:RELEASE_TAG
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $package = Get-Item dist/windows/*.msi | Select-Object -First 1
+          $target = Join-Path $env:RUNNER_TEMP 'posture-msi-admin'
+          $process = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            '/a', "`"$($package.FullName)`"", '/qn', "TARGETDIR=`"$target`""
+          )
+          if ($process.ExitCode -notin 0, 3010) { exit $process.ExitCode }
+          $service = Get-ChildItem $target -Recurse -File -Filter hardware_service.py |
+            Select-Object -First 1
+          $runtime = Get-ChildItem $target -Recurse -File -Filter python-hardware.exe |
+            Select-Object -First 1
+          $manifest = Get-ChildItem $target -Recurse -File -Filter MANIFEST.json |
+            Select-Object -First 1
+          if ($null -eq $service -or $null -eq $runtime -or $null -eq $manifest) {
+            throw 'MSI administrative payload is incomplete.'
+          }
+
+      - name: Upload Windows MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: dist/windows/*.msi
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Publish GitHub release
     needs:
       - package-arch
       - package-deb
       - package-rpm
+      - package-windows
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -257,9 +341,9 @@ jobs:
           set -euo pipefail
           cd release-assets
           shopt -s nullglob
-          files=(*.deb *.rpm *.pkg.tar.zst)
-          if [ "${#files[@]}" -ne 3 ]; then
-            echo "error: expected three package files, found ${#files[@]}" >&2
+          files=(*.deb *.rpm *.pkg.tar.zst *.msi)
+          if [ "${#files[@]}" -ne 4 ]; then
+            echo "error: expected four package files, found ${#files[@]}" >&2
             printf '%s\n' "${files[@]}" >&2
             exit 1
           fi
