@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-12）
 
-- **最新功能提交**：`dfe787b fix: hold tent through physical tablet fold`。它把已确认帐篷到物理平板的中间角保留两秒，避免先发布笔记本目标；`windows/hardware_application.py` 是生产硬件组合根，`windows/hardware_runtime.py` 只负责启动顺序、轮询和清理，`windows/hardware_service.py` 只负责 SCM 状态和停止适配。
+- **最新功能提交**：`3f23442 fix: correct windows msi install conditions`。它修复 MSI 的 Windows 10 启动条件、64 位 PowerShell 选择和开始菜单目录；此前的 `dfe787b fix: hold tent through physical tablet fold` 保留已确认帐篷到物理平板的中间角两秒，避免先发布笔记本目标。
 - **唯一物理输入**：物理平板状态只来自 `windows/etw_switch.py` 消费的 Intel HID Event Filter Event 115 ACPI 通知。`0xCC` 是平板、`0xCD` 是笔记本，`0xCA/0xCB` 不产生状态。首个有效事件前保持未知；ETW 不读取 CSM、shell 模式或注册表作为基线，也没有 CSM 回退。
 - **CSM 纯输出**：`ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态。所有 CSM 写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁；状态未知或读取失败时拒绝写入并保留 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal；已取得的后端若写入失败仍阻止姿态确认。崩溃恢复始终使用 `pending.original`，不把 CSM 当前值当成物理接管或新基线。
 - **会话装配**：会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
@@ -15,10 +15,10 @@
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
-- **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时和 LocalSystem 服务，提升权限执行同一可逆 CSM 配置和服务恢复策略，首次安装提示重启；同版本升级、修复和卸载由 Windows Installer 管理。2026-11-11 已在本机验证既有服务安装、命名管道和 WinRT 快照；首个有效 ETW 事件前仍保持 `hardware_status=absent` 并拒绝会话。
+- **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首个有效 ETW 事件前仍保持 `hardware_status=absent` 并拒绝会话。
 - **下一智能体优先动作**：在用户明确授权真机姿态操作后，使用 MSI 安装并重启，验证首个 ETW 事件、会话进程启动、显示/CSM 清理、ETW 中断后的租约撤销、恢复重建、MSI 升级和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
-- **验证基线**：2026-11-12 在实际运行时上源码编译 WiX 5.0.2 MSI 成功，并通过 `wix msi validate -sice ICE61`；服务、开始菜单、CSM 安装/回滚/卸载动作和受限解释器均进入 MSI 表。MSI、会话降级和打包目标测试 22 项通过；发布工作流与元数据合计 36/37 项通过，唯一失败是 Windows 运行时缺少 PyGObject 导致 UI 版本用例无法导入。此前受保护安装 3010 个清单文件一致，Windows 完整套件 351 项、最终 ZIP 自检通过；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
-- **未验证项**：MSI 在 CI/隔离机的实际安装、升级和卸载，首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。当前主机 `msiexec /a` 因 Windows Installer 环境返回 1619/1622，未将其视为 MSI 内容失败。
+- **验证基线**：2026-11-12 在实际运行时上源码编译 WiX 5.0.2 MSI 成功并通过 ICE；最终 MSI SHA-256 为 `7f6860dc4fa254378df50ff7a41e3a110a4edc87f9068c82291372b18dafeb20`。本机完成旧服务/程序/设备配置清理、MSI 首次安装、MSI 卸载、修正版同版本升级、服务 Running、`LaptopSlateExclusiveAccess=0`、64 位 Setup 记录、`NativeSlateDevice` 只读打开、程序菜单快捷方式、安装清单/Qt/IPC 自检和安装目录 UI 启动。硬件 RPC 返回 `backend=ready`、WinRT 传感器可用，但 ETW 首事件前 `hardware=null`、`session_connected=false`。MSI 目标测试 4 项通过；此前目标测试 22 项、发布工作流 9 项通过，发布元数据因当前运行时缺 PyGObject 为 5/6。
+- **未验证项**：GitHub Windows CI、Authenticode 签名、重启后的首次 MSI 安装链路、首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 - **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。会话代理新增有界 `native-display.log` 记录预锁和事务失败。退出物理平板时 Windows 仍可能覆盖方向锁并短暂回正，当前架构不能完全消除。
 
 ## 1. 工作流程
@@ -1236,8 +1236,18 @@ make WERROR=1 check
 - 动机：正式用户不应在安装后再手工运行服务或设备配置脚本；MSI 安装并重启后的完整 CSM 输出是产品底线。降级模式用于异常环境、尚未重启或设备不可用场景，避免无意义地阻断仍可工作的显示控制。
 - 影响：取代“首次设备非独占配置只由独立管理员脚本完成”和便携式服务安装语义；`packaging/windows/hardware-service.ps1` 的 Install 等动作只保留为内部维护/转换来源，不作为用户发布入口。不改变 ETW 唯一物理输入、CSM 纯输出、健康门禁、journal 原始值和目标/结果分离。CSM 后端不可用不代表已发布 Windows 姿态，界面/日志不得把它报告成完整 CSM 成功。
 - 同步：`packaging/windows/{build_msi.py,msi/Package.wxs,msi/LICENSE.rtf}`、`windows/session_agent.py`、Windows MSI/会话/打包/发布测试、`.github/workflows/{windows-preview,release}.yml`、README、MAINTENANCE 与本记录。
-- 验证：本机使用实际运行时与 Qt 依赖生成约 86 MiB 的 `panasonic-posture-manager-2.4.0-windows-x64.msi`，`wix msi validate -sice ICE61` 通过；反编译确认服务、开始菜单、CSM Install/Rollback/Remove 动作、重启条件和受保护解释器均进入 MSI 表。MSI、会话降级和打包目标测试 22 项通过；发布工作流与元数据合计 36/37 项通过，唯一失败是当前 Windows 运行时缺少 PyGObject。
-- 未验证：当前宿主的 Windows Installer 管理安装调用返回 1619/1622，未完成本机 MSI 安装/升级/卸载；GitHub Windows 构建、签名、隔离机安装和重启后的真机 ETW/显示/CSM 链路仍需执行。
+- 验证：本机使用实际运行时与 Qt 依赖生成约 86 MiB 的 MSI，`wix msi validate -sice ICE61` 通过；反编译确认服务、开始菜单、CSM Install/Rollback/Remove 动作、重启条件和受保护解释器均进入 MSI 表。MSI、会话降级和打包目标测试 22 项通过；发布工作流与元数据合计 36/37 项通过，唯一失败是当前 Windows 运行时缺少 PyGObject。
+- 未验证：GitHub Windows 构建、签名和重启后的真机 ETW/显示/CSM 链路仍需执行。
+
+### 2026-11-12 - Windows MSI 首次实际安装回归
+
+- 变更：Windows 10 启动条件改为搜索真实 `CurrentBuildNumber >= 10240`。首次实测发现 Windows Installer 在该 Windows 10 上把 `VersionNT64` 报为兼容值 `603`，原 `>=1000` 条件导致安装立即失败并返回 1603。
+- 变更：所有 MSI PowerShell 自定义动作固定使用 `[System64Folder]WindowsPowerShell\v1.0\powershell.exe`，避免第一次成功安装时 32 位 PowerShell 把可逆 CSM 原值记录写入 `WOW6432Node`。
+- 变更：开始菜单目录从 `StartMenuFolder` 改为 per-machine 的 `ProgramMenuFolder`；快捷方式现在位于 `ProgramData\Microsoft\Windows\Start Menu\Programs\Panasonic Posture Manager`，而不是开始菜单根目录。
+- 动机：用真实清理、安装、卸载和升级流程验证 MSI，而不是只依赖 ICE 与反编译。三次问题都只能在执行安装序列时暴露。
+- 证据：清理旧便携服务、主目录、两个 previous 备份和旧用户快捷方式后，启动条件修复版首次安装返回 3010；服务 Running，`python-hardware.exe` 固定 ImagePath，`NativeSlateDevice` 只读打开成功。随后 MSI 卸载返回 3010，移除产品、服务和程序目录并恢复 `LaptopSlateExclusiveAccess`。最终修正版同版本升级返回 0；服务 Running、CSM 值 0、64 位 Setup 记录存在、程序菜单快捷方式正确、安装清单/Qt/IPC 自检通过、`%ProgramFiles%` UI 成功启动。硬件 RPC 为 `backend=ready`、WinRT 可用，ETW 首事件前保持 `hardware=null`、`session_connected=false`。
+- 影响：不改变 ETW 物理输入、CSM 健康门禁、显示事务、降级或租约语义。`MSI` 安装/升级/卸载和安装后 CSM 只读能力从候选状态提升为已在本机验证；真实姿态、ETW 首事件和 CSM 写入仍未验收。
+- 同步：`packaging/windows/msi/Package.wxs`、`tests/test_windows_msi.py`、当前交接状态与本记录。
 
 ### 2026-11-12 - 帐篷折叠到物理平板的退出缓冲
 
