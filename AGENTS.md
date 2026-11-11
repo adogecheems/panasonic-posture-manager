@@ -15,6 +15,7 @@
 - **剩余根因**：Windows 在 `SM_CONVERTIBLESLATEMODE` 从平板释放时自行切换显示方向并清除自动旋转锁；即使应用在硬件切换前持续重锁，Windows 仍会覆盖。当前产品按要求暂停向 Windows 发布软件平板状态，因此不能阻止这一段 `2→0→2`。不要继续靠延长等待或重复锁来声称消除。
 - **下一智能体优先动作**：把 `AcpiPhysicalSwitch` 接入 LocalSystem 硬件主机的 `hardware_query`，先建立 ETW 监听再允许写 CSM；补服务启动失败、ETW 中断、物理切换、CSM 报告和崩溃恢复回归测试。仍须保留无事件源时的只读回退，不能把 CSM 指示器事件当成物理源。若必须完全无跳变，再评估是否需要更底层的显示交接；纯 `SetAutoRotation`/`ChangeDisplaySettings` 已证明只能缩短窗口。
 - **验证基线**：本机没有可用的系统 Python 或有效 `.venv-windows`，测试使用 `dist\PanasonicPostureManager\runtime\python.exe`，并在临时 `python314._pth` 中加入当前 `src`/`tests`；当前记录时 282 项 Windows 测试、47 项 Fluent 测试通过。临时运行路径和探针必须在提交前恢复/删除。
+- **清理状态**：任务开始前的 `$null` 和整个被忽略的 `build/` 已清理，当前 Git 工作树干净且没有遗留 ETW 计划任务。成功的真机映射已写入 `MAINTENANCE.md`；`dist/` 和源码保留。未来若重新尝试驱动构建，需要重新准备本地 WDK/SDK/Zig 工具。
 - **未验证项**：`平板→支架` 的真机时序；软件帐篷/支架自动屏幕键盘已暂停；Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 
 ## 1. 工作流程
