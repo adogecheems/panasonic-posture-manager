@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-11）
 
-- **最新主线**：产品代码状态为 `927dd9d fix: shorten the Windows physical-slate release jump`；其后的提交只维护本交接记录。工作树除任务开始前已有的未跟踪 `$null` 外应保持干净；不要提交、删除或覆盖它。
+- **最新主线**：产品行为仍以 `927dd9d fix: shorten the Windows physical-slate release jump` 为基线；`bc3592f feat: add no-driver ETW physical switch prototype` 新增了尚未接入生产后台的无驱动 ETW 原型。工作树除任务开始前已有的未跟踪 `$null` 外应保持干净；不要提交、删除或覆盖它。
 - **产品边界**：Windows 软件帐篷/支架的“让 Windows 知道平板状态”功能暂时停用。生产路径不写 `ACPI\INT33D3`、不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示 Windows 屏幕键盘。实体开关和硬件姿态查询必须保持只读、真实。
 - **无驱动 ETW 原型**：新增 `windows/etw_switch.py`，由 LocalSystem 服务计划监听现有 Intel `HidEventFilter` 的 Event 115 ACPI 通知，区分软件 CSM 指示器事件；启动初值仍取洁净 CSM。该模块尚未接入生产后台，也未在 SYSTEM 会话捕获真实折叠事件；必须先运行 `tests/windows_etw_switch_smoke.py` 验证 `0xCC/0xCD` 映射后才能启用。
 - **当前方向修复**：控制器在硬件开关仍为平板时，直接读取策略层原始重力几何；帐篷区候选持续 0.3 秒后会被缓存。`ScreenSession` 每 50 ms 重新锁定当前翻转方向，开关释放后的第一个目标直接使用缓存帐篷，不再等待原有两秒姿态窗口。
