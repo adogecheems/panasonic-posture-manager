@@ -95,8 +95,8 @@ class Server:
 
 
 class Supervisor:
-    def __init__(self, events, admission):
-        self.events, self.admission = events, admission
+    def __init__(self, events):
+        self.events = events
         self.closed = False
         self.requests = 0
 
@@ -125,10 +125,10 @@ class HardwareRuntimeTests(unittest.TestCase):
             events.append('launcher-create')
             return Launcher(events)
 
-        def supervisor_factory(launcher, register, *, clock, admit):
+        def supervisor_factory(launcher, register, *, clock):
             del launcher, register, clock
             events.append('supervisor-create')
-            return Supervisor(events, admit)
+            return Supervisor(events)
 
         runtime_object = HardwareRuntime(
             engine=engine,
@@ -150,12 +150,11 @@ class HardwareRuntimeTests(unittest.TestCase):
         ])
         runtime.close()
 
-    def test_first_event_is_required_before_a_session_may_publish_state(self):
+    def test_first_event_is_not_required_to_start_the_desktop_session_lifecycle(self):
         runtime, _, switch, _, _, _ = self.make(value=None, status=HardwareStatus.ABSENT)
         runtime.start()
-        self.assertFalse(runtime.supervisor.admission())
+        self.assertIsNotNone(runtime.supervisor)
         switch.value, switch.status = False, HardwareStatus.OK
-        self.assertTrue(runtime.supervisor.admission())
         runtime.close()
 
     def test_physical_source_failure_is_read_only_and_recovery_reopens_admission(self):
@@ -164,10 +163,8 @@ class HardwareRuntimeTests(unittest.TestCase):
         self.assertIsNotNone(runtime.server)
         self.assertIsNotNone(runtime.supervisor)
         self.assertFalse(runtime.admitted())
-        self.assertFalse(runtime.supervisor.admission())
         switch.value, switch.status = True, HardwareStatus.OK
         self.assertTrue(runtime.admitted())
-        self.assertTrue(runtime.supervisor.admission())
         switch.value, switch.status = None, HardwareStatus.READ_ERROR
         self.assertFalse(runtime.admitted())
         runtime.close()

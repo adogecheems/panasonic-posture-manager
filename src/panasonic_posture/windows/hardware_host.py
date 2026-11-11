@@ -2,8 +2,10 @@
 
 Only an OS-authenticated foreground console user may send UI operations.
 Display receipts additionally require the exact session process registered by
-the service host, never a PID/SID supplied in an RPC request. This module has
-no device discovery, installation or arbitrary device-write operation.
+the service host, never a PID/SID supplied in an RPC request. Before the first
+physical-source observation, the registered process may renew only a not-ready
+heartbeat; admission loss after a healthy observation revokes it. This module
+has no device discovery, installation or arbitrary device-write operation.
 """
 from collections.abc import Callable
 
@@ -22,6 +24,22 @@ class HardwareHost:
         self.session_process = session_process
         self.session_admission = session_admission or (lambda: True)
         self.instance = engine.state.instance
+        self._admission_open = False
+        self._admission_lost = False
+
+    def _observe_admission(self) -> bool:
+        admitted = bool(self.session_admission())
+        if admitted:
+            self._admission_open = True
+            self._admission_lost = False
+        elif self._admission_open:
+            # The physical source was healthy and has now disappeared. A
+            # dormant first-run source is different: it never authorized a
+            # ready receipt, so its not-ready heartbeat may keep the desktop
+            # agent discoverable without allowing any device write.
+            self._admission_open = False
+            self._admission_lost = True
+        return admitted
 
     def dispatch(self, peer: ConsoleIdentity, request: dict) -> dict:
         if not isinstance(peer, ConsoleIdentity) or not self.authorize(peer):
@@ -31,7 +49,8 @@ class HardwareHost:
         if method == 'session_update':
             if peer != self.session_process:
                 raise ServiceError(ErrorCode.ACCESS_DENIED, 'unregistered-session-process')
-            if not self.session_admission():
+            if not self._observe_admission() and (
+                    self._admission_lost or params['ready']):
                 raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE,
                                    'physical-switch-unavailable')
             accepted = self.engine.session_update(params['generation'], params['ready'],
@@ -47,8 +66,10 @@ class HardwareHost:
                     hardware_release_pose=self.engine.hardware_release_pose)
 
     def tick(self) -> None:
+        admitted = self._observe_admission()
         if self.session_process is not None and (
-                not self.authorize(self.session_process) or not self.session_admission()):
+                not self.authorize(self.session_process) or
+                (self._admission_lost and not admitted)):
             self.engine.revoke_session(self.session_process.owner)
         self.engine.tick()
 

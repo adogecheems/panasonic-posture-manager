@@ -70,6 +70,9 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn('Id="HardwareServiceScript"', first)
         self.assertIn('Id="ApplicationStartMenuShortcut"', first)
         self.assertIn('Advertise="yes"', first)
+        self.assertIn('Icon="ProductIcon.ico"', first)
+        self.assertIn('Key="System.AppUserModel.ID"', first)
+        self.assertIn('Value="work.mmoe.panasonic.PostureManager"', first)
         self.assertIn('Name="PanasonicPostureManagerHardware"', first)
         self.assertIn('Account="LocalSystem"', first)
         self.assertIn('panasonic_posture.windows.hardware_service --serve', first)
@@ -95,6 +98,9 @@ class MsiPayloadTests(unittest.TestCase):
             'Id="SearchWindowsBuild"',
             'WINDOWS_BUILD &gt;= 10240',
             'Id="ProgramMenuFolder"',
+            'Id="ARPPRODUCTICON" Value="ProductIcon.ico"',
+            'Id="ProductIcon.ico"',
+            'work.mmoe.panasonic.PostureManager.ico',
             'ScheduleReboot',
             'Id="WixUI_Minimal"',
         ):

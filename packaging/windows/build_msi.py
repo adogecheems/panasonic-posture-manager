@@ -166,8 +166,13 @@ def _shortcut_xml() -> str:
             Name="Panasonic Posture Manager"
             Description="Open Panasonic Posture Manager"
             Advertise="yes"
+            Icon="ProductIcon.ico"
             Arguments="-I &quot;[INSTALLFOLDER]launch.py&quot;"
-            WorkingDirectory="INSTALLFOLDER" />
+            WorkingDirectory="INSTALLFOLDER">
+          <ShortcutProperty
+              Key="System.AppUserModel.ID"
+              Value="work.mmoe.panasonic.PostureManager" />
+        </Shortcut>
         <RemoveFolder
             Id="RemoveApplicationProgramsFolder"
             Directory="ApplicationProgramsFolder"

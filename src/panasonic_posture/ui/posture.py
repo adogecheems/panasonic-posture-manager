@@ -88,7 +88,7 @@ class PosturePage:
         elif self._model.detail == Detail.UNSUPPORTED:
             text = _('This model does not support automatic mode changes.')
         elif self._model.detail == Detail.SWITCH:
-            text = _('The tablet switch is unavailable. Restart the background service if this continues.')
+            text = _('The tablet switch state is not available yet. Fold to tablet and back once; restart the background service if this continues.')
         elif self._model.detail == Detail.SENSOR:
             text = _('No posture data is available. Keep the device still; switching will resume automatically.')
         elif self._model.detail == Detail.SLOW:

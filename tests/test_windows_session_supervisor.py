@@ -195,35 +195,12 @@ class SupervisorTests(unittest.TestCase):
         self.until(lambda: len(self.launcher.children) == 2)
         self.assertTrue(old.closed)
 
-    def test_admission_loss_revokes_and_reaps_before_recovery_can_launch(self):
-        admitted = [True]
+    def test_physical_admission_does_not_own_the_desktop_session_lifecycle(self):
         supervisor = SessionSupervisor(self.launcher,
             lambda peer: self.events.append(('register', peer)),
-            clock=lambda: self.now, executor=InlineExecutor(),
-            admit=lambda: admitted[0])
+            clock=lambda: self.now, executor=InlineExecutor())
         self.addCleanup(self.shutdown)
         self.supervisor = supervisor
-        self.until(lambda: supervisor.child is not None and supervisor.child.resumed)
-        first = supervisor.child
-        admitted[0] = False
-        self.step()
-        self.assertIn(('register', None), self.events)
-        self.until(lambda: first.closed and supervisor.child is None)
-        self.assertEqual(len(self.launcher.children), 1)
-        admitted[0] = True
-        self.until(lambda: len(self.launcher.children) == 2 and
-                   self.launcher.children[-1].resumed)
-
-    def test_no_child_is_created_while_admission_is_closed(self):
-        admitted = [False]
-        supervisor = SessionSupervisor(self.launcher,
-            lambda peer: self.events.append(('register', peer)),
-            clock=lambda: self.now, executor=InlineExecutor(),
-            admit=lambda: admitted[0])
-        self.addCleanup(self.shutdown)
-        self.supervisor = supervisor
-        for _ in range(20):
-            self.step()
-        self.assertFalse(self.launcher.children)
-        admitted[0] = True
-        self.until(lambda: bool(self.launcher.children) and self.launcher.children[0].resumed)
+        self.until(lambda: bool(self.launcher.children) and
+                   self.launcher.children[0].resumed)
+        self.assertTrue(supervisor.child.alive())

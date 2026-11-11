@@ -13,9 +13,12 @@ Startup order is part of the safety contract:
 3. only then create the RPC endpoint and the trusted-session supervisor.
 
 The CSM is an output only.  Before the first valid ETW event the physical
-state is unknown, so admission stays closed and no session may publish a
-display or CSM transition.  A later ETW failure revokes admission again; the
-host retries the source instead of reading the indicator it may have written.
+state is unknown, so the host accepts only not-ready session heartbeats and
+no display or CSM transition may be confirmed.  The desktop agent still
+starts before that event so journal recovery and display setup do not race
+the first physical posture change.  A later ETW failure revokes admission
+again; the host retries the source instead of reading the indicator it may
+have written.
 """
 from __future__ import annotations
 
@@ -126,7 +129,6 @@ class HardwareRuntime:
                 self.launcher,
                 self.server.register_session_process,
                 clock=self.clock,
-                admit=self.admitted,
             )
         except BaseException:
             self.close()

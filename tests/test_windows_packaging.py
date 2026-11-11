@@ -44,6 +44,7 @@ class WindowsPackagingTests(unittest.TestCase):
                              'runtime/pythonw._pth', 'runtime/python-hardware.exe',
                              'runtime/python-hardware._pth',
                              'app/panasonic_posture/windows/client.py', 'data/assets/lets-note-window-icon.png',
+                             'data/assets/work.mmoe.panasonic.PostureManager.ico',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
                              'Panasonic Posture Manager.cmd', 'Hardware.cmd'):
                     self.assertIn(prefix + name, names)

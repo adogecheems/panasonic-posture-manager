@@ -520,8 +520,9 @@ with TemporaryDirectory() as directory:
             env.setdefault('QT_QPA_FONTDIR', str(Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'Fonts'))
         root = Path(__file__).resolve().parents[1]
         env['PYTHONPATH'] = str(root / 'src')
-        prelude = '''
+        prelude = f'''
 import sys
+sys.path.insert(0, {str(root / "src")!r})
 class Block:
     def find_spec(self, name, path=None, target=None):
         if name == 'gi' or name.endswith('linux_contract'):

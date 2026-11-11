@@ -222,6 +222,9 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
     activation = None
     startup = None
     hardware_ui = sys.platform == 'win32' and not (demo or backend)
+    if sys.platform == 'win32':
+        from ..windows.app_identity import configure_process_identity
+        configure_process_identity()
     if hardware_ui:
         from ..windows.machine_profile import verified_machine
         from ..windows.native_preflight import require_native_user
@@ -245,6 +248,10 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
         app = QApplication([sys.argv[0]])
         app.setStyle('Fusion')
         app.setApplicationName('Panasonic Posture Manager')
+        app.setWindowIcon(QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png')))
+        if sys.platform == 'win32':
+            from ..windows.app_identity import APP_USER_MODEL_ID
+            app.setDesktopFileName(APP_USER_MODEL_ID)
         setTheme(Theme.AUTO)
         setThemeColor('#0051f2')
         window = Window(demo=demo, language=language, scenario=scenario, backend=backend,

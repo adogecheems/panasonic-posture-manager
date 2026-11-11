@@ -138,7 +138,7 @@ class Home(Page):
             Detail.NONE: '', Detail.DISCONNECTED: _('The background service is not connected yet.'),
             Detail.SESSION: _('Waiting for the desktop to get ready…'),
             Detail.UNSUPPORTED: _('This model does not support automatic mode changes.'),
-            Detail.SWITCH: _('The tablet switch is unavailable. Restart the background service if this continues.'),
+            Detail.SWITCH: _('The tablet switch state is not available yet. Fold to tablet and back once; restart the background service if this continues.'),
             Detail.SENSOR: _('No posture data is available. Keep the device still; switching will resume automatically.'),
             Detail.SLOW: _('Switching is taking longer than usual. Please wait or choose another mode in Settings.'),
             Detail.COMPATIBLE: '',

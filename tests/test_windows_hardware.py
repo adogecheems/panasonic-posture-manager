@@ -5,6 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from panasonic_posture.model import HardwareStatus
+from panasonic_posture.service.hardware_monitor import HardwareMonitor
 from panasonic_posture.service.ports import SessionOwner
 from panasonic_posture.windows.backend import Backend
 from panasonic_posture.windows.hardware_host import ConsoleIdentity, HardwareHost, CHANNEL, validate_request
@@ -50,6 +52,28 @@ class HardwareHostTests(HostFixture):
         self.assertIsNone(self.engine.state.applied)
         admitted[0] = True
         self.assertTrue(self.host.dispatch(AGENT, receipt)['accepted'])
+
+    def test_unobserved_physical_source_allows_only_a_not_ready_heartbeat(self):
+        admitted = [False]
+        self.host.session_admission = lambda: admitted[0]
+        self.engine._hardware_monitor = HardwareMonitor(
+            lambda: (None, HardwareStatus.ABSENT)
+        )
+        self.engine.revoke_session(self.engine.session_owner)
+        heartbeat = self.request('session_update', generation=self.engine.state.generation,
+            ready=False, error_code=None, error_detail=None, unattended=False)
+        reply = self.host.dispatch(AGENT, heartbeat)
+        self.assertTrue(reply['accepted'])
+        self.assertTrue(reply['state']['session_connected'])
+        self.assertIsNone(reply['state']['hardware'])
+        self.assertEqual(reply['state']['target']['mode'], 'unavailable')
+        self.assertIsNone(self.engine.state.applied)
+
+        ready = self.request('session_update', generation=self.engine.state.generation,
+            ready=True, error_code=None, error_detail=None, unattended=False)
+        with self.assertRaisesRegex(Exception, 'display-unavailable'):
+            self.host.dispatch(AGENT, ready)
+        self.assertIsNone(self.engine.state.applied)
 
     def test_ui_can_choose_mode_but_cannot_submit_display_receipts(self):
         self.host.dispatch(UI, self.request('set_mode', mode='tent'))

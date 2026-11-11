@@ -28,6 +28,7 @@
 
     <Property Id="ARPHELPLINK" Value="https://github.com/adogecheems/panasonic-posture-manager" />
     <Property Id="ARPCOMMENTS" Value="Panasonic convertible posture, direction and hardware service." />
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon.ico" />
     <Property Id="SLATE_CONFIGURED_BY_PRODUCT">
       <RegistrySearch
           Id="SearchConfiguredSlate"
@@ -77,6 +78,10 @@
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="ApplicationProgramsFolder" Name="Panasonic Posture Manager" />
     </StandardDirectory>
+
+    <Icon
+        Id="ProductIcon.ico"
+        SourceFile="$(var.ProjectRoot)/data/assets/work.mmoe.panasonic.PostureManager.ico" />
 
     <Feature Id="Complete" Title="Panasonic Posture Manager" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="PayloadComponents" />
