@@ -298,11 +298,13 @@ class AcpiPhysicalSwitch:
     this application's own writes.  It must never seed or replace this state.
     """
 
-    def __init__(self, backend: EtwBackend | None = None) -> None:
+    def __init__(self, backend: EtwBackend | None = None,
+                 initial_reader: Callable[[], bool | None] | None = None) -> None:
         self.backend = backend or WindowsHidEventFilterBackend()
+        self.initial_reader = initial_reader
         self._lock = threading.Lock()
         self._state = _SwitchState(None, HardwareStatus.ABSENT)
-        self._started = False
+        self._started = self._bootstrap_failed = False
 
     def start(self) -> None:
         with self._lock:
@@ -322,6 +324,43 @@ class AcpiPhysicalSwitch:
                     None, HardwareStatus.PERMISSION
                     if isinstance(error, PermissionError) else HardwareStatus.READ_ERROR)
             log.warning('cannot start physical ETW switch: %s', error)
+
+    def bootstrap(self) -> None:
+        """Acquire the optional read-only startup baseline after sensor start."""
+
+        if self.initial_reader is None or self._bootstrap_failed:
+            return
+        with self._lock:
+            if not self._started or self._state.status != HardwareStatus.ABSENT:
+                return
+        if self.backend.failure is not None:
+            return
+        try:
+            initial = self.initial_reader()
+            if initial is not None and type(initial) is not bool:
+                raise ValueError('initial physical state is not boolean')
+        except (OSError, ValueError) as error:
+            log.warning('cannot bootstrap physical switch state: %s', error)
+            self._bootstrap_failed = True
+            return
+        if initial is None:
+            return
+        with self._lock:
+            # Never overwrite an ETW event that arrived while the read-only
+            # startup baseline was being acquired.
+            if self._started and self._state.status == HardwareStatus.ABSENT:
+                self._state = _SwitchState(initial, HardwareStatus.OK)
+
+    def finalize_bootstrap(self, fallback: bool) -> None:
+        """Ensure startup has a boolean baseline even when auxiliary reads fail."""
+
+        if type(fallback) is not bool:
+            raise ValueError('fallback physical state must be boolean')
+        if self.backend.failure is not None:
+            return
+        with self._lock:
+            if self._started and self._state.status == HardwareStatus.ABSENT:
+                self._state = _SwitchState(fallback, HardwareStatus.OK)
 
     def _ingest(self, payload: bytes) -> None:
         value = parse_acpi_notification(payload)

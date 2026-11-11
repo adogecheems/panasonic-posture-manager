@@ -225,6 +225,7 @@ def main(argv=None) -> int:
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError, ServiceError) as error:
+        log.exception('native session unavailable')
         print(f'native session unavailable: {error}', file=sys.stderr)
         return 1
 

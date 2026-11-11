@@ -60,6 +60,50 @@ class PayloadTests(unittest.TestCase):
 
 
 class PhysicalSwitchTests(unittest.TestCase):
+    def test_read_only_startup_baseline_seeds_an_unobserved_switch(self):
+        backend = FakeBackend()
+        switch = AcpiPhysicalSwitch(backend, initial_reader=lambda: False)
+        switch.start()
+        switch.bootstrap()
+        self.assertEqual(switch.query(), (False, HardwareStatus.OK))
+        switch.close()
+
+    def test_etw_event_during_bootstrap_wins_over_the_baseline(self):
+        backend = FakeBackend()
+
+        def bootstrap():
+            backend.emit(0xC0, ACPI_TABLET_NOTIFY)
+            return False
+
+        switch = AcpiPhysicalSwitch(backend, initial_reader=bootstrap)
+        switch.start()
+        switch.bootstrap()
+        self.assertEqual(switch.query(), (True, HardwareStatus.OK))
+        switch.close()
+
+    def test_failed_bootstrap_does_not_invent_physical_state(self):
+        backend = FakeBackend()
+
+        def bootstrap():
+            raise OSError('indicator unavailable')
+
+        with self.assertLogs('panasonic_posture.windows.etw_switch', level='WARNING'):
+            switch = AcpiPhysicalSwitch(backend, initial_reader=bootstrap)
+            switch.start()
+            switch.bootstrap()
+        self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+        switch.close()
+
+    def test_startup_finalization_never_leaves_an_unknown_baseline(self):
+        backend = FakeBackend()
+        switch = AcpiPhysicalSwitch(backend, initial_reader=lambda: None)
+        switch.start()
+        switch.bootstrap()
+        self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+        switch.finalize_bootstrap(False)
+        self.assertEqual(switch.query(), (False, HardwareStatus.OK))
+        switch.close()
+
     def test_state_is_unknown_until_an_independent_etw_event_arrives(self):
         backend = FakeBackend()
         switch = AcpiPhysicalSwitch(backend)

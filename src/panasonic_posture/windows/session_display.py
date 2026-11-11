@@ -5,7 +5,7 @@ from typing import Protocol
 
 from ..contracts import ErrorCode
 from ..model import HardwareStatus, StateSnapshot, Target
-from ..session.failures import DisplayError
+from ..session.failures import DisplayError, ServiceError
 from ..session.ports import DisplayBackend, DisplayRefresh
 
 
@@ -42,7 +42,7 @@ class SessionHardwareQuery:
             state = self.state_loader()
             hardware = getattr(state, 'hardware', None)
             status = getattr(state, 'hardware_status', None)
-        except (OSError, RuntimeError, ValueError, TypeError):
+        except (OSError, RuntimeError, ServiceError, ValueError, TypeError):
             return None, HardwareStatus.READ_ERROR
         if hardware is None:
             return None, status if isinstance(status, HardwareStatus) else HardwareStatus.ABSENT

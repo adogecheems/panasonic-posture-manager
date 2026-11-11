@@ -104,6 +104,7 @@ class HardwareRuntime:
         self.server = None
         self.launcher = None
         self.supervisor = None
+        self._bootstrap_until: float | None = None
         self.started = self.closed = False
 
     def admitted(self) -> bool:
@@ -123,6 +124,8 @@ class HardwareRuntime:
             # sensor, RPC endpoint or any session display writer exists.
             self.switch.start()
             self.engine.start()
+            if getattr(self.switch, 'bootstrap', None) is not None:
+                self._bootstrap_until = self.clock() + 5.
             self.server = self.server_factory(self.admitted)
             self.launcher = self.launcher_factory()
             self.supervisor = self.supervisor_factory(
@@ -137,6 +140,15 @@ class HardwareRuntime:
     def poll(self) -> None:
         if not self.started or self.closed:
             return
+        if self._bootstrap_until is not None:
+            self.switch.bootstrap()
+            if self.admitted():
+                self._bootstrap_until = None
+            elif self.clock() >= self._bootstrap_until:
+                finalize = getattr(self.switch, 'finalize_bootstrap', None)
+                if finalize is not None:
+                    finalize(False)
+                self._bootstrap_until = None
         # The supervisor registers before resume and the server owns the only
         # engine tick.  Do not call engine.tick() here: HardwareServer.poll()
         # already performs host.tick() followed by exactly one engine tick.

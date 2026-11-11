@@ -13,6 +13,7 @@ from .hardware_server import HardwareServer
 from .machine_profile import ProfileSensor, verified_machine
 from .sensor import IDENTITY, WindowsSensor
 from .session_launch import NativeSessionLauncher
+from .slate_bootstrap import StartupPhysicalBaseline, read_bootstrap_slate_state
 from .trusted_runtime import TrustedRuntime
 
 
@@ -31,11 +32,16 @@ def create_hardware_runtime(
     """Build the production graph without starting any hardware resource."""
     runtime = runtime if runtime is not None else TrustedRuntime.current()
     vendor, product = verified_machine()
-    switch = AcpiPhysicalSwitch()
     sensor = ProfileSensor(WindowsSensor(
         mount_matrix=IDENTITY,
         include_orientation=False,
     ))
+    baseline = StartupPhysicalBaseline(
+        slate_reader=read_bootstrap_slate_state,
+        sensor=sensor,
+        clock=clock,
+    )
+    switch = AcpiPhysicalSwitch(initial_reader=baseline)
     engine = Engine(
         controller=Controller(input_control=False),
         sensor=sensor,

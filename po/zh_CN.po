@@ -43,11 +43,8 @@ msgstr "进入支架模式"
 msgid "Retry"
 msgstr "重试"
 
-msgid "The tablet switch state is not available yet. Fold to tablet and back once; restart the background service if this continues."
-msgstr "尚未取得平板开关状态。请先折叠到平板再展开一次；若持续出现，请重启后台服务。"
-
-msgid "Tablet switch state is unavailable. Fold to tablet and back once."
-msgstr "尚未取得平板开关状态。请先折叠到平板再展开一次。"
+msgid "Tablet switch state is unavailable. Restart the background service or check the tablet device configuration."
+msgstr "无法取得平板开关状态。请重启后台服务或检查平板设备配置。"
 
 msgid "No posture data is available. Keep the device still; switching will resume automatically."
 msgstr "暂时没有姿态数据，请将设备静置，恢复后会自动继续切换。"

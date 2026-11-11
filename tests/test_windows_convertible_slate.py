@@ -5,7 +5,8 @@ import unittest
 from unittest import mock
 
 from panasonic_posture.model import HardwareStatus, Target
-from panasonic_posture.session.failures import DisplayError
+from panasonic_posture.contracts import ErrorCode
+from panasonic_posture.session.failures import DisplayError, ServiceError
 from panasonic_posture.windows.convertible_slate import (
     NativeSlateDevice,
     SlateError,
@@ -196,6 +197,9 @@ class SlateNotifierTests(unittest.TestCase):
         def broken():
             raise OSError('service unavailable')
         self.assertEqual(SessionHardwareQuery(broken)(), (None, HardwareStatus.READ_ERROR))
+        def rejected():
+            raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'session context unavailable')
+        self.assertEqual(SessionHardwareQuery(rejected)(), (None, HardwareStatus.READ_ERROR))
 
     def test_journal_path_is_a_sibling_of_the_display_journal(self):
         self.assertEqual(
