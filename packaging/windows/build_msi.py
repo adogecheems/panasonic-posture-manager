@@ -305,6 +305,7 @@ def build(
             wix, 'build',
             '-arch', 'x64',
             '-ext', 'WixToolset.UI.wixext',
+            '-ext', 'WixToolset.Util.wixext',
             '-d', f'ProductVersion={version}',
             '-d', f'ProjectRoot={ROOT}',
             '-o', str(temporary_msi),

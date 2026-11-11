@@ -101,6 +101,10 @@ class MsiPayloadTests(unittest.TestCase):
             'Id="ARPPRODUCTICON" Value="ProductIcon.ico"',
             'Id="ProductIcon.ico"',
             'work.mmoe.panasonic.PostureManager.ico',
+            'DllEntry="WixQuietExec"',
+            'BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"',
+            'Before="ConfigureSlate"',
+            'Before="ConfigureHardwareService"',
             'ScheduleReboot',
             'Id="WixUI_Minimal"',
         ):
@@ -116,6 +120,7 @@ class MsiPayloadTests(unittest.TestCase):
 
         def fail(command, **options):
             self.assertIn('WixToolset.UI.wixext', command)
+            self.assertIn('WixToolset.Util.wixext', command)
             return None
 
         with self.assertRaisesRegex(OSError, 'WiX did not create'):

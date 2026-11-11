@@ -39,35 +39,51 @@
           Bitness="always64" />
     </Property>
 
-    <CustomAction
-        Id="SetPowerShellExe"
-        Property="POWERSHELL_EXE"
-        Value="[System64Folder]WindowsPowerShell\v1.0\powershell.exe" />
+    <SetProperty
+        Id="ConfigureSlate"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Install"
+        Before="ConfigureSlate"
+        Sequence="execute" />
     <CustomAction
         Id="ConfigureSlate"
-        Property="POWERSHELL_EXE"
-        ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Install"
+        BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+        DllEntry="WixQuietExec"
         Execute="deferred"
         Impersonate="no"
         Return="check" />
+    <SetProperty
+        Id="ConfigureHardwareService"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#HardwareServiceScript]&quot; -Action Configure"
+        Before="ConfigureHardwareService"
+        Sequence="execute" />
     <CustomAction
         Id="ConfigureHardwareService"
-        Property="POWERSHELL_EXE"
-        ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[#HardwareServiceScript]&quot; -Action Configure"
+        BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+        DllEntry="WixQuietExec"
         Execute="deferred"
         Impersonate="no"
         Return="check" />
+    <SetProperty
+        Id="RollbackSlate"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Remove"
+        Before="RollbackSlate"
+        Sequence="execute" />
     <CustomAction
         Id="RollbackSlate"
-        Property="POWERSHELL_EXE"
-        ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Remove"
+        BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+        DllEntry="WixQuietExec"
         Execute="rollback"
         Impersonate="no"
         Return="ignore" />
+    <SetProperty
+        Id="RestoreSlate"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Remove"
+        Before="RestoreSlate"
+        Sequence="execute" />
     <CustomAction
         Id="RestoreSlate"
-        Property="POWERSHELL_EXE"
-        ExeCommand="-NoProfile -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Remove"
+        BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+        DllEntry="WixQuietExec"
         Execute="deferred"
         Impersonate="no"
         Return="check" />
@@ -91,7 +107,6 @@
     <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectRoot)/packaging/windows/msi/LICENSE.rtf" />
 
     <InstallExecuteSequence>
-      <Custom Action="SetPowerShellExe" After="InstallInitialize" />
       <Custom Action="RollbackSlate" Before="ConfigureSlate" Condition="NOT REMOVE" />
       <Custom Action="ConfigureSlate" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="ConfigureHardwareService" After="InstallServices" Condition="NOT REMOVE" />
