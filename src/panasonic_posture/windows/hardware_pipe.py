@@ -26,6 +26,8 @@ class NativePipes:
         fn(self.kernel, 'DisconnectNamedPipe', I32, HANDLE)
         fn(self.kernel, 'CreateFileW', HANDLE, C.c_wchar_p, U32, U32, HANDLE, U32, U32, HANDLE)
         fn(self.kernel, 'SetNamedPipeHandleState', I32, HANDLE, p(U32), HANDLE, HANDLE)
+        fn(self.kernel, 'PeekNamedPipe', I32, HANDLE, HANDLE, U32,
+           p(U32), p(U32), HANDLE)
         fn(self.kernel, 'ReadFile', I32, HANDLE, HANDLE, U32, p(U32), HANDLE)
         fn(self.kernel, 'WriteFile', I32, HANDLE, HANDLE, U32, p(U32), HANDLE)
 
@@ -86,11 +88,18 @@ class NativePipes:
         raise OSError(error, 'hardware pipe connection failed')
 
     def read(self, handle: int) -> dict | None:
+        available = U32()
+        if not self.kernel.PeekNamedPipe(
+                handle, None, 0, None, C.byref(available), None):
+            error = C.get_last_error()
+            if error in (109, 232, 233):  # broken pipe / no data / closing
+                raise OSError(error, 'hardware pipe disconnected')
+            raise OSError(error, 'hardware pipe state failed')
+        if not available.value:
+            return None
         data, size = C.create_string_buffer(MAX_FRAME), U32()
         if not self.kernel.ReadFile(handle, data, MAX_FRAME, C.byref(size), None):
             error = C.get_last_error()
-            if error == 232:  # empty nonblocking pipe
-                return None
             if error == 234:
                 raise ProtocolError('hardware frame exceeds the message limit')
             raise OSError(error, 'hardware pipe disconnected')

@@ -1,5 +1,6 @@
 """Privileged Windows dispatch never trusts identities or receipts in JSON."""
 from concurrent.futures import Future
+import ctypes as C
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ import unittest
 from panasonic_posture.service.ports import SessionOwner
 from panasonic_posture.windows.backend import Backend
 from panasonic_posture.windows.hardware_host import ConsoleIdentity, HardwareHost, CHANNEL, validate_request
+from panasonic_posture.windows.hardware_pipe import NativePipes
 from panasonic_posture.windows.protocol import ProtocolError
 from panasonic_posture.windows.hardware_ipc import ConsoleGuard, HardwareServer, HardwareConnection, CLIENT_ACCESS
 from panasonic_posture.windows.security import foreground_matches
@@ -360,3 +362,34 @@ class PipeTests(HostFixture):
             client.request('get_state', {})
         self.assertEqual(len(sent), 1)
         self.assertEqual(closed, [1])
+
+
+class NativePipeReadTests(unittest.TestCase):
+    def pipes(self, *, connected, available=0, error=0):
+        reads = []
+        class Kernel:
+            def PeekNamedPipe(self, handle, buffer, size, read, count, overlapped):
+                del handle, buffer, size, read, overlapped
+                C.cast(count, C.POINTER(C.c_uint32))[0] = available
+                if not connected:
+                    C.set_last_error(error)
+                    return 0
+                return 1
+            def ReadFile(self, *args):
+                reads.append(args)
+                return 0
+        pipes = object.__new__(NativePipes)
+        pipes.kernel = Kernel()
+        return pipes, reads
+
+    def test_empty_connected_pipe_is_idle_without_a_read(self):
+        pipes, reads = self.pipes(connected=True)
+        self.assertIsNone(pipes.read(1))
+        self.assertEqual(reads, [])
+
+    def test_broken_pipe_is_reported_as_disconnected_instead_of_idle(self):
+        pipes, reads = self.pipes(connected=False, error=109)
+        with self.assertRaises(OSError) as caught:
+            pipes.read(1)
+        self.assertEqual(caught.exception.errno, 109)
+        self.assertEqual(reads, [])

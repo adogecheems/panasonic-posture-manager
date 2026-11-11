@@ -15,9 +15,9 @@
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
-- **硬件服务安装**：新增 `windows/hardware_service.py` 和 `packaging/windows/hardware-service.ps1`。安装入口会从普通解压目录自举到 `%ProgramFiles%\PanasonicPostureManager`，验证 ACL、所有者、重解析点和受限 `_pth`，注册延迟自动启动的 `PanasonicPostureManagerHardware` LocalSystem 服务，配置 5/15/60 秒失败重启并立即启动。2026-11-11 已在本机安装并进入 Running；命名管道存在，普通用户 `GetState` 返回 `backend=ready`、WinRT 传感器可用。首个有效 ETW 事件前仍保持 `hardware_status=absent` 并拒绝会话。
+- **硬件服务安装**：新增 `windows/hardware_service.py` 和 `packaging/windows/hardware-service.ps1`。安装入口会从普通解压目录自举到 `%ProgramFiles%\PanasonicPostureManager`，验证 ACL、所有者、重解析点和受限 `_pth`，注册延迟自动启动的 `PanasonicPostureManagerHardware` LocalSystem 服务，配置 5/15/60 秒失败重启并立即启动。2026-11-11 已在本机安装并进入 Running；命名管道存在，普通用户 `GetState` 返回 `backend=ready`、WinRT 传感器可用。管道用 `PeekNamedPipe` 区分无数据与客户端断开，已复测界面连接期间可建立第二条连接且关闭后槽位可回收。首个有效 ETW 事件前仍保持 `hardware_status=absent` 并拒绝会话。
 - **下一智能体优先动作**：在用户明确授权真机姿态操作后，折叠/展开一次以验证运行中服务的首个 ETW 事件、会话进程启动、显示/CSM 清理、ETW 中断后的租约撤销、恢复重建和 SYSTEM 停止。不能恢复 CSM 基线或第二个显示写入者。
-- **验证基线**：当前测试包安装到 `%ProgramFiles%\PanasonicPostureManager`，服务与界面使用同一受保护构建；旧界面目录 `%LOCALAPPDATA%\Programs\PanasonicPostureManager` 保留备份性质。受保护安装 3010 个清单文件一致，硬件解释器预检通过；Windows 完整套件 343 项通过，最终 ZIP 自带 Python/Qt/后台 IPC 自检通过，SHA-256 为 `83a3912d57affd6edaab019e54ca065f5b2617231ba3fd3fea0d43591aca34fc`。Linux 全套 `make` 门槛未在当前 Windows 主机运行。
+- **验证基线**：当前测试包安装到 `%ProgramFiles%\PanasonicPostureManager`，服务与界面使用同一受保护构建；旧界面目录 `%LOCALAPPDATA%\Programs\PanasonicPostureManager` 保留备份性质。受保护安装 3010 个清单文件一致，硬件解释器预检通过；Windows 完整套件 351 项通过，最终 ZIP 自带 Python/Qt/后台 IPC 自检通过，SHA-256 为 `5012f9ee3150c205e7c34851b9431b3d27b85e5c4f7a9632d5e2cd2c8d5e40fc`。Linux 全套 `make` 门槛未在当前 Windows 主机运行。
 - **未验证项**：首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 
 ## 1. 工作流程
@@ -1216,3 +1216,11 @@ make WERROR=1 check
 - 证据：2026-11-11 在 CFQV8-1L 上从当前测试包实际安装。受保护目录 3010 个清单文件一致，受限解释器预检通过；`sc qc` 显示 `AUTO_START (DELAYED)`、LocalSystem、固定 `--serve` 命令，失败动作按 5/15/60 秒重启。服务进入 Running，命名管道存在，普通用户 `GetState` 返回 `backend=ready`、`sensor_source=windows-winrt`、`supported=true`。
 - 验证：Windows 完整套件 343 项通过；最终便携包解压后由自带 `python.exe`、`pythonw.exe` 和 `python-hardware.exe` 完成 Qt、中文资源、软件事务、后台回收及受限模块导入自检。
 - 未验证：首次真实服务 ETW 事件仍使 `hardware_status=absent`；会话准入、显示写入、CSM 输出、ETW 中断后的租约撤销、恢复重建、锁屏/电源切换与 SYSTEM 停止需另行真机验收。
+
+### 2026-11-11 - 回收断开的硬件管道槽位
+
+- 变更：`NativePipes.read()` 先用 `PeekNamedPipe` 判断连接状态和可读字节数；已连接但无数据返回空闲，`ERROR_BROKEN_PIPE`、`ERROR_NO_DATA`、`ERROR_PIPE_CLOSING` 视为断开并交给服务器 `_reset`，不再把非阻塞 `ReadFile` 的 `ERROR_NO_DATA` 当成永久空闲。
+- 动机：真机服务运行后，一个界面客户端曾经使第二条诊断连接得到 `ERROR_PIPE_BUSY`；连续客户端关闭后四个槽位仍可能被占满。原因是服务器无法区分空管道和已断开管道，过期连接只能等待较晚超时，期间阻塞会话代理或诊断连接。
+- 影响：最多四个连接的权限、鉴权、消息上限、超时和客户端不重放规则不变；断线槽位及时回到监听状态。该修复不改变 ETW 准入、RPC schema、租约或显示/CSM 行为。
+- 同步：`windows/hardware_pipe.py`、`tests/test_windows_hardware.py`、MAINTENANCE、AGENTS 与本记录。
+- 证据：更新后的本地服务和受保护运行时上，一个 `HardwareUIClient` 持续 15 秒并取得 21 次状态期间，第二条独立 `GetState` 连接成功；主客户端关闭并等待 7 秒后再次连接成功。Windows 完整套件 351 项通过。

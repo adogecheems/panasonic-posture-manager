@@ -268,7 +268,7 @@ python tests\windows_etw_switch_smoke.py --directory build\etw-switch-evidence-n
 
 Windows 源码虚拟环境的 `python.exe/pythonw.exe` 可能是转发启动器。软件客户端直接持有实际解释器进程，并从当前源码/安装位置加载标准库后台，避免结束启动器后实际后台仍占用设置锁；重连仍不重放写入。
 
-硬件通道独立于软件预览的私有标准管道，使用 `windows-hardware` JSON v1 信封和本地主机命名管道。服务端要求 LocalSystem，端点所有者也是 LocalSystem，拒绝远程客户端；交互用户只获读写权限，明确排除与 FILE_APPEND_DATA 共用数值的 FILE_CREATE_PIPE_INSTANCE。首实例独占端点名称，最多四个连接，每条消息至多 64 KiB，连接请求五秒超时。客户端核对端点所有者，不自动重放请求；服务实例和每连接递增请求序号用于拒绝旧请求。
+硬件通道独立于软件预览的私有标准管道，使用 `windows-hardware` JSON v1 信封和本地主机命名管道。服务端要求 LocalSystem，端点所有者也是 LocalSystem，拒绝远程客户端；交互用户只获读写权限，明确排除与 FILE_APPEND_DATA 共用数值的 FILE_CREATE_PIPE_INSTANCE。首实例独占端点名称，最多四个连接，每条消息至多 64 KiB，连接请求五秒超时。服务端用 `PeekNamedPipe` 区分“已连接但无数据”和断开/关闭；断开的客户端立即释放对应槽位，不能把 `ERROR_NO_DATA` 当作长期空闲连接。客户端核对端点所有者，不自动重放请求；服务实例和每连接递增请求序号用于拒绝旧请求。
 
 身份来自管道模拟令牌与实际客户端进程令牌，必须匹配 SID、登录 LUID 和会话 ID，并核对 PID、进程创建时间、当前本地控制台以及未锁定的活跃会话。界面可以提交模式和偏好选择；只有由可信主机预先登记的确切会话进程才能提交显示回执，不能通过 RPC 自行注册 PID。身份检查放在独立有界后台队列，主循环继续推进引擎；一秒内未获得新的会话确认即失去资格，慢查询结果不能延长有效期。失联、退出、锁屏或用户切换通过共用 `Engine.revoke_session` 撤销对应所有者并走原有释放事务。它不改变 Linux 鉴权、租约时长或 D-Bus 方法。
 

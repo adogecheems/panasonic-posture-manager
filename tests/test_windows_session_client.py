@@ -421,7 +421,9 @@ class NativeSessionRuntimeTests(unittest.TestCase):
                 time.sleep(.005)
             self.fail('native session assembly did not reach expected state')
         until(lambda: self.engine.state.applied is not None)
-        self.assertEqual(len(self.client._channels), 1)
+        # A display operation that spans the heartbeat window may already
+        # have created the independent lease lane. It must remain bounded.
+        self.assertLessEqual(len(self.client._channels), 2)
         context.screen_off = True
         beginning = self.now
         until(lambda: self.now - beginning > .6)
