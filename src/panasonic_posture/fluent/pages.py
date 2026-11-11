@@ -257,13 +257,17 @@ class Settings(Page):
         self.sensor_card = SettingRow(QIcon(), _('Sensor calibration'),
                                       _('Place the device in laptop form on a flat desk, then calibrate.'))
         self.calibration_hint = self.sensor_card.contentLabel
-        self.calibrate_button = PushButton(_('Calibrate'))
+        self.calibrate_button = PrimaryPushButton(_('Calibrate'))
         self.calibrate_button.clicked.connect(self.ask_calibration)
         self.reset_button = PushButton(_('Reset'))
         self.reset_button.clicked.connect(lambda: self.calibration.run('reset', self.client.reset_calibration))
-        self.sensor_card.hBoxLayout.addWidget(self.reset_button)
+        self.sensor_card.hBoxLayout.addWidget(
+            self.reset_button, 0, Qt.AlignmentFlag.AlignVCenter
+        )
         self.sensor_card.hBoxLayout.addSpacing(6)
-        self.sensor_card.hBoxLayout.addWidget(self.calibrate_button)
+        self.sensor_card.hBoxLayout.addWidget(
+            self.calibrate_button, 0, Qt.AlignmentFlag.AlignVCenter
+        )
         self.sensor_card.hBoxLayout.addSpacing(16)
         self.add_card(group, self.sensor_card, (self.reset_button, self.calibrate_button))
         group = self.add_group(_('Mode selection'))
@@ -302,9 +306,11 @@ class Settings(Page):
             self.refresh_startup()
         group = self.add_group(_('About'))
         self.version_card = SettingRow(QIcon(), _('Version'), __version__)
-        self.update_button = PushButton(_('Check for updates'))
+        self.update_button = PrimaryPushButton(Icon.SYNC, _('Check for updates'))
         self.update_button.clicked.connect(self.check_updates)
-        self.version_card.hBoxLayout.addWidget(self.update_button)
+        self.version_card.hBoxLayout.addWidget(
+            self.update_button, 0, Qt.AlignmentFlag.AlignVCenter
+        )
         self.version_card.hBoxLayout.addSpacing(16)
         self.add_card(group, self.version_card, (self.update_button,))
         self.add_card(group, SettingRow(QIcon(), _('Author'), 'adogecheems'))
@@ -313,8 +319,11 @@ class Settings(Page):
         github = SettingRow(
             QIcon(), _('GitHub'), 'github.com/adogecheems/panasonic-posture-manager'
         )
-        github.hBoxLayout.addWidget(self.github_button)
+        github.hBoxLayout.addWidget(
+            self.github_button, 0, Qt.AlignmentFlag.AlignVCenter
+        )
         github.hBoxLayout.addSpacing(16)
+        self.github_card = github
         self.add_card(group, github, (self.github_button,))
         appearance = ComboBox()
         for text in (_('System'), _('Light'), _('Dark')):
@@ -322,7 +331,7 @@ class Settings(Page):
         appearance.setAccessibleName(_('Appearance'))
         appearance.currentIndexChanged.connect(lambda index: setTheme((Theme.AUTO, Theme.LIGHT, Theme.DARK)[index]))
         card = SettingRow(QIcon(), _('Appearance'))
-        card.hBoxLayout.addWidget(appearance)
+        card.hBoxLayout.addWidget(appearance, 0, Qt.AlignmentFlag.AlignVCenter)
         card.hBoxLayout.addSpacing(16)
         self.add_card(group, card, (appearance,))
         notice = CaptionLabel(_("Let's note is a trademark of Panasonic Corporation. The author does not claim any rights to the trademark and is not associated with it."))

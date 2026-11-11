@@ -234,7 +234,8 @@ else:
 
     def test_about_repository_and_update_check_use_shared_user_copy(self):
         self.run_ui('''
-from PyQt6.QtCore import QObject, QByteArray, QUrl, pyqtSignal
+from PyQt6.QtCore import QObject, QByteArray, QUrl, Qt, pyqtSignal
+from qfluentwidgets import PrimaryPushButton, SettingCard
 from panasonic_posture.fluent.app import Window
 from panasonic_posture.fluent.update_check import UpdateChecker
 from panasonic_posture.windows.update_check import UpdateInfo
@@ -260,6 +261,13 @@ window.show()
 assert window.settings.github_button.getUrl().toString() == (
     'https://github.com/adogecheems/panasonic-posture-manager'
 )
+assert isinstance(window.settings.github_button.parent(), SettingCard)
+link_item = window.settings.github_card.hBoxLayout.itemAt(
+    window.settings.github_card.hBoxLayout.indexOf(window.settings.github_button)
+)
+assert link_item.alignment() & Qt.AlignmentFlag.AlignVCenter
+assert isinstance(window.settings.update_button, PrimaryPushButton)
+assert isinstance(window.settings.calibrate_button, PrimaryPushButton)
 window.settings.update_button.click()
 assert checker.calls == 1
 assert window.settings.version_card.contentLabel.text() == (
@@ -1045,7 +1053,7 @@ for theme in (Theme.LIGHT, Theme.DARK):
     primary = card.titleLabel.palette().windowText().color()
     secondary = card.contentLabel.palette().windowText().color()
     assert primary != secondary
-    assert window.settings.calibrate_button.palette().buttonText().color() == primary
+    assert window.settings.reset_button.palette().buttonText().color() == primary
     assert window.titleBar.titleLabel.palette().windowText().color() == secondary
     assert window.settings.groups[0].titleLabel.palette().windowText().color() == secondary
 ''')

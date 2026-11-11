@@ -11,7 +11,7 @@
 - **CSM 纯输出**：`ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态。所有 CSM 写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁；状态未知或读取失败时拒绝写入并保留 journal。首个 ETW 事件前受信会话仍会先行启动、证明资格并装配显示后端，但发送的只有 `not-ready` 心跳；Windows 显示恢复也使用同一已认证物理查询，未知时失败关闭并保留 journal，不写旋转或锁。物理源从已观察状态转为失效时仍撤销租约。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal；已取得的后端若写入失败仍阻止姿态确认。崩溃恢复始终使用 `pending.original`，不把 CSM 当前值当成物理接管或新基线。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
 - **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。`hardware_ipc.py` 只保留兼容导出。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
-- **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
+- **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。GitHub、版本和外观行的右侧控件统一垂直居中；「检查更新」和「校准」使用填充式强调按钮。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
 - **产品边界**：Windows 默认连接独立 LocalSystem 硬件服务，不再接受 `--native-backend`、`--hardware-backend` 或 `--simulate-backend`。`--backend` 仅保留为隔离软件预览，`--demo` 为内存演示。生产路径不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示屏幕键盘。
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
@@ -1278,3 +1278,11 @@ make WERROR=1 check
 - 影响：更新检查是独立只读网络操作，不触碰硬件服务、姿态快照、设置、租约、显示事务或 CSM；GitHub 共享代理出口可能限流，失败时不会伪造“已是最新”。硬件模式的安全预检和拒绝行为不变，只精简展示文案。
 - 同步：`windows/update_check.py`、`fluent/{update_check,pages,app}.py`、`tests/{test_windows_update_check,test_fluent}.py`、`po/zh_CN.po`、README、MAINTENANCE 与本记录。
 - 验证：5 项纯逻辑更新检查、完整 Fluent 47 项、打包 2 项和 i18n 114 个 msgid 通过；安装运行时上的离屏 Qt 检查验证仓库链接、成功/失败状态、固定代理 URL、Referer、API 403 跳转后备和失败路径。真实端点完成 `2.4.0 -> 2.4.0` 只读检查。未构建或安装新 MSI。
+
+### 2026-11-12 - Windows 设置行对齐与强调按钮
+
+- 变更：GitHub、版本和外观行的右侧控件显式使用垂直居中；传感器校准和检查更新由普通描边按钮改为带同步图标的填充式强调按钮，GitHub 仓库入口继续使用强调色链接。
+- 动机：多行设置卡片的默认控件对齐会随文字高度变化产生视觉偏移；校准和检查更新是设置页中的主要可执行操作，应与普通重置、重试操作形成清晰层级。
+- 影响：只改变 Fluent 控件类型和布局对齐，不改变检查更新网络边界、校准事务、设置保存、错误码、硬件行为或其他页面交互。
+- 同步：`fluent/pages.py`、`tests/test_fluent.py`、Windows 关于页离屏检查和本记录。
+- 验证：关于页更新、双主题文字对比和中文最小窗口 3 项目标测试及完整 Fluent 47 项通过；离屏中文截图确认链接垂直居中及两个强调按钮布局。
