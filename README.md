@@ -23,7 +23,7 @@
 从 [GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases) 下载对应安装包：
 
 - Arch Linux、Ubuntu、Debian、Fedora：安装后注销并重新登录。
-- Windows：双击 MSI，完成安装后按提示重启。
+- Windows：双击 MSI，中文安装界面会显示方形应用标志和许可说明；完成安装后按提示重启。
 
 完整安装命令、校验方法和卸载步骤见[维护指南](MAINTENANCE.md#安装)。
 

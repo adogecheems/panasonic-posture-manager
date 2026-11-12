@@ -23,6 +23,17 @@ from xml.sax.saxutils import quoteattr
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_WXS = ROOT / 'packaging/windows/msi/Package.wxs'
 COMPONENT_NAMESPACE = uuid.UUID('2D4F313E-76E4-4E38-A886-B14075283C26')
+DEFAULT_MSI_CULTURE = 'zh-CN'
+CULTURE_FILES = {
+    'en-US': (
+        ROOT / 'packaging/windows/msi/Setup.en-US.wxl',
+        ROOT / 'packaging/windows/msi/LICENSE.rtf',
+    ),
+    'zh-CN': (
+        ROOT / 'packaging/windows/msi/Setup.zh-CN.wxl',
+        ROOT / 'packaging/windows/msi/LICENSE.zh-CN.rtf',
+    ),
+}
 
 # The MSI owns service and CSM setup. Keeping the explicit helper commands out
 # of Program Files prevents users and repair scripts from changing that state
@@ -66,6 +77,17 @@ def project_version() -> str:
     if not version:
         raise ValueError('pyproject.toml has no project.version')
     return version
+
+
+def culture_files(culture: str) -> tuple[Path, Path]:
+    """Return the validation and license resources for one installer culture."""
+    try:
+        return CULTURE_FILES[culture]
+    except KeyError as error:
+        supported = ', '.join(sorted(CULTURE_FILES))
+        raise ValueError(
+            f'unsupported MSI culture {culture!r}; choose {supported}'
+        ) from error
 
 
 def _file_id(name: str) -> str:
@@ -271,6 +293,7 @@ def build(
     dependencies: Path,
     *,
     version: str | None = None,
+    culture: str = DEFAULT_MSI_CULTURE,
     wix: str = 'wix',
     runner=subprocess.run,
 ) -> Path:
@@ -282,6 +305,10 @@ def build(
         raise ValueError('MSI package source is missing')
     if sys.platform != 'win32':
         raise OSError('the Windows MSI build must run on Windows')
+    localization, license_rtf = culture_files(culture)
+    for resource in (localization, license_rtf):
+        if not resource.is_file():
+            raise ValueError(f'MSI culture resource is missing: {resource}')
 
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f'panasonic-posture-manager-{version}-windows-x64.msi'
@@ -320,10 +347,13 @@ def build(
         runner([
             wix, 'build',
             '-arch', 'x64',
+            '-culture', culture,
             '-ext', 'WixToolset.UI.wixext',
             '-ext', 'WixToolset.Util.wixext',
+            '-loc', str(localization),
             '-d', f'ProductVersion={version}',
             '-d', f'ProjectRoot={ROOT}',
+            '-d', f'LicenseRtf={license_rtf}',
             '-o', str(temporary_msi),
             str(PACKAGE_WXS),
             str(components),
@@ -349,6 +379,12 @@ def main(argv=None) -> int:
     parser.add_argument('--dependencies', type=Path, required=True)
     parser.add_argument('--output', type=Path, default=ROOT / 'dist/windows')
     parser.add_argument('--version', default=None)
+    parser.add_argument(
+        '--culture',
+        choices=tuple(sorted(CULTURE_FILES)),
+        default=DEFAULT_MSI_CULTURE,
+        help='Windows Installer UI culture (default: zh-CN)',
+    )
     parser.add_argument('--wix', default='wix')
     options = parser.parse_args(argv)
     print(build(
@@ -356,6 +392,7 @@ def main(argv=None) -> int:
         options.runtime,
         options.dependencies,
         version=options.version,
+        culture=options.culture,
         wix=options.wix,
     ))
     return 0

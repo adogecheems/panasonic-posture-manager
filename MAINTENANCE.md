@@ -176,6 +176,8 @@ python tests/check_i18n.py
 | Windows 便携包 | `python packaging\windows\build.py --dependencies build\windows-dependencies` | `dist/windows/` |
 | Windows MSI | `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | `dist/windows/` |
 
+Windows MSI 默认构建简体中文界面；需要英文界面时追加 `--culture en-US`。两种文化都使用同一套方形应用标志、欢迎/完成页背景、安装许可和重启提示，界面资源位于 `packaging/windows/msi/`。
+
 Windows 构建前准备依赖和 WiX：
 
 ```bat

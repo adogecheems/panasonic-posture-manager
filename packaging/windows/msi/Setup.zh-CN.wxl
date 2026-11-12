@@ -1,0 +1,12 @@
+<WixLocalization Culture="zh-CN" Codepage="936"
+    xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="ProductName" Value="松下二合一平板电脑姿态管理工具" />
+  <String Id="FeatureTitle" Value="松下二合一平板电脑姿态管理工具" />
+  <String Id="ArpComments" Value="松下二合一平板姿态、方向与硬件服务。" />
+  <String Id="DowngradeErrorMessage" Value="已安装较新版本的 [ProductName]。" />
+  <String Id="LaunchConditionMessage" Value="[ProductName] 需要 64 位 Windows 10 或更高版本。" />
+  <String Id="WelcomeEulaDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}安装 [ProductName]" />
+  <String Id="ExitDialogOptionalText"
+      Value="安装完成后可能需要重启 Windows，以便硬件服务与平板指示器配置生效。" />
+</WixLocalization>

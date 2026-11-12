@@ -1,7 +1,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
-      Name="Panasonic 2-in-1 Tablet Posture Management Tool"
+      Name="!(loc.ProductName)"
       Manufacturer="adogecheems"
       Version="$(var.ProductVersion)"
       UpgradeCode="7C0319E4-768D-4C48-A41C-25F0D677EA89"
@@ -9,7 +9,7 @@
       Compressed="yes">
     <MajorUpgrade
         AllowSameVersionUpgrades="yes"
-        DowngradeErrorMessage="A newer version of Panasonic 2-in-1 Tablet Posture Management Tool is already installed." />
+        DowngradeErrorMessage="!(loc.DowngradeErrorMessage)" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Property Id="WINDOWS_BUILD">
@@ -24,12 +24,13 @@
 
     <Launch
         Condition="VersionNT64 AND WINDOWS_BUILD &gt;= 10240"
-        Message="Panasonic 2-in-1 Tablet Posture Management Tool requires 64-bit Windows 10 or later." />
+        Message="!(loc.LaunchConditionMessage)" />
 
     <Property Id="ARPHELPLINK" Value="https://github.com/adogecheems/panasonic-posture-manager" />
-    <Property Id="ARPCOMMENTS" Value="Panasonic 2-in-1 tablet posture, direction and hardware service." />
+    <Property Id="ARPCOMMENTS" Value="!(loc.ArpComments)" />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon.ico" />
     <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="!(loc.ExitDialogOptionalText)" />
     <Property Id="SLATE_CONFIGURED_BY_PRODUCT">
       <RegistrySearch
           Id="SearchConfiguredSlate"
@@ -136,12 +137,24 @@
         Id="ProductIcon.ico"
         SourceFile="$(var.ProjectRoot)/data/assets/work.mmoe.panasonic.PostureManager.ico" />
 
-    <Feature Id="Complete" Title="Panasonic 2-in-1 Tablet Posture Management Tool" Level="1" AllowAbsent="no">
+    <Feature Id="Complete" Title="!(loc.FeatureTitle)" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="PayloadComponents" />
     </Feature>
 
     <ui:WixUI Id="WixUI_Minimal" />
-    <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectRoot)/packaging/windows/msi/LICENSE.rtf" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <WixVariable
+        Id="WixUIBannerBmp"
+        Value="$(var.ProjectRoot)/packaging/windows/msi/installer-banner.png" />
+    <WixVariable
+        Id="WixUIDialogBmp"
+        Value="$(var.ProjectRoot)/packaging/windows/msi/installer-dialog.png" />
+    <WixVariable
+        Id="WixUIInfoIco"
+        Value="$(var.ProjectRoot)/packaging/windows/msi/installer-info.png" />
+    <WixVariable
+        Id="WixUIExclamationIco"
+        Value="$(var.ProjectRoot)/packaging/windows/msi/installer-info.png" />
 
     <InstallExecuteSequence>
       <Custom Action="RollbackSlate" Before="ConfigureSlate" Condition="NOT REMOVE" />
@@ -158,4 +171,7 @@
           Condition="(NOT REMOVE AND SLATE_CONFIGURED_BY_PRODUCT &lt;&gt; &quot;#1&quot;) OR (REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE)" />
     </InstallExecuteSequence>
   </Package>
+  <Fragment>
+    <UIRef Id="WixUI_ErrorProgressText" />
+  </Fragment>
 </Wix>

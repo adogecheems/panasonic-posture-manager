@@ -16,6 +16,13 @@ msi = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(msi)
 
 
+def png_dimensions(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    if data[:8] != b'\x89PNG\r\n\x1a\n' or data[12:16] != b'IHDR':
+        raise ValueError(f'{path} is not a PNG')
+    return int.from_bytes(data[16:20], 'big'), int.from_bytes(data[20:24], 'big')
+
+
 class MsiPayloadTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -105,9 +112,9 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn(msi.APPLICATION_DISPLAY_NAME, license_text)
         self.assertNotIn('Panasonic Posture Manager', license_text)
         for value in (
-            'Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
+            'Name="!(loc.ProductName)"',
             'Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
-            'Id="Complete" Title="Panasonic 2-in-1 Tablet Posture Management Tool"',
+            'Id="Complete" Title="!(loc.FeatureTitle)"',
             'Scope="perMachine"',
             'Id="ConfigureSlate"',
             '-Action Install',
@@ -132,6 +139,15 @@ class MsiPayloadTests(unittest.TestCase):
             'Before="ConfigureHardwareService"',
             'ScheduleReboot',
             'Id="WixUI_Minimal"',
+            'Id="WixUI_ErrorProgressText"',
+            'Id="WixUIBannerBmp"',
+            'installer-banner.png',
+            'Id="WixUIDialogBmp"',
+            'installer-dialog.png',
+            'Id="WixUIInfoIco"',
+            'Id="WixUIExclamationIco"',
+            'installer-info.png',
+            'Id="WixUILicenseRtf" Value="$(var.LicenseRtf)"',
             'Id="LocalizeStartMenu"',
             'Id="RepairStartMenuShortcut"',
             'panasonic_posture.windows.shortcut_locale --install',
@@ -141,6 +157,53 @@ class MsiPayloadTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertIn(value, source)
+
+    def test_installer_cultures_have_complete_branding_and_copy(self):
+        expected = {
+            'en-US': (
+                'Panasonic 2-in-1 Tablet Posture Management Tool',
+                'A restart may be required',
+            ),
+            'zh-CN': (
+                '松下二合一平板电脑姿态管理工具',
+                '安装完成后可能需要重启',
+            ),
+        }
+        for culture, (product_name, exit_text) in expected.items():
+            with self.subTest(culture=culture):
+                localization, license_rtf = msi.culture_files(culture)
+                root = ET.parse(localization).getroot()
+                self.assertTrue(root.tag.endswith('WixLocalization'))
+                self.assertEqual(root.get('Culture'), culture)
+                strings = {
+                    element.get('Id'): element.get('Value')
+                    for element in root
+                    if element.tag.endswith('String')
+                }
+                self.assertEqual(strings['ProductName'], product_name)
+                self.assertEqual(strings['FeatureTitle'], product_name)
+                self.assertIn('[ProductName]', strings['WelcomeEulaDlgTitle'])
+                self.assertIn(exit_text, strings['ExitDialogOptionalText'])
+                self.assertIn(
+                    'https://www.gnu.org/licenses/agpl-3.0.html',
+                    license_rtf.read_text(encoding='utf-8'),
+                )
+
+        with self.assertRaisesRegex(ValueError, 'unsupported MSI culture'):
+            msi.culture_files('fr-FR')
+
+    def test_installer_branding_uses_wix_bitmap_dimensions(self):
+        dimensions = {
+            'installer-banner.png': (493, 58),
+            'installer-dialog.png': (493, 312),
+            'installer-info.png': (32, 32),
+        }
+        for name, expected in dimensions.items():
+            with self.subTest(name=name):
+                self.assertEqual(
+                    png_dimensions(ROOT / 'packaging/windows/msi' / name),
+                    expected,
+                )
 
     def test_start_menu_localization_runs_after_shortcuts_are_created(self):
         root = ET.fromstring(
@@ -164,7 +227,10 @@ class MsiPayloadTests(unittest.TestCase):
         original = output / 'panasonic-posture-manager-2.4.0-windows-x64.msi'
         original.write_bytes(b'existing')
 
+        commands = []
+
         def fail(command, **options):
+            commands.append(command)
             self.assertIn('WixToolset.UI.wixext', command)
             self.assertIn('WixToolset.Util.wixext', command)
             return None
@@ -178,6 +244,10 @@ class MsiPayloadTests(unittest.TestCase):
                 runner=fail,
             )
         self.assertEqual(original.read_bytes(), b'existing')
+        command = commands[0]
+        self.assertIn('zh-CN', command)
+        self.assertTrue(any('Setup.zh-CN.wxl' in part for part in command))
+        self.assertTrue(any('LICENSE.zh-CN.rtf' in part for part in command))
 
 
 if __name__ == '__main__':

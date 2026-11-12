@@ -1,0 +1,12 @@
+<WixLocalization Culture="en-US" Codepage="1252"
+    xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="ProductName" Value="Panasonic 2-in-1 Tablet Posture Management Tool" />
+  <String Id="FeatureTitle" Value="Panasonic 2-in-1 Tablet Posture Management Tool" />
+  <String Id="ArpComments" Value="Panasonic 2-in-1 tablet posture, direction and hardware service." />
+  <String Id="DowngradeErrorMessage" Value="A newer version of [ProductName] is already installed." />
+  <String Id="LaunchConditionMessage" Value="[ProductName] requires 64-bit Windows 10 or later." />
+  <String Id="WelcomeEulaDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}Install [ProductName]" />
+  <String Id="ExitDialogOptionalText"
+      Value="A restart may be required after installation so the hardware service and tablet indicator configuration can take effect." />
+</WixLocalization>
