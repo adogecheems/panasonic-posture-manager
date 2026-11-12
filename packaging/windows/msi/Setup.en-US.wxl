@@ -5,8 +5,39 @@
   <String Id="ArpComments" Value="Panasonic 2-in-1 tablet posture, direction and hardware service." />
   <String Id="DowngradeErrorMessage" Value="A newer version of [ProductName] is already installed." />
   <String Id="LaunchConditionMessage" Value="[ProductName] requires 64-bit Windows 10 or later." />
-  <String Id="WelcomeEulaDlgTitle" Overridable="yes"
-      Value="{\WixUI_Font_Title}Install [ProductName]" />
+  <String Id="WelcomeDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Bigger}Welcome to the [ProductName] Setup Wizard" />
+  <String Id="WelcomeDlgDescription"
+      Value="The Setup Wizard will install the posture management tool and configure the local hardware service. Click Next to review the license agreement." />
+  <String Id="InstallDirDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}Choose main application location" />
+  <String Id="InstallDirDlgDescription"
+      Value="Choose where to install the main application." />
+  <String Id="InstallDirDlgFolderLabel"
+      Value="Entering a parent folder automatically completes the PanasonicPostureManager leaf; use Change to browse. The hardware service is installed in a fixed protected folder under Program Files." />
+  <String Id="MainPathDialogTitle"
+      Value="{\WixUI_Font_Title}Change the installation location" />
+  <String Id="MainPathDialogDescription"
+      Value="The current path did not pass the installation location checks." />
+  <String Id="MainPathErrorFormat"
+      Value="Enter an absolute local path such as D:\Apps. Relative paths, UNC paths and invalid characters are not supported." />
+  <String Id="MainPathErrorNetwork"
+      Value="The main application can only be installed on a local fixed drive." />
+  <String Id="MainPathErrorProtected"
+      Value="Windows, system folders and the fixed hardware service folder cannot be selected." />
+  <String Id="MainPathErrorRoot"
+      Value="Choose a folder on the drive instead of the drive root." />
+  <String Id="MainPathErrorLength"
+      Value="The installation path is too long. Choose a shorter parent folder." />
+  <String Id="MainPathErrorReparse"
+      Value="The path contains a junction, symbolic link or another reparse point. Choose an ordinary folder." />
+  <String Id="MainPathErrorOccupied"
+      Value="The target folder contains unrelated files and is not an existing installation of this application. Choose another parent folder." />
+  <String Id="VerifyReadyDlgInstallTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}Confirm installation of [ProductName]" />
+  <String Id="VerifyReadyDlgInstallText"
+      Value="Click Confirm install to install the main application and configure the fixed-location local hardware service. Click Back to change the main application location." />
+  <String Id="VerifyReadyDlgInstall" Overridable="yes" Value="&amp;Confirm install" />
   <String Id="ExitDialogOptionalText"
       Value="A restart may be required after installation so the hardware service and tablet indicator configuration can take effect." />
 </WixLocalization>

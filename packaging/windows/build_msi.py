@@ -47,13 +47,24 @@ EXCLUDED_HELPERS = frozenset({
     'Slate Device Status.cmd',
 })
 
+MAIN_FOLDER = 'INSTALLFOLDER'
+SERVICE_FOLDER = 'SERVICEINSTALLFOLDER'
+ROLE_FOLDERS = {
+    'main': MAIN_FOLDER,
+    'service': SERVICE_FOLDER,
+}
+FIXED_SERVICE_SCRIPTS = frozenset({
+    'configure-slate-device.ps1',
+    'hardware-service.ps1',
+    'repair-start-menu-shortcut.ps1',
+})
 FIXED_FILE_IDS = {
-    'configure-slate-device.ps1': 'SlateConfigScript',
-    'hardware-service.ps1': 'HardwareServiceScript',
-    'launch.py': 'LaunchScript',
-    'repair-start-menu-shortcut.ps1': 'ShortcutRepairScript',
-    'runtime/python-hardware.exe': 'PythonHardwareExe',
-    'runtime/pythonw.exe': 'PythonwExe',
+    ('main', 'launch.py'): 'LaunchScript',
+    ('service', 'configure-slate-device.ps1'): 'ServiceSlateConfigScript',
+    ('service', 'hardware-service.ps1'): 'ServiceHardwareServiceScript',
+    ('service', 'repair-start-menu-shortcut.ps1'): 'ServiceShortcutRepairScript',
+    ('service', 'runtime/python-hardware.exe'): 'ServicePythonHardwareExe',
+    ('service', 'runtime/pythonw.exe'): 'ServicePythonwExe',
 }
 
 
@@ -90,75 +101,118 @@ def culture_files(culture: str) -> tuple[Path, Path]:
         ) from error
 
 
-def _file_id(name: str) -> str:
-    fixed = FIXED_FILE_IDS.get(name)
+def _file_id(role: str, name: str) -> str:
+    fixed = FIXED_FILE_IDS.get((role, name))
     if fixed is not None:
         return fixed
-    digest = hashlib.sha256(name.encode('utf-8')).hexdigest()[:20]
+    digest = hashlib.sha256(f'{role}/{name}'.encode('utf-8')).hexdigest()[:20]
     return f'File_{digest}'
 
 
-def _component_id(name: str) -> str:
-    digest = hashlib.sha256(name.encode('utf-8')).hexdigest()[:20]
+def _component_id(role: str, name: str) -> str:
+    digest = hashlib.sha256(f'{role}/{name}'.encode('utf-8')).hexdigest()[:20]
     return f'Component_{digest}'
 
 
-def _component_guid(name: str) -> str:
-    return str(uuid.uuid5(COMPONENT_NAMESPACE, f'panasonic-posture-manager/{name}')).upper()
+def _component_guid(role: str, name: str) -> str:
+    return str(uuid.uuid5(
+        COMPONENT_NAMESPACE,
+        f'panasonic-posture-manager/{role}/{name}',
+    )).upper()
 
 
-def _directory_id(name: str) -> str:
+def _directory_id(role: str, name: str) -> str:
     if not name:
-        return 'INSTALLFOLDER'
-    digest = hashlib.sha256(name.encode('utf-8')).hexdigest()[:20]
+        return ROLE_FOLDERS[role]
+    digest = hashlib.sha256(f'{role}/{name}'.encode('utf-8')).hexdigest()[:20]
     return f'Directory_{digest}'
 
 
-def payload_files(runtime: Path, dependencies: Path) -> dict[str, Path | bytes]:
-    files = _bundle_builder().application_files(runtime, dependencies)
-    files['configure-slate-device.ps1'] = (
+def payload_files(
+    runtime: Path,
+    dependencies: Path,
+) -> dict[str, dict[str, Path | bytes]]:
+    """Split the selectable UI from the fixed, protected service runtime."""
+    portable = _bundle_builder().application_files(runtime, dependencies)
+    portable['configure-slate-device.ps1'] = (
         ROOT / 'packaging/windows/configure-slate-device.ps1'
     )
-    files['hardware-service.ps1'] = (
+    portable['hardware-service.ps1'] = (
         ROOT / 'packaging/windows/hardware-service.ps1'
     )
-    files['repair-start-menu-shortcut.ps1'] = (
+    portable['repair-start-menu-shortcut.ps1'] = (
         ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
     )
     selected = {
-        name: value for name, value in files.items()
+        name: value for name, value in portable.items()
         if name not in EXCLUDED_HELPERS
+        and name not in {'Hardware.cmd', f'{APPLICATION_DISPLAY_NAME}.cmd'}
     }
-    for required in FIXED_FILE_IDS:
-        if required not in selected:
-            raise ValueError(f'MSI payload is missing {required}')
-    return selected
+    main = {
+        name: value for name, value in selected.items()
+        if name.startswith('app/')
+        or name == 'launch.py'
+        or name.startswith('data/assets/')
+        or name == 'po/zh_CN.po'
+        or name in {'LICENSE', 'README.md', 'MAINTENANCE.md'}
+    }
+    service = {
+        name: value for name, value in selected.items()
+        if name.startswith(('runtime/', 'app/'))
+        or name in FIXED_SERVICE_SCRIPTS
+    }
+    required = {
+        'main': {
+            'app/panasonic_posture/windows/hardware_client.py',
+            'launch.py',
+        },
+        'service': {
+            'app/panasonic_posture/windows/hardware_service.py',
+            'configure-slate-device.ps1',
+            'hardware-service.ps1',
+            'repair-start-menu-shortcut.ps1',
+            'runtime/python-hardware.exe',
+            'runtime/pythonw.exe',
+        },
+    }
+    for role, names in required.items():
+        files = main if role == 'main' else service
+        for name in names:
+            if name not in files:
+                raise ValueError(f'{role} MSI payload is missing {name}')
+    return {'main': main, 'service': service}
 
 
 def stage_payload(
     destination: Path,
     runtime: Path,
     dependencies: Path,
-) -> dict[str, str]:
-    """Materialize the MSI payload and return its per-file SHA-256 manifest."""
+) -> dict[str, dict[str, str]]:
+    """Materialize both install roots and return their per-file SHA-256 manifests."""
     if destination.exists():
         raise ValueError('payload destination already exists')
     bundle = _bundle_builder()
-    files = payload_files(runtime, dependencies)
+    groups = payload_files(runtime, dependencies)
     destination.mkdir(parents=True)
-    manifest = {}
-    for name, value in sorted(files.items()):
-        target = destination / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if isinstance(value, bytes):
-            target.write_bytes(value)
-        else:
-            shutil.copy2(value, target)
-        manifest[name] = bundle.file_digest(target)
-    (destination / 'MANIFEST.json').write_text(
-        json.dumps(manifest, indent=2) + '\n', encoding='utf-8', newline='\n'
-    )
-    return manifest
+    manifests = {}
+    for role, groups_files in groups.items():
+        role_root = destination / role
+        manifest = {}
+        for name, value in sorted(groups_files.items()):
+            target = role_root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if isinstance(value, bytes):
+                target.write_bytes(value)
+            else:
+                shutil.copy2(value, target)
+            manifest[name] = bundle.file_digest(target)
+        (role_root / 'MANIFEST.json').write_text(
+            json.dumps(manifest, indent=2) + '\n',
+            encoding='utf-8',
+            newline='\n',
+        )
+        manifests[role] = manifest
+    return manifests
 
 
 def _attribute(value: object) -> str:
@@ -213,66 +267,83 @@ def _shortcut_remove_xml() -> str:
 
 
 def render_components(
-    files: dict[str, Path | bytes],
+    groups: dict[str, dict[str, Path | bytes]],
     *,
     source_for=None,
 ) -> str:
-    """Create deterministic WiX source for the complete payload tree."""
+    """Create deterministic WiX components for the main and service roots."""
     source_for = source_for or (
-        lambda name: '$(var.PayloadDir)\\' + name.replace('/', '\\')
+        lambda role, name: (
+            '$(var.PayloadDir)\\'
+            + role
+            + '\\'
+            + name.replace('/', '\\')
+        )
     )
-    children: dict[str, set[str]] = defaultdict(set)
-    paths = [PurePosixPath(name) for name in files]
-    for path in paths:
-        parent = ''
-        for part in path.parts[:-1]:
-            child = f'{parent}/{part}' if parent else part
-            children[parent].add(child)
-            parent = child
 
     lines = [
         '<?xml version="1.0" encoding="utf-8"?>',
         '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">',
-        '  <Fragment>',
-        '    <DirectoryRef Id="INSTALLFOLDER">',
     ]
+    component_ids = []
+    for role in ('main', 'service'):
+        files = groups[role]
+        children: dict[str, set[str]] = defaultdict(set)
+        for name in files:
+            path = PurePosixPath(name)
+            parent = ''
+            for part in path.parts[:-1]:
+                child = f'{parent}/{part}' if parent else part
+                children[parent].add(child)
+                parent = child
 
-    def write_directories(parent: str, indent: int) -> None:
-        for relative in sorted(children[parent]):
-            padding = ' ' * indent
+        lines.extend((
+            '  <Fragment>',
+            f'    <DirectoryRef Id="{ROLE_FOLDERS[role]}">',
+        ))
+
+        def write_directories(parent: str, indent: int) -> None:
+            for relative in sorted(children[parent]):
+                padding = ' ' * indent
+                lines.append(
+                    f'{padding}'
+                    f'<Directory Id={_attribute(_directory_id(role, relative))} '
+                    f'Name={_attribute(PurePosixPath(relative).name)}>'
+                )
+                write_directories(relative, indent + 2)
+                lines.append(f'{padding}</Directory>')
+
+        write_directories('', 6)
+        lines.append('    </DirectoryRef>')
+        for name in sorted(files):
+            path = PurePosixPath(name)
+            parent = str(path.parent) if str(path.parent) != '.' else ''
+            component = _component_id(role, name)
+            component_ids.append(component)
             lines.append(
-                f'{padding}<Directory Id={_attribute(_directory_id(relative))} '
-                f'Name={_attribute(PurePosixPath(relative).name)}>'
+                f'    <Component Id={_attribute(component)} '
+                f'Directory={_attribute(_directory_id(role, parent))} '
+                f'Guid={_attribute(_component_guid(role, name))} Bitness="always64">'
             )
-            write_directories(relative, indent + 2)
-            lines.append(f'{padding}</Directory>')
-
-    write_directories('', 6)
-    lines.extend(('    </DirectoryRef>', '  </Fragment>', '  <Fragment>',
-                  '    <ComponentGroup Id="PayloadComponents">'))
-    for name in sorted(files):
-        path = PurePosixPath(name)
-        parent = str(path.parent) if str(path.parent) != '.' else ''
-        lines.append(
-            f'      <Component Id={_attribute(_component_id(name))} '
-            f'Directory={_attribute(_directory_id(parent))} '
-            f'Guid={_attribute(_component_guid(name))} Bitness="always64">'
-        )
-        source = str(source_for(name))
-        file_xml = (
-            f'        <File Id={_attribute(_file_id(name))} '
-            f'Name={_attribute(path.name)} Source={_attribute(source)} KeyPath="yes"'
-        )
-        if name == 'runtime/pythonw.exe':
-            lines.append(file_xml + '>')
-            lines.append(_shortcut_xml())
-            lines.append('        </File>')
-            lines.append(_shortcut_remove_xml())
-        else:
-            lines.append(file_xml + ' />')
-        if name == 'runtime/python-hardware.exe':
-            lines.append(_service_xml())
-        lines.append('      </Component>')
+            source = str(source_for(role, name))
+            file_xml = (
+                f'      <File Id={_attribute(_file_id(role, name))} '
+                f'Name={_attribute(path.name)} Source={_attribute(source)} KeyPath="yes"'
+            )
+            if role == 'service' and name == 'runtime/pythonw.exe':
+                lines.append(file_xml + '>')
+                lines.append(_shortcut_xml())
+                lines.append('      </File>')
+                lines.append(_shortcut_remove_xml())
+            else:
+                lines.append(file_xml + ' />')
+            if role == 'service' and name == 'runtime/python-hardware.exe':
+                lines.append(_service_xml())
+            lines.append('    </Component>')
+        lines.append('  </Fragment>')
+    lines.extend(('  <Fragment>', '    <ComponentGroup Id="PayloadComponents">'))
+    for component in component_ids:
+        lines.append(f'      <ComponentRef Id={_attribute(component)} />')
     lines.extend(('    </ComponentGroup>', '  </Fragment>', '</Wix>', ''))
     return '\n'.join(lines)
 
@@ -281,9 +352,9 @@ def generate_components(destination: Path, runtime: Path, dependencies: Path) ->
     """Stage the payload beside a generated WiX component fragment."""
     payload = destination / 'payload'
     stage_payload(payload, runtime, dependencies)
-    files = payload_files(runtime, dependencies)
+    groups = payload_files(runtime, dependencies)
     components = destination / 'Components.wxs'
-    components.write_text(render_components(files), encoding='utf-8', newline='\n')
+    components.write_text(render_components(groups), encoding='utf-8', newline='\n')
     return components
 
 
@@ -314,32 +385,38 @@ def build(
     archive = output / f'panasonic-posture-manager-{version}-windows-x64.msi'
     with tempfile.TemporaryDirectory(prefix='posture-msi-', dir=output) as temporary:
         work = Path(temporary)
-        files = payload_files(runtime, dependencies)
+        groups = payload_files(runtime, dependencies)
         generated = work / 'generated'
         generated.mkdir()
-        manifest = {}
         sources = {}
         bundle = _bundle_builder()
-        for name, value in sorted(files.items()):
-            if isinstance(value, bytes):
-                source = generated / name
-                source.parent.mkdir(parents=True, exist_ok=True)
-                source.write_bytes(value)
-                manifest[name] = hashlib.sha256(value).hexdigest()
-            else:
-                source = Path(value).absolute()
-                manifest[name] = bundle.file_digest(source)
-            sources[name] = source
-        manifest_path = work / 'MANIFEST.json'
-        manifest_path.write_text(
-            json.dumps(manifest, indent=2) + '\n',
-            encoding='utf-8',
-            newline='\n',
-        )
-        sources['MANIFEST.json'] = manifest_path
+        for role, files in groups.items():
+            manifest = {}
+            for name, value in sorted(files.items()):
+                if isinstance(value, bytes):
+                    source = generated / role / name
+                    source.parent.mkdir(parents=True, exist_ok=True)
+                    source.write_bytes(value)
+                    manifest[name] = hashlib.sha256(value).hexdigest()
+                else:
+                    source = Path(value).absolute()
+                    manifest[name] = bundle.file_digest(source)
+                sources[(role, name)] = source
+            manifest_path = generated / role / 'MANIFEST.json'
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + '\n',
+                encoding='utf-8',
+                newline='\n',
+            )
+            groups[role]['MANIFEST.json'] = manifest_path
+            sources[(role, 'MANIFEST.json')] = manifest_path
         components = work / 'Components.wxs'
         components.write_text(
-            render_components(sources, source_for=sources.__getitem__),
+            render_components(
+                groups,
+                source_for=lambda role, name: sources[(role, name)],
+            ),
             encoding='utf-8',
             newline='\n',
         )

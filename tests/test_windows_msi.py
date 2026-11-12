@@ -3,6 +3,8 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -48,27 +50,35 @@ class MsiPayloadTests(unittest.TestCase):
     def test_payload_contains_runtime_and_excludes_manual_service_helpers(self):
         payload = self.root / 'payload'
         manifest = msi.stage_payload(payload, self.runtime, self.dependencies)
-        self.assertIn('runtime/python-hardware.exe', manifest)
-        self.assertIn('runtime/python-hardware._pth', manifest)
-        self.assertIn('app/panasonic_posture/windows/hardware_service.py', manifest)
-        self.assertIn('configure-slate-device.ps1', manifest)
-        self.assertIn('hardware-service.ps1', manifest)
-        self.assertNotIn('Install Hardware Service.cmd', manifest)
-        self.assertNotIn('Configure Slate Device.cmd', manifest)
-        self.assertEqual(
-            json.loads((payload / 'MANIFEST.json').read_text(encoding='utf-8')),
-            manifest,
-        )
-        for name, digest in manifest.items():
+        main = manifest['main']
+        service = manifest['service']
+        self.assertIn('launch.py', main)
+        self.assertIn('app/panasonic_posture/windows/hardware_client.py', main)
+        self.assertNotIn('runtime/python-hardware.exe', main)
+        self.assertIn('runtime/python-hardware.exe', service)
+        self.assertIn('runtime/python-hardware._pth', service)
+        self.assertIn('app/panasonic_posture/windows/hardware_service.py', service)
+        self.assertIn('configure-slate-device.ps1', service)
+        self.assertIn('hardware-service.ps1', service)
+        self.assertNotIn('Install Hardware Service.cmd', service)
+        self.assertNotIn('Configure Slate Device.cmd', service)
+        for role, expected in manifest.items():
             self.assertEqual(
-                hashlib.sha256((payload / name).read_bytes()).hexdigest(),
-                digest,
+                json.loads(
+                    (payload / role / 'MANIFEST.json').read_text(encoding='utf-8')
+                ),
+                expected,
             )
+            for name, digest in expected.items():
+                self.assertEqual(
+                    hashlib.sha256((payload / role / name).read_bytes()).hexdigest(),
+                    digest,
+                )
 
     def test_generated_components_are_deterministic_and_register_the_service(self):
-        files = msi.payload_files(self.runtime, self.dependencies)
-        first = msi.render_components(files)
-        second = msi.render_components(files)
+        groups = msi.payload_files(self.runtime, self.dependencies)
+        first = msi.render_components(groups)
+        second = msi.render_components(groups)
         self.assertEqual(first, second)
         root = ET.fromstring(first)
         self.assertTrue(root.tag.endswith('Wix'))
@@ -84,11 +94,18 @@ class MsiPayloadTests(unittest.TestCase):
         )
         shortcut_file = parents[shortcut]
         self.assertTrue(shortcut_file.tag.endswith('File'))
-        self.assertEqual(shortcut_file.get('Id'), 'PythonwExe')
+        self.assertEqual(shortcut_file.get('Id'), 'ServicePythonwExe')
+        self.assertIsNone(shortcut.get('Target'))
+        self.assertEqual(
+            shortcut.get('Arguments'),
+            '-I "[INSTALLFOLDER]launch.py"',
+        )
         self.assertIn('Name="a&amp;b.py"', first)
-        self.assertIn('Id="PythonHardwareExe"', first)
-        self.assertIn('Id="HardwareServiceScript"', first)
-        self.assertIn('Id="ShortcutRepairScript"', first)
+        self.assertIn('Id="ServicePythonHardwareExe"', first)
+        self.assertIn('Id="ServiceHardwareServiceScript"', first)
+        self.assertIn('Id="ServiceShortcutRepairScript"', first)
+        self.assertIn('DirectoryRef Id="SERVICEINSTALLFOLDER"', first)
+        self.assertIn('DirectoryRef Id="INSTALLFOLDER"', first)
         self.assertIn('Id="ApplicationStartMenuShortcut"', first)
         self.assertIn('Advertise="yes"', first)
         self.assertIn('Icon="ProductIcon.ico"', first)
@@ -117,8 +134,10 @@ class MsiPayloadTests(unittest.TestCase):
             'Id="Complete" Title="!(loc.FeatureTitle)"',
             'Scope="perMachine"',
             'Id="ConfigureSlate"',
+            '[#ServiceSlateConfigScript]',
             '-Action Install',
             'Id="ConfigureHardwareService"',
+            '[#ServiceHardwareServiceScript]',
             '-Action Configure',
             '[System64Folder]WindowsPowerShell',
             'Id="RestoreSlate"',
@@ -138,7 +157,12 @@ class MsiPayloadTests(unittest.TestCase):
             'Before="ConfigureSlate"',
             'Before="ConfigureHardwareService"',
             'ScheduleReboot',
-            'Id="WixUI_Minimal"',
+            'Id="WixUI_PostureInstallDir" InstallDirectory="INSTALLFOLDER"',
+            'Id="MainPathActions"',
+            'JScriptCall="CompleteAndValidateMainPath"',
+            'JScriptCall="EnforceMainPath"',
+            'Action="EnforceMainPath" After="CostFinalize"',
+            'Id="SERVICEINSTALLFOLDER" Name="PanasonicPostureManagerService"',
             'Id="WixUI_ErrorProgressText"',
             'Id="WixUIBannerBmp"',
             'installer-banner.png',
@@ -150,6 +174,7 @@ class MsiPayloadTests(unittest.TestCase):
             'Id="WixUILicenseRtf" Value="$(var.LicenseRtf)"',
             'Id="LocalizeStartMenu"',
             'Id="RepairStartMenuShortcut"',
+            '[#ServiceShortcutRepairScript]',
             'panasonic_posture.windows.shortcut_locale --install',
             '--language-id [UserLanguageID]',
             'Id="RemoveLocalizedStartMenu"',
@@ -163,13 +188,15 @@ class MsiPayloadTests(unittest.TestCase):
             'en-US': (
                 'Panasonic 2-in-1 Tablet Posture Management Tool',
                 'A restart may be required',
+                'Confirm install',
             ),
             'zh-CN': (
                 '松下二合一平板电脑姿态管理工具',
                 '安装完成后可能需要重启',
+                '确认安装',
             ),
         }
-        for culture, (product_name, exit_text) in expected.items():
+        for culture, (product_name, exit_text, confirm_text) in expected.items():
             with self.subTest(culture=culture):
                 localization, license_rtf = msi.culture_files(culture)
                 root = ET.parse(localization).getroot()
@@ -182,7 +209,23 @@ class MsiPayloadTests(unittest.TestCase):
                 }
                 self.assertEqual(strings['ProductName'], product_name)
                 self.assertEqual(strings['FeatureTitle'], product_name)
-                self.assertIn('[ProductName]', strings['WelcomeEulaDlgTitle'])
+                self.assertIn('[ProductName]', strings['WelcomeDlgTitle'])
+                self.assertIn('InstallDirDlgTitle', strings)
+                self.assertIn('InstallDirDlgDescription', strings)
+                self.assertIn('InstallDirDlgFolderLabel', strings)
+                self.assertIn('PanasonicPostureManager', strings['InstallDirDlgFolderLabel'])
+                for error in (
+                    'MainPathErrorFormat',
+                    'MainPathErrorNetwork',
+                    'MainPathErrorProtected',
+                    'MainPathErrorRoot',
+                    'MainPathErrorLength',
+                    'MainPathErrorReparse',
+                    'MainPathErrorOccupied',
+                ):
+                    self.assertIn(error, strings)
+                self.assertIn(confirm_text, strings['VerifyReadyDlgInstall'])
+                self.assertIn('[ProductName]', strings['VerifyReadyDlgInstallTitle'])
                 self.assertIn(exit_text, strings['ExitDialogOptionalText'])
                 self.assertIn(
                     'https://www.gnu.org/licenses/agpl-3.0.html',
@@ -191,6 +234,57 @@ class MsiPayloadTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, 'unsupported MSI culture'):
             msi.culture_files('fr-FR')
+
+    def test_installer_selects_main_location_and_fixes_the_service_location(self):
+        source = (ROOT / 'packaging/windows/msi/Package.wxs').read_text(
+            encoding='utf-8'
+        )
+        root = ET.fromstring(source)
+        wix_ui = next(
+            element for element in root.iter()
+            if element.tag.endswith('WixUI')
+        )
+        self.assertEqual(wix_ui.get('Id'), 'WixUI_PostureInstallDir')
+        self.assertEqual(wix_ui.get('InstallDirectory'), 'INSTALLFOLDER')
+        self.assertIn(
+            'Id="INSTALLFOLDER" Name="PanasonicPostureManager"',
+            source,
+        )
+        self.assertIn(
+            'Id="SERVICEINSTALLFOLDER" Name="PanasonicPostureManagerService"',
+            source,
+        )
+
+    def test_main_path_actions_complete_and_guard_the_selected_location(self):
+        source = ROOT / 'packaging/windows/msi/main-path-actions.js'
+        text = source.read_text(encoding='utf-8')
+        for value in (
+            "PRODUCT_FOLDER = 'PanasonicPostureManager'",
+            'CompleteAndValidateMainPath',
+            'EnforceMainPath',
+            'DriveType !== 2',
+            'GetFolder(current).Attributes & 1024',
+            "'\\\\MANIFEST.json'",
+            'MAIN_PATH_VALID',
+            'MAIN_PATH_ERROR',
+        ):
+            with self.subTest(value=value):
+                self.assertIn(value, text)
+
+        cscript = shutil.which('cscript.exe')
+        if sys.platform != 'win32' or cscript is None:
+            self.skipTest('Windows Script Host is unavailable')
+        result = subprocess.run(
+            [cscript, '//nologo', '//E:JScript', str(source), '--self-test'],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        self.assertIn('self-test passed', result.stdout)
 
     def test_installer_branding_uses_wix_bitmap_dimensions(self):
         dimensions = {

@@ -79,7 +79,13 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
     files['runtime/python-hardware._pth'] = hardware_search_paths.encode('utf-8')
     for executable in ('python', 'pythonw'):
         files[f'runtime/{executable}._pth'] = ui_search_paths.encode('utf-8')
-    files['launch.py'] = b'from panasonic_posture.fluent.__main__ import main\nraise SystemExit(main())\n'
+    files['launch.py'] = (
+        b'import sys\n'
+        b'from pathlib import Path\n'
+        b'sys.path.insert(0, str(Path(__file__).resolve().parent / "app"))\n'
+        b'from panasonic_posture.fluent.__main__ import main\n'
+        b'raise SystemExit(main())\n'
+    )
     for name, arguments in ((f'{APPLICATION_DISPLAY_NAME}.cmd', ''),
                              ('Hardware.cmd', '')):
         files[name] = (

@@ -5,8 +5,39 @@
   <String Id="ArpComments" Value="松下二合一平板姿态、方向与硬件服务。" />
   <String Id="DowngradeErrorMessage" Value="已安装较新版本的 [ProductName]。" />
   <String Id="LaunchConditionMessage" Value="[ProductName] 需要 64 位 Windows 10 或更高版本。" />
-  <String Id="WelcomeEulaDlgTitle" Overridable="yes"
-      Value="{\WixUI_Font_Title}安装 [ProductName]" />
+  <String Id="WelcomeDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Bigger}欢迎安装 [ProductName]" />
+  <String Id="WelcomeDlgDescription"
+      Value="安装程序将安装平板姿态管理工具，并配置本地硬件服务。点击“下一步”查看许可协议。" />
+  <String Id="InstallDirDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}选择主程序安装位置" />
+  <String Id="InstallDirDlgDescription"
+      Value="请选择主程序的安装位置。" />
+  <String Id="InstallDirDlgFolderLabel"
+      Value="输入上级目录时会自动补全末尾的 PanasonicPostureManager；也可点击“更改”浏览。硬件服务固定安装到 Program Files 下的受保护目录。" />
+  <String Id="MainPathDialogTitle"
+      Value="{\WixUI_Font_Title}安装位置需要修改" />
+  <String Id="MainPathDialogDescription"
+      Value="当前路径未通过安装位置检查。" />
+  <String Id="MainPathErrorFormat"
+      Value="请输入本地绝对路径，例如 D:\Apps。不要使用相对路径、UNC 路径或无效字符。" />
+  <String Id="MainPathErrorNetwork"
+      Value="主程序只能安装到本地固定磁盘。" />
+  <String Id="MainPathErrorProtected"
+      Value="不能安装到 Windows、系统目录或固定硬件服务目录。" />
+  <String Id="MainPathErrorRoot"
+      Value="请选择磁盘中的文件夹，不要直接选择磁盘根目录。" />
+  <String Id="MainPathErrorLength"
+      Value="安装路径过长，请改选更短的上级目录。" />
+  <String Id="MainPathErrorReparse"
+      Value="路径中包含目录联接、符号链接或其他重解析点，请选择普通目录。" />
+  <String Id="MainPathErrorOccupied"
+      Value="目标目录已有其他文件，且不是本工具的安装目录。请选择其他上级目录。" />
+  <String Id="VerifyReadyDlgInstallTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}确认安装 [ProductName]" />
+  <String Id="VerifyReadyDlgInstallText"
+      Value="点击“确认安装”后将安装主程序，并配置固定位置的本地硬件服务。点击“上一步”可返回修改主程序安装位置。" />
+  <String Id="VerifyReadyDlgInstall" Overridable="yes" Value="确认安装" />
   <String Id="ExitDialogOptionalText"
       Value="安装完成后可能需要重启 Windows，以便硬件服务与平板指示器配置生效。" />
 </WixLocalization>

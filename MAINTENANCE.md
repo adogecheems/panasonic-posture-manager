@@ -177,7 +177,7 @@ python tests/check_i18n.py
 | Windows 便携包 | `python packaging\windows\build.py --dependencies build\windows-dependencies` | `dist/windows/` |
 | Windows MSI | `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | `dist/windows/` |
 
-Windows MSI 默认构建简体中文界面；需要英文界面时追加 `--culture en-US`。两种文化都使用同一套方形应用标志、欢迎/完成页背景、安装许可和重启提示，界面资源位于 `packaging/windows/msi/`。
+Windows MSI 默认构建简体中文界面；需要英文界面时追加 `--culture en-US`。两种文化都使用同一套方形应用标志、欢迎/完成页背景、安装许可、主程序安装位置选择、最终确认页和重启提示，界面资源位于 `packaging/windows/msi/`。主程序可安装到用户选择的本地固定磁盘目录，输入上级目录时自动补全 `PanasonicPostureManager` 叶目录；安装器拒绝磁盘根、Windows/系统目录、固定服务目录、重解析点、过长路径和已有陌生文件的目录。静默安装必须在 `INSTALLFOLDER` 中给出包含该叶目录的完整绝对路径。硬件运行时和服务固定安装到 `Program Files\PanasonicPostureManagerService`，不随主程序路径变化。
 
 Windows 构建前准备依赖和 WiX：
 

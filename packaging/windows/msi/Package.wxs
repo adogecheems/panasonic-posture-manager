@@ -31,6 +31,13 @@
     <Property Id="ARPPRODUCTICON" Value="ProductIcon.ico" />
     <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="!(loc.ExitDialogOptionalText)" />
+    <Property Id="MainPathErrorFormat" Value="!(loc.MainPathErrorFormat)" />
+    <Property Id="MainPathErrorNetwork" Value="!(loc.MainPathErrorNetwork)" />
+    <Property Id="MainPathErrorProtected" Value="!(loc.MainPathErrorProtected)" />
+    <Property Id="MainPathErrorRoot" Value="!(loc.MainPathErrorRoot)" />
+    <Property Id="MainPathErrorLength" Value="!(loc.MainPathErrorLength)" />
+    <Property Id="MainPathErrorReparse" Value="!(loc.MainPathErrorReparse)" />
+    <Property Id="MainPathErrorOccupied" Value="!(loc.MainPathErrorOccupied)" />
     <Property Id="SLATE_CONFIGURED_BY_PRODUCT">
       <RegistrySearch
           Id="SearchConfiguredSlate"
@@ -43,7 +50,7 @@
 
     <SetProperty
         Id="ConfigureSlate"
-        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Install"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#ServiceSlateConfigScript]&quot; -Action Install"
         Before="ConfigureSlate"
         Sequence="execute" />
     <CustomAction
@@ -55,7 +62,7 @@
         Return="check" />
     <SetProperty
         Id="ConfigureHardwareService"
-        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#HardwareServiceScript]&quot; -Action Configure"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#ServiceHardwareServiceScript]&quot; -Action Configure"
         Before="ConfigureHardwareService"
         Sequence="execute" />
     <CustomAction
@@ -67,7 +74,7 @@
         Return="check" />
     <SetProperty
         Id="RollbackSlate"
-        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Remove"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#ServiceSlateConfigScript]&quot; -Action Remove"
         Before="RollbackSlate"
         Sequence="execute" />
     <CustomAction
@@ -79,7 +86,7 @@
         Return="ignore" />
     <SetProperty
         Id="RestoreSlate"
-        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#SlateConfigScript]&quot; -Action Remove"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#ServiceSlateConfigScript]&quot; -Action Remove"
         Before="RestoreSlate"
         Sequence="execute" />
     <CustomAction
@@ -91,7 +98,7 @@
         Return="check" />
     <SetProperty
         Id="LocalizeStartMenu"
-        Value="&quot;[#PythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --install --language-id [UserLanguageID]"
+        Value="&quot;[#ServicePythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --install --language-id [UserLanguageID]"
         Before="LocalizeStartMenu"
         Sequence="execute" />
     <CustomAction
@@ -103,7 +110,7 @@
         Return="ignore" />
     <SetProperty
         Id="RepairStartMenuShortcut"
-        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#ShortcutRepairScript]&quot; -LanguageId [UserLanguageID] -InstallFolder &quot;[INSTALLFOLDER]&quot;"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#ServiceShortcutRepairScript]&quot; -LanguageId [UserLanguageID] -InstallFolder &quot;[INSTALLFOLDER]&quot;"
         Before="RepairStartMenuShortcut"
         Sequence="execute" />
     <CustomAction
@@ -115,7 +122,7 @@
         Return="check" />
     <SetProperty
         Id="RemoveLocalizedStartMenu"
-        Value="&quot;[#PythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --remove --language-id [UserLanguageID]"
+        Value="&quot;[#ServicePythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --remove --language-id [UserLanguageID]"
         Before="RemoveLocalizedStartMenu"
         Sequence="execute" />
     <CustomAction
@@ -125,9 +132,27 @@
         Execute="deferred"
         Impersonate="no"
         Return="ignore" />
+    <Binary
+        Id="MainPathActions"
+        SourceFile="$(var.ProjectRoot)/packaging/windows/msi/main-path-actions.js" />
+    <CustomAction
+        Id="CompleteAndValidateMainPath"
+        BinaryRef="MainPathActions"
+        JScriptCall="CompleteAndValidateMainPath"
+        Execute="immediate"
+        Impersonate="yes"
+        Return="check" />
+    <CustomAction
+        Id="EnforceMainPath"
+        BinaryRef="MainPathActions"
+        JScriptCall="EnforceMainPath"
+        Execute="immediate"
+        Impersonate="yes"
+        Return="check" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager" />
+      <Directory Id="SERVICEINSTALLFOLDER" Name="PanasonicPostureManagerService" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool" />
@@ -141,7 +166,7 @@
       <ComponentGroupRef Id="PayloadComponents" />
     </Feature>
 
-    <ui:WixUI Id="WixUI_Minimal" />
+    <ui:WixUI Id="WixUI_PostureInstallDir" InstallDirectory="INSTALLFOLDER" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
     <WixVariable
         Id="WixUIBannerBmp"
@@ -157,6 +182,7 @@
         Value="$(var.ProjectRoot)/packaging/windows/msi/installer-info.png" />
 
     <InstallExecuteSequence>
+      <Custom Action="EnforceMainPath" After="CostFinalize" Condition="NOT REMOVE" />
       <Custom Action="RollbackSlate" Before="ConfigureSlate" Condition="NOT REMOVE" />
       <Custom Action="LocalizeStartMenu" After="CreateShortcuts" Condition="NOT REMOVE" />
       <Custom Action="RepairStartMenuShortcut" After="LocalizeStartMenu" Condition="NOT REMOVE" />
@@ -173,5 +199,81 @@
   </Package>
   <Fragment>
     <UIRef Id="WixUI_ErrorProgressText" />
+  </Fragment>
+  <?foreach WIXUIARCH in X86;X64;A64 ?>
+  <Fragment>
+    <UI Id="WixUI_PostureInstallDir_$(WIXUIARCH)">
+      <Publish
+          Dialog="LicenseAgreementDlg"
+          Control="Print"
+          Event="DoAction"
+          Value="WixUIPrintEula_$(WIXUIARCH)" />
+    </UI>
+    <UIRef Id="WixUI_PostureInstallDir" />
+  </Fragment>
+  <?endforeach?>
+  <Fragment>
+    <UI Id="WixUI_PostureInstallDir">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+      <Property Id="ARPNOMODIFY" Value="1" />
+
+      <DialogRef Id="BrowseDlg" />
+      <DialogRef Id="DiskCostDlg" />
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="InvalidMainPathDlg" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT Installed" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Condition="LicenseAccepted = &quot;1&quot;" />
+
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="DoAction" Value="CompleteAndValidateMainPath" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidMainPathDlg" Order="2" Condition="MAIN_PATH_VALID &lt;&gt; &quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="3" Condition="MAIN_PATH_VALID = &quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="4" Condition="MAIN_PATH_VALID = &quot;1&quot;" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="1" Condition="NOT Installed" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="Installed AND PATCH" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+    </UI>
+    <UI Id="WixUI_PosturePathDialogs">
+      <Dialog Id="InvalidMainPathDlg" Width="370" Height="270" Title="!(loc.MainPathDialogTitle)">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="300" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.MainPathDialogTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="320" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.MainPathDialogDescription)" />
+        <Control Id="Message" Type="Text" X="25" Y="70" Width="320" Height="120" NoPrefix="yes" Text="[MAIN_PATH_ERROR]" />
+        <Control Id="Back" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUIBack)">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+    </UI>
+    <UIRef Id="WixUI_Common" />
   </Fragment>
 </Wix>

@@ -39,14 +39,19 @@ class ShortcutRepairTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.program_data = self.root / 'ProgramData'
         self.install = self.root / 'install'
+        self.service = self.root / 'service'
+        self.runtime = self.service / 'runtime'
         for relative in (
-            'runtime/pythonw.exe',
             'launch.py',
             'data/assets/work.mmoe.panasonic.PostureManager.ico',
         ):
             path = self.install / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'fixture')
+        (self.runtime / 'pythonw.exe').parent.mkdir(parents=True)
+        (self.runtime / 'pythonw.exe').write_bytes(b'fixture')
+        self.installed_repair = self.service / REPAIR_SCRIPT.name
+        shutil.copy2(REPAIR_SCRIPT, self.installed_repair)
 
     def run_repair(self, language_id: int = 0x0804):
         powershell = shutil.which('powershell.exe')
@@ -63,7 +68,7 @@ class ShortcutRepairTests(unittest.TestCase):
                 '-ExecutionPolicy',
                 'Bypass',
                 '-File',
-                str(REPAIR_SCRIPT),
+                str(self.installed_repair),
                 '-LanguageId',
                 str(language_id),
                 '-InstallFolder',
@@ -113,7 +118,7 @@ class ShortcutRepairTests(unittest.TestCase):
         self.assertEqual(inspect.returncode, 0, inspect.stderr)
         target, arguments = inspect.stdout.splitlines()
         self.assertTrue(
-            os.path.samefile(target, self.install / 'runtime/pythonw.exe')
+            os.path.samefile(target, self.runtime / 'pythonw.exe')
         )
         self.assertTrue(arguments.startswith('-I "'))
         self.assertTrue(arguments.endswith('\\launch.py"'))

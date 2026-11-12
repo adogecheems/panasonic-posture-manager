@@ -83,6 +83,15 @@ class WindowsPackagingTests(unittest.TestCase):
                 native = bundle.read(prefix + 'Hardware.cmd').decode('utf-8')
                 self.assertIn('runtime\\pythonw.exe', native)
                 self.assertNotIn('--hardware-backend', native)
+                launcher = bundle.read(prefix + 'launch.py').decode('utf-8')
+                self.assertIn(
+                    'Path(__file__).resolve().parent / "app"',
+                    launcher,
+                )
+                self.assertLess(
+                    launcher.index('sys.path.insert'),
+                    launcher.index('from panasonic_posture'),
+                )
                 self.assertIn(b'../app', bundle.read(prefix + 'runtime/python._pth'))
                 self.assertIn(b'Lib/site-packages', bundle.read(prefix + 'runtime/python._pth'))
                 self.assertEqual(bundle.read(prefix + 'runtime/python-hardware._pth'),

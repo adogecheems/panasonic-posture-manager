@@ -11,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 $InstallFolder = [IO.Path]::GetFullPath(
     $InstallFolder.Trim('"').TrimEnd([char[]]@('\', '/'))
 )
+$RuntimeFolder = Join-Path (Split-Path -Parent $PSCommandPath) 'runtime'
 $displayName = if (($LanguageId -band 0x3ff) -eq 0x04) {
     '松下二合一平板电脑姿态管理工具'
 } else {
@@ -43,7 +44,7 @@ foreach ($name in $knownNames) {
     Remove-Item -LiteralPath $folder -Force -ErrorAction SilentlyContinue
 }
 
-$target = Join-Path $InstallFolder 'runtime\pythonw.exe'
+$target = Join-Path $RuntimeFolder 'pythonw.exe'
 $launcher = Join-Path $InstallFolder 'launch.py'
 $icon = Join-Path $InstallFolder 'data\assets\work.mmoe.panasonic.PostureManager.ico'
 $appUserModelId = 'work.mmoe.panasonic.PostureManager'

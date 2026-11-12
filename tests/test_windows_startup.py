@@ -113,6 +113,24 @@ class LoginStartupTests(unittest.TestCase):
             (root / 'launch.py').touch()
             self.assertEqual(startup_command(executable=runtime / 'python.exe', root=root),
                 (str(runtime / 'pythonw.exe'), '-I', str(root / 'launch.py'), '--background'))
+            main = root / 'selected main'
+            main.mkdir()
+            (main / 'launch.py').touch()
+            service_runtime = root / 'service/runtime'
+            service_runtime.mkdir(parents=True)
+            (service_runtime / 'pythonw.exe').touch()
+            self.assertEqual(
+                startup_command(
+                    executable=service_runtime / 'python.exe',
+                    root=main,
+                ),
+                (
+                    str(service_runtime / 'pythonw.exe'),
+                    '-I',
+                    str(main / 'launch.py'),
+                    '--background',
+                ),
+            )
             (root / 'launch.py').unlink()
             with self.assertRaises(StartupError): startup_command(executable=runtime / 'python.exe', root=root)
             (root / 'src/panasonic_posture').mkdir(parents=True)

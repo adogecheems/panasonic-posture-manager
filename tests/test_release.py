@@ -79,6 +79,9 @@ class ReleaseMetadataTests(unittest.TestCase):
             "packaging/windows/build_msi.py",
             "packaging/windows/msi/Package.wxs",
             "packaging/windows/msi/LICENSE.rtf",
+            "packaging/windows/msi/main-path-actions.js",
+            "packaging/windows/msi/Setup.zh-CN.wxl",
+            "packaging/windows/msi/Setup.en-US.wxl",
             "MAINTENANCE.md",
         ):
             with self.subTest(relative=relative):
