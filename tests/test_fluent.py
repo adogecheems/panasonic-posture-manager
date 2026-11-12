@@ -427,6 +427,7 @@ resident.open_action.trigger()
 assert window.isVisible()
 window.hide()
 resident.tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+QTest.qWait(250)
 assert window.isVisible()
 resident.quit_action.trigger()
 QTest.qWait(50)
@@ -511,7 +512,26 @@ assert resident.notice is None
 assert not window.isVisible()
 QTest.qWait(800)
 resident.tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+QTest.qWait(250)
 assert events == ['confirm', 'show']
+resident.quit()
+QTest.qWait(50)
+''')
+
+    def test_tray_icon_opens_the_window_without_confirming_an_available_notice(self):
+        self.run_resident('''
+resident = ResidentTray(window, tray_factory=FakeTray)
+window.hide()
+client.scenario('prompt')
+events = []
+resident.show_window = lambda: events.append('show')
+window.home.confirm = lambda: events.append('confirm')
+resident.tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+QTest.qWait(250)
+assert events == ['show']
+assert resident.notice is not None
+assert client.state['manual'] == 'auto'
+assert client.state['pending_notification'] is not None
 resident.quit()
 QTest.qWait(50)
 ''')

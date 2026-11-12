@@ -26,6 +26,9 @@ class ResidentTray(QObject):
         self.instance = None
         self._tooltip = None
         self.timer = QTimer(self)
+        self._tray_activation = QTimer(self)
+        self._tray_activation.setSingleShot(True)
+        self._tray_activation.timeout.connect(self._finish_tray_activation)
         self._ = window._
         _ = self._
         self.menu = QMenu(window)
@@ -63,17 +66,24 @@ class ResidentTray(QObject):
         return super().eventFilter(watched, event)
 
     def activated(self, reason):
-        if (reason == QSystemTrayIcon.ActivationReason.Trigger
-                and self._notice_confirmable()):
-            self.open_notice()
-        elif reason in (QSystemTrayIcon.ActivationReason.Trigger,
-                        QSystemTrayIcon.ActivationReason.DoubleClick):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self._tray_activation.stop()
             if not self._notice_click_consumed():
                 self.show_window()
+        elif reason == QSystemTrayIcon.ActivationReason.Trigger:
+            # Windows may report one toast click as this tray trigger followed
+            # by messageClicked. Delay the tray action so a following notice
+            # signal can cancel it; a real tray click still opens the window.
+            self._tray_activation.start(100)
+
+    def _finish_tray_activation(self):
+        if not self._notice_click_consumed():
+            self.show_window()
 
     def show_window(self):
         if self.quitting:
             return
+        self._tray_activation.stop()
         self.window.showNormal()
         self.window.raise_()
         self.window.activateWindow()
@@ -81,16 +91,14 @@ class ResidentTray(QObject):
 
     def open_notice(self):
         """Confirm only when the clicked notice still describes the current state."""
+        self._tray_activation.stop()
+        if self._notice_click_consumed():
+            return
+        self._notice_click_until = time.monotonic() + 0.75
         if self.quitting or not self._notice_confirmable():
-            if self._notice_click_consumed():
-                return
             self.show_window()
             return
         self.notice = None
-        # Windows can deliver a toast click as both messageClicked and a tray
-        # activation. Confirm once and suppress the paired signal; a separate
-        # later tray click still opens the window normally.
-        self._notice_click_until = time.monotonic() + 0.75
         # The page owns busy/error handling and rechecks the same snapshot before
         # sending the epoch-bound confirmation.
         self.window.home.confirm()
@@ -158,6 +166,7 @@ class ResidentTray(QObject):
             return
         self.quitting = True
         self.timer.stop()
+        self._tray_activation.stop()
         self.tray.hide()
         self.window.shutdown()
 
@@ -170,6 +179,7 @@ class ResidentTray(QObject):
         if not self.quitting:
             self.quitting = True
             self.timer.stop()
+            self._tray_activation.stop()
             self.tray.hide()
             self.client.stop()
         self.app.quit()
