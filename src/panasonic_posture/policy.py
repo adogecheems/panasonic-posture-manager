@@ -376,6 +376,10 @@ class Policy:
         """After the display wakes, settle once even if samples arrive late."""
         self._source.startup_pending = True
 
+    def settle_explicit_mode(self) -> None:
+        """Let a user-selected manual mode bypass the startup settle gate."""
+        self._source.startup_pending = False
+
     def reset_after_suspend(self, *, adopt_first_pose: bool = True) -> None:
         """Forget everything because the machine was suspended.
 
@@ -482,13 +486,37 @@ class Policy:
             self._set_mode(MODE_DISABLED)
             return
 
+        pitch, roll, flat = self._classify()
+        if self._source.startup_pending:
+            # A restart, unlock or resume has no trustworthy previous posture.
+            # Keep the target unavailable until one posture becomes stable;
+            # publishing an interim laptop target would rotate first and then
+            # correct to tent/stand after the settle window.
+            if not self.stable or flat is None:
+                self._clear_timers()
+                self._set_mode(MODE_DISABLED)
+                return
+            self._clear_timers()
+            if flat < LAPTOP_MAX_FLAT:
+                self._source.origin = _Origin.LAPTOP
+                self._set_mode(MODE_LAPTOP)
+            else:
+                self._source.origin = _Origin.NON_LAPTOP
+                if tent_enabled and in_tent_zone(pitch, roll):
+                    self._set_mode(MODE_TENT)
+                elif flat >= STAND_MIN_FLAT:
+                    self._set_mode(MODE_STAND)
+                else:
+                    self._set_mode(MODE_LAPTOP)
+            self._source.startup_pending = False
+            return
+
         if (
             self.mode in (MODE_HARDWARE, MODE_DISABLED)
             and not self._source.hardware_release_pending
         ):
             self._set_mode(MODE_LAPTOP)
 
-        pitch, roll, flat = self._classify()
         if self.stable and flat is not None and flat < LAPTOP_MAX_FLAT:
             self._source.origin = _Origin.LAPTOP
             self._source.tent_exit_at = None
@@ -524,23 +552,6 @@ class Policy:
             else:
                 self._set_mode(MODE_LAPTOP)
             self._clear_timers()
-            return
-
-        if self.stable and self._source.startup_pending:
-            # The service has no prior decision to preserve.  Adopt the first
-            # stable recognised posture as the baseline so a restart while the
-            # device is already in tent or stand does not ask for confirmation.
-            self._clear_timers()
-            if flat is not None and flat < LAPTOP_MAX_FLAT:
-                self._source.origin = _Origin.LAPTOP
-                self._set_mode(MODE_LAPTOP)
-            else:
-                self._source.origin = _Origin.NON_LAPTOP
-                if tent:
-                    self._set_mode(MODE_TENT)
-                elif stand:
-                    self._set_mode(MODE_STAND)
-            self._source.startup_pending = False
             return
 
         if self.mode == MODE_TENT_PROMPT and not tent_hold:

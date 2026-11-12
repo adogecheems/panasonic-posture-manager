@@ -156,6 +156,8 @@ class Controller:
         if self.hardware is True and normalized != Mode.AUTO:
             raise ValueError(ErrorCode.HARDWARE_PRIORITY)
         self.manual = normalized
+        if normalized != Mode.AUTO:
+            self.policy.settle_explicit_mode()
 
     def confirm_tent(self, epoch: int) -> bool:
         """Accept the tent prompt when every precondition still holds."""

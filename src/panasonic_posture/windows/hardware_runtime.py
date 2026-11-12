@@ -23,6 +23,7 @@ have written.
 from __future__ import annotations
 
 from collections.abc import Callable
+import logging
 import time
 from typing import TYPE_CHECKING, Protocol
 
@@ -34,6 +35,10 @@ if TYPE_CHECKING:
     from .hardware_server import HardwareServer
     from .session_launch import NativeSessionLauncher
     from .trusted_runtime import TrustedRuntime
+
+log = logging.getLogger(__name__)
+
+RESUME_GAP_SECONDS = 1.5
 
 
 class ManagedSensor(Protocol):
@@ -118,6 +123,7 @@ class HardwareRuntime:
         self.launcher = None
         self.supervisor = None
         self._bootstrap_until: float | None = None
+        self._last_poll_at: float | None = None
         self.started = self.closed = False
 
     def admitted(self) -> bool:
@@ -145,6 +151,7 @@ class HardwareRuntime:
                 self.server.register_session_process,
                 clock=self.clock,
             )
+            self._last_poll_at = self.clock()
         except BaseException:
             self.close()
             raise
@@ -152,6 +159,15 @@ class HardwareRuntime:
     def poll(self) -> None:
         if not self.started or self.closed:
             return
+        now = self.clock()
+        if (self._last_poll_at is not None
+                and now - self._last_poll_at >= RESUME_GAP_SECONDS):
+            # Windows monotonic time advances across sleep.  The service owner
+            # loop resumes before it reads more RPC work, so discard the old
+            # pose before a desktop session can replay a pre-sleep tent target.
+            log.info("session gap %.2fs; requiring a fresh posture", now - self._last_poll_at)
+            self.engine.reset_after_session_context_loss()
+        self._last_poll_at = now
         if self._bootstrap_until is not None:
             self.switch.bootstrap()
             if self.admitted():
@@ -249,5 +265,6 @@ class HardwareRuntime:
 
 __all__ = [
     'HardwareRuntime', 'LauncherLifecycle', 'ManagedSensor', 'PhysicalSwitch',
-    'RuntimeLifecycle', 'ServerLifecycle', 'SessionLifecycle', 'SupervisorFactory',
+    'RESUME_GAP_SECONDS', 'RuntimeLifecycle', 'ServerLifecycle', 'SessionLifecycle',
+    'SupervisorFactory',
 ]

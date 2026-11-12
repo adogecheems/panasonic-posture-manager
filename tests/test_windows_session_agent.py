@@ -78,14 +78,18 @@ class SessionAgentTests(unittest.TestCase):
     def setUp(self):
         self.context, self.client, self.display = Context(), Client(), Display()
         self.created = []
+        self.context_callbacks = []
         def display(client):
             self.assertIsNotNone(client)
             self.created.append(True)
             self.assertTrue(self.client.feedback)
             self.assertFalse(self.client.feedback[0][1])
             return self.display
+        def client_factory(available, unattended):
+            self.context_callbacks.append((available, unattended))
+            return self.client
         self.agent = WindowsSessionAgent(context_factory=lambda: self.context,
-            client_factory=lambda unattended: self.client, display_factory=display,
+            client_factory=client_factory, display_factory=display,
             executor=InlineExecutor(), lease_executor=InlineExecutor())
         self.addCleanup(self.agent.close)
 
@@ -108,6 +112,18 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(self.display.current, 0)
         self.assertTrue(self.client.closed)
         self.assertTrue(self.context.closed)
+
+    def test_agent_wires_both_control_and_unattended_context(self):
+        self.agent.start()
+        available, unattended = self.context_callbacks[-1]
+        self.assertTrue(available())
+        self.assertFalse(unattended())
+        self.context.screen_off = True
+        self.assertTrue(available())
+        self.assertTrue(unattended())
+        self.context.absent = True
+        self.assertFalse(available())
+        self.assertTrue(unattended())
 
     def test_unavailable_target_renews_the_lease_without_reporting_ready(self):
         self.client.state = replace(
@@ -241,7 +257,7 @@ class SessionAgentTests(unittest.TestCase):
             events.append(('display-restore', normal))
         display.restore = ordered_restore
         agent = WindowsSessionAgent(context_factory=lambda: self.context,
-            client_factory=lambda unattended: self.client,
+            client_factory=lambda available, unattended: self.client,
             display_factory=lambda client: display,
             slate_factory=lambda client: Slate(),
             executor=InlineExecutor(), lease_executor=InlineExecutor())
@@ -262,7 +278,7 @@ class SessionAgentTests(unittest.TestCase):
             return None
 
         agent = WindowsSessionAgent(context_factory=lambda: self.context,
-            client_factory=lambda unattended: self.client,
+            client_factory=lambda available, unattended: self.client,
             display_factory=lambda client: self.display,
             slate_factory=slate,
             executor=InlineExecutor(), lease_executor=InlineExecutor())

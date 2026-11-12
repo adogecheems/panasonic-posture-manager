@@ -102,12 +102,14 @@ class NativeScreenTests(unittest.TestCase):
     def test_qualification_loss_revokes_lease_and_restores_and_can_resume(self):
         self.backend.call('set_mode', {'mode': 'tent'})
         self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'tent')
+        self.vector = (0., -9.81, 0.)
         self.context.available = False
         self.advance()
         self.assertIsNone(self.backend.snapshot()['applied'])
         self.until(lambda: self.display.current.transform == 0)
         self.context.available = True
         self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'tent')
+        self.assertEqual(self.backend.snapshot()['manual'], 'auto')
 
     def test_stale_sensor_restores_and_physical_switch_still_wins(self):
         self.backend.call('set_mode', {'mode': 'tent'})

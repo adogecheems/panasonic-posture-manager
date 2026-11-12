@@ -26,6 +26,7 @@ class HardwareHost:
         self.instance = engine.state.instance
         self._admission_open = False
         self._admission_lost = False
+        self._authorization_lost = False
 
     def _observe_admission(self) -> bool:
         admitted = bool(self.session_admission())
@@ -39,7 +40,23 @@ class HardwareHost:
             # agent discoverable without allowing any device write.
             self._admission_open = False
             self._admission_lost = True
+            self.engine.reset_after_session_context_loss()
         return admitted
+
+    def _observe_authorization(self) -> bool:
+        process = self.session_process
+        if process is None:
+            self._authorization_lost = False
+            return True
+        authorized = self.authorize(process)
+        if not authorized and not self._authorization_lost:
+            # A peer disconnect can clear the owner before the next host tick
+            # observes the lock.  Reset even when ownership is already gone.
+            self._authorization_lost = True
+            self.engine.reset_after_session_context_loss()
+        elif authorized:
+            self._authorization_lost = False
+        return authorized
 
     def dispatch(self, peer: ConsoleIdentity, request: dict) -> dict:
         if not isinstance(peer, ConsoleIdentity) or not self.authorize(peer):
@@ -70,9 +87,10 @@ class HardwareHost:
                     hardware_release_pose=self.engine.hardware_release_pose)
 
     def tick(self) -> None:
+        authorized = self._observe_authorization()
         admitted = self._observe_admission()
         if self.session_process is not None and (
-                not self.authorize(self.session_process) or
+                not authorized or
                 (self._admission_lost and not admitted)):
             self.engine.revoke_session(self.session_process.owner)
         self.engine.tick()

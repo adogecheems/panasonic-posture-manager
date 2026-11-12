@@ -1421,6 +1421,26 @@ class RetryTests(EngineTestCase):
 
 
 class SleepEventTests(EngineTestCase):
+    def test_session_context_loss_forgets_the_old_tent_transaction(self) -> None:
+        engine = self.make()
+        engine.controller.manual = Mode.TENT
+        engine.controller.target = TENT
+        engine.controller.applied = TENT
+        engine.session_owner = SessionOwner("windows", "session")
+        engine.agent_ready = engine.controller.generation
+        generation = engine.controller.generation
+
+        engine.reset_after_session_context_loss()
+
+        self.assertEqual(engine.controller.reset_calls, 1)
+        self.assertEqual(engine.controller.manual, Mode.AUTO)
+        self.assertEqual(engine.controller.target, Target())
+        self.assertEqual(engine.controller.generation, generation + 1)
+        self.assertIsNone(engine.controller.applied)
+        self.assertIsNone(engine.session_owner)
+        self.assertIsNone(engine.agent_ready)
+        self.assertIsNone(engine._hardware_monitor.last_valid)
+
     def test_suspend_releases_actuator_and_resets_decisions(self) -> None:
         engine = self.make()
         self.lease(engine)

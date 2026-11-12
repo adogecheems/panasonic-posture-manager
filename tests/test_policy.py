@@ -306,6 +306,8 @@ class StartupBaselineTests(PolicyTestCase):
 
     def test_first_stable_tent_is_adopted_without_prompt(self):
         modes = [self.step(80.0) for _ in range(30)]
+        self.assertEqual(modes[0], MODE_DISABLED)
+        self.assertNotIn(MODE_LAPTOP, modes)
         self.assertEqual(self.policy.mode, MODE_TENT)
         self.assertNotIn(MODE_TENT_PROMPT, modes)
         self.assertIsNone(self.policy.pending_notification)
@@ -315,6 +317,8 @@ class StartupBaselineTests(PolicyTestCase):
             self.step(175.0, stand_prompt=True)
             for _ in range(30)
         ]
+        self.assertEqual(modes[0], MODE_DISABLED)
+        self.assertNotIn(MODE_LAPTOP, modes)
         self.assertEqual(self.policy.mode, MODE_STAND)
         self.assertNotIn(MODE_STAND_PROMPT, modes)
         self.assertIsNone(self.policy.pending_notification)
@@ -1110,6 +1114,13 @@ class SuspendResetTests(PolicyTestCase):
                 self.hold(pitch, tent_prompt=True, stand_prompt=True)
                 self.assertEqual(self.policy.mode, expected)
                 self.assertIsNone(self.policy.pending_prompt)
+
+    def test_resume_never_publishes_an_interim_laptop_for_tent(self):
+        self.policy.reset_after_suspend()
+        modes = [self.step(80.0) for _ in range(12)]
+        self.assertEqual(modes[0], MODE_DISABLED)
+        self.assertNotIn(MODE_LAPTOP, modes)
+        self.assertEqual(self.policy.mode, MODE_TENT)
 
     def test_screen_on_waits_for_late_samples_then_restores_normal_prompts(self):
         self.hold(0.0)

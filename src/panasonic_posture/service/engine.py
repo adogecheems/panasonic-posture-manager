@@ -522,17 +522,17 @@ class Engine:
         self._pending_wake = None
         self.tick()
 
-    def sleep_event(self, suspended: bool) -> None:
-        """PrepareForSleep: drop the lease, release the relay, invalidate anchors."""
-        self.suspended = bool(suspended)
+    def reset_after_session_context_loss(self) -> None:
+        """Forget posture decisions that cannot survive a session boundary.
+
+        Lock, suspend and hibernation can all outlive a display receipt.  The
+        next session must establish a fresh stable pose instead of replaying a
+        tent target computed before the screen disappeared.  This method stays
+        non-blocking; the caller's next engine tick performs the ordinary
+        release transaction.
+        """
         self._pending_wake = None
         self._retry_requested = False
-        self._log.info("PrepareForSleep: suspended=%s", self.suspended)
-        self._wait_for_release()
-        try:
-            self._actuator.release()
-        except Exception:  # noqa: BLE001 - never abort the sleep handler
-            self._log.exception("cannot release relay on suspend/resume")
         self._controller.reset_after_suspend()
         self.session_owner = None
         self.agent_ready = None
@@ -544,6 +544,21 @@ class Engine:
             None, None, HardwareStatus.ABSENT
         )
         self._prefer_shared = None
+        self._handoff_until = None
+        self._following_hardware = False
+
+    def sleep_event(self, suspended: bool) -> None:
+        """PrepareForSleep: drop the lease, release the relay, invalidate anchors."""
+        self.suspended = bool(suspended)
+        self._pending_wake = None
+        self._retry_requested = False
+        self._log.info("PrepareForSleep: suspended=%s", self.suspended)
+        self._wait_for_release()
+        try:
+            self._actuator.release()
+        except Exception:  # noqa: BLE001 - never abort the sleep handler
+            self._log.exception("cannot release relay on suspend/resume")
+        self.reset_after_session_context_loss()
 
     def _touch_wake(self, lease: bool) -> int | None:
         event = getattr(self._actuator, "touch_activity", None)

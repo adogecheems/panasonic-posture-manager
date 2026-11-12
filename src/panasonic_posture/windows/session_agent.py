@@ -73,8 +73,13 @@ class WindowsSessionAgent:
     def __init__(self, *, display_factory: Callable[[ClosableClient], DisplayBackend],
                  slate_factory: Callable[[ClosableClient], SlatePosture] | None = None,
                  context_factory: Callable[[], SessionContext] = _native_context,
-                 client_factory: Callable[[Callable[[], bool]], ReleaseAwareSessionClient] = (
-                     lambda available: WindowsSessionClient(unavailable=lambda: not available())),
+                 client_factory: Callable[
+                     [Callable[[], bool], Callable[[], bool]], ReleaseAwareSessionClient
+                 ] = (
+                     lambda available, unattended: WindowsSessionClient(
+                         unattended=unattended,
+                         unavailable=lambda: not available(),
+                     )),
                  executor: Executor | None = None, lease_executor: Executor | None = None) -> None:
         self.display_factory, self.slate_factory = display_factory, slate_factory
         self.context_factory, self.client_factory = context_factory, client_factory
@@ -114,7 +119,10 @@ class WindowsSessionAgent:
     def _create_process_boundary(self) -> None:
         self.context = self.context_factory()
         self._stack.callback(self.context.close)
-        self.client = self.client_factory(self.context.control_available)
+        self.client = self.client_factory(
+            self.context.control_available,
+            self.context.unattended,
+        )
         self._stack.callback(self.client.close)
         if self.executor is None:
             self.executor = thread_executor('windows-session-display')

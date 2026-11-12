@@ -51,6 +51,7 @@ class ScreenSession:
         self.closed = False
         self.context = context
         self.slate = slate
+        self._control_lost = False
         self._stack.callback(context.close)
         self._stack.callback(sensor.close)
         if slate is not None:
@@ -85,8 +86,11 @@ class ScreenSession:
         if self.closed:
             return
         self.context.poll()
-        if not self.context.control_available():
-            self.engine.revoke_session(self.owner)
+        if not self.context.control_available() and not self._control_lost:
+            self._control_lost = True
+            self.engine.reset_after_session_context_loss()
+        elif self.context.control_available():
+            self._control_lost = False
         self.bridge.drain(self.engine, self.owner)
         self.engine.tick()
         self.bridge.publish(self.engine.state)

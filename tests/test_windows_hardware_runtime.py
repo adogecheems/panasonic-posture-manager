@@ -1,9 +1,10 @@
 """Hardware-service composition: ordering, physical gating and cleanup."""
+import time
 import unittest
 from unittest.mock import patch
 
 from panasonic_posture.model import HardwareStatus
-from panasonic_posture.windows.hardware_runtime import HardwareRuntime
+from panasonic_posture.windows.hardware_runtime import HardwareRuntime, RESUME_GAP_SECONDS
 
 
 class Switch:
@@ -47,6 +48,7 @@ class Engine:
     def __init__(self, events):
         self.events = events
         self.ticks = 0
+        self.resets = 0
         self.shutdowns = 0
 
     def start(self):
@@ -59,6 +61,10 @@ class Engine:
     def tick(self):
         self.ticks += 1
         self.events.append('engine-tick')
+
+    def reset_after_session_context_loss(self):
+        self.resets += 1
+        self.events.append('engine-reset')
 
 
 class Runtime:
@@ -119,7 +125,7 @@ class Supervisor:
 
 
 class HardwareRuntimeTests(unittest.TestCase):
-    def make(self, *, value=False, status=HardwareStatus.OK):
+    def make(self, *, value=False, status=HardwareStatus.OK, clock=time.monotonic):
         events = []
         switch, sensor, engine, runtime = Switch(events, value, status), Sensor(events), Engine(events), Runtime(events)
 
@@ -144,6 +150,7 @@ class HardwareRuntimeTests(unittest.TestCase):
             server_factory=server_factory,
             launcher_factory=launcher_factory,
             supervisor_factory=supervisor_factory,
+            clock=clock,
         )
         return runtime_object, events, switch, engine, sensor, runtime
 
@@ -189,6 +196,23 @@ class HardwareRuntimeTests(unittest.TestCase):
         runtime.poll()
         self.assertEqual(engine.ticks, 1)
         self.assertEqual(events[-3:], ['supervisor-poll', 'server-poll', 'engine-tick'])
+        runtime.close()
+
+    def test_sleep_gap_resets_old_posture_before_any_session_request(self):
+        now = [10.]
+        runtime, events, _, engine, _, _ = self.make(clock=lambda: now[0])
+        runtime.start()
+        events.clear()
+
+        now[0] += RESUME_GAP_SECONDS
+        runtime.poll()
+
+        self.assertEqual(engine.resets, 1)
+        self.assertEqual(events[0], 'engine-reset')
+        self.assertLess(events.index('engine-reset'), events.index('server-poll'))
+        self.assertLess(events.index('server-poll'), events.index('engine-tick'))
+        runtime.poll()
+        self.assertEqual(engine.resets, 1)
         runtime.close()
 
     def test_close_stops_supervisor_before_releasing_owned_resources(self):
