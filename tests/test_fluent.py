@@ -532,6 +532,7 @@ from panasonic_posture.windows.startup import LoginStartup
 class Registry:
     value = None
     fail = False
+    initialized = False
     def read(self): return self.value
     def write(self, command):
         if self.fail: raise PermissionError('denied')
@@ -539,6 +540,8 @@ class Registry:
     def delete(self):
         if self.fail: raise PermissionError('denied')
         self.value = None
+    def read_initialized(self): return self.initialized
+    def mark_initialized(self): self.initialized = True
 registry = Registry()
 startup = LoginStartup([sys.executable, 'fixed-entry.py'], registry=registry)
 window.close()

@@ -1,4 +1,4 @@
-"""Opt-in current-user login startup; never installs a service or elevates."""
+"""Default-on current-user login startup; never installs a service or elevates."""
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +8,8 @@ from typing import Protocol
 
 RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 RUN_NAME = 'PanasonicPostureManager'
+PREFERENCE_KEY = r'Software\PanasonicPostureManager'
+PREFERENCE_NAME = 'LoginStartupInitialized'
 
 
 class StartupError(OSError):
@@ -18,6 +20,8 @@ class StartupRegistry(Protocol):
     def read(self) -> str | None: ...
     def write(self, command: str) -> None: ...
     def delete(self) -> None: ...
+    def read_initialized(self) -> bool: ...
+    def mark_initialized(self) -> None: ...
 
 
 class NativeRunRegistry:
@@ -45,6 +49,24 @@ class NativeRunRegistry:
         except FileNotFoundError:
             pass
 
+    def read_initialized(self) -> bool:
+        import winreg
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, PREFERENCE_KEY, 0, winreg.KEY_QUERY_VALUE
+            ) as key:
+                value, kind = winreg.QueryValueEx(key, PREFERENCE_NAME)
+        except FileNotFoundError:
+            return False
+        return kind == winreg.REG_DWORD and value == 1
+
+    def mark_initialized(self) -> None:
+        import winreg
+        with winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER, PREFERENCE_KEY, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            winreg.SetValueEx(key, PREFERENCE_NAME, 0, winreg.REG_DWORD, 1)
+
 
 @dataclass(frozen=True)
 class StartupStatus:
@@ -71,6 +93,19 @@ class LoginStartup:
         return StartupStatus(value == self.command, value in (None, self.command),
                              value not in (None, self.command))
 
+    def ensure_default_enabled(self) -> None:
+        """Register the first-launch default without overriding an explicit choice."""
+        if self.registry.read_initialized():
+            return
+        value = self.registry.read()
+        if value not in (None, self.command):
+            raise StartupError('startup-entry-conflict')
+        if value is None:
+            self.registry.write(self.command)
+            if self.registry.read() != self.command:
+                raise StartupError('startup-change-not-applied')
+        self._mark_initialized()
+
     def set_enabled(self, enabled: bool) -> None:
         if type(enabled) is not bool:
             raise ValueError('startup preference must be a boolean')
@@ -78,6 +113,9 @@ class LoginStartup:
         if value not in (None, self.command):
             raise StartupError('startup-entry-conflict')
         desired = self.command if enabled else None
+        # Persist the explicit choice first so a later launch cannot mistake a
+        # disabled value for an untouched first-run default.
+        self._mark_initialized()
         if value == desired:
             return
         if enabled:
@@ -87,10 +125,20 @@ class LoginStartup:
         if self.registry.read() != desired:
             raise StartupError('startup-change-not-applied')
 
+    def _mark_initialized(self) -> None:
+        if self.registry.read_initialized():
+            return
+        self.registry.mark_initialized()
+        if not self.registry.read_initialized():
+            raise StartupError('startup-change-not-applied')
+
 
 class UnavailableStartup:
     def status(self) -> StartupStatus:
         return StartupStatus(False, False)
+
+    def ensure_default_enabled(self) -> None:
+        pass
 
     def set_enabled(self, enabled: bool) -> None:
         raise StartupError('startup-location-unavailable')
