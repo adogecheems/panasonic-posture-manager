@@ -385,6 +385,7 @@ network_checker.shutdown()
     def run_resident(self, body):
         self.run_ui('''
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QLabel, QSystemTrayIcon
 from panasonic_posture.fluent.resident import ResidentTray
 class FakeTray(QObject):
@@ -470,6 +471,8 @@ window.hide()
 client.scenario('prompt')
 assert len(resident.tray.messages) == 1
 assert resident.tray.messages[0][0] == 'Tent mode is available'
+assert isinstance(resident.tray.messages[0][2], QIcon)
+assert resident.tray.messages[0][2].cacheKey() == window.windowIcon().cacheKey()
 epoch = client.state['pending_notification']
 client.state['pending_notification'] = None
 client.refresh()

@@ -153,8 +153,10 @@ class ResidentTray(QObject):
         title = _('Tent mode is available') if prompt == 'tent' else _('Stand mode is available')
         self._notice_click_until = 0.0
         self.notice = notice_token(state)
+        # MessageIcon enum values draw a shell status badge; the QIcon overload
+        # preserves the full application icon without that colored background.
         self.tray.showMessage(title, _('Tap to enable the current posture.'),
-                              QSystemTrayIcon.MessageIcon.Information, 15000)
+                              self.window.windowIcon(), 15000)
 
     def unavailable(self):
         self.notice = None
