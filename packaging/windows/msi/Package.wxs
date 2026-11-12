@@ -29,6 +29,7 @@
     <Property Id="ARPHELPLINK" Value="https://github.com/adogecheems/panasonic-posture-manager" />
     <Property Id="ARPCOMMENTS" Value="Panasonic 2-in-1 tablet posture, direction and hardware service." />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon.ico" />
+    <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
     <Property Id="SLATE_CONFIGURED_BY_PRODUCT">
       <RegistrySearch
           Id="SearchConfiguredSlate"
@@ -100,6 +101,18 @@
         Impersonate="no"
         Return="ignore" />
     <SetProperty
+        Id="RepairStartMenuShortcut"
+        Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[#ShortcutRepairScript]&quot; -LanguageId [UserLanguageID] -InstallFolder &quot;[INSTALLFOLDER]&quot;"
+        Before="RepairStartMenuShortcut"
+        Sequence="execute" />
+    <CustomAction
+        Id="RepairStartMenuShortcut"
+        BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+        DllEntry="WixQuietExec"
+        Execute="deferred"
+        Impersonate="no"
+        Return="check" />
+    <SetProperty
         Id="RemoveLocalizedStartMenu"
         Value="&quot;[#PythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --remove --language-id [UserLanguageID]"
         Before="RemoveLocalizedStartMenu"
@@ -132,7 +145,8 @@
 
     <InstallExecuteSequence>
       <Custom Action="RollbackSlate" Before="ConfigureSlate" Condition="NOT REMOVE" />
-      <Custom Action="LocalizeStartMenu" Before="ConfigureSlate" Condition="NOT REMOVE" />
+      <Custom Action="LocalizeStartMenu" After="CreateShortcuts" Condition="NOT REMOVE" />
+      <Custom Action="RepairStartMenuShortcut" After="LocalizeStartMenu" Condition="NOT REMOVE" />
       <Custom Action="ConfigureSlate" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="ConfigureHardwareService" After="InstallServices" Condition="NOT REMOVE" />
       <Custom Action="RemoveLocalizedStartMenu" Before="RestoreSlate"

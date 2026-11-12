@@ -65,9 +65,23 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertEqual(first, second)
         root = ET.fromstring(first)
         self.assertTrue(root.tag.endswith('Wix'))
+        parents = {
+            child: parent
+            for parent in root.iter()
+            for child in parent
+        }
+        shortcut = next(
+            element for element in root.iter()
+            if element.tag.endswith('Shortcut')
+            and element.get('Id') == 'ApplicationStartMenuShortcut'
+        )
+        shortcut_file = parents[shortcut]
+        self.assertTrue(shortcut_file.tag.endswith('File'))
+        self.assertEqual(shortcut_file.get('Id'), 'PythonwExe')
         self.assertIn('Name="a&amp;b.py"', first)
         self.assertIn('Id="PythonHardwareExe"', first)
         self.assertIn('Id="HardwareServiceScript"', first)
+        self.assertIn('Id="ShortcutRepairScript"', first)
         self.assertIn('Id="ApplicationStartMenuShortcut"', first)
         self.assertIn('Advertise="yes"', first)
         self.assertIn('Icon="ProductIcon.ico"', first)
@@ -83,8 +97,13 @@ class MsiPayloadTests(unittest.TestCase):
 
     def test_package_template_installs_full_runtime_and_reversible_csm_setup(self):
         source = (ROOT / 'packaging/windows/msi/Package.wxs').read_text(encoding='utf-8')
+        license_text = (ROOT / 'packaging/windows/msi/LICENSE.rtf').read_text(
+            encoding='utf-8'
+        )
         root = ET.fromstring(source)
         self.assertTrue(root.tag.endswith('Wix'))
+        self.assertIn(msi.APPLICATION_DISPLAY_NAME, license_text)
+        self.assertNotIn('Panasonic Posture Manager', license_text)
         for value in (
             'Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
             'Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
@@ -104,6 +123,7 @@ class MsiPayloadTests(unittest.TestCase):
             'WINDOWS_BUILD &gt;= 10240',
             'Id="ProgramMenuFolder"',
             'Id="ARPPRODUCTICON" Value="ProductIcon.ico"',
+            'Id="DISABLEADVTSHORTCUTS" Value="1"',
             'Id="ProductIcon.ico"',
             'work.mmoe.panasonic.PostureManager.ico',
             'DllEntry="WixQuietExec"',
@@ -113,6 +133,7 @@ class MsiPayloadTests(unittest.TestCase):
             'ScheduleReboot',
             'Id="WixUI_Minimal"',
             'Id="LocalizeStartMenu"',
+            'Id="RepairStartMenuShortcut"',
             'panasonic_posture.windows.shortcut_locale --install',
             '--language-id [UserLanguageID]',
             'Id="RemoveLocalizedStartMenu"',
@@ -120,6 +141,21 @@ class MsiPayloadTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertIn(value, source)
+
+    def test_start_menu_localization_runs_after_shortcuts_are_created(self):
+        root = ET.fromstring(
+            (ROOT / 'packaging/windows/msi/Package.wxs').read_text(encoding='utf-8')
+        )
+        sequence = next(
+            element for element in root.iter()
+            if element.tag.endswith('InstallExecuteSequence')
+        )
+        localize = next(
+            element for element in sequence
+            if element.get('Action') == 'LocalizeStartMenu'
+        )
+        self.assertEqual(localize.get('After'), 'CreateShortcuts')
+        self.assertIsNone(localize.get('Before'))
 
     @unittest.skipUnless(sys.platform == 'win32', 'MSI build runs on Windows')
     def test_failed_msi_build_preserves_the_existing_artifact(self):

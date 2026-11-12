@@ -13,6 +13,9 @@ PIPE_NAME = r'\\.\pipe\PanasonicPostureManager.Hardware.v1'
 CLIENT_ACCESS = 0x12019b
 PIPE_SDDL = 'O:SYG:SYD:P(A;;GA;;;SY)(A;;0x12019b;;;IU)'
 MAX_CLIENTS = 4
+PIPE_TYPE_MESSAGE = 4
+PIPE_READMODE_MESSAGE = 2
+PIPE_REJECT_REMOTE_CLIENTS = 8
 FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000
 FILE_FLAG_OVERLAPPED = 0x40000000
 ERROR_IO_PENDING = 997
@@ -108,7 +111,7 @@ class NativePipes:
             attrs = SecurityAttributes(C.sizeof(SecurityAttributes), descriptor, False)
             handle = self.kernel.CreateNamedPipeW(
                 name, 3 | FILE_FLAG_OVERLAPPED | (FILE_FLAG_FIRST_PIPE_INSTANCE if first else 0),
-                4 | 2 | 1 | 8,
+                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_REJECT_REMOTE_CLIENTS,
                 MAX_CLIENTS, MAX_FRAME, MAX_FRAME, 0, C.byref(attrs),
             )
             if handle == C.c_void_p(-1).value:
@@ -309,6 +312,7 @@ class NativePipes:
 
 
 __all__ = [
-    'CLIENT_ACCESS', 'MAX_CLIENTS', 'NativePipes', 'PIPE_NAME', 'PIPE_SDDL',
-    'PipePoll', 'PipeState',
+    'CLIENT_ACCESS', 'MAX_CLIENTS', 'NativePipes', 'PIPE_NAME',
+    'PIPE_READMODE_MESSAGE', 'PIPE_REJECT_REMOTE_CLIENTS', 'PIPE_SDDL',
+    'PIPE_TYPE_MESSAGE', 'PipePoll', 'PipeState',
 ]

@@ -488,7 +488,10 @@ class NativePipeReadTests(unittest.TestCase):
         pipes._lock = threading.Lock()
         self.assertEqual(pipes.create(r'\\.\pipe\fixture', first=True), 10)
         open_mode = calls[0][1][1]
+        pipe_mode = calls[0][1][2]
         self.assertTrue(open_mode & FILE_FLAG_OVERLAPPED)
+        self.assertEqual(pipe_mode, 4 | 2 | 8)
+        self.assertFalse(pipe_mode & 1, 'overlapped I/O requires blocking pipe mode')
         self.assertEqual(pipes.connect(r'\\.\pipe\fixture'), 11)
         client_flags = calls[1][1][5]
         self.assertTrue(client_flags & FILE_FLAG_OVERLAPPED)

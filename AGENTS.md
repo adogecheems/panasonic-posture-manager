@@ -21,11 +21,11 @@
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
 - **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。开始菜单、运行窗口和任务栏共享固定多尺寸 ICO 与 AppUserModelID。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首事件前 `hardware_status=absent`；当前源码会让已认证会话发送 `not-ready` 心跳，但仍拒绝显示回执。
-- **下一智能体优先动作**：`bf3d436` 加本轮 MSI 许可页名称修复已生成待发布 ZIP/MSI，包含 overlapped 管道、显式边界整理、无首个 ETW 启动、CSM 发布后方向复核和完整显示名。本机仍安装旧的短名 MSI，下一步需用户明确授权安装当前候选包并做真机姿态验收；重点复测物理平板退出到帐篷时方向是否正确、旋转锁是否在 ready 前保持启用，以及进入物理平板后的 ETW 接管、显示/CSM 清理和中断恢复。安装后还须观察 SYSTEM 服务管道在停止和客户端中断时是否能收回 overlapped 操作，不得用自动化 fixture 代替真机验收。
-- **验证基线**：2026-11-12 待发布 MSI SHA-256 为 `582AF17B3D01C315E5D4BDF82DE279C7D57B686E18D66413B10288590C4F71BC`，便携 ZIP 为 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。Windows 发现式全套 319 项、Fluent 50 项、前端 14 项、会话刷新 9 项、可选输入 6 项、i18n 113 个 msgid 和 `compileall` 通过；MSI 通过 ICE61，管理解包 3006 个清单文件哈希一致，受限硬件解释器导入通过。此前本机安装的 MSI 仍为 `6E2551FC58A0BB9A4B72DA45E3CAD983AF32C50A6D26CE4C806BA45174899729`，不代表当前候选包。
-- **关于页验证**：5 项 jsproxy 响应/版本比较单测、完整 Fluent 50 项和 i18n 113 个 msgid 通过；Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer，真实端点返回 `2.4.0 -> 2.4.0`。待发布 MSI 已包含该功能，当前已安装的旧 MSI 尚未更新。
-- **未验证项**：GitHub Windows CI、Authenticode 签名（当前候选 MSI 为 `NotSigned`）、当前候选包的首次安装/卸载/同版本升级链路、首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
-- **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。退出物理平板时，Windows 若在帐篷目标前自行恢复方向锁，事务会采用并记录该状态；CSM 发布后再复核锁和方向，平台改写会触发一次有界重发。待发布 MSI 已包含该修复，真机退出方向仍需安装当前候选包后复测。
+- **下一智能体优先动作**：本机安装的 `2.4.0` 已包含命名管道 `PIPE_NOWAIT` 修复和可用的中文开始菜单快捷方式，硬件服务 Running，独立 RPC 连续连接返回 `backend=ready`，会话已连接。下一步需用户明确授权做真机姿态验收；重点复测物理平板退出到帐篷、ready 前旋转锁、ETW 接管和显示/CSM 清理。
+- **验证基线**：本机最终 MSI SHA-256 为 `C2E8A31C528EFB377E82021BC275189F5440E71F18B0C75D26819B9E72605C36`，便携 ZIP 为 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。Windows 发现式全套 319 项、Fluent 50 项、前端 14 项、会话刷新 9 项、可选输入 6 项、i18n 113 个 msgid 和 `compileall` 通过；安装后 3007 个清单文件哈希一致，独立 RPC 连续 20 次连接成功，中文快捷方式目标和启动均验证通过。
+- **关于页验证**：5 项 jsproxy 响应/版本比较单测、完整 Fluent 50 项和 i18n 113 个 msgid 通过；Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer，真实端点返回 `2.4.0 -> 2.4.0`。当前安装已包含该功能。
+- **未验证项**：GitHub Windows CI、Authenticode 签名（当前 MSI 为 `NotSigned`）、卸载及跨版本升级链路、首个真实服务 ETW 事件、SYSTEM 会话姿态、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
+- **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。退出物理平板时，Windows 若在帐篷目标前自行恢复方向锁，事务会采用并记录该状态；CSM 发布后再复核锁和方向，平台改写会触发一次有界重发。当前安装已包含该修复，真机退出方向仍需复测。
 
 ## 1. 工作流程
 
@@ -1388,3 +1388,21 @@ make WERROR=1 check
 - 验证：`compileall`；Windows 发现式全套 319 项、Fluent 50 项、前端 14 项、会话刷新 9 项、可选输入 6 项和 i18n 113 个 msgid 全部通过。重新构建的 ZIP 由自带 `python.exe`、`pythonw.exe` 和受限 `python-hardware.exe` 完成 Qt、中文资源、软件事务、后台回收和模块隔离 smoke；MSI 通过 `wix msi validate -sice ICE61`，管理解包包含 3006 个清单文件且哈希全部一致，反编译确认产品、功能、快捷方式、服务显示名和许可页均使用完整名称。发布版本脚本以 `v2.4.0` 校验返回 `2.4.0`。`test_release` 6 项中 5 项通过，GTK UI 版本用例因 Windows 运行时缺少 PyGObject 未导入；POSIX 打包脚本检查因本机缺少 `bash`/`sh` 不适用。
 - 产物：`dist/windows/panasonic-posture-manager-2.4.0-windows-x64.msi`，SHA-256 `582AF17B3D01C315E5D4BDF82DE279C7D57B686E18D66413B10288590C4F71BC`；`dist/windows/panasonic-posture-windows-preview.zip`，SHA-256 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。
 - 未验证：当前候选 MSI 未安装，安装/卸载/升级、首个真实 ETW 事件、SYSTEM 会话、显示与 CSM 真机行为仍需明确授权；GitHub Windows CI 和 Authenticode 签名尚未执行，当前 MSI 为 `NotSigned`。
+
+### 2026-11-12 - 修复 MSI 开始菜单本地化顺序并更新本机
+
+- 变更：`LocalizeStartMenu` 从无明确标准动作依赖的 `Before="ConfigureSlate"` 改为 `After="CreateShortcuts"`，确保 Windows Installer 先创建英文基础目录和快捷方式，再由受保护运行时按 `UserLanguageID` 改为当前 UI 语言名称。新增 XML 顺序回归测试。
+- 动机：首次安装修复版时，安装日志显示 `UserLanguageID=2052`，但自定义动作在 `CreateShortcuts` 前运行并以 `FileNotFoundError` 退出，因而留下英文开始菜单目录。安装整体返回成功掩盖了该展示退化。
+- 影响：只修正 MSI 自定义动作顺序，不改产品运行时、RPC、ETW/CSM、显示、租约、权限或卸载路径。同版本升级继续由既有 `MajorUpgrade` 处理。
+- 验证：MSI 测试 5 项通过；修复版重新构建并通过 ICE61；本机同版本升级返回 `0`，安装日志无本地化异常；开始菜单已生成「松下二合一平板电脑姿态管理工具」目录和中文快捷方式；ARP 显示完整名称 `2.4.0`，服务 Running，命名管道存在，3006 个安装清单文件哈希一致，中文快捷方式成功启动窗口。
+- 产物：修复版 MSI SHA-256 为 `EFAD51C90EF172401D79B4C58B653282DFF32B7ED3CCCD21DA74867BC7827F03`；便携 ZIP 不受该 MSI 顺序修复影响，仍为 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。
+- 未验证：Authenticode 签名、GitHub Windows CI、卸载和跨版本升级、真实 ETW/显示/CSM 链路仍待执行。
+
+### 2026-11-13 - 修复 Windows 命名管道永久忙并修正快捷方式落点
+
+- 变更：`NativePipes.create()` 的 pipe mode 原为 `4 | 2 | 1 | 8`，其中 `1` 是 `PIPE_NOWAIT` 而不是 `PIPE_WAIT`。现改为显式 `PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_REJECT_REMOTE_CLIENTS`，保留 `FILE_FLAG_OVERLAPPED`；新增 pipe mode 无 `PIPE_NOWAIT` 的回归断言。
+- 变更：开始菜单快捷方式仍以广告式作者源通过 ICE 校验，同时设置 `DISABLEADVTSHORTCUTS=1`；本地化完成后由受保护安装动作删除遗留广告式 `.lnk`，再用 Windows Script Host 创建目标明确指向 `pythonw.exe` 的普通快捷方式。
+- 动机：安装后服务本身为 Running，但所有客户端连接均返回 `WinError 231`；会话日志持续记录所有管道实例忙。`PIPE_NOWAIT` 与 overlapped I/O 组合使服务槽位无法按预期监听/回收。实际安装还暴露广告式快捷方式在当前 MSI 中不可启动的问题。
+- 影响：不改变 RPC 帧、鉴权、租约、ETW/CSM、显示事务或服务权限。管道仍是本地、消息模式、拒绝远程客户端并限制四个实例；开始菜单仍为每机器入口。
+- 验证：管道/客户端/会话相关 49 项和 MSI 5 项目标测试通过；最终 MSI 通过完整 WiX 验证并安装成功。安装后 `GetState` 返回 `backend=ready`、`hardware_status=ok`、`session_connected=True`，UI 运行时连续 20 次独立 RPC 连接成功；中文开始菜单快捷方式目标为 `runtime\pythonw.exe`，可启动且窗口响应正常；3007 个安装清单文件哈希一致。
+- 未验证：真机姿态、ETW/显示/CSM、Authenticode 和 GitHub Windows CI。

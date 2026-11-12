@@ -40,6 +40,7 @@ FIXED_FILE_IDS = {
     'configure-slate-device.ps1': 'SlateConfigScript',
     'hardware-service.ps1': 'HardwareServiceScript',
     'launch.py': 'LaunchScript',
+    'repair-start-menu-shortcut.ps1': 'ShortcutRepairScript',
     'runtime/python-hardware.exe': 'PythonHardwareExe',
     'runtime/pythonw.exe': 'PythonwExe',
 }
@@ -98,6 +99,9 @@ def payload_files(runtime: Path, dependencies: Path) -> dict[str, Path | bytes]:
     )
     files['hardware-service.ps1'] = (
         ROOT / 'packaging/windows/hardware-service.ps1'
+    )
+    files['repair-start-menu-shortcut.ps1'] = (
+        ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
     )
     selected = {
         name: value for name, value in files.items()
@@ -163,19 +167,23 @@ def _service_xml() -> str:
 
 def _shortcut_xml() -> str:
     return f'''
-        <Shortcut
-            Id="ApplicationStartMenuShortcut"
-            Directory="ApplicationProgramsFolder"
-            Name="{APPLICATION_DISPLAY_NAME}"
-            Description="Open {APPLICATION_DISPLAY_NAME}"
-            Advertise="yes"
-            Icon="ProductIcon.ico"
-            Arguments="-I &quot;[INSTALLFOLDER]launch.py&quot;"
-            WorkingDirectory="INSTALLFOLDER">
-          <ShortcutProperty
-              Key="System.AppUserModel.ID"
-              Value="work.mmoe.panasonic.PostureManager" />
-        </Shortcut>
+          <Shortcut
+              Id="ApplicationStartMenuShortcut"
+              Directory="ApplicationProgramsFolder"
+              Name="{APPLICATION_DISPLAY_NAME}"
+              Description="Open {APPLICATION_DISPLAY_NAME}"
+              Advertise="yes"
+              Icon="ProductIcon.ico"
+              Arguments="-I &quot;[INSTALLFOLDER]launch.py&quot;"
+              WorkingDirectory="INSTALLFOLDER">
+            <ShortcutProperty
+                Key="System.AppUserModel.ID"
+                Value="work.mmoe.panasonic.PostureManager" />
+          </Shortcut>'''
+
+
+def _shortcut_remove_xml() -> str:
+    return '''
         <RemoveFolder
             Id="RemoveApplicationProgramsFolder"
             Directory="ApplicationProgramsFolder"
@@ -229,14 +237,19 @@ def render_components(
             f'Guid={_attribute(_component_guid(name))} Bitness="always64">'
         )
         source = str(source_for(name))
-        lines.append(
+        file_xml = (
             f'        <File Id={_attribute(_file_id(name))} '
-            f'Name={_attribute(path.name)} Source={_attribute(source)} KeyPath="yes" />'
+            f'Name={_attribute(path.name)} Source={_attribute(source)} KeyPath="yes"'
         )
+        if name == 'runtime/pythonw.exe':
+            lines.append(file_xml + '>')
+            lines.append(_shortcut_xml())
+            lines.append('        </File>')
+            lines.append(_shortcut_remove_xml())
+        else:
+            lines.append(file_xml + ' />')
         if name == 'runtime/python-hardware.exe':
             lines.append(_service_xml())
-        if name == 'runtime/pythonw.exe':
-            lines.append(_shortcut_xml())
         lines.append('      </Component>')
     lines.extend(('    </ComponentGroup>', '  </Fragment>', '</Wix>', ''))
     return '\n'.join(lines)
