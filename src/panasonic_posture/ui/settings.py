@@ -4,14 +4,18 @@ from gi.repository import Adw, Gdk, Gtk
 from .. import __version__
 from ..frontend.ports import UIClient
 from ..frontend.actions import SettingsModel, ActionRunner
-from ..frontend.mode_copy import translated_mode_copy
 from .common import _
 from .errors import describe_error
 
 AUTHOR_NAME = 'adogecheems'
 APP_VERSION = __version__
 GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
-MODES = translated_mode_copy(_)
+MODES = (
+    ('auto', _('Automatic'), _('Switch automatically with the current posture')),
+    ('laptop', _('Laptop'), _('Best for typing and precise work')),
+    ('tent', _('Tent'), _('Designed for use in tent form')),
+    ('stand', _('Stand'), _('Designed for viewing in stand form')),
+)
 PREVIOUS_KEYS = {Gdk.KEY_Up, Gdk.KEY_Left, Gdk.KEY_KP_Up, Gdk.KEY_KP_Left}
 NEXT_KEYS = {Gdk.KEY_Down, Gdk.KEY_Right, Gdk.KEY_KP_Down, Gdk.KEY_KP_Right}
 

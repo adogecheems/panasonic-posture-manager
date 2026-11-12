@@ -12,7 +12,7 @@
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
 - **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。`hardware_ipc.py` 只保留兼容导出。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
 - **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。GitHub、版本和外观行的右侧控件统一垂直居中；「检查更新」和「校准」使用填充式强调按钮。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
-- **双端模式文案**：自动、笔记本、帐篷、支架四项目的名称与说明只定义在 `frontend/mode_copy.py`，Windows Fluent 与 Linux GTK 都调用同一翻译表；平板仍只作为物理状态，不进入手动模式列表。
+- **双端模式文案**：自动、笔记本、帐篷、支架四项目的名称与说明分别由 `fluent/pages.py` 与 `ui/settings.py` 维护，不再经过共享文案模块；平板仍只作为物理状态，不进入手动模式列表。
 - **产品边界**：Windows 默认连接独立 LocalSystem 硬件服务，不再接受 `--native-backend`、`--hardware-backend` 或 `--simulate-backend`。`--backend` 仅保留为隔离软件预览，`--demo` 为内存演示。生产路径不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示屏幕键盘。
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
@@ -1297,6 +1297,13 @@ make WERROR=1 check
 - 影响：用户可见文案保持现有英文 msgid 和中文译文不变；模式代码、能力判断、平板物理状态、默认值、设置写入和硬件行为均不改变。
 - 同步：`frontend/mode_copy.py`、`fluent/pages.py`、`ui/settings.py`、i18n 源文件扫描、`po/POTFILES.in`、前端回归测试与本记录。
 - 验证：共享模式文案与前端 14 项测试通过，i18n 114 个 msgid 全部翻译且无未引用项；Windows 关于页和模式能力目标测试通过。本轮完整 Fluent 套件复跑在外部中断前已通过的用例无失败，但未完成；GTK 完整套件需在 Linux 环境继续验证。
+
+### 2026-11-12 - 解耦双端模式文案
+
+- 变更：撤销上一项的共享文案模块。Windows Fluent 在 `fluent/pages.py` 维护模式名称与说明，Linux GTK 在 `ui/settings.py` 维护自己的模式行；删除 `frontend/mode_copy.py` 及对应 i18n 扫描和前端测试接入。
+- 动机：模式文案没有跨平台运行时行为，只在两个界面内各自使用；把它放进无框架的共用层增加了不必要的间接层，使界面代码为了复用四个常量而依赖共享模块。
+- 影响：四种手动模式的顺序、英文 msgid、中文译文、能力判断、平板物理状态和设置写入均保持不变。
+- 验证：前端 13 项、Fluent 模式说明目标测试、`src` 字节码编译和 i18n 113 个 msgid 检查通过；GTK UI 契约需在带 PyGObject 的 Linux 环境复验。
 
 ### 2026-11-12 - Windows 无需首个 ETW 即可启动
 
