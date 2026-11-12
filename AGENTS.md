@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-12）
 
-- **最新功能提交**：`bf077de fix: localize Windows shell names`。上一功能提交 `113f283 feat: enable login startup by default`。更早的旋转锁修复 `134b6b8 fix: keep Windows tent rotation locked` 保证退出物理平板后，若 Windows 已自行恢复方向锁，显示事务会重新取得该锁的 journal 所有权；软件 CSM 发布后再次核对固定方向与锁，平台若改写则只重发一次 CCD 目标，失败时恢复且不确认 ready。
+- **最新功能提交**：`fbbc357 fix: localize Windows shell names`。上一功能提交 `113f283 feat: enable login startup by default`。更早的旋转锁修复 `134b6b8 fix: keep Windows tent rotation locked` 保证退出物理平板后，若 Windows 已自行恢复方向锁，显示事务会重新取得该锁的 journal 所有权；软件 CSM 发布后再次核对固定方向与锁，平台若改写则只重发一次 CCD 目标，失败时恢复且不确认 ready。
 - **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
 - **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。崩溃恢复始终使用 `pending.original`。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
