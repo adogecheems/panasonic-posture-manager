@@ -25,6 +25,18 @@ def displayed_pose(state: dict) -> str:
         # Hardware slate mode is authoritative even if the accelerometer pose
         # is flat or stale while the device is folded.
         return 'tablet'
+    if (
+        state.get('manual') == 'auto'
+        and state.get('pending_notification') is not None
+        and state.get('pending_prompt') in ('tent', 'stand')
+    ):
+        # A detected fold is only a prompt request until the user confirms it.
+        # Keep the last confirmed target visible instead of presenting an
+        # unaccepted tent or stand as the current mode.
+        applied = (state.get('applied') or {}).get('mode')
+        if applied == 'hardware':
+            return 'tablet'
+        return applied if applied in POSES else 'laptop'
     pose = state.get('pose')
     if state.get('manual') == 'auto' and pose in POSES:
         # The current-posture page describes the recognized physical posture.

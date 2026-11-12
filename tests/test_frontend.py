@@ -149,6 +149,32 @@ from panasonic_posture.frontend import ports, state, actions
         model.update(state(target={'mode': 'unavailable'}, hardware=None), 3)
         self.assertEqual(model.detail, Detail.SWITCH)
 
+    def test_unconfirmed_auto_prompt_keeps_the_last_confirmed_pose(self):
+        for prompt, detected in (('tent', 'tent'), ('stand', 'stand')):
+            with self.subTest(prompt=prompt):
+                model = PostureModel()
+                model.update(state(
+                    manual='auto', target={'mode': 'laptop'},
+                    applied={'mode': 'laptop'}, pose=detected,
+                    pending_notification=7, pending_prompt=prompt,
+                ), 0)
+                self.assertEqual(model.pose, 'laptop')
+
+                model.update(state(
+                    manual='auto', target={'mode': prompt},
+                    applied={'mode': prompt}, pose=detected,
+                    pending_notification=None, pending_prompt=None,
+                ), 1)
+                self.assertEqual(model.pose, prompt)
+
+    def test_unconfirmed_auto_prompt_defaults_to_laptop_without_prior_result(self):
+        model = PostureModel()
+        model.update(state(
+            manual='auto', target={'mode': 'laptop'}, applied=None, pose='tent',
+            pending_notification=7, pending_prompt='tent',
+        ), 0)
+        self.assertEqual(model.pose, 'laptop')
+
     def test_settings_coalesce_failure_and_disconnect(self):
         client, errors, changes = Client(), [], []
         model = SettingsModel(client, lambda: changes.append(True), errors.append)
