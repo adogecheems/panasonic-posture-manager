@@ -30,11 +30,20 @@ class WindowsPackagingTests(unittest.TestCase):
             (dependencies / 'qfluentwidgets/__init__.py').write_text('', encoding='utf-8')
             qml = dependencies / 'PyQt6/Qt6/qml/Unused/Long/Path/asset.png'
             qml.parent.mkdir(parents=True)
-            qml.write_bytes(b'not part of the widget preview')
+            qml.write_bytes(b'not part of the widget runtime')
+            for relative in ('win32com/test/test_private.py', 'win32com/demos/demo.py'):
+                path = dependencies / relative
+                path.parent.mkdir(parents=True)
+                path.write_bytes(b'not part of the application')
+            for relative in ('Lib/turtledemo/turtle.py', 'Lib/idlelib/idle_test/test_private.py'):
+                path = runtime / relative
+                path.parent.mkdir(parents=True)
+                path.write_bytes(b'not part of the application')
             # Runtime DLLs and the complete archive may be large. Building
             # must hash and write bounded chunks instead of loading them whole.
             with patch.object(Path, 'read_bytes', side_effect=AssertionError('unbounded build read')):
                 archive = builder.build(root / 'output', runtime, dependencies)
+            self.assertEqual(archive.name, 'panasonic-posture-windows-portable.zip')
             staged = root / 'staged'
             builder.stage_application(staged, runtime, dependencies)
             with zipfile.ZipFile(archive) as bundle:
@@ -43,7 +52,7 @@ class WindowsPackagingTests(unittest.TestCase):
                 for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/python._pth',
                              'runtime/pythonw._pth', 'runtime/python-hardware.exe',
                              'runtime/python-hardware._pth',
-                             'app/panasonic_posture/windows/client.py',
+                             'app/panasonic_posture/windows/hardware_client.py',
                              'app/panasonic_posture/windows/update_check.py',
                              'app/panasonic_posture/fluent/update_check.py',
                              'data/assets/lets-note-window-icon.png',
@@ -53,8 +62,21 @@ class WindowsPackagingTests(unittest.TestCase):
                     self.assertIn(prefix + name, names)
                 self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in names))
                 self.assertFalse(any('/qml/' in name for name in names))
+                self.assertFalse(any('/test/' in name or '/tests/' in name or
+                                     '/demo/' in name or '/demos/' in name for name in names))
+                self.assertFalse(any('/turtledemo/' in name or '/idle_test/' in name
+                                     for name in names))
                 self.assertFalse(any(name.endswith('.ps1') for name in names))
                 self.assertFalse(any('Hardware Service' in name for name in names))
+                for retired in (
+                    'app/panasonic_posture/fluent/demo.py',
+                    'app/panasonic_posture/windows/backend.py',
+                    'app/panasonic_posture/windows/client.py',
+                    'app/panasonic_posture/windows/private_backend.py',
+                    'app/panasonic_posture/windows/simulation.py',
+                ):
+                    with self.subTest(retired=retired):
+                        self.assertNotIn(prefix + retired, names)
                 self.assertNotIn(prefix + 'runtime/python311._pth', names)
                 self.assertLess(max(map(len, names)), 240)
                 native = bundle.read(prefix + 'Hardware.cmd').decode('utf-8')

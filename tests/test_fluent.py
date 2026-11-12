@@ -1,4 +1,4 @@
-"""Windows UI preview: pure demo state plus optional isolated Qt widgets."""
+"""Windows UI behavior with synthetic clients and optional isolated Qt widgets."""
 import importlib.util
 import os
 from pathlib import Path
@@ -6,13 +6,17 @@ import subprocess
 import sys
 import unittest
 
-from panasonic_posture.fluent.demo import DemoClient, UnavailableClient
+from panasonic_posture.fluent.unavailable import UnavailableClient
+try:
+    from tests.fluent_fixture import SyntheticClient
+except ModuleNotFoundError:
+    from fluent_fixture import SyntheticClient
 
 
-class DemoTests(unittest.TestCase):
+class UiClientTests(unittest.TestCase):
     def setUp(self):
         self.jobs, self.states = [], []
-        self.client = DemoClient(lambda delay, callback: self.jobs.append(callback))
+        self.client = SyntheticClient(lambda delay, callback: self.jobs.append(callback))
         self.client.start(self.states.append, lambda: None)
 
     def drain(self):
@@ -71,28 +75,27 @@ class DemoTests(unittest.TestCase):
         result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent', '--help'],
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('--demo', result.stdout)
+        self.assertIn('--background', result.stdout)
+        for retired in ('--demo', '--backend', '--scenario', '--settings'):
+            self.assertNotIn(retired, result.stdout)
 
-    def test_scenario_requires_explicit_demo(self):
-        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
-                                 '--scenario', 'hardware'], text=True, capture_output=True, timeout=10)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('--scenario requires --demo', result.stderr)
-
-    def test_retired_backend_selector_options_are_not_accepted(self):
-        for option in ('--native-backend', '--hardware-backend', '--simulate-backend'):
+    def test_retired_development_options_are_not_accepted(self):
+        for option in ('--demo', '--backend', '--scenario', '--settings',
+                       '--native-backend', '--hardware-backend', '--simulate-backend'):
             with self.subTest(option=option):
                 result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
                     option], text=True, capture_output=True, timeout=10)
                 self.assertEqual(result.returncode, 2)
                 self.assertIn('unrecognized arguments', result.stderr)
 
-    def test_background_rejects_preview_selection_before_loading_qt(self):
+    def test_background_is_windows_only(self):
+        if sys.platform == 'win32':
+            self.skipTest('platform check is exercised on non-Windows hosts')
         result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
-                                 '--background', '--demo'],
+                                 '--background'],
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 2)
-        self.assertIn('--background cannot be combined', result.stderr)
+        self.assertIn('--background requires Windows', result.stderr)
 
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
@@ -150,13 +153,13 @@ class DemoTests(unittest.TestCase):
 
 
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
-                     'optional Fluent preview dependencies are not installed')
+                     'optional Fluent UI dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
     def test_application_name_follows_the_windows_ui_language(self):
         self.run_ui('''
 from panasonic_posture.fluent.app import configure_application
 from panasonic_posture.fluent.app import Window
-from panasonic_posture.fluent.demo import UnavailableClient
+from panasonic_posture.fluent.unavailable import UnavailableClient
 from panasonic_posture.product import APPLICATION_DISPLAY_NAME
 assert configure_application('zh_CN') == '松下二合一平板电脑姿态管理工具'
 assert app.applicationName() == '松下二合一平板电脑姿态管理工具'
@@ -259,11 +262,12 @@ else:
 
     def test_about_repository_and_update_check_use_shared_user_copy(self):
         self.run_ui('''
-from PyQt6.QtCore import QObject, QByteArray, QUrl, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, QByteArray, QUrl, Qt, QTimer, pyqtSignal
 from qfluentwidgets import PrimaryPushButton, SettingCard
 from panasonic_posture.fluent.app import Window
 from panasonic_posture.fluent.update_check import UpdateChecker
 from panasonic_posture.windows.update_check import UpdateInfo
+from fluent_fixture import SyntheticClient
 
 class FakeChecker(QObject):
     completed = pyqtSignal(object)
@@ -281,7 +285,7 @@ class FakeChecker(QObject):
 
 checker = FakeChecker()
 window.close()
-window = Window(demo=True, language='en', update_checker=checker)
+window = Window(client=SyntheticClient(QTimer.singleShot), language='en', update_checker=checker)
 window.show()
 assert window.settings.github_button.getUrl().toString() == (
     'https://github.com/adogecheems/panasonic-posture-manager'
@@ -406,7 +410,7 @@ class FakeTray(QObject):
     def hide(self): self.visible = False
     def showMessage(self, *args): self.messages.append(args)
 window.close()
-client = DemoClient(QTimer.singleShot)
+client = SyntheticClient(QTimer.singleShot)
 client.state.update(input_control_available=False,
                     available_modes=['auto', 'laptop', 'tent', 'stand'])
 window = Window(client=client, language='en')
@@ -616,7 +620,7 @@ assert window.settings.startup_switch.isEnabled()
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QLabel
 window.close()
-client = DemoClient(QTimer.singleShot)
+client = SyntheticClient(QTimer.singleShot)
 client.state.update(input_control_available=False,
                     available_modes=['auto', 'laptop', 'tent', 'stand'])
 window = Window(client=client, language='en')
@@ -639,26 +643,30 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from PyQt6.QtTest import QTest
 from panasonic_posture.model import SensorInfo
-from panasonic_posture.windows.backend import Backend
+from panasonic_posture.service.settings_store import SettingsStore
 from panasonic_posture.windows.hardware_client import HardwareUIClient
 from panasonic_posture.windows.hardware_host import HardwareHost, ConsoleIdentity
 from panasonic_posture.windows.hardware_ipc import HardwareConnection, PipePoll
+from windows_fixture import Simulation
 window.close()
 with TemporaryDirectory() as directory:
-    backend = Backend(Path(directory)/'settings.json', simulate=True)
+    simulation = Simulation(
+        SettingsStore(Path(directory) / 'settings.json'),
+        'fluent-hardware-fixture',
+    )
     # Synthetic ports supply native-shaped snapshots for this widget test.
     # No SYSTEM process, sensor, display or input device is used here.
-    backend.simulation.sensor.info = SensorInfo(ready=True, backend='windows-winrt')
+    simulation.sensor.info = SensorInfo(ready=True, backend='windows-winrt')
     peer = ConsoleIdentity('S-1-5-21-1000', 100, 1, 42, 100000)
-    host = HardwareHost(backend.simulation.engine, authorize=lambda value: value == peer)
+    host = HardwareHost(simulation.engine, authorize=lambda value: value == peer)
     class Pipes:
         reply = None
         def connect(self, name):
             return 1
         def write(self, handle, request):
             self.reply = host.dispatch(peer, request)
-            backend.advance(time.monotonic())
-            self.reply['state'] = backend.simulation.engine.state.to_dict()
+            simulation.advance(time.monotonic())
+            self.reply['state'] = simulation.engine.state.to_dict()
             self.reply['error'] = None
             return PipePoll.ready()
         def read(self, handle):
@@ -680,11 +688,10 @@ with TemporaryDirectory() as directory:
         QTest.qWait(25)
     assert window.settings.model.state['applied']['mode'] == 'tent'
     assert window.home.heading.text() == 'Tent'
-    assert not window.settings.model.state['simulation']
     window.close()
     client._thread.join(timeout=3)
     assert not client._thread.is_alive()
-    backend.close()
+    simulation.close()
 ''')
 
     def run_ui(self, body, scale='1'):
@@ -698,7 +705,7 @@ with TemporaryDirectory() as directory:
         env['PYTHONPATH'] = str(root / 'src')
         prelude = f'''
 import sys
-sys.path.insert(0, {str(root / "src")!r})
+sys.path[:0] = [{str(root / "src")!r}, {str(root / "tests")!r}]
 class Block:
     def find_spec(self, name, path=None, target=None):
         if name == 'gi' or name.endswith('linux_contract'):
@@ -707,11 +714,13 @@ sys.meta_path.insert(0, Block())
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtTest import QTest
+from PyQt6.QtCore import QTimer
 from panasonic_posture.fluent.app import Window
-from panasonic_posture.fluent.demo import DemoClient, UnavailableClient
+from panasonic_posture.fluent.unavailable import UnavailableClient
+from fluent_fixture import SyntheticClient
 app = QApplication([])
 assert QFontDatabase.families(), 'GUI verification requires installed system fonts'
-window = Window(demo=True, language='en')
+window = Window(client=SyntheticClient(QTimer.singleShot), language='en')
 window.show()
 QTest.qWait(100)
 '''
@@ -787,7 +796,7 @@ normal = Window(language='en', client=UnavailableClient())
 assert isinstance(normal.client, UnavailableClient)
 assert not normal.settings.radios['tent'].isEnabled()
 assert 'not connected' in normal.home.detail.text().lower()
-assert 'preview' not in normal.home.detail.text().lower()
+assert 'test' not in normal.home.detail.text().lower()
 normal.close()
 ''')
 
@@ -814,12 +823,11 @@ assert window.home.detail.isVisible()
 
     def test_backend_state_reconciles_once_per_second(self):
         self.run_ui('''
-from pathlib import Path
 from panasonic_posture.contracts import TICK_SECONDS
-from panasonic_posture.windows.client import ProcessClient
-class PollingClient(ProcessClient):
+from panasonic_posture.windows.hardware_client import HardwareUIClient
+class PollingClient(HardwareUIClient):
     def __init__(self):
-        super().__init__(Path('unused.json'))
+        super().__init__()
         self.polls = 0
         self.refreshes = 0
     def start(self, on_state, on_unavailable, on_connected=None):
@@ -843,6 +851,7 @@ window.close()
 
     def test_unchanged_presentation_skips_widget_work_and_reuses_svg(self):
         self.run_ui('''
+import time
 import panasonic_posture.fluent.widgets as widget_module
 client = window.client
 home_calls = []
@@ -873,21 +882,32 @@ QTest.qWait(20)
 assert len(settings_fits) == 1
 
 renderers = []
+render_instances = []
 real_renderer = widget_module.QSvgRenderer
 class CountingRenderer:
     def __init__(self, payload):
         renderers.append(payload)
+        render_instances.append(self)
+        self.render_calls = 0
         self.renderer = real_renderer(payload)
     def render(self, *args):
+        self.render_calls += 1
         return self.renderer.render(*args)
 widget_module.QSvgRenderer = CountingRenderer
 window.home.illustration._renderers.clear()
 window.home.illustration.pose = 'tent'
 window.home.illustration.update()
-QTest.qWait(20)
+deadline = time.monotonic() + 2
+while not render_instances and time.monotonic() < deadline:
+    QTest.qWait(10)
+assert render_instances, 'The changed pose must request an SVG paint'
 window.home.illustration.update()
-QTest.qWait(20)
+deadline = time.monotonic() + 2
+while (sum(instance.render_calls for instance in render_instances) < 2 and
+       time.monotonic() < deadline):
+    QTest.qWait(10)
 assert len(renderers) == 1, 'The same pose and theme must reuse one SVG renderer'
+assert sum(instance.render_calls for instance in render_instances) >= 2
 ''')
 
     def test_hardware_backend_failure_has_actionable_message(self):
@@ -901,36 +921,6 @@ assert hardware.home.detail.text() == (
 hardware.close()
 ''')
 
-    def test_private_backend_persists_preferences_and_disables_device_controls(self):
-        self.run_ui('''
-from pathlib import Path
-from tempfile import TemporaryDirectory
-import time
-with TemporaryDirectory() as directory:
-    path = Path(directory) / 'settings.json'
-    connected = Window(language='zh_CN', backend=True, settings_path=path)
-    connected.show()
-    deadline = time.monotonic() + 8
-    while connected.settings.model.state is None and time.monotonic() < deadline:
-        QTest.qWait(25)
-    assert connected.settings.model.state is not None
-    assert connected.settings.switches['tent_enabled'].isEnabled()
-    assert not connected.settings.radios['tent'].isEnabled()
-    assert not connected.settings.calibrate_button.isEnabled()
-    connected.settings.switches['tent_enabled'].setChecked(False)
-    deadline = time.monotonic() + 8
-    while connected.settings.model.value('tent_enabled') is not False and time.monotonic() < deadline:
-        QTest.qWait(25)
-    while connected.settings.model.active and time.monotonic() < deadline:
-        QTest.qWait(25)
-    assert path.is_file()
-    assert not connected.settings.model.state['tent_enabled']
-    assert connected.settings.model.state['applied'] is None
-    process = connected.client.process
-    connected.close()
-    assert process.poll() is not None
-''')
-
     def test_default_start_uses_platform_safe_client(self):
         self.run_ui('''
 from pathlib import Path
@@ -938,7 +928,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from panasonic_posture.contracts import TICK_SECONDS
 from panasonic_posture.windows.hardware_client import HardwareUIClient
-from panasonic_posture.fluent.demo import UnavailableClient
+from panasonic_posture.fluent.unavailable import UnavailableClient
 import os, time
 with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=directory):
     normal = Window(language='en')
@@ -973,7 +963,7 @@ assert not window.home.timer.isActive()
     def test_chinese_dark_and_minimum_layout(self):
         self.run_ui('''
 from qfluentwidgets import setTheme, Theme
-translated = Window(demo=True, language='zh_CN')
+translated = Window(client=SyntheticClient(QTimer.singleShot), language='zh_CN')
 translated.resize(500, 660)
 translated.show()
 setTheme(Theme.DARK)

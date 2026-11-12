@@ -1,5 +1,7 @@
-"""Assemble Fluent with explicitly selected preview, screen or service clients."""
+"""Assemble the Windows Fluent UI around the authenticated hardware client."""
+import os
 import sys
+from pathlib import Path
 
 from PyQt6 import sip
 from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtSignal, QCoreApplication, QEvent
@@ -14,8 +16,7 @@ from qfluentwidgets import (
 
 from ..contracts import TICK_SECONDS
 from ..frontend.ports import UIClient
-from .demo import DemoClient, UnavailableClient
-from ..windows.client import ProcessClient, settings_path as default_settings_path
+from .unavailable import UnavailableClient
 from ..windows.hardware_client import HardwareUIClient
 from .pages import Home, Settings
 from .resources import application_name, data_root, translator
@@ -54,8 +55,8 @@ class Window(FluentWidget):
     state_changed = pyqtSignal(dict)
     connection_lost = pyqtSignal()
 
-    def __init__(self, *, demo=False, language=None, scenario='laptop', client: UIClient | None = None,
-                 backend=False, settings_path=None, startup=None, update_checker=None):
+    def __init__(self, *, language=None, client: UIClient | None = None,
+                 startup=None, update_checker=None):
         configure_application_font()
         super().__init__()
         _ = translator(language)
@@ -79,22 +80,13 @@ class Window(FluentWidget):
         self.titleBar.titleLabel.setContentsMargins(0, 1, 0, 4)
         self.update_mark()
         qconfig.themeChangedFinished.connect(self.update_mark)
-        self.simulating = demo
-        self.memory_demo = demo
         self._stopped = False
         if client is not None:
             self.client = client
-        elif demo:
-            self.client = DemoClient(QTimer.singleShot)
-        elif backend:
-            path = settings_path if settings_path is not None else default_settings_path()
-            self.client = ProcessClient(path, scenario=scenario)
         elif sys.platform == 'win32':
             self.client = HardwareUIClient()
         else:
             self.client = UnavailableClient()
-        if demo and client is None:
-            self.client.scenario(scenario)
         self.home = Home(self.client, _, self.notify, self)
         self.settings = Settings(
             self.client, _, self.notify, self, startup=startup,
@@ -127,11 +119,6 @@ class Window(FluentWidget):
         footer.addWidget(self.navigation)
         footer.addStretch()
         layout.addLayout(footer)
-        if demo:
-            note = CaptionLabel(_('Demo preview · Changes stay in this window.'))
-            note.setWordWrap(True)
-            note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(note)
         for label in self.findChildren((BodyLabel, CaptionLabel, TitleLabel)):
             caption = isinstance(label, CaptionLabel)
             label.setTextColor(MUTED_LIGHT if caption else TEXT_LIGHT,
@@ -153,7 +140,7 @@ class Window(FluentWidget):
         self.client.start(self.update_state, self.unavailable)
         self._backend_poll_count = 0
         self.backend_timer = QTimer(self)
-        if isinstance(self.client, (ProcessClient, HardwareUIClient)):
+        if isinstance(self.client, HardwareUIClient):
             self.backend_timer.timeout.connect(self.poll_backend)
             # Match the shared service cadence instead of waking twice as often.
             self.backend_timer.start(max(1, round(TICK_SECONDS * 1000)))
@@ -215,9 +202,7 @@ class Window(FluentWidget):
     def notify(self, success, detail: str | None = None):
         _ = self._
         if success:
-            title = _('Preview updated') if self.simulating else _('Settings saved')
-            message = _('Demo preview · Changes stay in this window.') if self.memory_demo else ''
-            InfoBar.success(title, message, duration=3500,
+            InfoBar.success(_('Settings saved'), '', duration=3500,
                             position=InfoBarPosition.TOP, parent=self)
         else:
             InfoBar.error(_('Unable to complete the operation'), detail or _('Please try again.'),
@@ -237,11 +222,18 @@ class Window(FluentWidget):
         super().closeEvent(event)
 
 
-def run(*, demo=False, language=None, scenario='laptop', backend=False,
-        settings_path=None, background=False) -> int:
+def local_state_directory() -> Path:
+    """Return the per-user application state directory without side effects."""
+    root = os.environ.get('LOCALAPPDATA')
+    if not root or not Path(root).is_absolute():
+        raise OSError('LOCALAPPDATA is not an absolute directory')
+    return Path(root) / 'PanasonicPostureManager'
+
+
+def run(*, language=None, background=False) -> int:
     activation = None
     startup = None
-    hardware_ui = sys.platform == 'win32' and not (demo or backend)
+    hardware_ui = sys.platform == 'win32'
     if sys.platform == 'win32':
         from ..windows.app_identity import configure_process_identity
         configure_process_identity()
@@ -259,11 +251,16 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
         from ..windows.startup import (
             initialize_default_startup, LoginStartup, startup_command, UnavailableStartup,
         )
-        activation = WindowActivation(default_settings_path().parent)
+        try:
+            activation = WindowActivation(local_state_directory())
+        except OSError:
+            return hardware_start_failure(language, 'session')
         if not activation.acquire(background=background):
+            activation.close()
+            activation = None
             return 0
         try:
-            startup = LoginStartup(startup_command()) if settings_path is None else UnavailableStartup()
+            startup = LoginStartup(startup_command())
         except (OSError, ValueError):
             startup = UnavailableStartup()
         else:
@@ -278,8 +275,7 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
             app.setDesktopFileName(APP_USER_MODEL_ID)
         setTheme(Theme.AUTO)
         setThemeColor('#0051f2')
-        window = Window(demo=demo, language=language, scenario=scenario, backend=backend,
-                        settings_path=settings_path, startup=startup)
+        window = Window(language=language, startup=startup)
         resident = None
         try:
             if hardware_ui:

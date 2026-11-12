@@ -1,4 +1,4 @@
-"""Exercise an extracted Windows preview with only its bundled interpreter."""
+"""Exercise an extracted Windows portable app with only its bundled interpreter."""
 import hashlib
 import json
 import os
@@ -14,39 +14,26 @@ def main():
         assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, name
     with tempfile.TemporaryDirectory() as directory:
         code = '''
-import sys, time
-from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtTest import QTest
 from panasonic_posture.fluent.app import Window
-from panasonic_posture.windows.client import ProcessClient
+from panasonic_posture.fluent.unavailable import UnavailableClient
 app = QApplication([])
 assert QFontDatabase.families(), 'Bundle verification requires installed system fonts'
-client = ProcessClient(Path(sys.argv[1]), simulate=True)
-window = Window(backend=True, client=client, language='zh_CN', settings_path=Path(sys.argv[1]))
+window = Window(client=UnavailableClient(), language='zh_CN')
 window.show()
-deadline = time.monotonic() + 10
-while window.settings.model.state is None and time.monotonic() < deadline:
-    QTest.qWait(50)
-assert window.settings.model.state is not None
-window.settings.radios['tent'].click()
-deadline = time.monotonic() + 10
-while (window.settings.model.state['applied'] or {}).get('mode') != 'tent' and time.monotonic() < deadline:
-    QTest.qWait(50)
-assert window.settings.model.state['applied']['mode'] == 'tent'
-assert window.home.heading.text() == '帐篷'
-process = window.client.process
+QTest.qWait(100)
+assert '未连接' in window.home.detail.text()
+assert window.windowTitle() == '松下二合一平板电脑姿态管理工具'
 window.close()
-assert process.poll() is not None
 '''
         env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
         if os.name == 'nt':
             env.setdefault('QT_QPA_FONTDIR', str(Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'Fonts'))
         env.pop('PYTHONPATH', None)
         for executable in ('python.exe', 'pythonw.exe'):
-            result = subprocess.run([str(root / 'runtime' / executable), '-I', '-c', code,
-                                     str(Path(directory) / 'settings.json')],
+            result = subprocess.run([str(root / 'runtime' / executable), '-I', '-c', code],
                                     env=env, cwd=directory, text=True, capture_output=True, timeout=40)
             if result.returncode:
                 raise RuntimeError(executable + ': ' + result.stdout + result.stderr)
@@ -71,7 +58,7 @@ else:
         )
         if result.returncode:
             raise RuntimeError('python-hardware.exe: ' + result.stdout + result.stderr)
-    print('Extracted Windows runtime, Qt resources and backend IPC passed')
+    print('Extracted Windows runtime, Qt resources and hardware module boundary passed')
 
 
 if __name__ == '__main__':

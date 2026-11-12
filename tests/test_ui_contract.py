@@ -271,10 +271,6 @@ assert application.register(None)
 application.ensure_ui()
 assert application.window.get_default_size() == (500, 660)
 assert application.stack.get_visible_child_name() == 'posture'
-class Command:
-    def get_arguments(self): return ['test', '--settings']
-application._command_line(application, Command())
-assert application.stack.get_visible_child_name() == 'settings'
 service.on_state(s)
 assert application.settings_page.radios['auto'].get_active()
 service.on_unavailable()
@@ -287,7 +283,7 @@ assert service.stopped
 page.close()
 ''')
 
-    def test_real_second_launch_forwards_settings_option(self):
+    def test_real_second_launch_ignores_the_retired_settings_option(self):
         self.run_ui('''
 import subprocess, sys
 application = app.Application(service_factory=lambda: service)
@@ -317,7 +313,7 @@ else:
 output, errors = remote.communicate(timeout=5)
 assert not expired, errors
 assert remote.returncode == 0, errors
-assert application.stack.get_visible_child_name() == 'settings'
+assert application.stack.get_visible_child_name() == 'posture'
 application._shutdown(application)
 page.close()
 ''')

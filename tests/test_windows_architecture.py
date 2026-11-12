@@ -29,11 +29,16 @@ sys.meta_path.insert(0, Block())
 
 
 class WindowsArchitectureTests(unittest.TestCase):
+    def test_legacy_development_backend_is_absent_from_the_product(self):
+        windows = SOURCE / 'panasonic_posture/windows'
+        for name in ('backend.py', 'client.py', 'private_backend.py', 'simulation.py'):
+            with self.subTest(name=name):
+                self.assertFalse((windows / name).exists())
+        self.assertFalse((SOURCE / 'panasonic_posture/fluent/demo.py').exists())
+
     def test_hardware_composition_does_not_load_ui_or_screen_session_core(self):
         result = run_isolated(BLOCKER + '''
 blocked = {
-    'panasonic_posture.windows.backend',
-    'panasonic_posture.windows.client',
     'panasonic_posture.windows.hardware_client',
     'panasonic_posture.windows.hardware_server',
     'panasonic_posture.windows.screen_session',

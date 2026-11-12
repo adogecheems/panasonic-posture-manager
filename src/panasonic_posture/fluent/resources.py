@@ -1,4 +1,4 @@
-"""Portable source-preview resources and gettext without Linux configuration."""
+"""Portable source-runtime resources and gettext without Linux configuration."""
 import ast
 import ctypes
 import gettext
@@ -49,7 +49,7 @@ def translator(language: str | None = None):
                                    languages=[language], fallback=True)
     if not language.lower().startswith('zh'):
         return compiled.gettext
-    # Source previews on Windows do not require the GNU msgfmt executable.
+    # Windows source runs do not require the GNU msgfmt executable.
     # The project catalog contains singular entries only. Installed builds can
     # use the compiled catalog above; no second translation dictionary is kept.
     catalog = root / 'po' / 'zh_CN.po'

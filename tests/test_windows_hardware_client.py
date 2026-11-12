@@ -73,7 +73,6 @@ class HardwareUIClientTests(unittest.TestCase):
         future.result()
         self.assertEqual(seen, [(True, self.owner)])
         self.assertTrue(all(owner == self.owner for _, owner in self.events))
-        self.assertFalse(self.states[-1]['simulation'])
 
     def test_retry_does_not_inject_a_mode_write_and_ui_cannot_submit_receipts(self):
         self.start()

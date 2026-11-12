@@ -187,8 +187,6 @@ class Home(Page):
         else:
             text = messages[self.model.detail]
         set_text(self.detail, text)
-        if self.model.state and self.model.state.get('simulation') and self.model.detail == Detail.COMPATIBLE:
-            set_text(self.detail, '')
         set_visible(self.detail, bool(self.detail.text()))
 
     def show_slow(self):

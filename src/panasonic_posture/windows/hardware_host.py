@@ -1,4 +1,4 @@
-"""Privileged-host dispatch, isolated from the ordinary preview subprocess.
+"""Privileged-host dispatch, isolated from the ordinary UI process.
 
 Only an OS-authenticated foreground console user may send UI operations.
 Display receipts additionally require the exact session process registered by

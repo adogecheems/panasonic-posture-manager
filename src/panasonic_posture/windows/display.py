@@ -4,7 +4,7 @@ This adapter owns only the internal panel direction, automatic-rotation
 lock and their crash-recovery journal. Windows shell state is reported through
 the convertible-slate device as an independent operation. Physical tablet
 handoff relinquishes panel rotation to Windows without changing the user's
-shell policy. Ordinary preview never uses this port.
+shell policy. Ordinary UI processes never use this port.
 """
 from dataclasses import dataclass
 import ctypes as C

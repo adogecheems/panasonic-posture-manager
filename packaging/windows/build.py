@@ -1,4 +1,4 @@
-"""Build a self-contained Windows software-preview ZIP using an existing runtime.
+"""Build a self-contained Windows portable ZIP using an existing runtime.
 
 Run on Windows after installing requirements-ui.txt into a separate --target
 directory. This script never downloads packages, installs a service, modifies
@@ -38,7 +38,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
             raise ValueError(f'Windows Python runtime is missing {name}')
     for name in ('PyQt6', 'qfluentwidgets', 'qframelesswindow'):
         if not (dependencies / name).is_dir():
-            raise ValueError(f'preview dependency is missing {name}')
+            raise ValueError(f'UI dependency is missing {name}')
     metadata = list(dependencies.glob('*.dist-info'))
     if not metadata or any(not any('license' in path.name.lower() or 'copying' in path.name.lower()
                                   for path in directory.rglob('*') if path.is_file())
@@ -56,10 +56,16 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
                     path = Path(directory) / name
                     files[prefix + '/' + path.relative_to(source).as_posix()] = path
 
-    add_tree(runtime, 'runtime', ('__pycache__', '*.pyc', 'site-packages', 'Scripts',
-                                 'Doc', 'Tools', 'include', 'libs', 'tcl', 'test', 'tests',
+    development_trees = ('__pycache__', '*.pyc', 'test', 'tests', 'test_*.py', '*_test.py',
+                         'demo', 'demos', 'example', 'examples', 'samples', 'testdata',
+                         'idlelib', 'turtledemo', 'turtle.py', 'unittest', 'doctest.py',
+                         'bindings', 'scripts')
+    add_tree(runtime, 'runtime', ('site-packages', 'Scripts',
+                                 'Doc', 'Tools', 'include', 'libs', 'tcl',
+                                 *development_trees,
                                  'python*._pth'))
-    add_tree(dependencies, 'runtime/Lib/site-packages', ('__pycache__', '*.pyc', 'qml'))
+    add_tree(dependencies, 'runtime/Lib/site-packages',
+             ('*.chm', 'qml', 'pywin32_test*', *development_trees))
     add_tree(ROOT / 'src/panasonic_posture', 'app/panasonic_posture', ('__pycache__', '*.pyc'))
     add_tree(ROOT / 'data/assets', 'data/assets')
     files['po/zh_CN.po'] = ROOT / 'po/zh_CN.po'
@@ -108,7 +114,7 @@ def stage_application(destination: Path, runtime: Path, dependencies: Path) -> N
 def build(output: Path, runtime: Path, dependencies: Path) -> Path:
     files = application_files(runtime, dependencies)
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / 'panasonic-posture-windows-preview.zip'
+    archive = output / 'panasonic-posture-windows-portable.zip'
     # Stream each original file once into the archive while hashing its exact
     # bytes. Avoid thousands of redundant Windows file writes and an in-memory
     # copy of a complete Qt DLL or ZIP. Keep an existing artifact on failure.

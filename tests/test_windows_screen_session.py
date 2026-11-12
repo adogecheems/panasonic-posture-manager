@@ -16,17 +16,18 @@ from panasonic_posture.model import (
 from panasonic_posture.service.engine import Engine
 from panasonic_posture.session.failures import DisplayError, ServiceError
 from panasonic_posture.session.journal import Journal
-from panasonic_posture.windows.backend import Backend, BackendError
 from panasonic_posture.windows.display import Panel
 from panasonic_posture.windows.orientation import OrientationReading
-from panasonic_posture.windows.protocol import validate_state, ProtocolError
 from panasonic_posture.windows.screen_session import (
     SCREEN_MODES, ScreenSession, SessionBridge, ProfileSensor,
     select_native_display, verified_machine,
 )
 from panasonic_posture.windows.session_display import QualifiedDisplay
 from panasonic_posture.windows.hardware_release import HardwareReleaseCoordinator
-from panasonic_posture.windows.simulation import SimulatedDisplay
+try:
+    from tests.windows_fixture import Backend, BackendError, SimulatedDisplay
+except ModuleNotFoundError:
+    from windows_fixture import Backend, BackendError, SimulatedDisplay
 
 
 class Clock:
@@ -297,7 +298,6 @@ class Block:
             raise AssertionError(name)
 sys.meta_path.insert(0, Block())
 from panasonic_posture.windows.screen_session import ScreenSession
-from panasonic_posture.windows.backend import Backend
 '''], capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
 

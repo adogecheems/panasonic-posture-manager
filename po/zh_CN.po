@@ -259,17 +259,11 @@ msgstr "外观"
 msgid "Dark"
 msgstr "深色"
 
-msgid "Demo preview · Changes stay in this window."
-msgstr "演示预览 · 所有更改仅在此窗口中生效。"
-
 msgid "Light"
 msgstr "浅色"
 
 msgid "Please try again."
 msgstr "请重试。"
-
-msgid "Preview updated"
-msgstr "预览已更新"
 
 msgid "System"
 msgstr "跟随系统"

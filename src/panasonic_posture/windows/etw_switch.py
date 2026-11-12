@@ -133,7 +133,7 @@ class WindowsHidEventFilterBackend(EtwBackend):
     """Consume the Intel HID Event Filter's ACPI-notification ETW provider.
 
     ETW control is a privileged operation.  The caller must run this backend
-    in the LocalSystem hardware host; ordinary preview processes must not use
+    in the LocalSystem hardware host; ordinary UI processes must not use
     it as an unauthenticated hardware channel.
     """
 

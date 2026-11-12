@@ -22,10 +22,13 @@ from panasonic_posture.windows.hardware_ipc import (
     HardwareConnection, HardwareOperationError, validated_hardware_state, PipePoll,
 )
 from panasonic_posture.windows.hardware_host import CHANNEL, ConsoleIdentity, HardwareHost
-from panasonic_posture.windows.simulation import SimulatedInput
+try:
+    from tests.windows_fixture import SimulatedInput
+except ModuleNotFoundError:
+    from windows_fixture import SimulatedInput
 from panasonic_posture.windows.session_client import WindowsSessionClient
 from panasonic_posture.windows.session_agent import WindowsSessionAgent
-from panasonic_posture.windows.protocol import ProtocolError
+from panasonic_posture.windows.hardware_protocol import ProtocolError
 
 
 def state(instance='native-one'):

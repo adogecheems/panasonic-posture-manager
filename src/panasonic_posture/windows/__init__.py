@@ -1,1 +1,1 @@
-"""Unprivileged Windows software host; device adapters are not installed."""
+"""Windows platform components for the authenticated hardware service."""

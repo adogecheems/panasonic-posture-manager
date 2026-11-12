@@ -34,8 +34,6 @@ class Application(Adw.Application):
 
     def _command_line(self, app, command_line):
         self.ensure_ui()
-        if '--settings' in command_line.get_arguments()[1:]:
-            self.stack.set_visible_child_name('settings')
         return 0
 
     def ensure_ui(self) -> None:

@@ -6,16 +6,20 @@ import tempfile
 import threading
 import unittest
 
-from panasonic_posture.model import HardwareStatus
+from panasonic_posture.model import HardwareStatus, Mode, Target
 from panasonic_posture.service.hardware_monitor import HardwareMonitor
 from panasonic_posture.service.ports import SessionOwner
-from panasonic_posture.windows.backend import Backend
+from panasonic_posture.service.settings_store import SettingsStore
 from panasonic_posture.windows.hardware_host import ConsoleIdentity, HardwareHost, CHANNEL, validate_request
 from panasonic_posture.windows.hardware_pipe import FILE_FLAG_OVERLAPPED, NativePipes, PipePoll
 from panasonic_posture.windows.protocol import ProtocolError
 from panasonic_posture.windows.hardware_ipc import ConsoleGuard, HardwareServer, HardwareConnection, CLIENT_ACCESS
 from panasonic_posture.windows.security import foreground_matches
 from panasonic_posture.tasks import InlineExecutor
+try:
+    from tests.windows_fixture import Simulation
+except ModuleNotFoundError:
+    from windows_fixture import Simulation
 
 UI = ConsoleIdentity('S-1-5-21-1000', 100, 1, 42, 100000)
 AGENT = ConsoleIdentity('S-1-5-21-1000', 100, 1, 43, 100001)
@@ -25,9 +29,12 @@ class HostFixture(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.backend = Backend(Path(directory.name)/'settings.json', simulate=True)
-        self.addCleanup(self.backend.close)
-        self.engine = self.backend.simulation.engine
+        self.simulation = Simulation(
+            SettingsStore(Path(directory.name) / 'settings.json'),
+            'windows-test-host',
+        )
+        self.addCleanup(self.simulation.close)
+        self.engine = self.simulation.engine
         self.active = True
         self.host = HardwareHost(self.engine, authorize=lambda peer: self.active,
                                  session_process=AGENT)
@@ -42,17 +49,31 @@ class HardwareHostTests(HostFixture):
         admitted = [True]
         self.host.session_admission = lambda: admitted[0]
         self.engine.revoke_session(self.engine.session_owner)
+        self.engine.set_mode('tent')
+        self.engine.tick()
         receipt = self.request('session_update', generation=self.engine.state.generation,
             ready=True, error_code=None, error_detail=None, unattended=False)
-        self.assertTrue(self.host.dispatch(AGENT, receipt)['accepted'])
+        reply = self.host.dispatch(AGENT, receipt)
+        self.assertTrue(
+            reply['accepted'],
+            (
+                reply['state']['generation'],
+                self.engine._controller.generation,
+                reply['state']['session_connected'],
+                reply['state']['supported'],
+            ),
+        )
         admitted[0] = False
         with self.assertRaisesRegex(Exception, 'display-unavailable'):
             self.host.dispatch(AGENT, receipt)
         self.host.tick()
         self.assertIsNone(self.engine.session_owner)
         self.assertIsNone(self.engine.state.applied)
+        self.assertEqual(self.engine._controller.manual, Mode.AUTO)
         admitted[0] = True
-        self.assertTrue(self.host.dispatch(AGENT, receipt)['accepted'])
+        fresh = self.request('session_update', generation=self.engine.state.generation,
+            ready=True, error_code=None, error_detail=None, unattended=False)
+        self.assertTrue(self.host.dispatch(AGENT, fresh)['accepted'])
 
     def test_unobserved_physical_source_allows_only_a_not_ready_heartbeat(self):
         admitted = [False]
@@ -80,7 +101,7 @@ class HardwareHostTests(HostFixture):
         self.host.dispatch(UI, self.request('set_mode', mode='tent'))
         self.engine.tick()
         self.assertIsNone(self.engine.state.applied)
-        self.assertFalse(self.backend.simulation.actuator.running)
+        self.assertFalse(self.simulation.actuator.running)
         receipt = self.request('session_update', generation=self.engine.state.generation,
             ready=True, error_code=None, error_detail=None, unattended=False)
         with self.assertRaisesRegex(Exception, 'access-denied'):
@@ -93,7 +114,7 @@ class HardwareHostTests(HostFixture):
         self.assertEqual(self.engine.state.applied.mode, 'tent')
         self.host.disconnected(AGENT)
         self.assertIsNone(self.engine.state.applied)
-        self.assertFalse(self.backend.simulation.actuator.running)
+        self.assertFalse(self.simulation.actuator.running)
 
     def test_lock_switch_or_disconnect_revokes_only_registered_owner(self):
         self.engine.revoke_session(self.engine.session_owner)
@@ -107,9 +128,25 @@ class HardwareHostTests(HostFixture):
         self.active = False
         self.host.tick()
         self.assertIsNone(self.engine.session_owner)
-        self.assertFalse(self.backend.simulation.actuator.running)
+        self.assertFalse(self.simulation.actuator.running)
         with self.assertRaisesRegex(Exception, 'access-denied'):
             self.host.dispatch(UI, self.request('get_state'))
+
+    def test_lock_resets_stale_posture_even_after_pipe_disconnect(self):
+        self.engine.set_mode('tent')
+        self.engine.tick()
+        generation = self.engine.state.generation
+        self.host.disconnected(AGENT)
+        self.active = False
+
+        self.host.tick()
+
+        self.assertGreater(self.engine.state.generation, generation)
+        self.assertEqual(self.engine._controller.manual, Mode.AUTO)
+        self.assertEqual(self.engine._controller.target, Target())
+        reset_generation = self.engine.state.generation
+        self.host.tick()
+        self.assertEqual(self.engine.state.generation, reset_generation)
 
     def test_stale_generation_and_process_reuse_cannot_acknowledge(self):
         reused = ConsoleIdentity(AGENT.sid, AGENT.logon_id, AGENT.session_id,

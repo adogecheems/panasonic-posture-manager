@@ -1,4 +1,4 @@
-"""Shared validation for the private software and privileged RPC routes."""
+"""Validation for the privileged Windows hardware RPC route."""
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -6,19 +6,14 @@ from collections.abc import Mapping, Sequence
 from ..contracts import ALL_ERROR_CODES, MODES, PREFERENCES, PROMPTS
 
 
-SOFTWARE_SIGNATURES = {
+HARDWARE_SIGNATURES = {
     'get_state': (),
     'set_mode': ('mode',),
     'set_preference': ('field', 'enabled'),
-    'retry': ('fallback_mode',),
+    'retry': (),
     'calibrate': (),
     'reset_calibration': (),
     'confirm_prompt': ('prompt', 'epoch'),
-}
-
-HARDWARE_SIGNATURES = {
-    **SOFTWARE_SIGNATURES,
-    'retry': (),
     'session_update': ('generation', 'ready', 'error_code', 'error_detail', 'unattended'),
 }
 

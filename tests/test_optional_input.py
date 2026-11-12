@@ -10,7 +10,10 @@ from panasonic_posture.service.ports import SessionOwner, ActuatorError
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.windows.display_only_input import DisplayOnlyInput
-from panasonic_posture.windows.simulation import SimulatedDisplay
+try:
+    from tests.windows_fixture import SimulatedDisplay
+except ModuleNotFoundError:
+    from windows_fixture import SimulatedDisplay
 
 
 class OptionalInputTests(unittest.TestCase):

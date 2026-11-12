@@ -3,7 +3,7 @@
 No device path or packet operation is accepted from a caller. The driver
 owns device enrollment, idle admission and the independent three-second
 watchdog. A write is never execution evidence without its matching receipt.
-This port is not loaded by the ordinary software preview.
+This port is not loaded by the ordinary user interface.
 """
 from dataclasses import dataclass, field
 from collections.abc import Callable

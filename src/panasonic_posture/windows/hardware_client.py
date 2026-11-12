@@ -2,7 +2,7 @@
 
 One bounded worker owns its pipe; callbacks and Futures run only in poll().
 Disconnect invalidates queued work before completing callbacks. Reconnect
-never replays writes and never falls back to the software simulation.
+never replays writes or substitutes synthetic state.
 """
 from collections.abc import Callable
 from concurrent.futures import Future
@@ -13,7 +13,6 @@ import time
 
 from ..contracts import ErrorCode, LEASE_SECONDS, MODES
 from ..model import StateSnapshot
-from .client import BackendUnavailable
 from .hardware_protocol import CHANNEL, SIGNATURES, validate_request
 from .hardware_rpc import (
     HardwareConnection, HardwareOperationError, RPCConnection, validated_hardware_state,
@@ -21,6 +20,10 @@ from .hardware_rpc import (
 from .owner_loop import OwnerLoop
 from .protocol import MAX_PENDING, ProtocolError
 from .ui_operations import UIClientOperations
+
+
+class BackendUnavailable(RuntimeError):
+    """The authenticated hardware service is not currently usable."""
 
 
 @dataclass(frozen=True)
@@ -177,7 +180,7 @@ class HardwareUIClient(UIClientOperations):
                     if self._stopped or not self._active:
                         return
                 state = result.state.to_dict()
-                state.update(preferences_available=True, simulation=False)
+                state.update(preferences_available=True)
                 self._state(state)
                 if self._stopped or not self._active:
                     return

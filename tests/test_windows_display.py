@@ -7,7 +7,10 @@ from panasonic_posture.windows.display import (
     NativeDisplay, DevMode, PathInfo, ModeInfo,
 )
 from panasonic_posture.session.failures import DisplayError
-from panasonic_posture.windows.simulation import MemoryJournal
+try:
+    from tests.windows_fixture import MemoryJournal
+except ModuleNotFoundError:
+    from windows_fixture import MemoryJournal
 import ctypes as C
 from types import SimpleNamespace
 from panasonic_posture.model import HardwareStatus, Target
