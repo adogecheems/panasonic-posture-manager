@@ -6,7 +6,7 @@
 
 ## 当前交接状态（2026-11-13）
 
-- **最新功能提交**：`cca3ad0 fix: keep slate lease across hardware handoff`。帐篷/支架进入物理平板或会话在同一软件姿态重启时复用现有 CSM 租约，避免短暂回落笔记本；上一功能提交 `7950c80 fix: use full application display name` 统一完整应用名，项目 slug、AUMID、Run 键和内部服务名保持独立。
+- **最新功能提交**：`2552880 fix: settle Windows tablet release before display apply`。Windows 物理平板释放后即使姿态已稳定到帐篷，也先只读等待两秒方向交接，再执行唯一一次显示事务；此前 `cca3ad0 fix: keep slate lease across hardware handoff` 复用相同目标的 CSM 租约，避免回落笔记本信号。
 - **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
 - **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。需要恢复或在目标变化时始终使用 `pending.original`；若新目标与租约 `desired` 相同则沿用租约，不先恢复。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
@@ -22,10 +22,10 @@
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
 - **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。开始菜单、运行窗口和任务栏共享固定多尺寸 ICO 与 AppUserModelID。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首事件前 `hardware_status=absent`；当前源码会让已认证会话发送 `not-ready` 心跳，但仍拒绝显示回执。
 - **下一智能体优先动作**：本机安装的 `2.4.0` 已包含命名管道 `PIPE_NOWAIT` 修复和可用的中文开始菜单快捷方式，硬件服务 Running，独立 RPC 连续连接返回 `backend=ready`，会话已连接。下一步需用户明确授权做真机姿态验收；重点复测物理平板退出到帐篷、ready 前旋转锁、ETW 接管和显示/CSM 清理。
-- **验证基线**：本机最终 MSI SHA-256 为 `C2E8A31C528EFB377E82021BC275189F5440E71F18B0C75D26819B9E72605C36`，便携 ZIP 为 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。Windows 发现式全套 319 项、Fluent 50 项、前端 14 项、会话刷新 9 项、可选输入 6 项、i18n 113 个 msgid 和 `compileall` 通过；安装后 3007 个清单文件哈希一致，独立 RPC 连续 20 次连接成功，中文快捷方式目标和启动均验证通过。
+- **验证基线**：本机最终 MSI SHA-256 为 `C2E8A31C528EFB377E82021BC275189F5440E71F18B0C75D26819B9E72605C36`，便携 ZIP 为 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。Windows 发现式全套 322 项、会话刷新 13 项、共享策略/控制器/前端/模型 202 项和 `compileall` 通过；安装后 3007 个清单文件哈希一致，独立 RPC 连续 20 次连接成功，中文快捷方式目标和启动均验证通过。
 - **关于页验证**：5 项 jsproxy 响应/版本比较单测、完整 Fluent 50 项和 i18n 113 个 msgid 通过；Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer，真实端点返回 `2.4.0 -> 2.4.0`。当前安装已包含该功能。
-- **未验证项**：GitHub Windows CI、Authenticode 签名（当前 MSI 为 `NotSigned`）、卸载及跨版本升级链路、首个真实服务 ETW 事件、SYSTEM 会话姿态、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
-- **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。退出物理平板时，Windows 若在帐篷目标前自行恢复方向锁，事务会采用并记录该状态；CSM 发布后再复核锁和方向，平台改写会触发一次有界重发。当前安装已包含该修复，真机退出方向仍需复测。
+- **未验证项**：GitHub Windows CI、Authenticode 签名（当前 MSI 为 `NotSigned`）、卸载及跨版本升级链路、首个真实服务 ETW 事件、SYSTEM 会话姿态、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序、`平板→帐篷` 二次跳变修复和通知点击仍未验收。
+- **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。退出物理平板后的 Windows 会话从首次观测到释放起保留两秒，即使目标已直接稳定为帐篷，也只读观察平台方向，不提前应用；窗口结束后执行一次显示事务。CSM 发布后的锁/方向复核和有界重发仍保留为故障兜底。当前安装尚未包含该提交，需重新构建安装后复测。
 - **CSM 姿态交接连续性**：`SlateNotifier.sync_mode()` 遇到已持久化且 `desired` 与新姿态相同的租约时直接复用，不再先恢复 `original` 再写回。帐篷/支架进入物理平板、或会话在同一软件姿态重启时，CSM 不会短暂回落到笔记本；切换到不同目标或释放仍恢复 `pending.original`，写入失败保留 journal。
 
 ## 1. 工作流程
@@ -1416,3 +1416,12 @@ make WERROR=1 check
 - 同步：`windows/convertible_slate.py`、`tests/test_windows_convertible_slate.py` 与本记录。
 - 验证：新增回归先复现失败，再覆盖帐篷/支架到 `hardware`、同一姿态崩溃恢复、写入失败保留租约和关闭恢复原值；convertible-slate 22 项及 Windows 发现式全套 322 项通过，`compileall` 通过。
 - 未验证：未真机重放帐篷/支架到物理平板，未构建或安装包含本修复的 MSI；CSM 视觉连续性仍需安装后真机确认。
+
+### 2026-11-13 - 平板退出到帐篷先等待 Windows 方向交接
+
+- 变更：Windows 的 `SessionRuntime` 显式启用 `defer_hardware_handoff`。会话从首次观测到物理平板释放或 `posture_pending` 起保留 `HARDWARE_SETTLE_SECONDS` 两秒；即使姿态已稳定并切换到帐篷目标，也只按轮询周期只读观察方向，不执行 `apply`。窗口结束或物理平板重新接管后，稳定目标才走现有显示事务并报告 ready。
+- 动机：本机 `native-display.log` 在 `00:57:50` 和 `00:58:05` 两次记录了平板退出后约一秒触发 `rotation-lock-took-over`，随后重发帐篷目标。旧会话只要目标从 `unavailable` 变成帐篷便提前结束等待，Windows 的原生方向交接尚未完成，应用接管后又被平台改写，形成第二个可见阶段。
+- 影响：不改变姿态阈值、ETW 物理优先级、CSM 门禁、目标/结果分离、显示 journal、租约或 RPC；两秒窗口仍是原有上限，不因目标代次变化续期。Linux 默认路径保持原行为，只有 Windows 两个会话装配启用。期间不报告 ready，物理重新接管或健康条件失效会立即取消等待。
+- 同步：`session/runtime.py`、`windows/{screen_session,session_agent}.py`、`tests/test_session_refresh.py` 与本记录。
+- 验证：新增回归覆盖 `posture_pending` 跨目标代次、硬件直接稳定到帐篷、物理重新接管取消等待和非 Windows 默认不延迟；Windows 发现式全套 322 项、会话刷新 13 项、共享策略/控制器/前端/模型 202 项与 `compileall` 通过。
+- 未验证：未构建或安装包含本提交的 MSI，未在真机重放平板退出到帐篷；二次跳变是否完全消失仍需安装后观察日志中的重发告警与可见方向变化。
