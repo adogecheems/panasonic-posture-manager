@@ -150,6 +150,7 @@ class WindowsSessionAgent:
             screen_locked=lambda: not self.context.control_available(),
             executor=self.executor,
             lease_executor=self.lease_executor,
+            defer_hardware_handoff=True,
         )
 
     def _qualification_heartbeat(self) -> None:

@@ -202,4 +202,143 @@ class QualificationTests(unittest.TestCase):
         with self.assertRaises(DisplayError): guarded.refresh(state)
 
 
+class HardwareHandoffTests(unittest.TestCase):
+    def make_runtime(self, state, *, defer=True):
+        events = []
+        current = [state]
+
+        def update(generation, ready, code, detail):
+            del code, detail
+            events.append(('feedback', generation, ready))
+
+        client = SimpleNamespace(get_state=lambda: current[0], session_update=update)
+        display = SimpleNamespace(
+            apply=lambda target: events.append(('apply', target.mode)),
+            hold_orientation=lambda: events.append(('hold',)),
+            restore=lambda: events.append(('restore',)),
+        )
+        runtime = SessionRuntime(
+            client,
+            display,
+            None,
+            executor=InlineExecutor(),
+            lease_executor=InlineExecutor(),
+            defer_hardware_handoff=defer,
+        )
+        self.addCleanup(runtime.close)
+        return events, runtime, current
+
+    def test_windows_release_holds_across_the_settled_target_generation(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=False,
+            hardware_status=HardwareStatus.OK,
+            posture_pending=True,
+            target=Target(mode='unavailable'),
+        )
+        events, runtime, current = self.make_runtime(state)
+
+        runtime.tick(0.)
+        self.assertIn(('hold',), events)
+        self.assertFalse(any(event[0] == 'apply' for event in events))
+
+        current[0] = replace(
+            state,
+            generation=2,
+            posture_pending=False,
+            target=Target(mode='tent'),
+        )
+        runtime.tick(.2)
+        runtime.tick(1.9)
+        self.assertNotIn(('apply', 'tent'), events)
+        self.assertFalse(runtime.ready)
+
+        runtime.tick(2.01)
+        self.assertEqual([event for event in events if event[0] == 'apply'], [('apply', 'tent')])
+        self.assertTrue(runtime.ready)
+        self.assertEqual(events[-1], ('feedback', 2, True))
+
+    def test_windows_release_hold_also_covers_a_direct_settled_target(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=True,
+            hardware_status=HardwareStatus.OK,
+            target=Target(mode='hardware'),
+        )
+        events, runtime, current = self.make_runtime(state)
+
+        runtime.tick(0.)
+        self.assertEqual([event for event in events if event[0] == 'apply'],
+                         [('apply', 'hardware')])
+
+        current[0] = replace(
+            state,
+            generation=2,
+            hardware=False,
+            target=Target(mode='tent'),
+        )
+        runtime.tick(.2)
+        runtime.tick(1.9)
+        self.assertNotIn(('apply', 'tent'), events)
+
+        runtime.tick(2.21)
+        self.assertEqual([event for event in events if event[0] == 'apply'],
+                         [('apply', 'hardware'), ('apply', 'tent')])
+        self.assertTrue(runtime.ready)
+
+    def test_physical_reentry_cancels_the_windows_release_hold(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=False,
+            hardware_status=HardwareStatus.OK,
+            posture_pending=True,
+            target=Target(mode='unavailable'),
+        )
+        events, runtime, current = self.make_runtime(state)
+        runtime.tick(0.)
+        self.assertIn(('hold',), events)
+
+        current[0] = replace(
+            state,
+            generation=2,
+            hardware=True,
+            posture_pending=False,
+            target=Target(mode='hardware'),
+        )
+        runtime.tick(.1)
+        self.assertIn(('apply', 'hardware'), events)
+        self.assertTrue(runtime.ready)
+
+    def test_windows_handoff_wait_is_opt_in(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=False,
+            hardware_status=HardwareStatus.OK,
+            posture_pending=True,
+            target=Target(mode='unavailable'),
+        )
+        events, runtime, current = self.make_runtime(state, defer=False)
+
+        current[0] = replace(
+            state,
+            generation=2,
+            posture_pending=False,
+            target=Target(mode='tent'),
+        )
+        runtime.tick(0.)
+        self.assertIn(('apply', 'tent'), events)
+
+
 if __name__ == '__main__': unittest.main()

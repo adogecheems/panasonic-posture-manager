@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .. import contracts
-from ..model import StateSnapshot
+from ..model import HardwareStatus, StateSnapshot
 from ..tasks import thread_executor
 from . import failures as errors
 from .failures import DisplayError, ErrorCode, FailureKind, ServiceError, describe_error
@@ -76,11 +76,13 @@ class SessionRuntime:
         lease_executor: Executor | None = None,
         schedule_completion: Callable[[], None] | None = None,
         display_refresh: DisplayRefresh | None = None,
+        defer_hardware_handoff: bool = False,
     ) -> None:
         self.client = client
         self.display = display
         self.notifier = notifier
         self._display_refresh = display_refresh
+        self._defer_hardware_handoff = defer_hardware_handoff
         self._refresh_at = float('-inf')
         self._screen_locked = screen_locked
         self._adapter_errors = (OSError, ValueError, *adapter_errors)
@@ -131,6 +133,8 @@ class SessionRuntime:
         self._hold_key: tuple[str, int] | None = None
         self._hold_until = 0.0
         self._hold_check_at = 0.0
+        self._hardware_release_until: float | None = None
+        self._hardware_seen = False
 
         # lease/authorization failure mode
         self.failure_active = False
@@ -501,6 +505,8 @@ class SessionRuntime:
         if instance != self.instance:
             # The daemon restarted: policy epochs and generations start over.
             self.instance = instance
+            self._hardware_release_until = None
+            self._hardware_seen = False
             self.generation = None
             self.error_code = ""
             self.error_detail = ""
@@ -516,6 +522,24 @@ class SessionRuntime:
             self.apply_now = True
             self._reset_display_retry()
             self._reported_error = None
+
+        if self._defer_hardware_handoff:
+            if state.hardware is True:
+                self._hardware_seen = True
+                self._hardware_release_until = None
+            elif (
+                state.hardware is False
+                and state.hardware_status == HardwareStatus.OK
+                and (self._hardware_seen or state.posture_pending)
+                and self._hardware_release_until is None
+            ):
+                # Start on the release itself. The policy may settle directly
+                # on tent before the next poll, so waiting only for
+                # posture_pending would miss that path.
+                self._hardware_release_until = now + HARDWARE_SETTLE_SECONDS
+                self._hold_check_at = now
+            if state.hardware is False:
+                self._hardware_seen = False
 
         daemon_error = self._daemon_error(state)
         if daemon_error:
@@ -576,6 +600,35 @@ class SessionRuntime:
             return True
         if not (self.apply_now or (self.retry_display and now >= self.retry_at)):
             return True
+        if self._defer_hardware_handoff:
+            if state.posture_pending and self._hardware_release_until is None:
+                self._hardware_release_until = now + HARDWARE_SETTLE_SECONDS
+                self._hold_check_at = now
+            if self._hardware_release_until is not None:
+                healthy = (
+                    state.hardware is False
+                    and state.session_connected
+                    and state.supported
+                    and not state.sensor_error
+                    and not state.error_code
+                    and state.hardware_status == HardwareStatus.OK
+                )
+                if not healthy or now >= self._hardware_release_until:
+                    self._hardware_release_until = None
+                else:
+                    if now >= self._hold_check_at:
+                        self._display_needs_restore = True
+                        self._submit(
+                            "hold",
+                            self.display.hold_orientation,
+                            context=(state, generation, ""),
+                        )
+                        self._hold_check_at = now + contracts.TICK_SECONDS
+                    # Keep the old generation not-ready while Windows finishes
+                    # its tablet-to-desktop direction handoff. A settled tent
+                    # target may already be known, but applying it during this
+                    # window makes the platform rotate twice.
+                    return False
         key = (state.instance, generation)
         waiting = (
             state.posture_pending and state.hardware is False

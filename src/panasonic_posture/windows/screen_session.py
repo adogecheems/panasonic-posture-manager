@@ -72,7 +72,8 @@ class ScreenSession:
             refresh = (QualifiedRefresh(display, context, lambda: self.engine.state)
                        if refreshable else None)
             self.session = SessionRuntime(self.bridge, qualified, None,
-                screen_locked=lambda: not context.control_available(), display_refresh=refresh)
+                screen_locked=lambda: not context.control_available(),
+                display_refresh=refresh, defer_hardware_handoff=True)
             self._stack.callback(self.session.close)
             self._stack.callback(self.bridge.close)
             self.engine.start()
