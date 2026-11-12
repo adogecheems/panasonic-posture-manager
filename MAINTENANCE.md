@@ -99,7 +99,7 @@ packaging\windows\preview.cmd --language zh_CN
 msiexec /i panasonic-posture-manager-2.4.0-windows-x64.msi
 ```
 
-MSI 按机器安装到 `%ProgramFiles%\PanasonicPostureManager`，创建带固定多尺寸图标和 AppUserModelID 的开始菜单入口，注册 LocalSystem 硬件服务，并由提升权限的安装动作执行 `ACPI\INT33D3` 的 `LaptopSlateExclusiveAccess=0` 配置。两个设备/服务 PowerShell 动作由 `WixQuietExec` 托管，不创建可见控制台窗口；安装动作会保留原值并提供卸载恢复，首次安装结束会请求重启。安装序列还通过受保护运行时中的 `windows/shortcut_locale.py`，按 Windows Installer 的 `UserLanguageID` 把开始菜单文件夹和快捷方式名称切换为当前 UI 语言；该动作只重命名固定的应用入口，失败不影响硬件安装，卸载时只清理已知链接和空目录。重启后无需再运行服务或设备配置脚本。
+MSI 按机器安装到 `%ProgramFiles%\PanasonicPostureManager`，创建带固定多尺寸图标和 AppUserModelID 的开始菜单入口，注册 LocalSystem 硬件服务，并由提升权限的安装动作执行 `ACPI\INT33D3` 的 `LaptopSlateExclusiveAccess=0` 配置。两个设备/服务 PowerShell 动作由 `WixQuietExec` 托管，不创建可见控制台窗口；安装动作会保留原值并提供卸载恢复，首次安装结束会请求重启。安装序列还通过受保护运行时中的 `windows/shortcut_locale.py`，按 Windows Installer 的 `UserLanguageID` 把开始菜单文件夹和快捷方式切换为窗口标题对应的中文或英文应用名，并迁移旧版 `Panasonic Posture Manager` 短名入口；该动作失败不影响硬件安装，卸载时只清理已知链接和空目录。重启后无需再运行服务或设备配置脚本。
 
 升级使用同版本或更高版本的 MSI。修复安装会重新验证并恢复设备配置；卸载会停止服务、恢复原平板指示器配置并提示重启。不得在 MSI 已安装时再用便携脚本管理同一服务。
 
@@ -340,7 +340,7 @@ python packaging\windows\build.py --dependencies build\windows-dependencies
 
 构建器从当前 Python 基础安装和独立依赖目录读取运行时、Qt/Fluent 及随包许可，连同源码、插画、翻译和维护说明直接流式写入 ZIP，同时计算逐文件校验，减少临时磁盘写入和内存占用。预览只使用 Qt Widgets，因此排除 PyQt6 自带但未使用的 QML 资源，避免 Windows 传统解压工具遗漏超长路径文件。完整归档生成后才替换已有包。`runtime/python._pth` 和 `runtime/pythonw._pth` 只服务 UI，隔离注册表和 `PYTHONPATH`，并显式包含随包 Qt 站点目录。硬件服务和会话代理使用额外的 `runtime/python-hardware.exe` 与 `runtime/python-hardware._pth`，搜索路径严格限制为 `Lib`、`DLLs` 和 `../app`，不处理 `site` 或 UI 包。构建器不再生成 DLL 级 `_pth`，避免它覆盖受限硬件解释器；参见 [Python Windows 搜索路径说明](https://docs.python.org/3.11/using/windows.html#finding-modules)。基础安装的第三方包、测试数据或配置不进入归档。
 
-输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Hardware.cmd` 或默认 `Panasonic Posture Manager.cmd` 都会连接 MSI 已安装的 LocalSystem 硬件服务；ZIP 不提供服务安装、设备配置或独立卸载入口，未安装 MSI 时界面只显示断线。`--backend` 是隔离软件预览，`--demo` 是内存演示。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`、Python 许可为 `runtime/LICENSE.txt`。用户设置继续位于 LocalAppData。
+输出为 `dist/windows/panasonic-posture-windows-preview.zip` 和 SHA-256 校验文件。解压后运行 `Hardware.cmd` 或默认 `Panasonic 2-in-1 Tablet Posture Management Tool.cmd` 都会连接 MSI 已安装的 LocalSystem 硬件服务；ZIP 不提供服务安装、设备配置或独立卸载入口，未安装 MSI 时界面只显示断线。`--backend` 是隔离软件预览，`--demo` 是内存演示。ZIP 内 `MANIFEST.json` 记录逐文件校验值，第三方许可保留在 `runtime/Lib/site-packages/*.dist-info/`、Python 许可为 `runtime/LICENSE.txt`。用户设置继续位于 LocalAppData。
 
 同一依赖目录也用于构建正式 MSI：
 

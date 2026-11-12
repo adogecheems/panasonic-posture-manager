@@ -8,3 +8,4 @@ src/panasonic_posture/ui/settings.py
 src/panasonic_posture/fluent/app.py
 src/panasonic_posture/fluent/pages.py
 src/panasonic_posture/fluent/resident.py
+src/panasonic_posture/fluent/resources.py

@@ -7,6 +7,7 @@ the host Python or publishes a release.
 import argparse
 import fnmatch
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,19 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _application_display_name() -> str:
+    source = ROOT / 'src/panasonic_posture/product.py'
+    spec = importlib.util.spec_from_file_location('posture_product', source)
+    if spec is None or spec.loader is None:
+        raise RuntimeError('cannot load the application display name')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return str(module.APPLICATION_DISPLAY_NAME)
+
+
+APPLICATION_DISPLAY_NAME = _application_display_name()
 
 
 def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | bytes]:
@@ -60,7 +74,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
     for executable in ('python', 'pythonw'):
         files[f'runtime/{executable}._pth'] = ui_search_paths.encode('utf-8')
     files['launch.py'] = b'from panasonic_posture.fluent.__main__ import main\nraise SystemExit(main())\n'
-    for name, arguments in (('Panasonic Posture Manager.cmd', ''),
+    for name, arguments in ((f'{APPLICATION_DISPLAY_NAME}.cmd', ''),
                              ('Hardware.cmd', '')):
         files[name] = (
             '@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'

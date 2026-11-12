@@ -28,9 +28,6 @@ msgstr "设置"
 msgid "Panasonic 2-in-1 Tablet Posture Management Tool"
 msgstr "松下二合一平板电脑姿态管理工具"
 
-msgid "Panasonic Posture Manager"
-msgstr "松下姿态管理器"
-
 msgid "Connecting to background service…"
 msgstr "正在连接后台服务…"
 

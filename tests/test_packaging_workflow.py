@@ -148,7 +148,12 @@ class DistributionPackagingTests(unittest.TestCase):
             "packaging/systemd/panasonic-posture-manager.service",
             "packaging/systemd/user/panasonic-posture-manager-session.service",
         ):
-            self.assertIn("ExecStart=/usr/bin/python3", read(unit))
+            content = read(unit)
+            self.assertIn("ExecStart=/usr/bin/python3", content)
+            self.assertIn(
+                "Description=Panasonic 2-in-1 Tablet Posture Management Tool",
+                content,
+            )
 
     def test_aur_bin_template_matches_source_dependencies(self) -> None:
         source = read("packaging/aur/.SRCINFO")

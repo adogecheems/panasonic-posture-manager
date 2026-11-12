@@ -56,6 +56,9 @@ def _bundle_builder():
     return module
 
 
+APPLICATION_DISPLAY_NAME = _bundle_builder().APPLICATION_DISPLAY_NAME
+
+
 def project_version() -> str:
     project = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
     version = str(project.get('project', {}).get('version', ''))
@@ -137,12 +140,12 @@ def _attribute(value: object) -> str:
 
 
 def _service_xml() -> str:
-    return '''
+    return f'''
       <ServiceInstall
           Id="HardwareServiceInstall"
           Name="PanasonicPostureManagerHardware"
-          DisplayName="Panasonic Posture Manager Hardware Service"
-          Description="Provides the authenticated LocalSystem hardware endpoint for Panasonic Posture Manager."
+          DisplayName="{APPLICATION_DISPLAY_NAME} Hardware Service"
+          Description="Provides the authenticated LocalSystem hardware endpoint for {APPLICATION_DISPLAY_NAME}."
           Type="ownProcess"
           Start="auto"
           ErrorControl="normal"
@@ -159,12 +162,12 @@ def _service_xml() -> str:
 
 
 def _shortcut_xml() -> str:
-    return '''
+    return f'''
         <Shortcut
             Id="ApplicationStartMenuShortcut"
             Directory="ApplicationProgramsFolder"
-            Name="Panasonic Posture Manager"
-            Description="Open Panasonic Posture Manager"
+            Name="{APPLICATION_DISPLAY_NAME}"
+            Description="Open {APPLICATION_DISPLAY_NAME}"
             Advertise="yes"
             Icon="ProductIcon.ico"
             Arguments="-I &quot;[INSTALLFOLDER]launch.py&quot;"

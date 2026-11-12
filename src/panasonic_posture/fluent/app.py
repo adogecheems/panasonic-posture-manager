@@ -18,7 +18,7 @@ from .demo import DemoClient, UnavailableClient
 from ..windows.client import ProcessClient, settings_path as default_settings_path
 from ..windows.hardware_client import HardwareUIClient
 from .pages import Home, Settings
-from .resources import data_root, translator
+from .resources import application_name, data_root, translator
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     PageSwitcher,
@@ -44,8 +44,7 @@ def configure_application(language=None):
     app = QApplication.instance()
     if app is None:
         raise RuntimeError('QApplication must exist before configuring the application name')
-    _ = translator(language)
-    name = _('Panasonic Posture Manager')
+    name = application_name(language)
     app.setApplicationName(name)
     app.setApplicationDisplayName(name)
     return name
@@ -64,7 +63,7 @@ class Window(FluentWidget):
         # Destroy the Qt object tree while the event loop can still process
         # deferred deletion, before PyQt's interpreter-exit wrapper cleanup.
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setWindowTitle(_('Panasonic 2-in-1 Tablet Posture Management Tool'))
+        self.setWindowTitle(application_name(language))
         self.setMicaEffectEnabled(False)
         self.setCustomBackgroundColor(WINDOW_LIGHT, WINDOW_DARK)
         self.resize(500, 660)

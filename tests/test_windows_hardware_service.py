@@ -9,12 +9,15 @@ import unittest
 from panasonic_posture.windows.hardware_service import (
     ERROR_SERVICE_SPECIFIC_ERROR,
     HardwareServiceRunner,
+    SERVICE_DESCRIPTION,
+    SERVICE_DISPLAY_NAME,
     SERVICE_RUNNING,
     SERVICE_START_PENDING,
     SERVICE_STOPPED,
     SERVICE_STOP_PENDING,
     service_image_path,
 )
+from panasonic_posture.product import APPLICATION_DISPLAY_NAME
 
 
 class Runtime:
@@ -37,6 +40,12 @@ class Runtime:
 
 
 class HardwareServiceRunnerTests(unittest.TestCase):
+    def test_service_labels_use_the_application_display_name(self):
+        self.assertEqual(
+            SERVICE_DISPLAY_NAME, f'{APPLICATION_DISPLAY_NAME} Hardware Service'
+        )
+        self.assertIn(APPLICATION_DISPLAY_NAME, SERVICE_DESCRIPTION)
+
     def test_service_reports_startup_polling_and_clean_stop(self):
         events, reports = [], []
         stop = threading.Event()

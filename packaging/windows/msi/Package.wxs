@@ -1,7 +1,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
-      Name="Panasonic Posture Manager"
+      Name="Panasonic 2-in-1 Tablet Posture Management Tool"
       Manufacturer="adogecheems"
       Version="$(var.ProductVersion)"
       UpgradeCode="7C0319E4-768D-4C48-A41C-25F0D677EA89"
@@ -9,7 +9,7 @@
       Compressed="yes">
     <MajorUpgrade
         AllowSameVersionUpgrades="yes"
-        DowngradeErrorMessage="A newer version of Panasonic Posture Manager is already installed." />
+        DowngradeErrorMessage="A newer version of Panasonic 2-in-1 Tablet Posture Management Tool is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Property Id="WINDOWS_BUILD">
@@ -24,10 +24,10 @@
 
     <Launch
         Condition="VersionNT64 AND WINDOWS_BUILD &gt;= 10240"
-        Message="Panasonic Posture Manager requires 64-bit Windows 10 or later." />
+        Message="Panasonic 2-in-1 Tablet Posture Management Tool requires 64-bit Windows 10 or later." />
 
     <Property Id="ARPHELPLINK" Value="https://github.com/adogecheems/panasonic-posture-manager" />
-    <Property Id="ARPCOMMENTS" Value="Panasonic convertible posture, direction and hardware service." />
+    <Property Id="ARPCOMMENTS" Value="Panasonic 2-in-1 tablet posture, direction and hardware service." />
     <Property Id="ARPPRODUCTICON" Value="ProductIcon.ico" />
     <Property Id="SLATE_CONFIGURED_BY_PRODUCT">
       <RegistrySearch
@@ -116,14 +116,14 @@
       <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="Panasonic Posture Manager" />
+      <Directory Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool" />
     </StandardDirectory>
 
     <Icon
         Id="ProductIcon.ico"
         SourceFile="$(var.ProjectRoot)/data/assets/work.mmoe.panasonic.PostureManager.ico" />
 
-    <Feature Id="Complete" Title="Panasonic Posture Manager" Level="1" AllowAbsent="no">
+    <Feature Id="Complete" Title="Panasonic 2-in-1 Tablet Posture Management Tool" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="PayloadComponents" />
     </Feature>
 

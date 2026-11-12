@@ -5,7 +5,7 @@
 # for display transactions, and shows tent/stand posture prompts.  No
 # root privileges are involved.
 [Unit]
-Description=Panasonic 2-in-1 posture session adapter
+Description=Panasonic 2-in-1 Tablet Posture Management Tool session adapter
 After=graphical-session.target
 PartOf=graphical-session.target
 

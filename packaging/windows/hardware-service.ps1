@@ -6,8 +6,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ServiceName = 'PanasonicPostureManagerHardware'
-$DisplayName = 'Panasonic Posture Manager Hardware Service'
-$Description = 'Provides the authenticated LocalSystem hardware endpoint for Panasonic Posture Manager.'
+$DisplayName = 'Panasonic 2-in-1 Tablet Posture Management Tool Hardware Service'
+$Description = 'Provides the authenticated LocalSystem hardware endpoint for Panasonic 2-in-1 Tablet Posture Management Tool.'
 
 $identity = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

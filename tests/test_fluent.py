@@ -106,6 +106,14 @@ class DemoTests(unittest.TestCase):
                 self.assertEqual(translator('zh_CN')('Laptop'), '笔记本')
                 self.assertEqual(translator('en')('Laptop'), 'Laptop')
 
+    def test_application_display_name_matches_the_window_title_source(self):
+        from panasonic_posture.fluent.resources import application_name
+        from panasonic_posture.product import APPLICATION_DISPLAY_NAME
+        self.assertEqual(application_name('en'), APPLICATION_DISPLAY_NAME)
+        self.assertEqual(
+            application_name('zh_CN'), '松下二合一平板电脑姿态管理工具'
+        )
+
     def test_windows_ui_language_wins_over_process_lang(self):
         from unittest.mock import patch
         from panasonic_posture.fluent.resources import default_language
@@ -147,12 +155,18 @@ class FluentWidgetTests(unittest.TestCase):
     def test_application_name_follows_the_windows_ui_language(self):
         self.run_ui('''
 from panasonic_posture.fluent.app import configure_application
-assert configure_application('zh_CN') == '松下姿态管理器'
-assert app.applicationName() == '松下姿态管理器'
-assert app.applicationDisplayName() == '松下姿态管理器'
-assert configure_application('en') == 'Panasonic Posture Manager'
-assert app.applicationName() == 'Panasonic Posture Manager'
-assert app.applicationDisplayName() == 'Panasonic Posture Manager'
+from panasonic_posture.fluent.app import Window
+from panasonic_posture.fluent.demo import UnavailableClient
+from panasonic_posture.product import APPLICATION_DISPLAY_NAME
+assert configure_application('zh_CN') == '松下二合一平板电脑姿态管理工具'
+assert app.applicationName() == '松下二合一平板电脑姿态管理工具'
+assert app.applicationDisplayName() == '松下二合一平板电脑姿态管理工具'
+window.close()
+window = Window(client=UnavailableClient(), language='zh_CN')
+assert window.windowTitle() == app.applicationDisplayName()
+assert configure_application('en') == APPLICATION_DISPLAY_NAME
+assert app.applicationName() == APPLICATION_DISPLAY_NAME
+assert app.applicationDisplayName() == APPLICATION_DISPLAY_NAME
 ''')
 
     def test_home_shows_stable_error_reasons_and_action_failures(self):

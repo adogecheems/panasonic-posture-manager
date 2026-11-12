@@ -17,6 +17,7 @@ from typing import Callable
 from gi.repository import Gio, GLib
 
 from .. import protocol
+from ..product import APPLICATION_DISPLAY_NAME
 from . import errors
 from .errors import describe_error
 
@@ -218,7 +219,7 @@ class Notifier:
         parameters = GLib.Variant(
             "(susssasa{sv}i)",
             (
-                self._("Panasonic 2-in-1 Tablet Posture Management Tool"),
+                self._(APPLICATION_DISPLAY_NAME),
                 0,
                 ICON_NAME,
                 summary,

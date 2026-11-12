@@ -78,3 +78,9 @@ def translator(language: str | None = None):
         # entries but resolve newly added strings from the source catalog.
         return messages.get(text, text) if value == text else value
     return translate
+
+
+def application_name(language: str | None = None) -> str:
+    """Return the same user-facing name used by the native window title."""
+    _ = translator(language)
+    return _('Panasonic 2-in-1 Tablet Posture Management Tool')

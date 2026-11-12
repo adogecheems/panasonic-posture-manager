@@ -73,6 +73,8 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn('Icon="ProductIcon.ico"', first)
         self.assertIn('Key="System.AppUserModel.ID"', first)
         self.assertIn('Value="work.mmoe.panasonic.PostureManager"', first)
+        self.assertIn(f'Name="{msi.APPLICATION_DISPLAY_NAME}"', first)
+        self.assertIn(f'DisplayName="{msi.APPLICATION_DISPLAY_NAME} Hardware Service"', first)
         self.assertIn('Name="PanasonicPostureManagerHardware"', first)
         self.assertIn('Account="LocalSystem"', first)
         self.assertIn('panasonic_posture.windows.hardware_service --serve', first)
@@ -84,6 +86,9 @@ class MsiPayloadTests(unittest.TestCase):
         root = ET.fromstring(source)
         self.assertTrue(root.tag.endswith('Wix'))
         for value in (
+            'Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
+            'Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
+            'Id="Complete" Title="Panasonic 2-in-1 Tablet Posture Management Tool"',
             'Scope="perMachine"',
             'Id="ConfigureSlate"',
             '-Action Install',

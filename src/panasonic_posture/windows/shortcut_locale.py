@@ -6,10 +6,13 @@ import os
 from pathlib import Path
 import stat
 
-from ..fluent.resources import translator
+from ..fluent.resources import application_name
+from ..product import APPLICATION_DISPLAY_NAME
 
-SOURCE_FOLDER = 'Panasonic Posture Manager'
-SOURCE_SHORTCUT = 'Panasonic Posture Manager.lnk'
+SOURCE_FOLDER = APPLICATION_DISPLAY_NAME
+SOURCE_SHORTCUT = f'{APPLICATION_DISPLAY_NAME}.lnk'
+LEGACY_FOLDER = 'Panasonic Posture Manager'
+LEGACY_SHORTCUT = f'{LEGACY_FOLDER}.lnk'
 START_MENU_RELATIVE_PATH = Path('Microsoft/Windows/Start Menu/Programs')
 
 
@@ -31,7 +34,16 @@ def _display_name(language_id: int) -> str:
     if type(language_id) is not int or not 0 <= language_id <= 0xFFFF:
         raise ValueError('Windows language ID must be an unsigned 16-bit integer')
     language = 'zh_CN' if language_id & 0x3FF == 0x04 else 'en'
-    return translator(language)('Panasonic Posture Manager')
+    return application_name(language)
+
+
+def _known_names() -> tuple[str, ...]:
+    names = (
+        application_name('en'),
+        application_name('zh_CN'),
+        LEGACY_FOLDER,
+    )
+    return tuple(dict.fromkeys(names))
 
 
 def _programs_root(program_data: Path) -> Path:
@@ -45,54 +57,60 @@ def localize_start_menu(program_data: Path, language_id: int) -> Path:
     """Rename the MSI-created folder and shortcut to the current UI language."""
     display_name = _display_name(language_id)
     root = _programs_root(program_data)
-    alternate_name = (
-        SOURCE_FOLDER if display_name != SOURCE_FOLDER else _display_name(0x0804)
-    )
     desired_folder = root / display_name
-    alternate_folder = root / alternate_name
-    if not _ordinary_directory(desired_folder) and _ordinary_directory(alternate_folder):
-        alternate_folder.rename(desired_folder)
+    if not _ordinary_directory(desired_folder):
+        for name in _known_names():
+            candidate = root / name
+            if _ordinary_directory(candidate):
+                candidate.rename(desired_folder)
+                break
     if not _ordinary_directory(desired_folder):
         raise FileNotFoundError(
             f'application Start menu folder is unavailable: {desired_folder}'
         )
 
     desired_shortcut = desired_folder / f'{display_name}.lnk'
-    alternate_shortcut = desired_folder / f'{alternate_name}.lnk'
-    if _ordinary_directory(alternate_folder):
-        stale_shortcut = alternate_folder / f'{alternate_name}.lnk'
-        if (
-            not _ordinary_file(desired_shortcut)
-            and not _ordinary_file(alternate_shortcut)
-            and _ordinary_file(stale_shortcut)
-        ):
-            stale_shortcut.rename(desired_shortcut)
-        elif _ordinary_file(stale_shortcut):
-            stale_shortcut.unlink()
-        try:
-            alternate_folder.rmdir()
-        except OSError:
-            pass
-    if not _ordinary_file(desired_shortcut) and _ordinary_file(alternate_shortcut):
-        alternate_shortcut.rename(desired_shortcut)
-    if _ordinary_file(desired_shortcut) and _ordinary_file(alternate_shortcut):
-        alternate_shortcut.unlink()
+    if not _ordinary_file(desired_shortcut):
+        folders = [desired_folder]
+        folders.extend(root / name for name in _known_names() if name != display_name)
+        for folder in folders:
+            for name in _known_names():
+                candidate = folder / f'{name}.lnk'
+                if _ordinary_file(candidate):
+                    candidate.rename(desired_shortcut)
+                    break
+            if _ordinary_file(desired_shortcut):
+                break
+    for name in _known_names():
+        duplicate = desired_folder / f'{name}.lnk'
+        if duplicate != desired_shortcut and _ordinary_file(duplicate):
+            duplicate.unlink()
     if not _ordinary_file(desired_shortcut):
         raise FileNotFoundError(
             f'application Start menu shortcut is unavailable: {desired_shortcut}'
         )
+
+    for name in _known_names():
+        stale_folder = root / name
+        if stale_folder == desired_folder or not _ordinary_directory(stale_folder):
+            continue
+        for shortcut_name in _known_names():
+            stale_shortcut = stale_folder / f'{shortcut_name}.lnk'
+            if _ordinary_file(stale_shortcut):
+                stale_shortcut.unlink()
+        try:
+            stale_folder.rmdir()
+        except OSError:
+            # Preserve any user-created files rather than deleting the folder.
+            pass
     return desired_shortcut
 
 
 def remove_start_menu_entries(program_data: Path) -> None:
     """Remove only the known localized/base links and empty application folders."""
     root = _programs_root(program_data)
-    names = {
-        _display_name(0x0409),
-        _display_name(0x0804),
-    }
-    folders = {root / SOURCE_FOLDER}
-    folders.update(root / name for name in names)
+    names = _known_names()
+    folders = {root / name for name in names}
     for folder in folders:
         if not _ordinary_directory(folder):
             continue

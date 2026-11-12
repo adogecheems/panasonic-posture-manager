@@ -13,7 +13,7 @@
 - **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。服务端和客户端管道均使用 overlapped I/O；服务器的 accept/read、异步鉴权和 write 分阶段推进，不再在 owner loop 内同步写回复。`hardware_ipc.py` 只保留兼容导出。偏好字段和显式 Engine 操作映射不再依赖前端包或动态 `getattr`。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
 - **Windows 质量门禁**：`windows-preview.yml` 使用 `test_windows*.py` 发现全部 Windows 测试，不再保留已删除测试的静默 no-op；测试前执行 `compileall`。架构测试显式把当前 `src/` 插入隔离子进程，避免误测已安装副本。物理启动基线、硬件释放和显示刷新能力使用显式 Protocol；首次登录启动初始化失败会记录有界警告但不阻止 UI。
 - **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。GitHub、版本和外观行的右侧控件统一垂直居中；「检查更新」和「校准」使用填充式强调按钮。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
-- **Windows 壳层名称本地化**：Fluent 在创建窗口前把 Qt 应用名和显示名设为本地化后的 `Panasonic Posture Manager`，中文为「松下姿态管理器」；标题栏仍使用较完整的既有产品名。MSI 安装和卸载通过受保护运行时的 `windows/shortcut_locale.py`，按 `UserLanguageID` 重命名固定的开始菜单文件夹与 `.lnk`，保留 AppUserModelID、图标和可执行目标。该动作只处理两个已知名称且卸载不删除用户新增内容；尚未用包含本轮改动的 MSI 覆盖安装观察真实开始菜单。
+- **Windows 壳层名称本地化**：用户可见应用名就是窗口标题：英文 `Panasonic 2-in-1 Tablet Posture Management Tool`，中文「松下二合一平板电脑姿态管理工具」。QApplication 名称、开始菜单、通知、托盘、桌面入口、MSI 产品/功能/快捷方式和服务描述均使用这一名称；`panasonic-posture-manager`、`PanasonicPostureManager`、AUMID、Run 键和管道名仍是项目/内部标识符。MSI 安装和卸载通过 `windows/shortcut_locale.py` 按 `UserLanguageID` 设置开始菜单名称并迁移旧短名，保留 AppUserModelID、图标和可执行目标。
 - **前端稳态更新**：Fluent 丢弃完全相同的连续快照；设置页只按用户可见控件签名重新同步，姿态未变化时不重画插画，SVG renderer 按姿态和主题缓存，零延时卡片布局请求合并为最多一个；托盘只在 ToolTip 内容变化时设置。Linux UI 状态读取改为单次 JSON 解码，严格字段校验和错误边界不变。
 - **双端模式文案**：自动、笔记本、帐篷、支架四项目的名称与说明分别由 `fluent/pages.py` 与 `ui/settings.py` 维护，不再经过共享文案模块；平板仍只作为物理状态，不进入手动模式列表。
 - **产品边界**：Windows 默认连接独立 LocalSystem 硬件服务，不再接受 `--native-backend`、`--hardware-backend` 或 `--simulate-backend`。`--backend` 仅保留为隔离软件预览，`--demo` 为内存演示。生产路径不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示屏幕键盘。
@@ -1349,6 +1349,15 @@ make WERROR=1 check
 - 影响：不改变硬件 RPC、ETW/CSM、显示事务、服务权限或安装授权；本地化动作失败被限制为 shell 展示退化，不影响硬件安装。中文判断与 UI 的 `GetUserDefaultUILanguage` 主语言规则一致，非中文系统保留英文。
 - 同步：`fluent/app.py`、`windows/shortcut_locale.py`、`packaging/windows/msi/Package.wxs`、`po/zh_CN.po`、Fluent/MSI/Start menu 测试、README、MAINTENANCE 与本记录。
 - 验证：Windows 发现式全套 309 项、Fluent 48 项和 i18n 114 个 msgid 通过；使用本机受保护运行时与 WiX 5.0.2 构建 MSI 并通过 ICE61，反编译确认安装/卸载延迟动作、`UserLanguageID` 命令和 `shortcut_locale.py` 均在 MSI 中，管理解包后的 `python-hardware.exe -I` 可导入新模块。`test_release` 的 GTK 版本检查因 Windows 运行时缺少 `gi` 跳过执行失败，`test_packaging_workflow` 的 shell 脚本检查因 Windows 缺少 `bash`/`sh` 失败；均为本机环境缺口。未安装或覆盖当前 MSI，真实任务栏和开始菜单刷新仍待安装后观察。
+
+### 2026-11-12 - 统一用户可见应用名称
+
+- 变更：新增 `product.py` 的 `APPLICATION_DISPLAY_NAME`，明确用户可见应用名就是现有窗口标题 `Panasonic 2-in-1 Tablet Posture Management Tool`；中文翻译继续使用「松下二合一平板电脑姿态管理工具」。该记录取代上一项把应用显示名缩短为 `Panasonic Posture Manager`／「松下姿态管理器」的决定。
+- 变更：Fluent 应用名、窗口标题、Linux 窗口与通知、托盘工具提示、开始菜单、MSI 产品/功能/快捷方式名称、Windows 服务显示说明、systemd 单元说明、polkit vendor 和 GitHub Release 标题统一使用完整显示名。便携入口改名为 `Panasonic 2-in-1 Tablet Posture Management Tool.cmd`。
+- 动机：短名只是仓库、包、可执行文件和内部协议使用的项目标识符，不应在任务栏、开始菜单或系统界面冒充本地化产品名；窗口标题才代表最终用户看到的完整应用程序名称。
+- 影响：项目名 `panasonic-posture-manager`、安装目录/注册表/服务/Run/管道等标识符以及 AUMID `work.mmoe.panasonic.PostureManager` 不变。开始菜单本地化会迁移上一提交产生的短名和更早的英文短名，不覆盖用户新增文件。
+- 同步：`product.py`、`fluent/{resources,app}.py`、`session/notify.py`、`ui/app.py`、`windows/{shortcut_locale,hardware_service}.py`、Windows MSI/便携包、systemd、polkit、Release workflow、翻译、README、MAINTENANCE 与相关测试。
+- 验证：Windows 发现式全套 319 项、Fluent 50 项、frontend 14 项、session refresh 9 项和 i18n 113 个 msgid 通过。使用受保护运行时与 WiX 5.0.2 构建的 MSI 通过 ICE61；反编译确认 Package、Feature、开始菜单目录/快捷方式和服务显示名均为完整应用名。便携 ZIP 实际包含 `Panasonic 2-in-1 Tablet Posture Management Tool.cmd` 与 `product.py`。未安装或覆盖当前 MSI，真实任务栏、开始菜单和文件资源管理器刷新仍待安装后观察。
 
 ### 2026-11-12 - 前端增量更新与渲染缓存
 

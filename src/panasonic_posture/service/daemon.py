@@ -31,6 +31,7 @@ except ImportError:  # pragma: no cover - fallback for non-Linux development
 
 from .. import __version__
 from ..model import StateSnapshot
+from ..product import APPLICATION_DISPLAY_NAME
 from ..protocol import (
     DBUS_ERROR,
     DBUS_XML,
@@ -451,7 +452,7 @@ class Daemon:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="panasonic-posture-manager-service",
-        description="Panasonic posture manager privileged service (internal entry point).",
+        description=f'{APPLICATION_DISPLAY_NAME} privileged service (internal entry point).',
     )
     parser.add_argument(
         "--session-bus",

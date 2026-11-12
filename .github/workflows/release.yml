@@ -363,7 +363,7 @@ jobs:
           else
             gh release create "$TAG" "${assets[@]}" \
               --verify-tag \
-              --title "Panasonic Posture Manager $TAG" \
+              --title "Panasonic 2-in-1 Tablet Posture Management Tool $TAG" \
               --generate-notes
           fi
 

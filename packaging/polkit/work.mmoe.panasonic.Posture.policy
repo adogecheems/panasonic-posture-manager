@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
- <vendor>Panasonic Posture Manager community project</vendor>
+ <vendor>Panasonic 2-in-1 Tablet Posture Management Tool community project</vendor>
  <!-- The daemon additionally requires the caller to be the active local
       graphical session on seat0 (logind); this policy action is the second
       gate and deliberately does not prompt: allow_active=yes. -->

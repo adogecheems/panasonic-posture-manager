@@ -8,6 +8,7 @@ from .posture import PosturePage
 from .settings import SettingsPage
 from .service import PostureService
 from ..frontend.ports import UIClient
+from ..product import APPLICATION_DISPLAY_NAME
 
 APPLICATION_ID = 'work.mmoe.panasonic.PostureManager'
 NAVIGATION_CSS = b'''
@@ -45,7 +46,7 @@ class Application(Adw.Application):
         display = Gdk.Display.get_default()
         Gtk.IconTheme.get_for_display(display).add_search_path(str(DATA_ROOT / 'assets'))
         Gtk.Window.set_default_icon_name(APPLICATION_ID)
-        self.window = Adw.ApplicationWindow(application=self, title=_('Panasonic 2-in-1 Tablet Posture Management Tool'), default_width=500, default_height=660)
+        self.window = Adw.ApplicationWindow(application=self, title=_(APPLICATION_DISPLAY_NAME), default_width=500, default_height=660)
         toolbar = Adw.ToolbarView()
         self.window.set_content(toolbar)
         header = Adw.HeaderBar()
@@ -60,7 +61,7 @@ class Application(Adw.Application):
         self._style = Adw.StyleManager.get_default()
         self._style_handler = self._style.connect('notify::dark', self._update_mark)
         self._update_mark()
-        header.set_title_widget(Adw.WindowTitle(title=_('Panasonic 2-in-1 Tablet Posture Management Tool')))
+        header.set_title_widget(Adw.WindowTitle(title=_(APPLICATION_DISPLAY_NAME)))
         toolbar.add_top_bar(header)
         overlay = Adw.ToastOverlay()
         toolbar.set_content(overlay)

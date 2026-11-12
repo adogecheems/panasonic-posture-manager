@@ -49,7 +49,7 @@ class WindowsPackagingTests(unittest.TestCase):
                              'data/assets/lets-note-window-icon.png',
                              'data/assets/work.mmoe.panasonic.PostureManager.ico',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
-                             'Panasonic Posture Manager.cmd', 'Hardware.cmd'):
+                             f'{builder.APPLICATION_DISPLAY_NAME}.cmd', 'Hardware.cmd'):
                     self.assertIn(prefix + name, names)
                 self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in names))
                 self.assertFalse(any('/qml/' in name for name in names))

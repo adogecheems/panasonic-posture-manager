@@ -6,7 +6,7 @@
 # is requested at boot via packaging/modules-load.d instead of an
 # ExecStartPre=+/usr/bin/modprobe line.
 [Unit]
-Description=Panasonic 2-in-1 posture management service
+Description=Panasonic 2-in-1 Tablet Posture Management Tool hardware service
 After=dbus.service
 Requires=dbus.service
 

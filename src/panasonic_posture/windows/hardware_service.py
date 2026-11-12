@@ -17,16 +17,17 @@ from pathlib import Path
 import threading
 
 from ..contracts import TICK_SECONDS
+from ..product import APPLICATION_DISPLAY_NAME
 from .hardware_runtime import HardwareRuntime
 from .trusted_runtime import TrustedRuntime
 
 log = logging.getLogger(__name__)
 
 SERVICE_NAME = 'PanasonicPostureManagerHardware'
-SERVICE_DISPLAY_NAME = 'Panasonic Posture Manager Hardware Service'
+SERVICE_DISPLAY_NAME = f'{APPLICATION_DISPLAY_NAME} Hardware Service'
 SERVICE_DESCRIPTION = (
     'Provides the authenticated LocalSystem hardware endpoint for '
-    'Panasonic Posture Manager.'
+    f'{APPLICATION_DISPLAY_NAME}.'
 )
 LOG_RELATIVE_PATH = Path('PanasonicPostureManager/Logs/hardware-service.log')
 
