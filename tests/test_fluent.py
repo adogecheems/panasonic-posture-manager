@@ -398,6 +398,7 @@ class FakeTray(QObject):
     messageClicked = pyqtSignal()
     def __init__(self, icon, parent):
         super().__init__(parent)
+        self.icon = icon
         self.visible = False
         self.messages = []
     @classmethod
@@ -422,6 +423,8 @@ window.show()
 from PyQt6 import sip
 resident = ResidentTray(window, tray_factory=FakeTray)
 assert resident.enabled and resident.tray.visible
+assert not resident.tray.icon.pixmap(16, 16).isNull()
+assert resident.tray.icon.cacheKey() != window.windowIcon().cacheKey()
 assert not app.quitOnLastWindowClosed()
 assert not any('system tray' in label.text().lower() for label in window.findChildren(QLabel))
 window.close()

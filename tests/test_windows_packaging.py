@@ -57,6 +57,7 @@ class WindowsPackagingTests(unittest.TestCase):
                              'app/panasonic_posture/fluent/update_check.py',
                              'data/assets/lets-note-window-icon.png',
                              'data/assets/work.mmoe.panasonic.PostureManager.ico',
+                             'data/assets/notification-badge.svg',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
                              f'{builder.APPLICATION_DISPLAY_NAME}.cmd', 'Hardware.cmd'):
                     self.assertIn(prefix + name, names)
