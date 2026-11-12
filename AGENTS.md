@@ -6,9 +6,9 @@
 
 ## 当前交接状态（2026-11-13）
 
-- **最新功能提交**：`7950c80 fix: use full application display name`。任务栏、开始菜单、窗口标题、通知、服务与打包元数据统一使用完整应用名，项目 slug、AUMID、Run 键和内部服务名保持独立。上一功能提交 `3d80648 refactor: harden Windows hardware transport`，更早的 `fbbc357 fix: localize Windows shell names` 首次引入开始菜单运行时本地化。
+- **最新功能提交**：`cca3ad0 fix: keep slate lease across hardware handoff`。帐篷/支架进入物理平板或会话在同一软件姿态重启时复用现有 CSM 租约，避免短暂回落笔记本；上一功能提交 `7950c80 fix: use full application display name` 统一完整应用名，项目 slug、AUMID、Run 键和内部服务名保持独立。
 - **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
-- **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。崩溃恢复始终使用 `pending.original`。
+- **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。需要恢复或在目标变化时始终使用 `pending.original`；若新目标与租约 `desired` 相同则沿用租约，不先恢复。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
 - **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。服务端和客户端管道均使用 overlapped I/O；服务器的 accept/read、异步鉴权和 write 分阶段推进，不再在 owner loop 内同步写回复。`hardware_ipc.py` 只保留兼容导出。偏好字段和显式 Engine 操作映射不再依赖前端包或动态 `getattr`。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
 - **Windows 质量门禁**：`windows-preview.yml` 使用 `test_windows*.py` 发现全部 Windows 测试，不再保留已删除测试的静默 no-op；测试前执行 `compileall`。架构测试显式把当前 `src/` 插入隔离子进程，避免误测已安装副本。物理启动基线、硬件释放和显示刷新能力使用显式 Protocol；首次登录启动初始化失败会记录有界警告但不阻止 UI。
