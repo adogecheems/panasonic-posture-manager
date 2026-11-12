@@ -4,7 +4,7 @@
 
 按任务查阅：[代码与测试](#4-定位代码与测试) · [哪些操作需要授权](#7-授权边界) · [验证命令](#8-验证) · [提交规则](#11-git-与提交) · [设计变更记录](#13-设计变更记录)。
 
-## 当前交接状态（2026-11-12）
+## 当前交接状态（2026-11-13）
 
 - **最新功能提交**：`7950c80 fix: use full application display name`。任务栏、开始菜单、窗口标题、通知、服务与打包元数据统一使用完整应用名，项目 slug、AUMID、Run 键和内部服务名保持独立。上一功能提交 `3d80648 refactor: harden Windows hardware transport`，更早的 `fbbc357 fix: localize Windows shell names` 首次引入开始菜单运行时本地化。
 - **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
@@ -26,6 +26,7 @@
 - **关于页验证**：5 项 jsproxy 响应/版本比较单测、完整 Fluent 50 项和 i18n 113 个 msgid 通过；Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer，真实端点返回 `2.4.0 -> 2.4.0`。当前安装已包含该功能。
 - **未验证项**：GitHub Windows CI、Authenticode 签名（当前 MSI 为 `NotSigned`）、卸载及跨版本升级链路、首个真实服务 ETW 事件、SYSTEM 会话姿态、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 - **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。退出物理平板时，Windows 若在帐篷目标前自行恢复方向锁，事务会采用并记录该状态；CSM 发布后再复核锁和方向，平台改写会触发一次有界重发。当前安装已包含该修复，真机退出方向仍需复测。
+- **CSM 姿态交接连续性**：`SlateNotifier.sync_mode()` 遇到已持久化且 `desired` 与新姿态相同的租约时直接复用，不再先恢复 `original` 再写回。帐篷/支架进入物理平板、或会话在同一软件姿态重启时，CSM 不会短暂回落到笔记本；切换到不同目标或释放仍恢复 `pending.original`，写入失败保留 journal。
 
 ## 1. 工作流程
 
@@ -1406,3 +1407,12 @@ make WERROR=1 check
 - 影响：不改变 RPC 帧、鉴权、租约、ETW/CSM、显示事务或服务权限。管道仍是本地、消息模式、拒绝远程客户端并限制四个实例；开始菜单仍为每机器入口。
 - 验证：管道/客户端/会话相关 49 项和 MSI 5 项目标测试通过；最终 MSI 通过完整 WiX 验证并安装成功。安装后 `GetState` 返回 `backend=ready`、`hardware_status=ok`、`session_connected=True`，UI 运行时连续 20 次独立 RPC 连接成功；中文开始菜单快捷方式目标为 `runtime\pythonw.exe`，可启动且窗口响应正常；3007 个安装清单文件哈希一致。
 - 未验证：真机姿态、ETW/显示/CSM、Authenticode 和 GitHub Windows CI。
+
+### 2026-11-13 - 保持帐篷/支架到物理平板的 CSM 连续性
+
+- 变更：`SlateNotifier.sync_mode()` 在已有 journal 租约的 `desired` 与当前姿态一致时保留该租约并直接幂等写入目标，不再先恢复 `pending.original`。仅当目标不同、真正释放或异常回滚时恢复原值；相同目标写入失败时继续保留 pending lease 和 journal。
+- 动机：帐篷/支架进入物理平板时，CSM 的理想值始终是平板。旧顺序会把软件租约先恢复到启动时的笔记本值，再写回平板，表现为短暂丢失 CSM 平板状态；会话在帐篷姿态重启时也会出现同类闪断。
+- 影响：不改 ETW 健康门禁、CSM 原始值映射、journal schema、姿态策略、显示事务、租约或 RPC 契约。相同目标的重复同步保持幂等；平板退出、切换到笔记本及进程关闭仍恢复 `pending.original`。
+- 同步：`windows/convertible_slate.py`、`tests/test_windows_convertible_slate.py` 与本记录。
+- 验证：新增回归先复现失败，再覆盖帐篷/支架到 `hardware`、同一姿态崩溃恢复、写入失败保留租约和关闭恢复原值；convertible-slate 22 项及 Windows 发现式全套 322 项通过，`compileall` 通过。
+- 未验证：未真机重放帐篷/支架到物理平板，未构建或安装包含本修复的 MSI；CSM 视觉连续性仍需安装后真机确认。

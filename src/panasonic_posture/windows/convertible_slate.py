@@ -399,6 +399,19 @@ class SlateNotifier:
         if desired is None:
             return False
         self._require_hardware()
+        if self.pending is not None and self.pending.desired == desired:
+            # A pending lease that already targets this posture is still the
+            # same software ownership. Replaying its original laptop value
+            # would briefly drop the tablet signal when tent/stand hands over
+            # to the physical tablet (or when a session restarts in tent).
+            self.original = self.pending.original
+            changed = bool(self.device.set(desired))
+            self.last = desired
+            if desired == self.original:
+                if self.journal is not None:
+                    self.journal.clear()
+                self.pending = None
+            return changed
         self._recover()
         if self.original is None:
             self.original = bool(self.device.read())

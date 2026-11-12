@@ -127,19 +127,36 @@ class SlateNotifierTests(unittest.TestCase):
             self.assertIsNotNone(notifier.pending)
             notifier.closed = True
 
-    def test_crash_recovery_restores_the_journal_original_before_a_new_target(self):
+    def test_crash_recovery_in_the_same_target_retains_the_lease_until_release(self):
         with tempfile.TemporaryDirectory() as directory:
             journal = SlateJournal(Path(directory) / 'slate.json')
             journal.save(False, True)
             device = FakeSlateDevice(True)
             notifier = SlateNotifier(device, journal, hardware_query=healthy())
-            self.assertTrue(notifier.sync_mode('tent'))
-            self.assertEqual(device.sets, [False, True])
+            self.assertFalse(notifier.sync_mode('tent'))
+            self.assertEqual(device.sets, [True])
             self.assertFalse(notifier.original)
             self.assertTrue(notifier.last)
+            self.assertIsNotNone(journal.load())
             notifier.close()
             self.assertFalse(device.state)
             self.assertIsNone(journal.load())
+
+    def test_software_posture_to_hardware_reuses_the_lease_without_a_laptop_flash(self):
+        for mode in ('tent', 'stand'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                journal = SlateJournal(Path(directory) / 'slate.json')
+                journal.save(False, True)
+                device = FakeSlateDevice(True)
+                notifier = SlateNotifier(device, journal, hardware_query=healthy(True))
+                self.assertFalse(notifier.sync_mode(mode))
+                self.assertFalse(notifier.sync_mode('hardware'))
+                self.assertEqual(device.sets, [True, True])
+                self.assertTrue(device.state)
+                self.assertIsNotNone(journal.load())
+                notifier.close()
+                self.assertFalse(device.state)
+                self.assertIsNone(journal.load())
 
     def test_recovery_for_laptop_restores_and_clears_without_an_extra_flash(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -166,6 +183,23 @@ class SlateNotifierTests(unittest.TestCase):
             self.assertIsNotNone(journal.load())
             device.fail_set = False
             notifier.close()
+            self.assertIsNone(journal.load())
+
+    def test_failed_same_target_recovery_keeps_the_pending_lease(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            journal.save(False, True)
+            device = FakeSlateDevice(True)
+            device.fail_set = True
+            notifier = SlateNotifier(device, journal, hardware_query=healthy(True))
+            with self.assertRaises(SlateError):
+                notifier.sync_mode('hardware')
+            self.assertIsNotNone(notifier.pending)
+            self.assertIsNotNone(journal.load())
+            self.assertTrue(device.state)
+            device.fail_set = False
+            notifier.close()
+            self.assertFalse(device.state)
             self.assertIsNone(journal.load())
 
     def test_an_unchanged_set_result_does_not_adopt_a_new_baseline(self):
