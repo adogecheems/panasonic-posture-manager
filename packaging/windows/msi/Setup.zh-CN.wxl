@@ -8,17 +8,18 @@
   <String Id="WelcomeDlgTitle" Overridable="yes"
       Value="{\WixUI_Font_Bigger}欢迎安装 [ProductName]" />
   <String Id="WelcomeDlgDescription"
-      Value="安装程序将安装平板姿态管理工具，并配置本地硬件服务。点击“下一步”查看许可协议。" />
+      Value="安装程序将帮助你在计算机上安装此应用。点击“下一步”继续。" />
   <String Id="InstallDirDlgTitle" Overridable="yes"
-      Value="{\WixUI_Font_Title}选择主程序安装位置" />
+      Value="{\WixUI_Font_Title}选择安装位置" />
   <String Id="InstallDirDlgDescription"
-      Value="请选择主程序的安装位置。" />
+      Value="选择此应用的安装位置。" />
   <String Id="InstallDirDlgFolderLabel"
-      Value="输入上级目录时会自动补全末尾的 PanasonicPostureManager；也可点击“更改”浏览。硬件服务固定安装到 Program Files 下的受保护目录。" />
+      Value="默认位置适合大多数用户；如需安装到其他位置，请点击“更改”。" />
+  <String Id="PostureChangeFolder" Value="更改(&amp;C)..." />
   <String Id="MainPathDialogTitle"
-      Value="{\WixUI_Font_Title}安装位置需要修改" />
+      Value="{\WixUI_Font_Title}无法使用此安装位置" />
   <String Id="MainPathDialogDescription"
-      Value="当前路径未通过安装位置检查。" />
+      Value="请选择其他文件夹后重试。" />
   <String Id="MainPathErrorFormat"
       Value="请输入本地绝对路径，例如 D:\Apps。不要使用相对路径、UNC 路径或无效字符。" />
   <String Id="MainPathErrorNetwork"
@@ -36,8 +37,8 @@
   <String Id="VerifyReadyDlgInstallTitle" Overridable="yes"
       Value="{\WixUI_Font_Title}确认安装 [ProductName]" />
   <String Id="VerifyReadyDlgInstallText"
-      Value="点击“确认安装”后将安装主程序，并配置固定位置的本地硬件服务。点击“上一步”可返回修改主程序安装位置。" />
+      Value="点击“确认安装”开始安装。如需更改安装位置，请点击“上一步”。" />
   <String Id="VerifyReadyDlgInstall" Overridable="yes" Value="确认安装" />
   <String Id="ExitDialogOptionalText"
-      Value="安装完成后可能需要重启 Windows，以便硬件服务与平板指示器配置生效。" />
+      Value="安装完成后可能需要重启 Windows，重启后设置才会生效。" />
 </WixLocalization>

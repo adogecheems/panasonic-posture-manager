@@ -187,16 +187,24 @@ class MsiPayloadTests(unittest.TestCase):
         expected = {
             'en-US': (
                 'Panasonic 2-in-1 Tablet Posture Management Tool',
-                'A restart may be required',
+                'You may need to restart Windows',
                 'Confirm install',
+                'The default location works for most users. '
+                'To install somewhere else, select Change.',
             ),
             'zh-CN': (
                 '松下二合一平板电脑姿态管理工具',
-                '安装完成后可能需要重启',
+                '安装完成后可能需要重启 Windows',
                 '确认安装',
+                '默认位置适合大多数用户；如需安装到其他位置，请点击“更改”。',
             ),
         }
-        for culture, (product_name, exit_text, confirm_text) in expected.items():
+        for culture, (
+            product_name,
+            exit_text,
+            confirm_text,
+            folder_text,
+        ) in expected.items():
             with self.subTest(culture=culture):
                 localization, license_rtf = msi.culture_files(culture)
                 root = ET.parse(localization).getroot()
@@ -210,10 +218,30 @@ class MsiPayloadTests(unittest.TestCase):
                 self.assertEqual(strings['ProductName'], product_name)
                 self.assertEqual(strings['FeatureTitle'], product_name)
                 self.assertIn('[ProductName]', strings['WelcomeDlgTitle'])
+                self.assertNotIn(
+                    'hardware service',
+                    strings['WelcomeDlgDescription'].lower(),
+                )
+                self.assertNotIn(
+                    '硬件服务',
+                    strings['WelcomeDlgDescription'],
+                )
                 self.assertIn('InstallDirDlgTitle', strings)
                 self.assertIn('InstallDirDlgDescription', strings)
                 self.assertIn('InstallDirDlgFolderLabel', strings)
-                self.assertIn('PanasonicPostureManager', strings['InstallDirDlgFolderLabel'])
+                self.assertIn('PostureChangeFolder', strings)
+                self.assertNotIn(
+                    'PanasonicPostureManager',
+                    strings['InstallDirDlgFolderLabel'],
+                )
+                self.assertNotIn(
+                    'Program Files',
+                    strings['InstallDirDlgFolderLabel'],
+                )
+                self.assertEqual(
+                    strings['InstallDirDlgFolderLabel'],
+                    folder_text,
+                )
                 for error in (
                     'MainPathErrorFormat',
                     'MainPathErrorNetwork',
@@ -227,6 +255,14 @@ class MsiPayloadTests(unittest.TestCase):
                 self.assertIn(confirm_text, strings['VerifyReadyDlgInstall'])
                 self.assertIn('[ProductName]', strings['VerifyReadyDlgInstallTitle'])
                 self.assertIn(exit_text, strings['ExitDialogOptionalText'])
+                self.assertNotIn(
+                    'main application',
+                    strings['VerifyReadyDlgInstallText'],
+                )
+                self.assertNotIn(
+                    '主程序',
+                    strings['VerifyReadyDlgInstallText'],
+                )
                 self.assertIn(
                     'https://www.gnu.org/licenses/agpl-3.0.html',
                     license_rtf.read_text(encoding='utf-8'),
@@ -258,6 +294,11 @@ class MsiPayloadTests(unittest.TestCase):
     def test_main_path_actions_complete_and_guard_the_selected_location(self):
         source = ROOT / 'packaging/windows/msi/main-path-actions.js'
         text = source.read_text(encoding='utf-8')
+        self.assertNotRegex(
+            text,
+            r"session\.Property\([^)]*,",
+            'Session.Property is a parameterized property, not a setter method',
+        )
         for value in (
             "PRODUCT_FOLDER = 'PanasonicPostureManager'",
             'CompleteAndValidateMainPath',
@@ -285,6 +326,43 @@ class MsiPayloadTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         self.assertIn('self-test passed', result.stdout)
+
+    def test_install_directory_copy_has_cjk_metrics_and_no_control_overlap(self):
+        root = ET.fromstring(
+            (ROOT / 'packaging/windows/msi/Package.wxs').read_text(encoding='utf-8')
+        )
+        ui = next(
+            element for element in root.iter()
+            if element.tag.endswith('}UI')
+            and element.get('Id') == 'WixUI_PostureInstallDir'
+        )
+        styles = {
+            element.get('Id'): element
+            for element in ui
+            if element.tag.endswith('TextStyle')
+        }
+        for element in styles.values():
+            self.assertEqual(element.get('FaceName'), 'Microsoft YaHei UI')
+        self.assertGreaterEqual(int(styles['WixUI_Font_Normal'].get('Size')), 9)
+
+        install_dir = next(
+            element for element in root.iter()
+            if element.tag.endswith('Dialog')
+            and element.get('Id') == 'PostureInstallDirDlg'
+        )
+        controls = {
+            element.get('Id'): element
+            for element in install_dir
+            if element.tag.endswith('Control')
+        }
+        folder_label = controls['FolderLabel']
+        folder = controls['Folder']
+        change = controls['ChangeFolder']
+        label_bottom = int(folder_label.get('Y')) + int(folder_label.get('Height'))
+        folder_bottom = int(folder.get('Y')) + int(folder.get('Height'))
+        self.assertLessEqual(label_bottom + 4, int(folder.get('Y')))
+        self.assertLessEqual(folder_bottom + 4, int(change.get('Y')))
+        self.assertGreaterEqual(int(folder_label.get('Height')), 34)
 
     def test_installer_branding_uses_wix_bitmap_dimensions(self):
         dimensions = {

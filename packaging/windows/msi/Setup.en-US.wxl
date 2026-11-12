@@ -8,17 +8,18 @@
   <String Id="WelcomeDlgTitle" Overridable="yes"
       Value="{\WixUI_Font_Bigger}Welcome to the [ProductName] Setup Wizard" />
   <String Id="WelcomeDlgDescription"
-      Value="The Setup Wizard will install the posture management tool and configure the local hardware service. Click Next to review the license agreement." />
+      Value="The Setup Wizard will help you install this app. Select Next to continue." />
   <String Id="InstallDirDlgTitle" Overridable="yes"
-      Value="{\WixUI_Font_Title}Choose main application location" />
+      Value="{\WixUI_Font_Title}Choose install location" />
   <String Id="InstallDirDlgDescription"
-      Value="Choose where to install the main application." />
+      Value="Choose where to install this app." />
   <String Id="InstallDirDlgFolderLabel"
-      Value="Entering a parent folder automatically completes the PanasonicPostureManager leaf; use Change to browse. The hardware service is installed in a fixed protected folder under Program Files." />
+      Value="The default location works for most users. To install somewhere else, select Change." />
+  <String Id="PostureChangeFolder" Value="&amp;Change..." />
   <String Id="MainPathDialogTitle"
-      Value="{\WixUI_Font_Title}Change the installation location" />
+      Value="{\WixUI_Font_Title}Install location unavailable" />
   <String Id="MainPathDialogDescription"
-      Value="The current path did not pass the installation location checks." />
+      Value="Choose a different folder and try again." />
   <String Id="MainPathErrorFormat"
       Value="Enter an absolute local path such as D:\Apps. Relative paths, UNC paths and invalid characters are not supported." />
   <String Id="MainPathErrorNetwork"
@@ -36,8 +37,8 @@
   <String Id="VerifyReadyDlgInstallTitle" Overridable="yes"
       Value="{\WixUI_Font_Title}Confirm installation of [ProductName]" />
   <String Id="VerifyReadyDlgInstallText"
-      Value="Click Confirm install to install the main application and configure the fixed-location local hardware service. Click Back to change the main application location." />
+      Value="Select Confirm install to begin. To choose a different install location, select Back." />
   <String Id="VerifyReadyDlgInstall" Overridable="yes" Value="&amp;Confirm install" />
   <String Id="ExitDialogOptionalText"
-      Value="A restart may be required after installation so the hardware service and tablet indicator configuration can take effect." />
+      Value="You may need to restart Windows after installation for the new settings to take effect." />
 </WixLocalization>

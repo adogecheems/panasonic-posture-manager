@@ -151,16 +151,17 @@ function applyValidation(session, allowCompletion) {
         result = { path: session.Property('INSTALLFOLDER'), error: 'Format' };
     }
     if (result.error) {
-        session.Property('MAIN_PATH_VALID', '');
-        session.Property(
-            'MAIN_PATH_ERROR',
-            session.Property('MainPathError' + result.error) || result.error
-        );
+        // The MSI Session.Property member is a parameterized read/write
+        // property. Passing a second argument invokes the getter with an
+        // invalid signature and aborts the install with JScript error 1720.
+        session.Property('MAIN_PATH_VALID') = '';
+        session.Property('MAIN_PATH_ERROR') =
+            session.Property('MainPathError' + result.error) || result.error;
         return result;
     }
-    session.Property('INSTALLFOLDER', result.path);
-    session.Property('MAIN_PATH_ERROR', '');
-    session.Property('MAIN_PATH_VALID', '1');
+    session.Property('INSTALLFOLDER') = result.path;
+    session.Property('MAIN_PATH_ERROR') = '';
+    session.Property('MAIN_PATH_VALID') = '1';
     return result;
 }
 

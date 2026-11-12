@@ -214,9 +214,12 @@
   <?endforeach?>
   <Fragment>
     <UI Id="WixUI_PostureInstallDir">
-      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
-      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
-      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <!-- Microsoft YaHei UI has native CJK metrics on supported Windows
+           versions. Tahoma falls back to mismatched glyph metrics and can
+           overlap wrapped Chinese copy at high DPI. -->
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Microsoft YaHei UI" Size="9" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Microsoft YaHei UI" Size="14" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Microsoft YaHei UI" Size="11" Bold="yes" />
 
       <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
       <Property Id="ARPNOMODIFY" Value="1" />
@@ -227,6 +230,7 @@
       <DialogRef Id="FatalError" />
       <DialogRef Id="FilesInUse" />
       <DialogRef Id="InvalidMainPathDlg" />
+      <DialogRef Id="PostureInstallDirDlg" />
       <DialogRef Id="MsiRMFilesInUse" />
       <DialogRef Id="PrepareDlg" />
       <DialogRef Id="ProgressDlg" />
@@ -239,17 +243,17 @@
       <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
 
       <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
-      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Condition="LicenseAccepted = &quot;1&quot;" />
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="PostureInstallDirDlg" Condition="LicenseAccepted = &quot;1&quot;" />
 
-      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
-      <Publish Dialog="InstallDirDlg" Control="Next" Event="DoAction" Value="CompleteAndValidateMainPath" Order="1" />
-      <Publish Dialog="InstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidMainPathDlg" Order="2" Condition="MAIN_PATH_VALID &lt;&gt; &quot;1&quot;" />
-      <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="3" Condition="MAIN_PATH_VALID = &quot;1&quot;" />
-      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="4" Condition="MAIN_PATH_VALID = &quot;1&quot;" />
-      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
-      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+      <Publish Dialog="PostureInstallDirDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
+      <Publish Dialog="PostureInstallDirDlg" Control="Next" Event="DoAction" Value="CompleteAndValidateMainPath" Order="1" />
+      <Publish Dialog="PostureInstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidMainPathDlg" Order="2" Condition="MAIN_PATH_VALID &lt;&gt; &quot;1&quot;" />
+      <Publish Dialog="PostureInstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="3" Condition="MAIN_PATH_VALID = &quot;1&quot;" />
+      <Publish Dialog="PostureInstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="4" Condition="MAIN_PATH_VALID = &quot;1&quot;" />
+      <Publish Dialog="PostureInstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="PostureInstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
 
-      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="1" Condition="NOT Installed" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PostureInstallDirDlg" Order="1" Condition="NOT Installed" />
       <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
       <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" Condition="Installed AND PATCH" />
 
@@ -259,12 +263,27 @@
       <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
     </UI>
     <UI Id="WixUI_PosturePathDialogs">
+      <Dialog Id="PostureInstallDirDlg" X="50" Y="50" Width="370" Height="270" Title="[ProductName] 安装程序">
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Text="!(loc.WixUINext)" TabSkip="no" Default="yes" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" TabSkip="no" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Text="!(loc.WixUICancel)" TabSkip="no" Cancel="yes">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" Text="WixUI_Bmp_Banner" Disabled="yes" TabSkip="no" />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" Disabled="yes" TabSkip="yes" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" Disabled="yes" TabSkip="yes" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="300" Height="18" Transparent="yes" NoPrefix="yes" Text="!(loc.InstallDirDlgTitle)" TabSkip="yes" />
+        <Control Id="Description" Type="Text" X="25" Y="24" Width="330" Height="18" Transparent="yes" NoPrefix="yes" Text="!(loc.InstallDirDlgDescription)" TabSkip="yes" />
+        <Control Id="FolderLabel" Type="Text" X="20" Y="58" Width="325" Height="36" Text="!(loc.InstallDirDlgFolderLabel)" NoPrefix="yes" TabSkip="yes" />
+        <Control Id="Folder" Type="PathEdit" X="20" Y="104" Width="320" Height="18" Indirect="yes" Property="WIXUI_INSTALLDIR" TabSkip="no" />
+        <Control Id="ChangeFolder" Type="PushButton" X="20" Y="127" Width="64" Height="18" Text="!(loc.PostureChangeFolder)" TabSkip="no" />
+      </Dialog>
       <Dialog Id="InvalidMainPathDlg" Width="370" Height="270" Title="!(loc.MainPathDialogTitle)">
         <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
-        <Control Id="Title" Type="Text" X="15" Y="6" Width="300" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.MainPathDialogTitle)" />
-        <Control Id="Description" Type="Text" X="25" Y="23" Width="320" Height="15" Transparent="yes" NoPrefix="yes" Text="!(loc.MainPathDialogDescription)" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="300" Height="18" Transparent="yes" NoPrefix="yes" Text="!(loc.MainPathDialogTitle)" />
+        <Control Id="Description" Type="Text" X="25" Y="24" Width="320" Height="18" Transparent="yes" NoPrefix="yes" Text="!(loc.MainPathDialogDescription)" />
         <Control Id="Message" Type="Text" X="25" Y="70" Width="320" Height="120" NoPrefix="yes" Text="[MAIN_PATH_ERROR]" />
         <Control Id="Back" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUIBack)">
           <Publish Event="EndDialog" Value="Return" />
