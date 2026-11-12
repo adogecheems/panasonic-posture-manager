@@ -139,9 +139,9 @@ CFQV8-1L 的 `ACPI\INT33D3` 非独占配置由 MSI 自动执行：它把受保�
 
 Windows「关于」页提供仓库链接；版本卡片的「检查更新」使用 QtNetwork 异步请求 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受 256 KiB 以内的 JSON `tag_name`，按数字版本段比较当前 `__version__`。请求携带 jsproxy 所需的代理来源头，8 秒超时；GitHub 共享 API 出口限流或返回非 200 时，经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。两种响应都必须匹配固定 GitHub 仓库和受限版本格式，全部失败时只在卡片显示简短重试提示；不发送凭据、不下载安装包，也不改变硬件服务或姿态事务。
 
-「登录时启动」只在用户开启时写入 HKCU 的 `Software\Microsoft\Windows\CurrentVersion\Run` 中本项目的 `PanasonicPostureManager` 值；关闭时只删除与当前固定命令完全相同的值，发现其他内容则保留并显示冲突。不创建服务、计划任务或提权项，不更改 Windows 启动应用管理器的禁用选择。界面显示本项目启动登记是否存在，Windows 自身的启动管理或登录延迟仍可能阻止即时运行。命令使用绝对路径、正确引用与无控制台解释器，并拒绝超过 260 UTF-16 单元的命令；限制依据 [Microsoft Run 键说明](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)。移动便携文件夹前应先在旧位置关闭此项，移动后重新开启。使用 `--settings` 的独立测试实例不开放自启动。
+「登录时启动」默认开启。生产 Fluent 首次正常启动会写入 HKCU 的 `Software\Microsoft\Windows\CurrentVersion\Run` 中本项目的 `PanasonicPostureManager` 值，并在本应用键 `Software\PanasonicPostureManager\LoginStartupInitialized` 记录已完成首次初始化。此后该标记可区分首次默认值与用户主动关闭，后续启动不会自动重新开启；用户切换时只删除与当前固定命令完全相同的值，发现其他内容则保留并显示冲突。不创建服务、计划任务或提权项，不更改 Windows 启动应用管理器的禁用选择。界面显示本项目启动登记是否存在，Windows 自身的启动管理或登录延迟仍可能阻止即时运行。命令使用绝对路径、正确引用与无控制台解释器，并拒绝超过 260 UTF-16 单元的命令；限制依据 [Microsoft Run 键说明](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)。移动便携文件夹前应先在旧位置关闭此项，移动后重新开启。使用 `--settings` 的独立测试实例不开放自启动。
 
-源码自启动由固定 `packaging/windows/launch-hardware.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --background`。首次开发测试保持自启动关闭。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；点击通知时，仅当服务实例、epoch、提示类型和当前可确认条件仍完全匹配才经页面现有事务确认并立即切换，不打开主窗口，否则只打开界面。Windows 可能同时交付通知点击和托盘激活，因此同一次点击只确认一次；实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
+源码自启动由固定 `packaging/windows/launch-hardware.py` 补齐自身源码路径，不依赖登录时的工作目录、`PYTHONPATH` 或激活虚拟环境；便携包用自身 `runtime/pythonw.exe -I launch.py --background`。源码和打包生产入口首次启动都登记登录启动；用户主动关闭后，初始化标记会阻止后续启动自动重开。姿态通知复用已校验快照、会话就绪和提示 epoch，只在可确认时发送一次；点击通知时，仅当服务实例、epoch、提示类型和当前可确认条件仍完全匹配才经页面现有事务确认并立即切换，不打开主窗口，否则只打开界面。Windows 可能同时交付通知点击与托盘激活，因此同一次点击只确认一次；实际显示可能受 Windows 通知设置影响，未用通知组件的“支持消息”标志冒充可见性验收。
 
 授权真机可运行 `tests/windows_etw_switch_smoke.py` 和 `tests/windows_launcher_smoke.py`。前者只读 ETW 事件，后者验证受保护运行时、会话启动和回收；两者都不能替代安装后的服务、真实显示或通知验收。
 
