@@ -3,6 +3,7 @@ import logging
 import time
 
 from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
+from PyQt6.QtGui import QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from qfluentwidgets import CaptionLabel
 
@@ -10,6 +11,20 @@ from ..frontend.state import notice_confirmable, notice_token
 from .pages import mode_label
 
 log = logging.getLogger(__name__)
+
+
+def notification_icon(icon):
+    """Keep the complete artwork while preventing Shell accent bleed-through."""
+    pixmap = icon.pixmap(256, 256)
+    if pixmap.isNull():
+        return icon
+    opaque = QPixmap(pixmap.size())
+    opaque.setDevicePixelRatio(pixmap.devicePixelRatio())
+    opaque.fill(Qt.GlobalColor.white)
+    painter = QPainter(opaque)
+    painter.drawPixmap(0, 0, pixmap)
+    painter.end()
+    return QIcon(opaque)
 
 
 class ResidentTray(QObject):
@@ -153,10 +168,10 @@ class ResidentTray(QObject):
         title = _('Tent mode is available') if prompt == 'tent' else _('Stand mode is available')
         self._notice_click_until = 0.0
         self.notice = notice_token(state)
-        # MessageIcon enum values draw a shell status badge; the QIcon overload
-        # preserves the full application icon without that colored background.
+        # Windows may composite transparent icon pixels over its accent color.
+        # Preserve the complete artwork on an opaque backing for the notice.
         self.tray.showMessage(title, _('Tap to enable the current posture.'),
-                              self.window.windowIcon(), 15000)
+                              notification_icon(self.window.windowIcon()), 15000)
 
     def unavailable(self):
         self.notice = None

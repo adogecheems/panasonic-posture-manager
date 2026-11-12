@@ -476,7 +476,14 @@ client.scenario('prompt')
 assert len(resident.tray.messages) == 1
 assert resident.tray.messages[0][0] == 'Tent mode is available'
 assert isinstance(resident.tray.messages[0][2], QIcon)
-assert resident.tray.messages[0][2].cacheKey() == window.windowIcon().cacheKey()
+notice = resident.tray.messages[0][2].pixmap(256, 256).toImage()
+original = window.windowIcon().pixmap(256, 256).toImage()
+assert notice.pixelColor(0, 0).alpha() == 255
+assert min(notice.pixelColor(x, y).alpha() for y in range(0, notice.height(), 16)
+           for x in range(0, notice.width(), 16)) == 255
+center = notice.width() // 2
+notice_center, original_center = notice.pixelColor(center, center), original.pixelColor(center, center)
+assert max(abs(a - b) for a, b in zip(notice_center.getRgb()[:3], original_center.getRgb()[:3])) <= 4
 epoch = client.state['pending_notification']
 client.state['pending_notification'] = None
 client.refresh()
