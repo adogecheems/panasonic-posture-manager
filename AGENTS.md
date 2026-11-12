@@ -6,11 +6,12 @@
 
 ## 当前交接状态（2026-11-12）
 
-- **最新功能提交**：`fbbc357 fix: localize Windows shell names`。上一功能提交 `113f283 feat: enable login startup by default`。更早的旋转锁修复 `134b6b8 fix: keep Windows tent rotation locked` 保证退出物理平板后，若 Windows 已自行恢复方向锁，显示事务会重新取得该锁的 journal 所有权；软件 CSM 发布后再次核对固定方向与锁，平台若改写则只重发一次 CCD 目标，失败时恢复且不确认 ready。
+- **最新功能提交**：`3d80648 refactor: harden Windows hardware transport`。Windows 命名管道改为 overlapped I/O，服务器槽位拆为显式阶段，RPC 操作映射和前端依赖完成收口；preview 工作流改为全量 Windows glob 加 `compileall`。上一功能提交 `fbbc357 fix: localize Windows shell names`，登录启动默认开启为 `113f283`。
 - **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
 - **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。崩溃恢复始终使用 `pending.original`。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
-- **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。`hardware_ipc.py` 只保留兼容导出。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
+- **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。服务端和客户端管道均使用 overlapped I/O；服务器的 accept/read、异步鉴权和 write 分阶段推进，不再在 owner loop 内同步写回复。`hardware_ipc.py` 只保留兼容导出。偏好字段和显式 Engine 操作映射不再依赖前端包或动态 `getattr`。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
+- **Windows 质量门禁**：`windows-preview.yml` 使用 `test_windows*.py` 发现全部 Windows 测试，不再保留已删除测试的静默 no-op；测试前执行 `compileall`。架构测试显式把当前 `src/` 插入隔离子进程，避免误测已安装副本。物理启动基线、硬件释放和显示刷新能力使用显式 Protocol；首次登录启动初始化失败会记录有界警告但不阻止 UI。
 - **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。GitHub、版本和外观行的右侧控件统一垂直居中；「检查更新」和「校准」使用填充式强调按钮。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
 - **Windows 壳层名称本地化**：Fluent 在创建窗口前把 Qt 应用名和显示名设为本地化后的 `Panasonic Posture Manager`，中文为「松下姿态管理器」；标题栏仍使用较完整的既有产品名。MSI 安装和卸载通过受保护运行时的 `windows/shortcut_locale.py`，按 `UserLanguageID` 重命名固定的开始菜单文件夹与 `.lnk`，保留 AppUserModelID、图标和可执行目标。该动作只处理两个已知名称且卸载不删除用户新增内容；尚未用包含本轮改动的 MSI 覆盖安装观察真实开始菜单。
 - **前端稳态更新**：Fluent 丢弃完全相同的连续快照；设置页只按用户可见控件签名重新同步，姿态未变化时不重画插画，SVG renderer 按姿态和主题缓存，零延时卡片布局请求合并为最多一个；托盘只在 ToolTip 内容变化时设置。Linux UI 状态读取改为单次 JSON 解码，严格字段校验和错误边界不变。
@@ -20,8 +21,8 @@
 - **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
 - **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
 - **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。开始菜单、运行窗口和任务栏共享固定多尺寸 ICO 与 AppUserModelID。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首事件前 `hardware_status=absent`；当前源码会让已认证会话发送 `not-ready` 心跳，但仍拒绝显示回执。
-- **下一智能体优先动作**：当前安装程序尚未包含 `134b6b8`。下一阶段需用户明确授权真机姿态操作，重点复测物理平板退出到帐篷时方向是否正确、旋转锁是否在 ready 前保持启用，以及进入物理平板后的 ETW 接管、显示/CSM 清理和中断恢复。不得用自动化 fixture 代替真机验收。
-- **验证基线**：2026-11-12 最终 MSI SHA-256 为 `6E2551FC58A0BB9A4B72DA45E3CAD983AF32C50A6D26CE4C806BA45174899729`，已同版本覆盖安装并通过 ICE。安装目录 `session_display.py` 与源码 SHA-256 一致；服务 Running，UI 启动，无新 ETW 事件时 `hardware=false`、`hardware_status=ok`、`target=laptop`、`session_connected=true`。Windows 全套 300 项通过；真机多姿态跳变改善仍需观察。
+- **下一智能体优先动作**：当前安装程序尚未包含本轮的 overlapped 管道和显式边界整理。下一阶段需用户明确授权真机姿态操作，重点复测物理平板退出到帐篷时方向是否正确、旋转锁是否在 ready 前保持启用，以及进入物理平板后的 ETW 接管、显示/CSM 清理和中断恢复。更新 MSI 后还须观察真实 SYSTEM 服务管道在停止和客户端中断时是否能收回 overlapped 操作。不得用自动化 fixture 代替真机验收。
+- **验证基线**：2026-11-12 最终已安装 MSI SHA-256 为 `6E2551FC58A0BB9A4B72DA45E3CAD983AF32C50A6D26CE4C806BA45174899729`，该 MSI 不包含本轮传输重构。当前源码 Windows 发现式全套 317 项、Fluent 49 项和前端 14 项通过，`compileall` 通过。真实 SYSTEM 命名管道、更新后的 MSI 和真机多姿态跳变仍未验证。
 - **本轮关于页验证**：新增 5 项 jsproxy 响应/版本比较单测、完整 Fluent 47 项、打包 2 项和 i18n 114 个 msgid 通过；当前安装的 Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer 通过，真实端点返回 `2.4.0 -> 2.4.0`。新 MSI 和已安装程序尚未包含本轮改动。
 - **未验证项**：GitHub Windows CI、Authenticode 签名、重启后的首次 MSI 安装链路、首个真实服务 ETW 事件、SYSTEM 会话启动、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序和通知点击仍未验收。
 - **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。退出物理平板时，Windows 若在帐篷目标前自行恢复方向锁，事务会采用并记录该状态；CSM 发布后再复核锁和方向，平台改写会触发一次有界重发。当前安装程序未包含该修复，真机退出方向仍需复测。
@@ -1357,3 +1358,14 @@ make WERROR=1 check
 - 影响：不改变状态 v2、D-Bus/Windows RPC、姿态策略、目标/结果分离、租约、设置串行合并、错误码或通知确认语义。相同快照不再重复发出 `state_changed`，但纯模型保留最后状态，窗口重新显示或下一次有效变化仍从完整快照渲染。
 - 同步：`frontend/actions.py`、`fluent/{app,pages,resident,widgets}.py`、`snapshot_codec.py`、`state_codec.py`、`ui/service.py`、`tests/{test_frontend,test_model,test_fluent}.py` 与本记录。
 - 验证：前端 14 项、模型 15 项和目标 Fluent 用例通过；Fluent 全套 49 项中 48 项通过，唯一导入失败来自并行存在的 `windows/hardware_server.py` 语法缩进错误，不在本轮文件内。离屏 300 次姿态变化测量把窗口回调均值从约 0.26 ms 降至 0.14 ms，设置卡片重排由 300 次降至 0，插画绘制均值从约 3.14 ms 降至 1.93 ms；5 秒、2 Hz 姿态变化约占单核 0.94%，此前约 2.08%。Linux UI 因本机缺少 PyGObject 未运行 GTK 浏览器检查，单次解码入口已用纯 Python 目标验证；未执行真机功耗或视觉验收。
+
+### 2026-11-12 - Windows 传输、操作契约与质量门禁收口
+
+- 变更：`NativePipes` 的服务器和客户端句柄改用 `FILE_FLAG_OVERLAPPED`，accept、read、write 以事件和 `GetOverlappedResult` 轮询；`PipePoll` 明确区分 idle、pending、ready，关闭或重置时先取消仍活动的操作。`HardwareServer` 将每个槽位拆为 connect、异步鉴权、request、response 阶段，pending write 不再占用服务 owner loop；客户端在原有总超时内轮询 overlapped write。
+- 变更：偏好字段移动到平台无关 `contracts.py`，Windows RPC 不再导入 `frontend.ports`；Engine 操作的偏好和提示映射改为显式分支，未知字段稳定抛出 `ValueError`。`PhysicalSwitch`、`SupervisorFactory`、会话 client 的硬件释放能力、`DisplayRefresh` 和硬件释放显示能力都使用显式 Protocol 或 runtime-checkable Protocol，不再靠隐藏 `getattr` 探测。
+- 变更：Windows preview 工作流以单个 `test_windows*.py` glob 运行全部当前测试，并先执行 `compileall`；删除三个已删除测试文件的静默 no-op。Windows 架构测试显式注入当前源码路径，防止本机隔离解释器误测安装副本。首次登录启动初始化失败由 `initialize_default_startup()` 记录警告并继续打开 UI。
+- 动机：同步 `WriteFile` 在客户端停止读取时可能阻塞硬件服务唯一 owner loop，连带延迟 supervisor、ETW 状态消费和恢复；运行时字符串映射、UI 反向依赖和隐藏能力会让静态检查失效，并在重命名时把错误推迟到生产。旧 preview 列表还会静默漏跑新增 Windows 测试。
+- 影响：RPC 帧格式、鉴权顺序、回执代次、ETW 物理优先级、CSM 门禁、显示事务、租约、错误码和恢复日志不变。overlapped 操作仍在同一槽位串行完成，客户端仍不重放写操作；pending write 只推迟该槽读取下一条请求。`--demo`、`--backend` 和隔离设置入口不启用生产自启动。
+- 同步：`contracts.py`、`frontend/ports.py`、`session/ports.py`、`windows/{hardware_pipe,hardware_rpc,hardware_server,hardware_ipc,hardware_runtime,hardware_application,request_contract,operations,backend,ui_operations,screen_session,session_display,session_agent,session_qualification,startup}.py`、`fluent/{app,demo}.py`、`.github/workflows/windows-preview.yml`、Windows/Fluent/frontend/打包测试与本记录。
+- 验证：Windows 发现式全套 317 项、Fluent 49 项、frontend 14 项和 preview 工作流契约通过；`compileall` 通过。目标测试覆盖 overlapped 标志、pending write 不阻塞 owner loop、客户端超时内完成 write、服务器阶段推进、显式偏好/提示失败、源码架构隔离和启动初始化诊断。`test_ui_contract` 因当前 Windows 运行时缺少 PyGObject 未导入；`test_packaging_workflow` 的 POSIX shell 用例在本机因缺少 `bash`/`sh` 无法执行，单独运行新增 Windows preview 契约通过。
+- 未验证：未启动真实 LocalSystem 服务，未在真实命名管道上验证 overlapped accept/read/write 的停止与客户端中断行为；未构建或安装包含本轮改动的 MSI，未执行真机姿态、ETW、显示或 CSM 验收。
