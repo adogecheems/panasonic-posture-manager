@@ -107,6 +107,11 @@ class MsiPayloadTests(unittest.TestCase):
             'Before="ConfigureHardwareService"',
             'ScheduleReboot',
             'Id="WixUI_Minimal"',
+            'Id="LocalizeStartMenu"',
+            'panasonic_posture.windows.shortcut_locale --install',
+            '--language-id [UserLanguageID]',
+            'Id="RemoveLocalizedStartMenu"',
+            'panasonic_posture.windows.shortcut_locale --remove',
         ):
             with self.subTest(value=value):
                 self.assertIn(value, source)

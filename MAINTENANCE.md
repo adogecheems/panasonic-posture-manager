@@ -99,7 +99,7 @@ packaging\windows\preview.cmd --language zh_CN
 msiexec /i panasonic-posture-manager-2.4.0-windows-x64.msi
 ```
 
-MSI 按机器安装到 `%ProgramFiles%\PanasonicPostureManager`，创建带固定多尺寸图标和 AppUserModelID 的开始菜单入口，注册 LocalSystem 硬件服务，并由提升权限的安装动作执行 `ACPI\INT33D3` 的 `LaptopSlateExclusiveAccess=0` 配置。两个设备/服务 PowerShell 动作由 `WixQuietExec` 托管，不创建可见控制台窗口；安装动作会保留原值并提供卸载恢复，首次安装结束会请求重启。重启后无需再运行服务或设备配置脚本。
+MSI 按机器安装到 `%ProgramFiles%\PanasonicPostureManager`，创建带固定多尺寸图标和 AppUserModelID 的开始菜单入口，注册 LocalSystem 硬件服务，并由提升权限的安装动作执行 `ACPI\INT33D3` 的 `LaptopSlateExclusiveAccess=0` 配置。两个设备/服务 PowerShell 动作由 `WixQuietExec` 托管，不创建可见控制台窗口；安装动作会保留原值并提供卸载恢复，首次安装结束会请求重启。安装序列还通过受保护运行时中的 `windows/shortcut_locale.py`，按 Windows Installer 的 `UserLanguageID` 把开始菜单文件夹和快捷方式名称切换为当前 UI 语言；该动作只重命名固定的应用入口，失败不影响硬件安装，卸载时只清理已知链接和空目录。重启后无需再运行服务或设备配置脚本。
 
 升级使用同版本或更高版本的 MSI。修复安装会重新验证并恢复设备配置；卸载会停止服务、恢复原平板指示器配置并提示重启。不得在 MSI 已安装时再用便携脚本管理同一服务。
 

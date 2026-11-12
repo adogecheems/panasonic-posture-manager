@@ -87,6 +87,30 @@
         Execute="deferred"
         Impersonate="no"
         Return="check" />
+    <SetProperty
+        Id="LocalizeStartMenu"
+        Value="&quot;[#PythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --install --language-id [UserLanguageID]"
+        Before="LocalizeStartMenu"
+        Sequence="execute" />
+    <CustomAction
+        Id="LocalizeStartMenu"
+        BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+        DllEntry="WixQuietExec"
+        Execute="deferred"
+        Impersonate="no"
+        Return="ignore" />
+    <SetProperty
+        Id="RemoveLocalizedStartMenu"
+        Value="&quot;[#PythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --remove --language-id [UserLanguageID]"
+        Before="RemoveLocalizedStartMenu"
+        Sequence="execute" />
+    <CustomAction
+        Id="RemoveLocalizedStartMenu"
+        BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+        DllEntry="WixQuietExec"
+        Execute="deferred"
+        Impersonate="no"
+        Return="ignore" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager" />
@@ -108,8 +132,11 @@
 
     <InstallExecuteSequence>
       <Custom Action="RollbackSlate" Before="ConfigureSlate" Condition="NOT REMOVE" />
+      <Custom Action="LocalizeStartMenu" Before="ConfigureSlate" Condition="NOT REMOVE" />
       <Custom Action="ConfigureSlate" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="ConfigureHardwareService" After="InstallServices" Condition="NOT REMOVE" />
+      <Custom Action="RemoveLocalizedStartMenu" Before="RestoreSlate"
+              Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <Custom Action="RestoreSlate" Before="RemoveFiles"
               Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
       <ScheduleReboot

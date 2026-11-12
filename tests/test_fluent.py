@@ -144,6 +144,17 @@ class DemoTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent preview dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def test_application_name_follows_the_windows_ui_language(self):
+        self.run_ui('''
+from panasonic_posture.fluent.app import configure_application
+assert configure_application('zh_CN') == '松下姿态管理器'
+assert app.applicationName() == '松下姿态管理器'
+assert app.applicationDisplayName() == '松下姿态管理器'
+assert configure_application('en') == 'Panasonic Posture Manager'
+assert app.applicationName() == 'Panasonic Posture Manager'
+assert app.applicationDisplayName() == 'Panasonic Posture Manager'
+''')
+
     def test_home_shows_stable_error_reasons_and_action_failures(self):
         self.run_ui('''
 from concurrent.futures import Future

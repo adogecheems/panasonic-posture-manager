@@ -39,6 +39,18 @@ def configure_application_font():
     app.setFont(font)
 
 
+def configure_application(language=None):
+    """Apply the localized shell name before native windows are created."""
+    app = QApplication.instance()
+    if app is None:
+        raise RuntimeError('QApplication must exist before configuring the application name')
+    _ = translator(language)
+    name = _('Panasonic Posture Manager')
+    app.setApplicationName(name)
+    app.setApplicationDisplayName(name)
+    return name
+
+
 class Window(FluentWidget):
     state_changed = pyqtSignal(dict)
     connection_lost = pyqtSignal()
@@ -258,7 +270,7 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
     try:
         app = QApplication([sys.argv[0]])
         app.setStyle('Fusion')
-        app.setApplicationName('Panasonic Posture Manager')
+        configure_application(language)
         app.setWindowIcon(QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png')))
         if sys.platform == 'win32':
             from ..windows.app_identity import APP_USER_MODEL_ID

@@ -6,12 +6,14 @@
 
 ## 当前交接状态（2026-11-12）
 
-- **最新功能提交**：`113f283 feat: enable login startup by default`。本轮旋转锁修复为 `134b6b8 fix: keep Windows tent rotation locked`：退出物理平板后，若 Windows 已自行恢复方向锁，显示事务会重新取得该锁的 journal 所有权；软件 CSM 发布后再次核对固定方向与锁，平台若改写则只重发一次 CCD 目标，失败时恢复且不确认 ready。
+- **最新功能提交**：`bf077de fix: localize Windows shell names`。上一功能提交 `113f283 feat: enable login startup by default`。更早的旋转锁修复 `134b6b8 fix: keep Windows tent rotation locked` 保证退出物理平板后，若 Windows 已自行恢复方向锁，显示事务会重新取得该锁的 journal 所有权；软件 CSM 发布后再次核对固定方向与锁，平台若改写则只重发一次 CCD 目标，失败时恢复且不确认 ready。
 - **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
 - **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。崩溃恢复始终使用 `pending.original`。
 - **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
 - **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。`hardware_ipc.py` 只保留兼容导出。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
 - **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。GitHub、版本和外观行的右侧控件统一垂直居中；「检查更新」和「校准」使用填充式强调按钮。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
+- **Windows 壳层名称本地化**：Fluent 在创建窗口前把 Qt 应用名和显示名设为本地化后的 `Panasonic Posture Manager`，中文为「松下姿态管理器」；标题栏仍使用较完整的既有产品名。MSI 安装和卸载通过受保护运行时的 `windows/shortcut_locale.py`，按 `UserLanguageID` 重命名固定的开始菜单文件夹与 `.lnk`，保留 AppUserModelID、图标和可执行目标。该动作只处理两个已知名称且卸载不删除用户新增内容；尚未用包含本轮改动的 MSI 覆盖安装观察真实开始菜单。
+- **前端稳态更新**：Fluent 丢弃完全相同的连续快照；设置页只按用户可见控件签名重新同步，姿态未变化时不重画插画，SVG renderer 按姿态和主题缓存，零延时卡片布局请求合并为最多一个；托盘只在 ToolTip 内容变化时设置。Linux UI 状态读取改为单次 JSON 解码，严格字段校验和错误边界不变。
 - **双端模式文案**：自动、笔记本、帐篷、支架四项目的名称与说明分别由 `fluent/pages.py` 与 `ui/settings.py` 维护，不再经过共享文案模块；平板仍只作为物理状态，不进入手动模式列表。
 - **产品边界**：Windows 默认连接独立 LocalSystem 硬件服务，不再接受 `--native-backend`、`--hardware-backend` 或 `--simulate-backend`。`--backend` 仅保留为隔离软件预览，`--demo` 为内存演示。生产路径不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示屏幕键盘。
 - **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
@@ -82,7 +84,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/tes
 | Windows 硬件组合根与物理源准入 | `windows/{hardware_application,hardware_runtime,hardware_host,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server,session_supervisor}.py` | `test_windows_architecture`、`test_windows_hardware_runtime`、`test_windows_hardware`、`test_windows_session_supervisor` |
 | Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,session_qualification,session_bridge,hardware_rpc,app_identity}.py`、`fluent/`、`session/runtime.py` | `test_windows_app_identity`、`test_windows_hardware_client`、`test_windows_session_qualification`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
 | Windows 可信启动、服务安装与停止边界 | `windows/{hardware_service,trusted_runtime,console_identity,session_stop,session_launch,session_supervisor,hardware_server}.py`、`windows/security.py`、`packaging/windows/hardware-service.ps1` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_launch`、`test_windows_session_supervisor`、`test_windows_session_agent`、`test_windows_hardware`、`test_windows_packaging`；便携包不得作为特权运行时或携带安装入口 |
-| Windows MSI、降级装配与发布 | `packaging/windows/{build_msi.py,msi/Package.wxs}`、`.github/workflows/{release,windows-preview}.yml`、`windows/session_agent.py` | `test_windows_msi`、`test_windows_session_agent`、`test_windows_packaging`、`test_packaging_workflow`、`test_release`、`wix msi validate -sice ICE61` |
+| Windows MSI、开始菜单名称、降级装配与发布 | `packaging/windows/{build_msi.py,msi/Package.wxs}`、`.github/workflows/{release,windows-preview}.yml`、`windows/{session_agent,shortcut_locale}.py` | `test_windows_msi`、`test_windows_shortcut_locale`、`test_windows_session_agent`、`test_windows_packaging`、`test_packaging_workflow`、`test_release`、`wix msi validate -sice ICE61` |
 | GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
 | 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
 
@@ -1337,3 +1339,21 @@ make WERROR=1 check
 - 影响：不改变固定绝对命令、260 UTF-16 单元上限、冲突保留、写后回读和 Windows 启动管理器禁用选择；不创建服务、计划任务或提权项。登记失败只保留设置页供用户重试，不阻止界面启动。真实登录启动仍受 Windows 启动管理和登录延迟影响。
 - 同步：`windows/startup.py`、`fluent/app.py`、`tests/{test_windows_startup,test_fluent}.py`、README、MAINTENANCE、AGENTS 与本记录。
 - 验证：登录启动目标 9 项、Windows 发现式全套 305 项、Fluent 47 项、frontend 13 项和 i18n 113 个 msgid 通过；改动文件 `py_compile` 与 diff 检查通过。未在当前用户注册表执行真实登记，也未构建或安装包含本提交的 MSI，因此尚未验证实际注销再登录后的托盘启动。
+
+### 2026-11-12 - Windows 任务栏与开始菜单名称本地化
+
+- 变更：Fluent 在创建原生窗口前通过 `configure_application()` 把 Qt `applicationName` 与 `applicationDisplayName` 设置为翻译后的 `Panasonic Posture Manager`，中文为「松下姿态管理器」，不再写死英文。标题栏保留较完整的「松下二合一平板电脑姿态管理工具」。
+- 变更：新增受保护的 `windows/shortcut_locale.py`。MSI 在 `InstallFiles` 后通过 `python-hardware.exe -I` 调用它，按 Windows Installer 的 `UserLanguageID` 把 `ProgramData` 开始菜单文件夹和快捷方式从英文基础名改为当前语言名称；卸载前只删除已知 `.lnk` 并尝试移除空目录。快捷方式本身由 Windows Installer 创建，AppUserModelID、图标、目标和修复语义不变。
+- 动机：窗口标题已有中文翻译，但 Qt 应用级名称、开始菜单文件夹和短接名仍固定为英文；只翻译窗口标题不足以修正任务栏身份和开始菜单入口。
+- 影响：不改变硬件 RPC、ETW/CSM、显示事务、服务权限或安装授权；本地化动作失败被限制为 shell 展示退化，不影响硬件安装。中文判断与 UI 的 `GetUserDefaultUILanguage` 主语言规则一致，非中文系统保留英文。
+- 同步：`fluent/app.py`、`windows/shortcut_locale.py`、`packaging/windows/msi/Package.wxs`、`po/zh_CN.po`、Fluent/MSI/Start menu 测试、README、MAINTENANCE 与本记录。
+- 验证：Windows 发现式全套 309 项、Fluent 48 项和 i18n 114 个 msgid 通过；使用本机受保护运行时与 WiX 5.0.2 构建 MSI 并通过 ICE61，反编译确认安装/卸载延迟动作、`UserLanguageID` 命令和 `shortcut_locale.py` 均在 MSI 中，管理解包后的 `python-hardware.exe -I` 可导入新模块。`test_release` 的 GTK 版本检查因 Windows 运行时缺少 `gi` 跳过执行失败，`test_packaging_workflow` 的 shell 脚本检查因 Windows 缺少 `bash`/`sh` 失败；均为本机环境缺口。未安装或覆盖当前 MSI，真实任务栏和开始菜单刷新仍待安装后观察。
+
+### 2026-11-12 - 前端增量更新与渲染缓存
+
+- 变更：Fluent 在窗口入口比较连续快照，完全相同时不再更新两个页面或托盘；`SettingsModel.render_signature()` 只覆盖设置页可见内容，无关的 generation、姿态和应用结果变化不再触发全量控件同步或卡片重排。主页只在姿态变化时请求插画绘制，`Illustration` 缓存每个姿态/主题的 `QSvgRenderer`；`Settings` 将零延时 `fit_cards()` 请求合并为一个，托盘 ToolTip 仅在文字变化时写入。
+- 变更：状态解析新增 `parse_snapshot_data()`/`parse_state_data()`。Linux D-Bus UI 先解码一次 JSON，再把同一对象交给严格字段校验，不再为预检和模型转换各执行一次 `json.loads`。
+- 动机：离屏剖析显示旧设置在每次姿态快照时都重算全部卡片布局，并在同一姿态下重新读取、替换和解析 SVG；设置页全量同步和插画重绘是稳态主要 UI 开销。Linux 界面也会对同一状态文本重复解码。
+- 影响：不改变状态 v2、D-Bus/Windows RPC、姿态策略、目标/结果分离、租约、设置串行合并、错误码或通知确认语义。相同快照不再重复发出 `state_changed`，但纯模型保留最后状态，窗口重新显示或下一次有效变化仍从完整快照渲染。
+- 同步：`frontend/actions.py`、`fluent/{app,pages,resident,widgets}.py`、`snapshot_codec.py`、`state_codec.py`、`ui/service.py`、`tests/{test_frontend,test_model,test_fluent}.py` 与本记录。
+- 验证：前端 14 项、模型 15 项和目标 Fluent 用例通过；Fluent 全套 49 项中 48 项通过，唯一导入失败来自并行存在的 `windows/hardware_server.py` 语法缩进错误，不在本轮文件内。离屏 300 次姿态变化测量把窗口回调均值从约 0.26 ms 降至 0.14 ms，设置卡片重排由 300 次降至 0，插画绘制均值从约 3.14 ms 降至 1.93 ms；5 秒、2 Hz 姿态变化约占单核 0.94%，此前约 2.08%。Linux UI 因本机缺少 PyGObject 未运行 GTK 浏览器检查，单次解码入口已用纯 Python 目标验证；未执行真机功耗或视觉验收。
