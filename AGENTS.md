@@ -1,182 +1,161 @@
-# AGENTS.md — Agent 执行手册
+# AGENTS.md — 开发手册
 
-本手册适用于在本仓库工作的 AI 助手。先遵守运行环境的限制，再依次遵守用户本轮指令、本手册、README 和代码中的历史注释。用代码和测试核对当前行为，有出入时修正文档。
+本文件面向在本仓库工作的 AI 助手和维护者。执行顺序为：运行环境限制、用户本轮指令、本文件、README、代码与测试。行为以代码和测试为准；发现文档过期时，应在同一任务中修正。
 
-按任务查阅：[代码与测试](#4-定位代码与测试) · [哪些操作需要授权](#7-授权边界) · [验证命令](#8-验证) · [提交规则](#11-git-与提交) · [设计变更记录](#13-设计变更记录)。
+文档分工：
 
-## 当前交接状态（2026-11-13）
+- `README.md` 面向普通用户，不写内部协议、服务和调试实现。
+- `MAINTENANCE.md` 面向安装、排障、构建和发布维护者。
+- `AGENTS.md` 只保留现行开发规则、边界和验证方法。
 
-- **最新功能提交**：`2552880 fix: settle Windows tablet release before display apply`。Windows 物理平板释放后即使姿态已稳定到帐篷，也先只读等待两秒方向交接，再执行唯一一次显示事务；此前 `cca3ad0 fix: keep slate lease across hardware handoff` 复用相同目标的 CSM 租约，避免回落笔记本信号。
-- **物理状态来源**：启动时由 `windows/slate_bootstrap.py` 读取一次 CSM/journal，并在陈旧或冲突时要求稳定笔记本/帐篷几何；五秒内仍无法明确时使用非平板安全基线，绝不等待 ETW。启动完成后，物理平板变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本，`0xCA/0xCB` 不产生状态。运行期不从 CSM、shell 模式或注册表回退。
-- **CSM 启动特例**：`ACPI\INT33D3` 在运行时仍只用于向 Windows 发布软件帐篷/支架姿态，所有写入、恢复和 slate journal 清理必须先通过 ETW 健康门禁。启动只允许一次只读 CSM/journal 基线；若存在未完成 journal，不能用当前 CSM 直接证明物理状态，应以稳定笔记本/帐篷几何校验，并让会话代理随后恢复 journal。CSM 设备无法打开时会话降级为仅显示，不创建 notifier 或触碰 slate journal。需要恢复或在目标变化时始终使用 `pending.original`；若新目标与租约 `desired` 相同则沿用租约，不先恢复。
-- **会话装配**：可信会话监管器按本地控制台用户启动会话进程，不等待首个 ETW 姿态事件；物理准入只约束 ready 回执和写入。会话进程先证明服务端登记的回执资格，再创建显示和 CSM 后端；两者共用同一个已验证 RPC 客户端。`session_qualification.py` 负责控制资格栅栏，`session_bridge.py` 负责进程内线程安全回执，`session_display.py` 负责显示/CSM 事务限定。关闭时先停止共享运行时和后台任务，再恢复显示、释放 CSM、关闭执行器与 RPC。`SlateNotifier` 不再有 `software_owned`、settling 计时器或外部变化猜测。
-- **Windows 模块边界**：`console_identity.py` 保存 OS 认证身份，`hardware_protocol.py` 保存 RPC 信封契约，`hardware_pipe.py`/`hardware_rpc.py`/`hardware_server.py` 分负责本地传输、客户端响应校验和非阻塞服务器。服务端和客户端管道均使用 overlapped I/O；服务器的 accept/read、异步鉴权和 write 分阶段推进，不再在 owner loop 内同步写回复。`hardware_ipc.py` 只保留兼容导出。偏好字段和显式 Engine 操作映射不再依赖前端包或动态 `getattr`。`machine_identity.py`/`machine_profile.py` 是机型身份和传感器挂载事实源，`native_preflight.py` 只做普通本地会话预检。
-- **Windows 质量门禁**：`windows-preview.yml` 使用 `test_windows*.py` 发现全部 Windows 测试，不再保留已删除测试的静默 no-op；测试前执行 `compileall`。架构测试显式把当前 `src/` 插入隔离子进程，避免误测已安装副本。物理启动基线、硬件释放和显示刷新能力使用显式 Protocol；首次登录启动初始化失败会记录有界警告但不阻止 UI。
-- **Windows 关于页与更新检查**：Fluent「关于」页已补 GitHub 仓库入口，版本卡片提供异步「检查更新」。更新首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest`，只接受受限 JSON `tag_name` 并比较数字版本；共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。8 秒超时，全部失败只显示简短重试文案，不下载安装包。GitHub、版本和外观行的右侧控件统一垂直居中；「检查更新」和「校准」使用填充式强调按钮。Windows 专用的“设备控制尚未接入”覆盖提示已删除，未知物理源和硬件预检文案已缩短。
-- **Windows 壳层名称本地化**：用户可见应用名就是窗口标题：英文 `Panasonic 2-in-1 Tablet Posture Management Tool`，中文「松下二合一平板电脑姿态管理工具」。QApplication 名称、开始菜单、通知、托盘、桌面入口、MSI 产品/功能/快捷方式和服务描述均使用这一名称；`panasonic-posture-manager`、`PanasonicPostureManager`、AUMID、Run 键和管道名仍是项目/内部标识符。MSI 安装和卸载通过 `windows/shortcut_locale.py` 按 `UserLanguageID` 设置开始菜单名称并迁移旧短名，保留 AppUserModelID、图标和可执行目标。
-- **前端稳态更新**：Fluent 丢弃完全相同的连续快照；设置页只按用户可见控件签名重新同步，姿态未变化时不重画插画，SVG renderer 按姿态和主题缓存，零延时卡片布局请求合并为最多一个；托盘只在 ToolTip 内容变化时设置。Linux UI 状态读取改为单次 JSON 解码，严格字段校验和错误边界不变。
-- **双端模式文案**：自动、笔记本、帐篷、支架四项目的名称与说明分别由 `fluent/pages.py` 与 `ui/settings.py` 维护，不再经过共享文案模块；平板仍只作为物理状态，不进入手动模式列表。
-- **产品边界**：Windows 默认连接独立 LocalSystem 硬件服务，不再接受 `--native-backend`、`--hardware-backend` 或 `--simulate-backend`。`--backend` 仅保留为隔离软件预览，`--demo` 为内存演示。生产路径不发布 Windows shell 平板模式、不读取平板切换偏好，也不承诺自动显示屏幕键盘。
-- **旧路径清理**：删除 `switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py`、生产 `native_screen_session` 和用户态 `--native`。旧 CSM 读取、shell 平板模式和手动四向平板显示不再有代码入口。
-- **ETW 真机探针**：2026-11-11 15:14–15:16 的临时 SYSTEM 任务确认 Event 115 收到 `0xCC/0xCD` 且映射正确；探针未写 CSM，临时任务已删除。该证据只证明事件源可用，不证明服务安装、显示写入或 CSM 输出已验收。
-- **可信解释器布局**：便携包保留 UI 使用的 `python.exe`/`pythonw.exe` 与含 Qt 的 `_pth`，另生成 `runtime/python-hardware.exe` 和只含 `Lib`、`DLLs`、`../app` 的 `runtime/python-hardware._pth`。可信运行时拒绝 DLL 级 `_pth`，因此它不能覆盖硬件解释器路径；会话代理也由该受限解释器启动，不加载 UI site packages。
-- **硬件服务与正式安装**：便携式安装已弃用；便携 ZIP 只保留开发、诊断和连接已安装服务的能力，不再携带服务安装或设备配置入口。正式用户安装只使用 `packaging/windows/build_msi.py` 生成的每机器 MSI。MSI 安装 UI、受保护运行时、LocalSystem 服务、正确的“程序”菜单入口，并由 64 位 PowerShell 执行同一可逆 CSM 配置和服务恢复策略。开始菜单、运行窗口和任务栏共享固定多尺寸 ICO 与 AppUserModelID。2026-11-12 已在本机完成旧安装清理、首次安装、卸载、重装和同版本升级；服务进入 Running，CSM 设备可以只读打开。首事件前 `hardware_status=absent`；当前源码会让已认证会话发送 `not-ready` 心跳，但仍拒绝显示回执。
-- **下一智能体优先动作**：本机安装的 `2.4.0` 已包含命名管道 `PIPE_NOWAIT` 修复和可用的中文开始菜单快捷方式，硬件服务 Running，独立 RPC 连续连接返回 `backend=ready`，会话已连接。下一步需用户明确授权做真机姿态验收；重点复测物理平板退出到帐篷、ready 前旋转锁、ETW 接管和显示/CSM 清理。
-- **验证基线**：本机最终 MSI SHA-256 为 `C2E8A31C528EFB377E82021BC275189F5440E71F18B0C75D26819B9E72605C36`，便携 ZIP 为 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。Windows 发现式全套 322 项、会话刷新 13 项、共享策略/控制器/前端/模型 202 项和 `compileall` 通过；安装后 3007 个清单文件哈希一致，独立 RPC 连续 20 次连接成功，中文快捷方式目标和启动均验证通过。
-- **关于页验证**：5 项 jsproxy 响应/版本比较单测、完整 Fluent 50 项和 i18n 113 个 msgid 通过；Qt 6.12/PyQt6 离屏脚本验证 GitHub 链接、更新成功/失败状态、API 403 后跳转后备、代理 URL/Referer，真实端点返回 `2.4.0 -> 2.4.0`。当前安装已包含该功能。
-- **未验证项**：GitHub Windows CI、Authenticode 签名（当前 MSI 为 `NotSigned`）、卸载及跨版本升级链路、首个真实服务 ETW 事件、SYSTEM 会话姿态、ETW 接入后的显示事务、CSM 写入门禁的真机效果、`平板→支架` 时序、`平板→帐篷` 二次跳变修复和通知点击仍未验收。
-- **帐篷折向平板与释放时序**：已确认帐篷继续折向物理平板时保留 `tent_leave_seconds=2.0`，等待 ETW `0xCC` 接管；真实笔记本姿态稳定超过两秒仍释放。退出物理平板后的 Windows 会话从首次观测到释放起保留两秒，即使目标已直接稳定为帐篷，也只读观察平台方向，不提前应用；窗口结束后执行一次显示事务。CSM 发布后的锁/方向复核和有界重发仍保留为故障兜底。当前安装尚未包含该提交，需重新构建安装后复测。
-- **CSM 姿态交接连续性**：`SlateNotifier.sync_mode()` 遇到已持久化且 `desired` 与新姿态相同的租约时直接复用，不再先恢复 `original` 再写回。帐篷/支架进入物理平板、或会话在同一软件姿态重启时，CSM 不会短暂回落到笔记本；切换到不同目标或释放仍恢复 `pending.original`，写入失败保留 journal。
+不在这里维护提交流水、历史测试数量、旧 SHA-256 或逐次真机日志。需要追溯时使用 Git 历史和提交正文。
 
-## 1. 工作流程
+## 1. 当前产品边界
 
-1. 开始前运行 `git status --short --untracked-files=all`，查看目标文件的 `git diff`。默认已有改动属于用户。
-2. 用 `rg` 找入口和测试。弄清谁做决定、哪个进程执行、怎样确认成功，以及哪些调用方依赖现有行为。文档任务核对代码、测试、命令和链接。
-3. 先跑相关测试，记下已有失败。改变设计前，查阅第 13 节的历史决定。
-4. 先复现问题或说明原因，再修根因。行为变更先写回归测试，覆盖正常、失败和安全边界。只改必要文件，复用现有事务。
-5. 先跑目标测试，再按第 8 节扩大检查范围。检查差异和生成物，按第 11 节单独提交。
-6. 每完成一个可交付阶段，更新本节和对应设计变更记录。至少写明最新提交、已改行为、实际命令/结果、真机证据、未验证项和下一步；不要只依赖聊天上下文。
+- Linux 支持 x86_64 GNOME Wayland 与 KDE Plasma 6 Wayland。仓库为 Panasonic CFQV8、CFQV9、CFQV1 提供已验证机型配置；其他 360° 翻转本只有在硬件探测明确匹配时才可使用。
+- Windows 支持 Windows 10/11 x64，当前只对 `Panasonic Corporation CFQV8-1L` 开放。正式安装使用每机器 MSI。
+- 两个平台的手动模式都只有自动、笔记本、帐篷、支架。平板是物理状态，不是手动模式。
+- Windows 保持内置键盘和触控板可用，不发布 shell 平板模式，不自动打开屏幕键盘，不加载自研输入过滤驱动。
+- Windows 正式用户界面只连接已安装的 LocalSystem 硬件服务。服务不可用时显示断线；不得回退到模拟状态、测试客户端或 CSM 推断。
+- 已删除的 `--native`、`--native-backend`、`--hardware-backend`、`--simulate-backend`、`--demo`、`--backend`、`--scenario` 和 `--settings` 入口不得恢复。
 
-## 2. 项目和文档范围
+## 2. 工作流程
 
-- [README](README.md) 面向使用者，说明功能、机型和桌面支持。[维护指南](MAINTENANCE.md) 说明安装、构建、发布和运维。用户文档只保留这两页，不恢复旧的 `docs/`、`CHANGELOG` 或独立硬件验收文档。
-- 对照 `data/profiles/` 和运行时探针确认机型支持等级。其他 360° 翻转本按硬件能力判断。桌面支持限于 x86_64 Linux 上的 GNOME Wayland 和 KDE Plasma 6 Wayland。`fluent/` 是 Windows 界面预览。
-- 使用 Python 3.11+、C11 relay 和 GTK 4/libadwaita。PyGObject 由发行版提供，Python 包的运行时依赖列表保持为空。
+1. 先运行 `git status --short --untracked-files=all`，查看目标文件的 `git diff`。现有改动默认属于用户。
+2. 用 `rg` 定位入口、调用方、测试和相关文档，确认谁做决定、哪个进程执行、如何确认成功。
+3. 先运行目标测试记录基线。行为变更前阅读相关系统不变量；不要用旧设计日志中的历史实现替代当前代码。
+4. 先复现问题或说明根因，再修根因。行为变化先补回归测试，覆盖正常路径、失败路径和安全边界。
+5. 先跑目标测试，再按第 10 节扩大验证。禁止通过吞异常、跳过测试、放宽断言或删除分支来制造通过。
+6. 同步更新受影响文档。设计变化应改写现行条款，不追加互相矛盾的长篇时间线。
+7. 检查 diff、生成物和工作树，按第 12 节提交本轮改动。
 
-## 3. 运行边界与状态回执
+## 3. 共用架构
 
-- **系统服务**以 root 身份持有系统 D-Bus 名。`service/daemon.py` 验证并分发调用、发布状态。`policy.py` 判断姿态，`controller.py` 生成目标和代次（generation），`service/engine.py` 管理租约并安排执行。恢复前核对设备实例和所有权。
-- **C relay** 由 `service/actuator.py` 管理。只有它能打开 `/dev/input` 和 `/dev/uinput`、抓取内置键盘和触控板。stdout 只写 JSON 行，日志写 stderr。软件接管时可只读观察唯一直接触摸屏的接触开始。经当前已认证会话确认后，独立虚拟设备在时限内发送专用唤醒键。禁止抓取触摸屏、记录坐标或读取键盘内容。
-- **用户会话适配器**每个用户只运行一个实例，先取得系统总线上的 per-uid 名，再操作显示。`session/runtime.py` 通过注入的客户端读取状态，调用显示事务处理旋转、方向锁和恢复。Linux 用 `GetState` 读快照，按代次用 `SessionUpdate` 上报准备状态并续租，登录或熄屏时用 `SessionUpdateUnattended`。系统服务结合会话和 relay 的结果，通过 `GetState` 和 `StateChanged` 发布确认状态。
-  可选的持续显示刷新与 apply、hold、restore 共用同一串行工作线程，刷新后仍须核对实例和代次；不另起绕过事务或租约的显示写入循环。
-- **界面**只显示已校验的快照。Linux UI 只通过 D-Bus 操作服务。Windows 默认连接独立 LocalSystem 硬件服务；服务不可用时只显示断线，不回退软件、模拟或 CSM 推断。`--demo` 使用内存数据，`--backend` 是隔离软件预览。预览不操作真实设备或桌面，软件后台不能执行特权硬件写入。
-  两个平台的手动模式都只有自动、笔记本、帐篷、支架；平板只表示物理折叠/硬件姿态，不得重新加入可选手动模式。
-  硬件服务以 LocalSystem 运行 `HardwareRuntime`：先启动 ETW，再把其查询注入共用 Engine，随后启动 WinRT 传感器、RPC 端点和可信会话监管器。界面启动前核对普通用户本地控制台和精确机型并给出可读拒绝原因。启动阶段通过一次 CSM/journal 与稳定几何建立初始物理布尔状态，最多五秒后使用非平板安全基线，不等待 ETW；运行期物理变化只来自 ETW。软件帐篷/支架的 CSM 写入前必须先取得健康 ETW 状态。ETW 从启动基线后的健康状态失效时撤销租约。当前不发布 shell 平板模式，软件帐篷/支架不会自动触发 Windows 屏幕键盘。正式 MSI 自动完成设备非独占配置并提示重启；便携包不得提供安装入口。CSM 设备无法打开时会话只降级显示控制，不伪造 CSM 成功。会话入口不提供输入控制，锁屏、挂起或失去本地会话资格时撤销。
-  原生 UI 默认留在系统托盘，关闭窗口只隐藏，明确退出才停止后台并恢复；无托盘时须保留可见退出路径。姿态通知的点击确认必须同时匹配已校验快照中的实例、提示代次、姿态类型和当前可确认条件；匹配时点击本身即明确切换，直接确认且不打开主窗口，过期、不匹配或不可确认时只能打开界面。Windows 可能同时交付通知点击与托盘激活，同一次点击不得重复确认或因配对信号打开窗口。软件帐篷/支架的自动屏幕键盘当前暂停，不得新增主页或托盘的“显示屏幕键盘”入口，也不得取得输入控制。私有后台在首个状态前失败时只能发送固定原因集的 `fatal` 回执；UI 不得展示自由文本或 traceback，设备配置原因应给出操作说明并停止该连接重连。私有后台在身份检查后向设置文件旁的同名滚动日志写入有界诊断，不得记录输入内容。UI 单实例的空文件时间戳只可请求显示窗口，不能承载执行命令、设置或硬件回执。登录自启动默认开启：生产 Fluent 首次正常启动登记当前用户的固定 Run 值并写入 `LoginStartupInitialized` 标记，用户显式关闭后后续启动不得自动重开；只在用户切换时修改 Run 值，冲突内容须保留，不得改为系统启动项或更改 Windows 自己的禁用选择。原生 UI/后台在访问用户状态文件前拒绝提权和非本地控制台进程。
-  Windows 默认连接独立 LocalSystem 硬件端点，不能与软件或演示选项混用；它不安装、启动服务或回退到模拟。UI 不得提交会话回执，硬件快照校验后才决定控制是否可用。
-- **探针**Linux 只读 sysfs 和机型配置；Windows 加速度计诊断只读系统 WinRT 传感器 API，不改采样配置，不读取触摸坐标。禁止打开输入设备或写入内核；诊断结果不提升设备支持等级。
-- **Windows 硬件主机组件**与普通软件后台分开，尚不自动启用。命名管道只接受经 Windows 令牌、登录实例、进程创建时间及未锁定活跃本地控制台核对的调用方；显示回执还限于可信主机预先登记的会话进程。客户端不得获得创建服务端管道实例的权限，不接受任意设备写入或命令。鉴权不得阻塞引擎，失去会话资格或物理源失效时按已认证所有者撤销租约并走原有释放流程。安装驱动与系统服务须另行授权。
-  原生会话进程须使用非提权交互令牌，并先核对回执资格再创建显示后端。锁屏、会话资格或电源观测失效时，经既有显示不可用错误回执释放软件输入并恢复方向事务；不能用无错误的未就绪心跳代表资格丢失。已知的单纯熄屏只属于电源上下文，普通原生入口复用共享直接姿态策略，不得被当作资格丢失或自动制造显示错误。旧未就绪心跳完成后才允许恢复就绪。Windows 产品保持系统输入可用，不要求 Linux 输入禁用场景的软件触摸唤醒；真实电源变化和特权会话链路仍须分别验收。
+- `policy.py` 判断姿态，`controller.py` 生成目标和代次，`service/engine.py` 管理租约与执行。`target` 是期望状态，`applied` 只能由匹配代次、租约和会话回执确认。
+- 硬件物理姿态优先。传感器、租约或执行器失效时，必须撤销软件接管并恢复桌面原生状态。
+- 显示写入统一经过 `session/transaction.py`：保留所有权检查、写前日志、回读、回滚和崩溃恢复。
+- 平台适配实现 `service/ports.py`、`session/ports.py` 和 `frontend/ports.py`，不得用平台特例绕开共用事务。
+- `frontend/` 只依赖标准库；页面只读取经过校验的快照。断线后旧连接的结果必须失效，写入不得自动重放。
 
-**接入平台。** 姿态策略、服务引擎、会话运行时和显示事务可共用。实现 `service/ports.py` 和 `session/ports.py` 中的接口。共用层使用 `contracts.py`、已认证的 `SessionOwner`、`SensorInfo`、`DeviceInfo` 和输入完成判定。Linux 在 `service/application.py` 和 `session/agent.py` 接入时钟、设备、设置、D-Bus 和桌面组件。平台负责配置和通信错误分类。显示事务必须显式传入恢复日志。
+## 4. Linux 运行边界
 
-**接入界面。** `frontend/` 只依赖标准库。页面通过 `frontend/ports.py` 操作服务，客户端负责传输参数、状态校验和平台错误。`frontend/state.py` 和 `frontend/actions.py` 管理展示和交互。前端提供时钟与调度，在界面主循环处理状态和 Future 完成回调。断线时使旧连接的结果失效。
+- 系统服务以 root 身份持有系统 D-Bus 名，负责鉴权、姿态策略、租约、设备和状态发布。
+- 只有 C relay 打开 `/dev/input` 和 `/dev/uinput`。软件接管时可抓取内置键盘和触控板，并可只读观察唯一直接触摸屏的接触开始；禁止记录坐标或键盘内容。
+- 每个用户只运行一个会话适配器。它先取得 per-uid 总线名，再通过 `SessionUpdate` 上报准备状态并续租，通过显示事务处理旋转、方向锁和恢复。
+- 登录、锁屏和熄屏使用既有的无人值守和电源上下文路径。平台不支持输入控制时，目标必须如实声明 `disable_internal_input=False`，不得伪造执行器回执。
+- 界面只显示已知稳定错误码对应的本地化文案；traceback、自由文本和内部细节只进入有界诊断日志。
 
-## 4. 定位代码与测试
+## 5. Windows 运行边界
 
-Python 路径以 `src/panasonic_posture/` 为起点，`test_*` 对应 `tests/test_*.py`。
-先按下表找入口和测试，再追踪实际调用方。
+### 硬件服务
 
-| 改动 | 先读 | 目标验证 |
+- `HardwareRuntime` 以 LocalSystem 运行。启动顺序为 ETW 物理源、注入查询的共用 Engine、WinRT 传感器、RPC 端点和可信会话监管器。
+- 启动阶段只允许一次只读平板指示器/恢复记录基线。存在旧恢复记录或结果冲突时，用稳定笔记本/帐篷几何校验；五秒内仍不明确时使用非平板安全基线，不等待首个 ETW 事件。
+- 运行期物理变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本；`0xCA/0xCB` 不改变状态。
+- `ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态，不能反推物理状态。所有写入、恢复和恢复记录清理必须先取得健康 ETW 门禁。
+- 相同目标的 CSM 租约应直接复用；不同目标或真正释放时才恢复 `pending.original`。
+- 平板指示器无法打开时可降级为仅显示模式；不得创建写入器、伪造 CSM 成功或触碰其恢复记录。
+
+### 通信与会话
+
+- 命名管道只接受通过令牌、登录实例、进程创建时间、本地控制台和会话状态校验的调用方。客户端不得创建服务端实例，也不能请求任意设备写入或命令。
+- 只有可信主机预登记的精确会话进程可提交显示回执。界面不能自行取得回执资格。
+- 会话进程使用非提权交互令牌，先证明回执资格，再创建显示和 CSM 后端。锁屏、用户切换或资格失效时撤销租约并恢复显示；单纯熄屏不等同于资格丢失。
+- 服务端和客户端使用 overlapped I/O。鉴权和写回复不得阻塞唯一 owner loop。
+- ETW 健康状态失效时立即撤销物理准入和当前会话租约，保留可恢复的显示日志。
+
+### 显示、界面与启动
+
+- Windows 显示只拥有内屏方向和全局自动旋转锁。没有活动内屏且有活动外屏时，可只读保留外屏拓扑；存在未恢复的内屏日志时，不得借此忽略旧所有权。
+- 物理平板退出后先只读等待最多两秒，让 Windows 完成方向交接；窗口结束后再执行一次稳定目标事务。等待不得续期，也不能确认 `applied`。
+- 软件笔记本、帐篷和支架先完成方向和旋转锁事务，再发布 CSM 姿态；CSM 返回后核对方向和锁，平台改写时只允许一次有界重发。
+- UI 默认留在托盘，关闭窗口只隐藏；明确退出才停止后台并恢复。无托盘时必须保留可见退出路径。
+- 姿态通知点击必须同时匹配已校验快照的实例、提示代次、姿态类型和可确认条件。匹配时直接确认且不打开主窗口；否则只打开界面。
+- 「登录时启动」默认开启。首次正常启动写入当前用户的固定 Run 值并记录初始化标记；用户关闭后不得自动重开，冲突内容必须保留。
+- 用户界面、会话进程和普通入口必须在访问用户状态前拒绝提权、远程会话和非本地控制台。
+- 特权服务只使用受保护安装目录中的受限解释器和固定模块入口。源码目录和便携目录不能作为 LocalSystem 运行时。
+
+## 6. 代码与测试地图
+
+Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*.py`。
+
+| 改动 | 先读 | 目标测试 |
 | --- | --- | --- |
-| 姿态、阈值、迟滞、提示 epoch | `policy.py`、`controller.py`、`presentation.py` | `test_policy`、`test_controller`、`test_presentation` |
-| 手动模式、目标、状态及服务事务 | `protocol.py`、`model.py`、`controller.py`、`service/engine.py`；装配与方法入口见 `service/application.py`、`service/daemon.py` | `test_protocol`、`test_model`、`test_engine`、`test_application`、`test_ui_contract` |
-| 共用逻辑与平台装配 | `service/ports.py`、`session/ports.py`、`service/application.py`、`session/agent.py` | `test_platform_boundaries`、`test_application`、`test_agent`、`make check-dbus` |
-| 鉴权、会话身份、租约 | `service/access.py`、`service/daemon.py`、`service/engine.py`、`session/agent.py`、`packaging/dbus/`、`packaging/polkit/` | `test_access`、`test_engine`、`test_agent`、`make check-dbus` |
-| 设置、校准 | `service/settings.py`、`service/engine.py`、`calibration.py`、`protocol.py`、`ui/settings.py` | `test_settings`、`test_calibration`、`test_engine`、`test_ui_contract`、`make check-i18n` |
-| 传感器、IIO、sysfs、profile | `service/sensor*.py`、`service/hardware_monitor.py`、`hardware/`、`data/profiles/` | `test_sensor`、`test_hardware_monitor`、`test_iio`、`test_sysfs`、`test_profile`、`test_calibration` |
-| relay、物理开关、输入抓取 | `backend/`、`service/actuator.py`、`protocol.py` | `make check-c`、`test_actuator`、`test_sysfs`；涉及会话时加 `make check-dbus` |
-| 显示、恢复日志、桌面检测 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display`、`test_display_plasma`、`test_journal`、`test_agent` |
-| 通知、提示交互、锁屏 | `session/{notify,lockstate,runtime,agent}.py`、`policy.py` | `test_notify`、`test_lockstate`、`test_agent`；提示语义变化加策略和 UI 契约测试 |
-| 共用界面与 Windows 预览 | `frontend/`、`fluent/` | `test_frontend`、`test_fluent` |
-| Windows 显示、ETW 物理输入与 CSM 输出 | `windows/{screen_session,session_bridge,backend,client,display,orientation,convertible_slate,slate_journal,session_context,etw_switch,operations,hardware_runtime}.py`、`fluent/`、`packaging/windows/configure-slate-device.ps1` | `test_windows_architecture`、`test_windows_hardware_runtime`、`test_windows_screen_session`、`test_windows_display`、`test_windows_orientation`、`test_session_refresh`、`test_windows_convertible_slate`、`test_windows_etw_switch`、`test_windows_packaging`、`test_frontend`、`test_fluent`；授权真机可运行 `windows_display_only_smoke.py`、`windows_power_transition_smoke.py`、`windows_launcher_smoke.py` 和 `windows_etw_switch_smoke.py`，不能用隔离端口代替真机证据 |
-| Windows 常驻、自启动、姿态通知与硬件服务界面 | `windows/{activation,startup,instance,screen_session,session_display,hardware_client,hardware_protocol,owner_loop,ui_operations}.py`、`fluent/{resident,app,pages}.py` | `test_windows_startup`、`test_windows_hardware_client`、`test_windows_screen_session`、`test_windows_architecture`、`test_fluent`；实际注销登录、通知点击和屏幕键盘显示须单独记录，不能由 mock 或支持标志代替 |
-| Windows 软件后台、通信与便携包 | `windows/{backend,private_backend,protocol,request_contract,state_contract}.py`、`service/settings_store.py`、`snapshot_codec.py`、`packaging/windows/` | `test_windows`、`test_windows_operations`、`test_windows_probe`、`test_windows_packaging`、`test_fluent`；Windows 解压包运行 `tests/windows_bundle_smoke.py` |
-| Windows 持续采样、硬件主机权限边界 | `windows/{sensor,hardware_host,hardware_ipc,security,actuator}.py`、`service/engine.py` | `test_windows_sensor`、`test_windows_hardware`、`test_windows_actuator`、`test_engine`；授权环境内可运行 `tests/windows_hardware_smoke.py` 的无设备通信 fixture，以及 `tests/windows_actuator_smoke.py` 的纯 C 控制组件联测 |
-| Windows 硬件组合根与物理源准入 | `windows/{hardware_application,hardware_runtime,hardware_host,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server,session_supervisor}.py` | `test_windows_architecture`、`test_windows_hardware_runtime`、`test_windows_hardware`、`test_windows_session_supervisor` |
-| Windows 硬件界面与会话客户端 | `windows/{hardware_client,session_client,session_context,session_agent,session_qualification,session_bridge,hardware_rpc,app_identity}.py`、`fluent/`、`session/runtime.py` | `test_windows_app_identity`、`test_windows_hardware_client`、`test_windows_session_qualification`、`test_windows_session_client`、`test_windows_session_context`、`test_windows_session_agent`、`test_fluent`；与 fake 系统端口的链路联测不替代真实输入验收 |
-| Windows 可信启动、服务安装与停止边界 | `windows/{hardware_service,trusted_runtime,console_identity,session_stop,session_launch,session_supervisor,hardware_server}.py`、`windows/security.py`、`packaging/windows/hardware-service.ps1` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_stop`、`test_windows_session_launch`、`test_windows_session_supervisor`、`test_windows_session_agent`、`test_windows_hardware`、`test_windows_packaging`；便携包不得作为特权运行时或携带安装入口 |
-| Windows MSI、开始菜单名称、降级装配与发布 | `packaging/windows/{build_msi.py,msi/Package.wxs}`、`.github/workflows/{release,windows-preview}.yml`、`windows/{session_agent,shortcut_locale}.py` | `test_windows_msi`、`test_windows_shortcut_locale`、`test_windows_session_agent`、`test_windows_packaging`、`test_packaging_workflow`、`test_release`、`wix msi validate -sice ICE61` |
-| GTK 布局、文案、插画、设置页 | `ui/`、`data/assets/`、`model.py` 的 `StateSnapshot` | `test_ui_contract`、`make check-i18n` |
-| 打包、systemd、发布 | `Makefile`、`packaging/`、`pyproject.toml`、`.github/workflows/release.yml` | `test_packaging_workflow`、`test_release`；构建 Arch 包后运行 `make check-package` |
+| 姿态、阈值、迟滞、提示代次 | `policy.py`、`controller.py`、`presentation.py` | `test_policy`、`test_controller`、`test_presentation` |
+| 目标、状态和服务事务 | `protocol.py`、`model.py`、`controller.py`、`service/engine.py` | `test_protocol`、`test_model`、`test_engine`、`test_application` |
+| Linux 鉴权、会话和租约 | `service/access.py`、`service/daemon.py`、`session/agent.py` | `test_access`、`test_agent`、`make check-dbus` |
+| 设置、校准、持久化 | `service/settings*.py`、`calibration.py`、`ui/settings.py` | `test_settings`、`test_calibration`、`test_ui_contract` |
+| 传感器、机型配置和设备发现 | `service/sensor*.py`、`hardware/`、`data/profiles/` | `test_sensor`、`test_iio`、`test_sysfs`、`test_profile` |
+| C relay 与内置输入 | `backend/`、`service/actuator.py` | `make check-c`、`test_actuator` |
+| Linux 显示与恢复 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display*`、`test_journal`、`test_agent` |
+| GTK/Fluent 界面 | `ui/`、`fluent/`、`frontend/` | `test_ui_contract`、`test_fluent`、`test_frontend`、`make check-i18n` |
+| Windows 硬件组合与 RPC | `windows/{hardware_application,hardware_runtime,hardware_host,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server}.py` | `test_windows_architecture`、`test_windows_hardware*` |
+| Windows ETW 与启动基线 | `windows/{etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_etw_switch`、`test_windows_slate_bootstrap` |
+| Windows 显示、CSM 和会话 | `windows/{display,screen_session,session_agent,session_display,session_client,session_context,convertible_slate,slate_journal}.py` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
+| Windows 服务与可信启动 | `windows/{hardware_service,trusted_runtime,session_supervisor,session_launch,session_stop,security}.py` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_*` |
+| Windows 界面、托盘和自启动 | `windows/{activation,instance,startup,update_check}.py`、`fluent/` | `test_windows_startup`、`test_fluent` |
+| Windows 打包与发布 | `packaging/windows/`、`.github/workflows/` | `test_windows_msi`、`test_windows_packaging`、`test_packaging_workflow`、`test_release` |
+| Linux 打包 | `Makefile`、`packaging/`、`pyproject.toml` | `test_packaging_workflow`、`test_release`、`make check-package` |
 
-## 5. 兼容契约与联动检查
+## 7. 兼容契约
 
-- D-Bus 端点和方法、per-uid 总线名、权限／polkit 语义、错误码及版本化载荷属于兼容契约。
-  修改前必须取得明确授权，按实际调用方同步 Python、C、打包配置和契约测试。
-- 从定义确认版本。`protocol.py` 兼容导出 `contracts.py` 的状态快照 v2 和
-  `linux_contract.py` 的 relay 协议 v4、profile v1。
-  `service/settings_schema.py` 和 `session/journal_schema.py` 分别定义设置 v1、显示日志 v1，
-  原存储模块继续兼容导出版本号。
-  不兼容变更须同步版本、迁移和调用方。
-- 用户可见行为变更同步 README。文案同步英文源文案、`po/zh_CN.po` 和 UI 契约。
-  错误码同步 `protocol.py`、`session/errors.py`、`src/panasonic_posture/ui/errors.py`。界面用简短的本地化文案说明
-  当前状态、操作结果和用户可采取的动作。内部技术细节留在日志和维护文档中。
-- 发布版本核对 `pyproject.toml`、`__version__`、UI `APP_VERSION`、`packaging/aur/PKGBUILD`、
-  `packaging/aur/.SRCINFO`、`po/zh_CN.po` 和 README。由 `packaging/scripts/release_version.py`
-  和 `tests/test_release.py` 校验。
+- 状态快照 v2：`contracts.py`。
+- C relay v4、硬件 profile v1：`linux_contract.py`。
+- 设置 v1：`service/settings_schema.py`。
+- 显示恢复日志 v1：`session/journal_schema.py`。
+- Windows 硬件 RPC 信封与请求/状态 schema：`windows/hardware_protocol.py`、`request_contract.py`、`state_contract.py`。
 
-## 6. 系统不变量
+以下变化必须先取得用户明确授权：D-Bus 端点和方法、per-uid 名称、鉴权/polkit 语义、错误码、版本化载荷、租约或特权进程职责。修改后同步 Python、C、打包配置、所有调用方和契约测试。
 
-1. **硬件优先。** 物理平板开关开启时，软件模式不得覆盖；禁止伪造硬件状态。
-2. **权限隔离。** 特权操作留在系统服务与 relay，桌面操作留在非特权会话适配器，UI 只调用 D-Bus。
-3. **目标和结果分离。** `target` 表示期望状态。事务只有在收到匹配 generation 的会话就绪回执、
-   租约有效且 relay 的相应操作成功后才可确认 `applied`。过期回执必须忽略。
-   平台显式不提供输入控制时，目标必须如实声明 `disable_internal_input=False`，没有输入所有权才可确认释放；仍须显示回执与租约，不得伪造 relay/驱动就绪。
-4. **失效即撤销。** 传感器失效、租约丢失或执行失败时，释放软件接管并恢复桌面原生状态，
-   避免遗留输入抓取、方向锁或未完成的显示事务。沿用现有的重试和恢复路径。
-5. **显示事务化。** 所有显示写入经 `session/transaction.py`，保留所有权检查、恢复日志、回读、回滚及崩溃恢复。
-   硬件平板退出后的正常姿态等待由 `posture_pending` 标识，会话可在两秒等待窗口内
-   暂时锁定开始等待时的方向并核对、纠正偏移；等待不代表已应用，故障仍走恢复路径。
-   已有软件 relay 可在物理平板期间转为硬件转发，退出后独立保留最多两秒的桌面平板
-   信号，心跳不得延长窗口。原始硬件状态始终如实上报；等待期间不确认已应用模式，
-   软件输入重新接管仍须匹配代次的显示回执。原生平板启动不得为此新建 relay。
-   Windows 的 CSM 输出与显示事务相互独立：运行期物理变化只来自 ETW，启动只允许一次
-   CSM/journal 与稳定几何基线，并在有界时间后用非平板安全值收口，不能等待首个 ETW。
-   CSM 后端无法打开时允许
-   仅显示降级且不得创建任何指标写入器；已取得后端后的写入失败仍阻止姿态确认。
-   桌面会话代理不等待首个 ETW 事件才启动；物理状态未观测时只发送 `not-ready` 心跳，
-   完成旧日志恢复和显示后端装配后再等待首个姿态事件，避免首次进入平板时发生启动竞态。
-   旋转失败回滚旋转与锁；不能从 CSM 当前值反推物理姿态，也不能把它当作 ETW 的替代输入。
-   软件帐篷/支架当前不发布 shell 模式；CSM 只提示 Windows，不等于屏幕键盘会自动出现。
-   物理平板释放后的有界姿态等待期采纳 Windows 刚完成的平台方向交接，不把第一次 hold
-   的方向写回；等待期间保持旋转锁释放，避免阻断平台交接，结束后仍由稳定目标执行一次显示事务。
-   没有活动内屏且存在活动外屏时，Windows 可只读保留外屏拓扑和方向，并通过共用刷新通道
-   复核拓扑；存在未恢复内屏日志时必须先恢复旧所有权，不得用外接模式忽略日志。
-6. **设备发现拒绝歧义。** 排除 relay 创建的虚拟开关。物理开关、内置输入和加速度计有歧义时拒绝选择。
-   Profile 只能收窄候选，不能绕开能力和总线校验。
-7. **持久化安全。** 设置和显示日志复用 `SettingsStore` 与 `Journal` 的原子写入与损坏隔离。
-   损坏文件移至 `.corrupt-<timestamp>` 后缀路径。
+用户可见名称：
 
-## 7. 授权边界
+- 英文：`Panasonic 2-in-1 Tablet Posture Management Tool`
+- 中文：`松下二合一平板电脑姿态管理工具`
 
-### 可直接执行
+`panasonic-posture-manager`、`PanasonicPostureManager`、AUMID、Run 键和管道名是内部标识，不随显示名称变化。UI 文案同步英文 msgid、`po/zh_CN.po` 和契约测试。发布版本同步 `pyproject.toml`、`__version__`、README、AUR、翻译文件头和其他发布元数据。
 
-读取仓库、历史和测试。按用户请求修改仓库内文件，运行安全检查、单元测试、隔离集成测试和构建。
-用临时目录与 fixture 验证，避免读写真正的用户状态。
+## 8. 系统不变量
 
-### 更新任务的既定安装授权
+1. 硬件状态优先，禁止伪造或从软件输出反推物理姿态。
+2. 特权硬件操作留在系统服务或 relay，桌面操作留在非特权会话进程，UI 只使用状态/操作接口。
+3. 目标与结果分离；过期回执、错误实例和失效租约不能确认成功。
+4. 失败即撤销；传感器、租约、会话资格或执行失败时必须恢复方向、锁和输入。
+5. 所有显示写入必须可恢复；等待平台交接不等于已应用。
+6. 设备发现存在歧义时拒绝选择；机型 profile 只能收窄候选，不能绕过能力校验。
+7. 设置和恢复日志使用原子写入与损坏隔离，不得静默覆盖损坏文件。
+8. 测试可用 fixture 模拟系统边界，但不得用模拟结果声明真机验收通过。
 
-用户已明确约定：本项目中说“更新”时，默认要求构建、验证并将最新安装包实际安装到本机，
-完成后核对已安装版本，不能只交付安装包。该约定授权后续更新任务中本项目安装所必需的
-提权操作；如果需要用户输入认证信息，应明确说明安装尚未完成。
-此约定不自动授权卸载软件、真机验收、直接操作设备或其他宿主操作。
+## 9. 授权边界
 
-### 须由用户本轮明确授权
+无需额外授权：
 
-本项目更新安装适用上述既定授权；其他操作仍按以下要求取得本轮授权。
+- 读取仓库、历史和测试。
+- 按用户请求修改仓库内文件。
+- 运行静态检查、单元测试、隔离集成测试和构建。
+- 使用临时目录和 fixture，避免触碰真实用户状态或设备。
 
-- 安装或卸载软件、`sudo`／`pkexec`、启停 systemd 单元、修改 D-Bus／polkit／桌面设置、
-  旋转屏幕、发送通知或改变锁屏状态等宿主操作。
-- 接触真实设备，包括打开或写入 `/dev/input`、`/dev/uinput`，抓取输入，或在目标机运行验收脚本。
-- 修改鉴权、租约、per-uid 名称、特权进程职责或兼容契约。提升机型支持等级或声明真机验收通过还需要对应证据。
-- 修改发布元数据、tag 或 AUR 文件，或执行推送、建分支、PR、merge 和发布。
+项目更新任务的既定授权：用户说“更新”时，默认要求构建、验证并把最新安装包实际安装到本机，最后核对已安装版本。该授权只覆盖本项目正常更新所需的提权安装，不包括卸载、真机验收、直接操作设备或其他宿主操作。
+
+以下操作必须由用户本轮明确授权：
+
+- 安装或卸载其他软件，执行 `sudo`/`pkexec`，启停 systemd 单元，修改 D-Bus、polkit 或桌面设置。
+- 旋转屏幕、发送通知、改变锁屏状态或执行其他宿主操作。
+- 打开或写入 `/dev/input`、`/dev/uinput`，抓取输入，或运行目标机验收脚本。
+- 修改鉴权、租约、per-uid 名称、特权职责或兼容契约。
+- 修改发布元数据、tag 或 AUR；推送、建分支、PR、merge 和发布。
 - 删除仓库文件、重命名公共文件、批量重写、引入或升级依赖。
 
-### 禁止
+禁止：
 
-- 覆盖、回滚、清理用户改动，或暂存／取消暂存其改动。提交须遵守第 11 节。
-- 将 `.backup/`、`.review/`、缓存或构建产物当作源码。禁止手工编辑 `backend/relay`、
-  `locale/**/*.mo`、`build/`、`dist/`、`__pycache__/` 等生成物。
-- 为验收在开发宿主安装测试包或运行 `tests/manual/`；用自动化测试冒充真机验收。
-  按上述约定为实际使用更新本项目，不属于验收安装；包验收仍须在隔离环境中完成。
-- 为测试放宽生产授权，将 `--session-bus` 用作生产边界，或将设备写入移入用户进程。
-- 恢复 X11／xrandr／xinput 路径、添加隐式桌面回退或把未支持环境宣称为可用。
+- 覆盖、回滚或清理用户改动；擅自暂存/取消暂存用户改动。
+- 手工编辑 `backend/relay`、`locale/**/*.mo`、`build/`、`dist/`、`__pycache__` 等生成物。
+- 为验证在开发宿主安装测试包、运行 `tests/manual/`，或用自动化测试冒充真机验收。
+- 为测试放宽生产鉴权、把设备写入移入用户进程，或把 `--session-bus` 当作生产边界。
+- 恢复 X11/xrandr/xinput 路径或增加隐式桌面回退。
 
-## 8. 验证
+## 10. 验证
 
-使用默认解释器 `/usr/bin/python3` 和标准库 `unittest`。从第 4 节选择目标测试。
-代码改动交付前至少尝试完整门槛。
+Linux 默认使用 `/usr/bin/python3` 和标准库 `unittest`。先跑目标测试，再按改动范围扩大：
 
 ```sh
 PYTHONPATH=src /usr/bin/python3 -m unittest discover -s tests -p 'test_policy.py' -v
@@ -187,1241 +166,61 @@ make check-i18n
 make WERROR=1 check
 ```
 
-- C 改动必跑 `make check-c`，涉及 relay 和会话联动时加 `make check-dbus`。
-  UI 文案或错误码改动必跑 `make check-i18n`。
-- D-Bus 集成测试使用临时会话总线，也会启动传感器探测。使用普通用户，在未映射真实传感器的隔离环境中运行。
-- UI 测试可能因缺少 PyGObject 或 `gtk4-broadwayd` 等依赖而跳过。涉及 UI 时说明跳过项和残余风险。
-- Arch 包验收用 `make check-package PACKAGE=/path/to/package.pkg.tar.zst`。
-  静态检查加 `PACKAGE_NO_INSTALL=1`。完整检查只在隔离 pacman 根目录中安装，详见 [MAINTENANCE.md](MAINTENANCE.md#构建和验收)。
-- 修复失败根因，禁止吞异常、跳过测试、放宽断言、缩短超时或删除分支来让检查通过。
-  无法执行时记录命令、错误和未覆盖范围。未做真机验证时明确说明。
+- C 改动至少运行 `make check-c`；涉及 relay 与会话联动时加 `make check-dbus`。
+- UI 文案或错误码改动必须运行 `make check-i18n`。
+- 版本、README、AUR 或发布元数据改动至少运行 `test_release.py`。
+- D-Bus 集成测试使用临时会话总线，应使用普通用户并在未映射真实传感器的隔离环境中运行。
+- UI 测试因缺少 PyGObject、GTK 或离屏后端而跳过时，必须记录跳过项和残余风险。
+- Arch 包先运行 `make check-package PACKAGE=... PACKAGE_NO_INSTALL=1`；安装/升级检查只在隔离环境执行。
 
-## 9. 实现约定
+Windows 目标：
 
-- **Python** 保持 3.11+ 兼容。纯逻辑无 I/O、时钟和 D-Bus。边界模块使用类型标注、现有
-  dataclass／`StrEnum` 和错误码。D-Bus 回调执行有界工作，耗时任务交给现有调度。
-- **C** 使用 C11 并通过 `-Wall -Wextra -Werror`。保留字符设备打开时的安全检查。
-- **UI** 使用 PyGObject、四空格缩进及 `_()`。页面只读取校验过的快照字段，字段变更同步状态模型与契约测试。
-- **测试** 在进程、总线、文件系统边界注入 fake，临时文件放入 `TemporaryDirectory`。
-- **翻译** 以英文源文案为 msgid，确保 `po/POTFILES.in` 覆盖实际源文件。用构建流程生成 `.mo`。
-- **注释** 说明原因、不变量或失败路径。
+```powershell
+$env:PYTHONPATH = "src"
+python -m compileall -q src/panasonic_posture/windows src/panasonic_posture/fluent
+python -m unittest discover -s tests -p "test_windows*.py" -v
+python -m unittest discover -s tests -p "test_session_refresh.py" -v
+python -m unittest discover -s tests -p "test_optional_input.py" -v
+python -m unittest discover -s tests -p "test_frontend.py" -v
+python -m unittest discover -s tests -p "test_fluent.py" -v
+python tests/check_i18n.py
+```
 
-## 10. 完成定义
+交付时说明实际命令、结果、跳过项、失败和未验证范围。未执行真机验证时必须明确写出。
 
-- [ ] 根因已核实，改动限于本轮任务，用户已有改动原样保留。
-- [ ] 行为改动有回归测试，覆盖失败路径及安全边界。
-- [ ] 目标检查和适用的完整检查已执行，已区分通过、失败、跳过及未验证项。
-- [ ] 已核对兼容契约、版本、迁移、翻译、打包和文档联动；设计变更已记入第 13 节。
-- [ ] 已执行 `git diff --check`、`git diff --stat` 和 `git status --short --untracked-files=all`。
-- [ ] 已按第 11 节提交，或有明确原因无法提交。
+## 11. 实现约定
 
-用用户当前语言交付。说明改了什么、原因、涉及文件、实际验证和未验证项。未提交时说明原因和残留状态。
+- Python 保持 3.11+ 兼容；纯逻辑不直接依赖 I/O、时钟或 D-Bus；边界使用类型标注、dataclass/`StrEnum` 和稳定错误码。
+- C 使用 C11，并通过 `-Wall -Wextra -Werror`；保留字符设备打开与输入权限检查。
+- Linux UI 使用 PyGObject、GTK 4/libadwaita；Windows UI 使用 PyQt6 和 Fluent Widgets。
+- 测试在进程、总线、文件系统、时钟和设备边界注入 fake；临时文件使用 `TemporaryDirectory`。
+- 翻译以英文源文案为 msgid，确保 `po/POTFILES.in` 覆盖源文件；`.mo` 由构建生成。
+- 注释解释原因、不变量和失败路径；不复述代码。
+- 文档只保留当前有效信息。设计或行为变化时直接更新对应条款，并在提交正文记录动机和验证；不新建按日期的流水账。
 
-## 11. Git 与提交
+## 12. 完成与提交
 
-- 开始时检查工作树和相关差异，默认现存改动属于用户。保留其内容和暂存状态。
-- 完成并验证后，本轮改动须在交付前单独提交。用户明确要求不提交或上层环境禁止提交时除外。
-  没有改动时不创建空提交。
-- 只暂存本轮文件或 hunk。与用户改动混在同一文件时，仅暂存能安全分离的 hunk；无法分离时停止询问。
-  有其他改动时禁止 `git add .`、`git commit -a` 或等价操作。
-- 提交前检查 `git status`、`git diff --cached` 和 `git diff --cached --check`，
-  排除生成物、缓存、密钥和无关文件。
-- 使用简洁的英文 Conventional Commit 主题，如 `fix:`、`docs:`。正文写明改动和验证结果。
-- 禁止 amend、改写已发布 tag 或直接修改 `.git/`。推送、建分支和打 tag 须符合第 7 节授权。
+完成前确认：
 
-## 12. 必须停止并询问
+- [ ] 根因已验证，改动限于本轮任务，用户已有改动保持原样。
+- [ ] 行为变化有回归测试，覆盖失败和安全边界。
+- [ ] 目标测试及适用的完整检查已执行，并区分通过、失败、跳过和未验证。
+- [ ] 兼容契约、版本、翻译、打包和文档联动已核对。
+- [ ] 已运行 `git diff --check`、`git diff --stat` 和 `git status --short --untracked-files=all`。
 
-- 第 7 节要求的明确授权缺失。沉默、时间压力或任务需要均不构成授权。
+Git 规则：
+
+- 完成并验证后，本轮改动应单独提交；用户明确要求不提交或环境禁止提交时除外。
+- 只暂存本轮文件或可安全分离的 hunk。存在其他改动时禁止 `git add .`、`git commit -a` 或等价操作。
+- 提交前检查 `git diff --cached` 和 `git diff --cached --check`，排除生成物、缓存、密钥和无关文件。
+- 使用简洁的英文 Conventional Commit 主题，如 `docs:`、`fix:`；正文说明改动和验证结果。
+- 禁止 amend、改写已发布 tag 或直接修改 `.git/`。
+
+## 13. 必须停止并询问
+
+- 缺少第 9 节要求的明确授权。
 - 用户改动与本轮 hunk 无法安全分离。
-- 必需验证依赖真实硬件、特权操作、缺失工具链或外部环境，且没有安全替代方案。
-- 代码、测试与文档给出无法消解的冲突，或多种任务解释会显著改变范围、兼容性或导致不可逆结果。
+- 必需验证依赖真实硬件、特权操作或缺失工具链，且没有安全替代方案。
+- 代码、测试与文档存在无法消解的冲突，或不同解释会显著改变范围、兼容性或造成不可逆结果。
 
-可依现有模式解决的命名和样式选择自行处理，交付时说明有实质影响的假设。
-
-## 13. 设计变更记录
-
-历史记录按日期排列，可能提到已替换的实现。查找现行规则先看第 3 至 6 节，追溯原因再按功能名查本节。
-
-- 改变产品行为、系统架构、权限边界、协议/状态/持久化 schema、默认策略、UI 交互
-  模型、兼容范围或发布语义时，必须在同一改动中追加记录。
-- 每条至少包含：日期、变更内容、动机、影响的约束/不变量、需要同步的代码与测试。
-- 新设计取代旧内容时，明确写出取代关系，并同步修改前文的对应条款，不能只追加
-  一条互相矛盾的说明。
-- 纯内部重构、格式化或无设计语义变化的依赖补丁无需新增记录；无法判断时按设计
-  变更处理。
-
-### 2026-11-04 - 精简发布与维护文档
-
-- 变更：用户文档只保留 `README.md` 和 `packaging/aur/README.md`，移除更新日志、
-  机型说明、验收记录和截图；发布版本校验不再要求更新日志条目。
-- 动机：减少面向用户和维护者重复暴露的内部技术细节，降低文档同步负担。
-- 影响：`pyproject.toml`、运行时版本和 AUR 元数据仍是发布版本的事实源；
-  `README.md` 继续承担版本公告与支持范围，安装维护文档继续保留。
-- 同步：`README.md`、`packaging/aur/README.md`、`release_version.py` 和发布测试。
-
-### 2026-11-04 - 安装维护文档移至仓库根目录
-
-- 变更：安装、打包与运维说明从 `packaging/aur/README.md` 移至 `USAGE.md`，
-  `README.md` 的维护入口和发布输入检查同步改为新路径。
-- 动机：让安装维护说明与用户总览并列，避免 AUR 子目录继续承担全项目维护文档
-  的入口。
-- 影响：取代“精简发布与维护文档”中的安装维护文档路径约束；仍只保留用户总览和
-  安装维护两页文档，版本校验和发布语义不变。
-- 同步：`README.md`、`USAGE.md`、`AGENTS.md`、`tests/test_release.py` 和 AUR
-  打包注释。
-
-### 2026-11-04 - 手动发布重建使用派发提交
-
-- 变更：`workflow_dispatch` 手动发布改为构建派发时选定的提交，`tag` 输入只决定
-  发布标签；`v*` 标签推送仍构建对应标签。Arch 容器脚本不再提前展开构建变量。
-- 动机：允许在发布标签不可移动的前提下修复发布基础设施，并以同一版本号重建
-  制品。
-- 影响：正常标签发布不变；手动重建的 GitHub 安装包和 AUR 预构建包使用所选
-  提交，发布标签和版本校验仍保持一致。AUR 源码包按版本标签取源码。
-- 同步：`.github/workflows/release.yml`、`tests/test_packaging_workflow.py` 和
-  本记录。
-
-### 2026-11-04 - 帐篷模式总开关
-
-- 变更：新增默认开启的 `tent_enabled` 设置。关闭后自动策略不再进入帐篷模式，
-  已有自动帐篷接管立即撤销。手动帐篷的限制已由 2026-11-07「自动帐篷与手动选择独立」取代。
-  设置通过 `SetTentEnabled`
-  D-Bus 方法和状态快照对外提供。
-- 动机：让不希望使用帐篷模式的用户可以彻底避免误触发，而不必依赖提示设置。
-- 影响：`tent_enabled` 是向后兼容的状态字段，旧快照和旧设置缺少该字段时默认
-  开启；设置文件 schema 仍为版本 1，不改变硬件优先和失效撤销约束。
-- 同步：控制器、策略、状态模型、设置持久化、D-Bus、UI、翻译、README 和测试。
-
-### 2026-11-04 - 主页优先显示已应用模式
-
-- 变更：主页插画和标题优先读取 `applied.mode`，硬件平板映射为平板姿态；没有
-  有效已应用模式时才回退到传感器识别的 `pose`。
-- 动机：手动切换输出模式后，主页应立即反映实际生效的模式，而不是继续显示
-  未变化的物理姿态。
-- 影响：此项取代此前“主页只显示识别姿态”的显示规则；`target` 仍不直接用于
-  展示，目标与结果分离的约束不变。
-- 同步：`data/ui/posturePage.js` 和 UI 契约测试。
-
-### 2026-11-04 - 手动模式过渡期同步主页插画
-
-- 变更：手动选择已写入 `manual`、对应 `target` 一致，但新事务尚未确认
-  `applied` 且没有错误时，主页插画和标题临时显示该手动模式；事务成功后仍以
-  `applied` 为准，出现错误则立即回退到传感器识别的姿态。
-- 动机：`SetMode` 会先清空 `applied`，原逻辑在事务期间回退到未变化的物理姿态，
-  使用户看到的手动切换结果偶发停留在旧图标。
-- 影响：补充“主页优先显示已应用模式”的过渡期规则；`target` 不作为展示来源，
-  只用于确认当前 `manual` 选择已进入服务事务，目标与结果分离的约束不变。
-- 同步：`data/ui/posturePage.js` 和 UI 契约测试。
-
-### 2026-11-04 - 仅发布可确认的姿态提示
-
-- 变更：策略新增“当前提示可确认”判定；控制器只有在硬件状态、稳定性和
-  当前原始/平滑姿态仍满足目标确认区时，才把 `pending_notification` 和
-  `pending_prompt` 对外发布。提示模式仍可在较宽的保持区内保留，设备回到确认区
-  后以同一 epoch 重新出现。
-- 动机：提示会在较宽保持区内持续存在，但确认只接受较窄的目标确认区。设备轻微
-  偏出确认区时，通知仍可点击，服务端必然拒绝，随后又刷新同一提示，形成反复点按
-  但模式无法切换的循环。
-- 影响：`pending_notification`/`pending_prompt` 明确表示“现在可以执行”的提示，
-  不再暴露无法成功的动作；内部保持区、目标与结果分离以及 D-Bus 状态 schema 均
-  不变。
-- 同步：`policy.py`、`controller.py`、策略/控制器测试和 README 使用说明。
-
-### 2026-11-04 - 底部导航悬停反馈
-
-- 变更：底部导航的未选中项在鼠标悬停时显示低透明度背景，不再把 hover 背景设为
-  完全透明；选中态样式保持不变。
-- 动机：此前的覆盖规则消除了悬停反馈，底部按钮在鼠标操作时缺少可点击提示。
-- 影响：只改变悬停视觉反馈，不改变导航选择语义、布局或 D-Bus/状态契约。
-- 同步：`data/ui/navigation.js` 和 UI 契约测试。
-
-### 2026-11-04 - 显示恢复独立于目标代次
-
-- 变更：GNOME 和 Plasma 共用同一套软件模式显示事务。恢复日志在旋转读回成功前
-  同时保留上一已写入方向和本次写入意图。会话适配器独立跟踪显示是否需要恢复，
-  后端故障或租约拒绝时发起恢复，临时失败后重试。
-- 动机：切换期间发生写入失败、崩溃或服务端故障时，仍能恢复接管前的屏幕方向和
-  方向锁。
-- 影响：日志仍为版本 1，缺少可选的 `pending_transform` 字段时按旧记录恢复。
-  恢复仅回退当前输出上与日志相符的旋转，继续遵守事务化显示和失效撤销约束。
-- 同步：`session/transaction.py`、`session/journal.py`、`session/runtime.py`
-  和显示、日志及会话测试。
-
-### 2026-11-04 - 分离输入释放与模式确认
-
-- 变更：笔记本和硬件平板目标在 relay 释放成功且收到同代次显示回执后确认，
-  支持任意到达顺序。软件平板类目标仍需 relay 确认输入已接管。发布快照时，
-  租约失效会清除已应用结果。
-- 动机：避免迟到的显示回执丢失、未完成的接管提前确认，以及租约失效后状态残留。
-- 影响：保持目标与结果分离，D-Bus 方法、状态版本和租约时序不变。
-- 同步：`service/engine.py` 和服务事务测试。
-
-### 2026-11-04 - 校验会话适配器的完整单元归属
-
-- 变更：从 systemd 的 cgroup 记录匹配调用方 UID 对应的用户管理器及适配器
-  单元名。管理器内外允许 systemd slice 路径，相似单元名和其他服务的委托子树
-  不予接受。
-- 动机：阻止同 UID 的其他单元仅凭名称包含适配器单元名通过身份检查。
-- 影响：保留活跃本地 Wayland 会话、per-uid 总线名及现有租约检查。
-- 同步：`service/access.py` 和会话身份测试。
-
-### 2026-11-04 - Arch 发布制品使用检出提交的源码
-
-- 变更：补全“手动发布重建使用派发提交”。Arch 任务以检出提交的源码归档构建
-  GitHub 安装包，并用该安装包验证 AUR 预构建包。导出的 AUR 源码构建配方继续
-  按版本标签获取源码。
-- 动机：使同一轮发布的 Arch、Debian 和 RPM 安装包从同一提交构建。
-- 影响：标签和版本校验沿用既有发布契约。
-- 同步：`.github/workflows/release.yml` 和打包工作流测试。
-
-### 2026-11-04 - 姿态处理故障撤销接管
-
-- 变更：服务控制循环遇到异常时使原有模式回执失效，通过原有异步释放流程撤销输入接管。
-  故障状态触发会话适配器恢复显示。重新接管需等待释放完成和新代次的显示回执。
-- 动机：防止服务已报错时仍发布已应用模式，或继续依赖故障前的准备回执。
-- 影响：沿用目标与结果分离、硬件优先和失效撤销约束，D-Bus 状态版本和租约时序不变。
-- 同步：`service/engine.py`、服务事务测试和 README。
-
-### 2026-11-04 - 按显示日志确认方向锁所有权
-
-- 变更：恢复时比对当前方向锁或自动旋转策略与日志中的已写入值和待写入值。Plasma
-  还要求输出身份匹配，GNOME 继续使用全局方向锁。接管期间被外部修改的设置，在
-  下一次由程序写入时作为新的恢复基准。
-- 动机：保留用户在接管期间修改的设置，同时覆盖方向锁写入前后发生崩溃的情况。
-- 影响：日志仍为版本 1，`pending_lock` 为可选字段。旧日志按已记录的值判断，
-  无法确认归属时保留当前桌面设置。
-- 同步：`session/transaction.py`、`session/plasma.py`、`session/journal.py`、
-  两种桌面的恢复测试、日志验证测试和 README。
-
-### 2026-11-04 - 主循环异步等待鉴权
-
-- 变更：界面操作和会话心跳使用各自有上限的串行鉴权队列，结果返回服务主循环后，
-  才执行对应方法并回复。关闭服务时停止分发待处理的结果。
-- 动机：防止慢的 logind 或 polkit 查询阻塞控制循环，也避免界面鉴权延迟占用会话心跳的队列。
-- 影响：沿用现有鉴权检查、缓存、错误码与租约规则，状态更新继续由主循环串行处理。
-- 同步：`service/daemon.py` 和鉴权分发测试。
-
-### 2026-11-04 - 分离共用事务与 Linux 平台装配
-
-- 变更：服务引擎通过输入、采样和设置接口接入平台实现。会话运行时通过客户端、显示、
-  锁屏和通知接口工作，Linux 装配负责 BOOTTIME、GLib 与 D-Bus 的适配。显示后端显式
-  声明方向锁是否全局，回滚时据此判断能否恢复不同输出上的设置。
-- 动机：复用姿态、执行回执、显示恢复和重试逻辑，为未来增加平台实现留出入口。
-- 影响：Linux 继续使用原有进程、鉴权、租约、协议和文件格式。新增平台仍须提供可信的
-  硬件状态、与引擎同一时钟的传感器采样，以及能撤销的输入和显示接管。
-- 同步：服务和会话接口、Linux 装配、显示事务、`test_platform_boundaries` 和 `USAGE.md`。
-
-### 2026-11-04 - 独立恢复方向锁并限制显示输出选择
-
-- 变更：Plasma 默认只对已识别的内屏应用新模式，已有恢复日志仍按记录的输出恢复。
-  GNOME 在内屏暂时不可旋转时先恢复全局方向锁，保留未完成的旋转恢复记录。
-- 动机：防止只启用外接屏幕时误旋转外接屏幕，以及内屏禁用或镜像后遗留方向锁。
-- 影响：沿用现有的显式输出选择、所有权校验、回读和日志格式。已经恢复的方向锁
-  不会在后续旋转恢复时覆盖用户的设置。
-- 同步：两种桌面的显示适配器、共用显示事务、恢复测试和 README。
-
-### 2026-11-04 - 核对会话恢复探测并限制退避
-
-- 变更：会话适配器使用当前代次探测，并在重新应用显示前核对服务实例、代次和
-  会话连接状态。重试间隔在达到上限后保持固定。
-- 动机：避免把过期探测的空回复当成租约已恢复，以及长时间被拒绝时因计算溢出而频繁重试。
-- 影响：保留现有鉴权、租约时长、D-Bus 方法和状态版本。恢复仍要求当次显示回执。
-- 同步：会话运行时和租约恢复测试。
-
-### 2026-11-04 - 区分模式浏览、切换进度和操作结果
-
-- 变更：方向键只浏览模式，激活选项后才切换。主页在保留姿态插画的同时提示切换中或
-  已暂停。较早请求的失败不丢弃后续选择，完成回调按当前提示更新按钮。校准说明加入
-  静置时间，断线后等待新状态才重新启用操作。
-- 动机：防止浏览时停用输入设备，并让用户直接看到操作效果、进度和下一步。
-- 影响：补充“手动模式过渡期同步主页插画”的反馈规则，保留目标与已应用结果的区别、
-  物理开关优先和现有状态格式。界面只说明用户可见的状态和操作。
-- 同步：主页、设置页、校准文案和翻译、UI 契约测试及 README。
-
-### 2026-11-05 - 简化切换反馈并及时处理会话回执
-
-- 变更：取代上一条中主页显示切换进度的规则。正常切换时由插画和标题反馈，
-  暂停和失败仍显示状态。提交姿态确认后，按钮保留原文案并暂时禁用。
-  会话适配器在后台任务完成后由主循环推进显示事务。
-- 动机：避免短暂的进度文案闪现，省去各个显示事务步骤等待下一次定时轮询的时间。
-- 影响：周期状态读取和心跳继续使用现有定时器。显示写入、代次核对及回执顺序不变，
-  保留硬件优先、目标与结果分离及失效撤销约束。
-- 同步：主页、中文翻译、README、会话适配器和运行时，以及 UI 契约与会话测试。
-
-### 2026-11-05 - 姿态暂时不稳时保留通知发送记录
-
-- 变更：补充“仅发布可确认的姿态提示”。暂时无法确认时关闭桌面通知，保留同一 epoch
-  的发送和重试记录。恢复确认条件后，应用主页可再次确认，已经发送过的桌面通知不重复弹出。
-- 动机：设备跨过竖直位置时，稳定判定可能短暂中断。同一次姿态提示不应随之反复弹出。
-- 影响：新的姿态提示仍可发送通知，锁屏和会话恢复仍按原有规则重置通知记录。
-  确认条件、提示 epoch 和 D-Bus 状态契约不变。
-- 同步：会话通知组件、会话运行时、通知回归测试和 README。
-
-### 2026-11-05 - 隔离损坏恢复日志并异步清理 relay 故障
-
-- 变更：非 UTF-8 的显示恢复日志按损坏文件隔离，避免阻止会话适配器启动。
-  relay 操作报错后先记录失败状态，再通过已有后台释放流程清理；清理期间禁止
-  重新接管，原生状态恢复失败优先于此前的 relay 错误。系统服务首次获取总线名称
-  失败时，只有确认名称已有所有者才正常退出，其他情况按启动失败处理。
-- 动机：修复损坏日志导致重复启动失败、同步清理阻塞主循环，以及总线连接失败
-  被误报为重复实例的问题。
-- 影响：沿用失效撤销、目标与结果分离、代次检查、损坏文件隔离和已有进程职责；
-  不改变鉴权、租约、D-Bus 契约、状态和日志版本。日志损坏后无法恢复其中的原始设置。
-- 同步：显示日志、服务引擎、服务入口、日志与服务回归测试和 README。
-
-### 2026-11-05 - 慢切换续租、异步重试和延迟反馈
-
-- 变更：显示操作期间由独立任务续租，使用当前服务实例和代次探测，始终上报未就绪；
-  显示完成后等待该心跳结束，再核对当前状态并确认。鉴权拒绝和持续通信失败仍撤销
-  接管，正在执行的显示操作结束后恢复。重试和故障后的手动模式切换复用后台输入
-  任务，等待既有释放结束；重复重试合并，重试期间不把旧错误当作新结果，原生状态
-  重置失败禁止软件输入接管。
-- 变更：界面丢弃旧连接的回复和错误，并断开旧信号处理器。补充“简化切换反馈并及时
-  处理会话回执”：正常切换仍不显示进度，等待超过两秒才提示；暂停时说明原因与
-  下一步。断线、切换完成、服务实例或代次变化及退出时撤销过期计时器。
-- 动机：防止慢显示事务被误判为会话失联，避免重试阻塞服务和旧回复覆盖新界面，
-  并让异常等待有可理解的反馈。
-- 影响：保留现有租约时长、鉴权和 per-uid 名称、D-Bus 方法和状态版本；续租不代表
-  已应用，输入重置和显示事务保持串行，继续遵守硬件优先、目标与结果分离及失效撤销。
-- 同步：会话运行时、服务引擎、界面连接和主页、中文翻译、README、服务/会话/界面回归测试。
-
-### 2026-11-05 - 退出物理平板后直接采用稳定姿态
-
-- 变更：物理平板开关关闭后，策略在新的姿态样本稳定前保持未确认，随后直接采用
-  支架、帐篷或笔记本模式，不再先发布笔记本目标或追加进入计时。等待期间主页
-  沿用最后的平板插画；开关未知或传感器失效时继续撤销接管。
-- 动机：此前退出物理平板时无条件回到笔记本，导致设备已处于支架姿态时仍短暂
-  确认笔记本模式，并延迟后续支架接管。
-- 影响：只调整物理平板退出时的姿态决策；不保留或伪造已关闭的硬件状态。继续
-  要求匹配代次的显示回执和 relay 执行成功，鉴权、租约、状态版本和协议不变。
-  帐篷总开关及从稳定笔记本姿态发起的确认提示仍生效。
-- 同步：`policy.py`、策略和控制器回归测试、服务状态与插画联动测试及 README。
-
-### 2026-11-05 - 完成共用层与 Linux 语义分离
-
-- 变更：共用运行时使用已分类的失败，共用引擎使用带命名空间的会话持有者、平台输入
-  完成证据及独立的传感器和机型信息。Linux 保留 UID 鉴权、relay 双条件确认和状态 v2。
-  显示日志改为显式注入；设置和日志格式校验、安装方向数学、异常类型与平台 I/O 分离。
-  共用常量、Linux 配置和兼容导入入口各自独立，GLib 回调边界移至宿主模块。
-- 动机：避免新平台伪造 D-Bus 错误名、UID、IIO 来源或软件平板信号才能使用共用事务。
-- 影响：补充“分离共用事务与 Linux 平台装配”。不改变 Linux 鉴权、租约时长、per-uid
-  名称、特权职责、外部协议或持久化版本；仍遵守硬件优先、严格执行确认和失效撤销。
-  不新增 Windows 支持声明，也不继承跨平台真机验证等级。
-- 同步：服务和会话接口与装配、数据模型及兼容协议、存储格式模块、平台边界及安全回归
-  测试、`USAGE.md` 和本文件。
-
-### 2026-11-05 - 移除姿态未确定时的暂停提示
-
-- 变更：取代“慢切换续租、异步重试和延迟反馈”中对所有暂停状态显示原因与下一步的规则。
-  姿态暂时未确定且无明确故障时，主页不再显示“模式切换已暂停，请将设备静置后再试”。
-  硬件开关不可用、传感器异常和切换失败仍显示对应提示。
-- 动机：暂时未确定的姿态由程序自动继续判断，无需用户重试，避免不必要的操作提示。
-- 影响：仅调整主页文案的显示条件，姿态策略、硬件优先、执行确认及状态契约不变。
-- 同步：`data/ui/posturePage.js`、中文翻译、UI 契约测试和 README。
-
-### 2026-11-05 - 软件姿态直接交接并保留采样回退
-
-- 变更：已确认的帐篷与支架之间切换时，新姿态的进入计时优先于旧姿态的退出计时，
-  不再在候选确认期间插入笔记本目标。候选消失、实际回到笔记本、关闭帐篷功能、
-  物理开关变化或采样失效时继续执行原有退出与恢复规则。
-- 变更：IIO 试运行接管后再次失败，先恢复 sysfs 采样并按原退避时间后台重试；
-  sysfs 也失败时仍允许尝试 IIO，避免退避阻断所有可用来源。
-- 动机：慢速采样和连续翻转时，旧姿态退出计时可能先到期，触发不必要的输入释放、
-  显示恢复和重复接管；采样重试条件无法成立还会在失败后立即重开 IIO。
-- 影响：不缩短稳定、进入或失效时限，不修改鉴权、租约、协议或状态格式。新方向
-  仍要求同代次显示回执和输入执行成功，故障仍撤销接管。
-- 同步：`policy.py`、`service/sensor.py`、策略/传感器/服务联动回归测试和 README。
-
-### 2026-11-06 - 硬件平板显示交接保留当前方向
-
-- 变更：进入硬件平板时不再恢复接管前的旋转，先在日志中放弃旋转所有权，再解除
-  方向锁交给桌面。原方向锁的恢复信息继续保留。退出时，健康且未稳定的姿态通过
-  可选状态字段 `posture_pending` 标识；会话经显示事务锁定当前方向，在两秒等待窗口
-  内等待稳定目标，不插入恢复旋转。超时、故障、失联或退出时仍恢复桌面设置。
-- 动机：补充“退出物理平板后直接采用稳定姿态”，消除显示层把暂时未确定的姿态
-  当作完整恢复，以及进入硬件平板先恢复旧旋转造成的中间画面跳变。
-- 影响：状态仍为 v2，缺少字段时默认为 false，旧适配器保持原有恢复行为。显示日志
-  仍为 v1，沿用可空的旋转所有权字段。等待期间只续租并上报未就绪，保持硬件优先、
-  输入撤销、代次检查及故障恢复；桌面接手后的自动旋转时机仍由桌面决定。
-- 同步：策略、状态模型与解码、服务快照、会话运行时与显示接口、共用显示事务、
-  GJS 状态校验、两种桌面及策略/服务/会话/状态/UI 回归测试和 README。
-
-### 2026-11-06 - 物理平板退出等待期间保持共享采样
-
-- 变更：服务在策略的 `posture_pending` 期间继续请求共享采样，进入支架或帐篷后
-  延续该偏好；确定回到笔记本或采样失效后仍使用原有选择规则。
-- 动机：显示交接已识别正常等待，但采样偏好漏掉该状态，导致 sysfs → IIO → sysfs
-  往返切换；日志显示此时可能遇到 IIO 缓冲区占用或无采样，干扰新姿态证据的建立。
-- 影响：补充“硬件平板显示交接保留当前方向”；仅保持采样偏好，不延长显示等待、
-  租约或传感器失效时限，不保留输入接管。sysfs 失败时的 IIO 回退保持有效。
-- 同步：服务引擎、采样模块说明、真实策略联动与失效回归测试、README。
-
-### 2026-11-06 - 稳定回到笔记本后取消帐篷免确认窗口
-
-- 变更：稳定的笔记本姿态清除帐篷退出后的五秒免确认记录，退出帐篷时也不再为
-  该笔记本姿态重新开启窗口。随后进入帐篷时按提示设置重新询问；其他姿态之间
-  的直接衔接和短暂离开帐篷区域的恢复规则继续生效。
-- 动机：修复确实回到笔记本后快速翻到帐篷仍跳过确认、自动停用内置输入的问题。
-- 影响：笔记本姿态优先于此前的帐篷确认记忆。提示关闭时仍可自动进入，物理开关
-  优先、失效撤销、目标与结果分离及协议、设置版本均不变。
-- 同步：`policy.py`、策略和控制器回归测试、README。
-
-### 2026-11-06 - 恢复被姿态波动中断的通知
-
-- 变更：取代“姿态暂时不稳时保留通知发送记录”中已发送通知永不重现的规则。
-  程序因提示不可确认而收起通知后，同一提示持续可确认一秒再弹出；持续有效时不重复发送。
-- 动机：避免首次通知被短暂不稳定立即关闭后，用户再也收不到该次确认提示。
-- 影响：不可确认时仍立即撤下通知并清除可点击标识，通知发送失败的退避和次数上限不变。
-  不修改确认条件、提示 epoch、鉴权、租约或状态契约；锁屏及会话恢复仍使用原有重置路径。
-- 同步：会话通知组件、真实策略联动和通知回归测试、README。
-
-### 2026-11-06 - 锁定自动旋转后重新核对显示方向
-
-- 变更：软件模式在设置方向锁后重新读取显示状态，核对输出身份，再决定是否写入
-  目标方向。读取失败或输出变化走原有回滚路径，不确认切换成功。
-- 动机：从平板交接时，桌面可能在首次读取与锁定之间完成自动旋转；使用锁定前
-  的方向会漏掉纠正操作，并把错误方向记为已应用。
-- 影响：补充“硬件平板显示交接保留当前方向”。沿用显示事务、恢复日志、同代次
-  回执和硬件优先约束，不修改鉴权、租约、协议、状态或日志版本。
-- 同步：共用显示事务、GNOME/Plasma 竞态与失败路径回归测试、README。
-
-### 2026-11-06 - 用新采样证据完成姿态稳定和进入等待
-
-- 变更：稳定时长和候选姿态进入时长按最新有效样本时间计算，不再使用主循环当前时间。
-  重复读取缓存不能使未完成的稳定窗口或进入窗口到期。
-- 动机：采样中断期间，少量短暂一致的数据被反复读取，原逻辑仍可发布帐篷提示；
-  下一份真实样本显示设备仍在移动时，提示随即消失，通知重发无法解决过早提示。
-- 影响：计时阈值、确认区和失效撤销规则不变；已有稳定姿态仍按原有新鲜度规则保持，
-  正常低频采样可以进入姿态。协议、鉴权、租约及持久化版本不变。
-- 同步：姿态策略、缓存样本回归测试、控制器与通知联动测试及 README。
-
-### 2026-11-06 - 在短暂方向锁定窗口内核对显示
-
-- 变更：补充“硬件平板显示交接保留当前方向”。退出后的健康姿态等待期间，记录
-  首次锁定时的方向，并按原有轮询周期核对、纠正窗口内的方向偏移；两秒上限不续期。
-  确定目标、重新进入硬件平板、超时或故障时结束这次暂存方向。
-- 动机：仅写入桌面方向锁不能验证方向是否真正保持，交接期间的桌面重配置仍可能
-  改变方向。处理限于本项目现有显示事务，不修改桌面组件。
-- 影响：纠正操作复用恢复日志、输出身份检查和读回；硬件交接后以开始等待时的
-  原生方向作为恢复基准，避免恢复到更早的软件姿态。故障仍撤销接管，等待不确认
-  已应用；鉴权、租约、D-Bus、状态及日志版本不变。
-- 同步：共用显示事务、会话运行时、两种桌面及会话联动回归测试、README。
-
-### 2026-11-06 - 首次物理开关出现时保留有界显示交接
-
-- 变更：补充“在短暂方向锁定窗口内核对显示”，并取代“分离输入释放与模式确认”中
-  硬件平板必须释放已有 relay 的规则。已运行的软件 relay 在物理平板期间转为硬件
-  转发，输入控制跟随真实开关；退出后停止物理输入抓取，桌面平板信号最多延续两秒，
-  稳定软件目标的显示确认后再接管输入。没有既有 relay 时维持原生路径。
-- 动机：本机内核首次折叠才创建物理开关；旧路径在硬件进入时关闭 relay，让首次退出
-  直接触发桌面回正，而方向锁不能阻止该回正。后续切换和重启服务后的对照没有出现
-  同样的桌面管理状态变化。保留既有转发避免这次多余的退出与重新进入。
-- 影响：经用户明确授权，将内部 relay 协议升至 v3，新增硬件转发命令和命令序号回执。
-  原始硬件状态不伪造，继承三秒租约，C 和引擎分别限制退出窗口且心跳不续期。
-  失联、采样失效、开关异常、超时和故障仍释放；待定模式不确认，硬件模式的确认
-  改用匹配命令的真实硬件、桌面信号和输入执行证据。原生平板启动不新增抓取，避免
-  遮蔽桌面已配对物理开关的退出事件。D-Bus、鉴权、状态 v2 和持久化格式不变。
-- 同步：C relay、共用输入接口、服务执行器和引擎、共享等待常量、C/服务/执行器/
-  平台边界及协议测试、README 和 USAGE。
-- 本机验证：安装提交 `60dc84a` 的修复构建后，2026-11-06 20:17:21 内核首次注册
-  物理平板开关（boot ID `91b04b0e-556b-4077-9170-539ae75c1c5d`）。同一 relay
-  进程 24435 在 20:17:28.277 开始退出保护、20:17:29.581 转回软件接管；每 100 ms
-  的只读方向采样保持 180°，用户确认没有额外跳变。20:18:42 返回笔记本时进程释放，
-  用户确认屏幕、键盘和触控板恢复正常。该证据只覆盖本机这一首次切换及恢复案例，
-  不扩大机型或桌面支持等级。
-
-### 2026-11-07 - 软件接管期间增加会话确认的触摸唤醒
-
-- 变更：经用户授权，relay 在软件接管且内置输入已抓取时观察唯一直接触摸屏的接触开始，
-  不抓取触摸屏，不记录坐标。新增内部协议 v4：回执携带 `touch_serial`，`w` 命令经
-  独立虚拟设备发送一次 `KEY_WAKEUP`；原有平板开关设备仍只提供开关。状态 v2 新增
-  可选的短期令牌 `touch_wake`，缺少时为 null；新增 `SessionWake(u t)` 供会话确认。
-- 动机：帐篷熄屏后内置输入不可用，电源键可能触发挂起并清空姿态，导致用户必须翻回
-  笔记本解锁。专用唤醒事件沿用桌面的输入唤醒路径，保留锁屏和当前姿态。
-- 影响：`SessionWake` 复用现有适配器身份校验，额外核对当前所有者、租约、代次、已应用
-  目标和两秒内的真实接触。服务和 relay 均拒绝过期或重复事件；唤醒不续租、不确认模式，
-  不改变鉴权条件、物理优先或挂起重建规则。慢唤醒调用独立于显示和续租；失败、歧义、
-  断开和释放不保留唤醒能力。此项仅通过隔离测试，未完成真机或桌面实际唤醒验证。
-- 同步：C 输入发现、relay 与 uinput、服务执行器/引擎/方法分发、状态模型和解码、会话
-  客户端/运行时/接口、D-Bus 配置注释、C/服务/会话/鉴权/总线回归测试及 README/USAGE。
-
-### 2026-11-07 - 界面迁移至 Python/PyGObject
-
-- 变更：取代 GJS 界面实现，由 Python 调用 GTK 4/libadwaita；窗口、插画、设置、异步
-  D-Bus 客户端和隔离界面测试一起迁移，移除 GJS 运行依赖。界面复用严格状态解码和错误文案。
-- 动机：统一开发语言，减少重复状态与错误定义，同时保留原有外观和操作语义。
-- 影响：UI 仍为独立非特权进程，只通过既有 D-Bus 方法操作服务；硬件优先、鉴权、租约、
-  relay、状态版本和发布版本不变。保留延迟提示、旧连接回调隔离、按控件串行合并写入及键盘浏览。
-- 同步：Python UI、启动入口、翻译源清单、发行版打包与发布验证、界面回归测试、README 和 USAGE。
-
-### 2026-11-07 - 提取跨前端的展示与交互接口
-
-- 变更：增加标准库实现的 `frontend/`，统一界面操作接口、姿态展示、延迟反馈、设置
-  写入合并与旧连接结果隔离。现有 GTK 页面通过 Linux 客户端调用既有 D-Bus 方法。
-- 动机：为 Python/PyQt Fluent 和其他平台前端复用界面规则，避免控件代码绑定传输参数。
-- 影响：三进程职责、鉴权、租约、D-Bus 和状态格式不变；请求完成不代表目标已应用。
-  本条补充上一条的界面分层，不改变 GTK 外观和既定交互；同步抛错与异步失败统一处理，
-  取消的设置请求也会释放忙碌状态。尚未增加 Qt 依赖或声明 Windows 支持。
-- 同步：`frontend/`、GTK 页面与服务客户端、共用层及界面回归测试、USAGE 和本手册。
-
-### 2026-11-07 - 增加 Windows Fluent 界面预览
-
-- 变更：新增独立 Python/PyQt6 Fluent 前端和可选依赖清单，提供主页、设置、关于、
-  中英文、主题和内存演示场景。默认显示后台未接入，显式 `--demo` 才启用演示交互。
-- 动机：先完成 Windows 界面与交互，复用共用展示和动作模型，后端在后续阶段接入。
-- 影响：Windows 预览不声明设备支持，不接触真实硬件、系统服务、显示设置或持久化
-  用户配置。Linux UI 与三进程职责、鉴权、租约和线协议不变；不引入 C# 或 .NET。
-  PyQt6/Fluent 仅安装在独立预览环境，核心运行时依赖列表不变。箭头只浏览模式，
-  激活才提交；演示目标与完成回执分离，旧代次完成回调失效。
-- 同步：`fluent/`、Windows 预览依赖和启动脚本、Qt/演示测试、翻译检查与目录、
-  README、USAGE 和本手册。Qt 验证使用离屏平台，Windows 原生环境尚未验收。
-
-### 2026-11-07 - Windows 预览沿用 Linux 简洁布局
-
-- 变更：取代“增加 Windows Fluent 界面预览”中的三页侧栏布局，默认窗口改为 500×660，
-  底部仅有姿态和设置两页。主页保留插画、模式与必要反馈，设置页收纳关于与外观选项。
-  窗口图标和标题栏沿用横向 Let’s note 素材，按深浅主题切换。
-- 动机：让 Windows 与 Linux 端的布局和信息密度接近，避免额外卡片和入口分散注意力。
-- 影响：移除主页的显示/输入摘要卡片和场景选择器；场景改为显式 `--demo --scenario`
-  启动参数，演示说明保持可见。后端、确认流程、模式浏览保护和平台支持范围不变。
-- 同步：Fluent 窗口、启动参数、布局和图标回归测试、翻译、README、USAGE 与本记录。
-
-### 2026-11-07 - Windows 预览使用 Logo 蓝色强调色
-
-- 变更：默认强调色从紫色改为横向 Let’s note 素材中提取的蓝色 `#0051f2`。
-- 动机：让按钮、开关和导航选中反馈与窗口标志保持一致。
-- 影响：仅改变视觉配色，主题明暗适配继续由 Fluent 组件处理，操作与后端边界不变。
-- 同步：Fluent 启动入口、README 和本记录；使用现有 Qt 回归与界面预览验证。
-
-### 2026-11-07 - Windows 预览高分屏标志与触屏滚动
-
-- 变更：标题栏横向标志以原始像素保存在 Qt 图像中，按逻辑宽度 88 显示，避免先缩小
-  再被高分屏放大；卡片、按钮与导航增加圆角。滚动区显式启用触摸拖动和惯性滚动。
-- 动机：修复高分屏下标志模糊、圆角过小与只有滚轮滚动而无法用触屏拖动的问题。
-- 影响：触摸手势仅作用于界面滚动区，鼠标操作保持正常；拖动交由 Qt 手势识别取消点击，
-  不直接调用模式或设置操作。继续不访问真实输入设备、不改变后端或系统设置。
-- 同步：Fluent 图像与绘制、组件样式、滚动区、缩放/滚动/操作回归测试及 README。
-  Qt 隔离测试不能代替目标 Windows 设备上的真实触摸手感验收。
-
-### 2026-11-07 - 使用原生 Fluent 设置组件对齐 Linux 视觉层级
-
-- 变更：设置页改用 Fluent 原生设置分组、开关卡片与设置卡片，文字采用常规字重和
-  与 Linux 相近的灰色层级。底部原生分段栏居中限宽，统一框线与选中背景圆角。
-- 动机：避免手工拼装与自绘逐渐偏离 Linux 端的简洁布局和组件框架本身的样式。
-- 影响：取代上一条中 Logo 逻辑宽度 88 的选择，恢复到 Linux 的 72，保留高分屏
-  原始图像采样。撤掉自绘导航和大范围圆角覆盖；模式浏览保护、触屏滚动与客户端边界
-  不变。原生卡片按文字换行调整行高，不能通过裁切长说明压缩界面。
-- 同步：Fluent 页面、原生组件/窄窗口/字体/图标回归、翻译、README、USAGE 与本记录。
-
-### 2026-11-07 - Windows 预览按设置分组使用大圆角
-
-- 变更：取代上一条沿用默认卡片和分段栏圆角的做法。每个设置分组共用 18 像素外缘，
-  行间以细线分隔。底栏按语言内容居中，选中项圆角 20 像素，外框 24 像素。
-  主页沿用共享姿态线稿，使用浅蓝色调适配深浅主题。
-- 动机：使设置页与 Linux 的分组层次一致，改善窄窗口的阅读节奏与底部导航的辨识度。
-- 影响：继续使用 Fluent 开关、单选、卡片与分段导航控件，只替换固定小圆角的背景样式。
-  滚动区底部渐隐对输入透明，到达末尾时隐藏。
-- 同步：Fluent 页面、分组边缘与导航布局回归测试、README 和 USAGE。
-
-### 2026-11-07 - 收敛 Windows 预览圆角与文字色调
-
-- 变更：取代上一条的胶囊形底栏。外框和选中项分别使用 14、10 像素圆角，
-  保留 4 像素内边距。设置组圆角由 18 略减至 16，操作按钮由 12 调为 10。
-- 动机：让底栏保有清楚的直边，标题、说明与普通操作文字在深浅主题下使用协调的中性灰。
-- 影响：沿用既有布局尺寸、控件热区、Logo 蓝强调色和交互规则。
-- 同步：Fluent 样式、深浅主题下的边缘与文字颜色回归测试、README。
-
-### 2026-11-07 - 参照应用图标重绘姿态插画
-
-- 变更：GTK 和 Fluent 主页共用五幅圆角机身插画。屏面以主题前景色填充，机身侧边保留蓝色细节，暂未确定时在屏幕中央显示问号。
-- 动机：原先叠加的直角边框与密集键位在主页尺寸下显得尖锐，新的轮廓强调屏幕与底座的折叠关系。
-- 影响：插画继续依据既有姿态展示规则选择，沿用深浅主题和 GTK 高对比度配色。
-- 同步：`data/assets/` 中的姿态 SVG、README，以及现有 GTK 插画与 Fluent 界面测试。
-
-### 2026-11-07 - 姿态插画只保留四种机身形态
-
-- 变更：取代上一条的问号插画，姿态暂未确定时沿用主页保留上一幅插画的规则。SVG 加载失败时由页面留空并记录错误。
-- 动机：问号并非机身姿态。蓝色接口仅画在底座侧面，能看到底座前缘时，在左端用短绿线表示开机拨杆。
-- 影响：仅调整展示资源和加载失败时的显示，服务仍能上报姿态暂未确定。
-- 同步：姿态 SVG、GTK 插画加载、界面契约测试和 README。
-
-### 2026-11-07 - 登录和唤醒时直接判定姿态，Linux 可选触屏唤醒挂起
-
-- 变更：GDM 和熄屏时，已认证的活动会话可上报无需提示的上下文。点亮后采用下一个稳定姿态。
-  挂起恢复取代此前的笔记本来源假设，用第一段新鲜稳定样本直接建立姿态基准。
-  补充此前的会话触摸唤醒设计：Linux 用户可选用内置 USB 触摸屏的硬件唤醒能力。
-- 动机：在没有可见确认按钮的情景中，用户应能保持设备摆放方向登录或解锁。
-- 约束：设置默认关闭。唯一固定端口、直接触摸能力和设备唤醒属性都需验证；
-  系统服务只恢复自身写入。物理开关、帐篷总开关、现有鉴权和租约、代次回执及显示恢复优先。
-  普通亮屏桌面按原偏好提示，挂起前的手动选择和旧回执不能恢复。
-- 同步：姿态策略、会话客户端与电源状态读取、服务设置及硬件写入、D-Bus、GTK 设置和翻译、
-  README、USAGE，以及策略、USB 模拟设备、服务、会话、总线和 UI 回归测试。
-
-### 2026-11-07 - 自动帐篷与手动选择独立
-
-- 变更：取代“帐篷模式总开关”的手动限制，`tent_enabled` 仅控制自动策略，界面改称
-  “自动识别帐篷模式”。关闭后仍可选择和保留手动帐篷，返回自动后按当前自动设置判定。
-  GTK 和 Fluent 主页在手动模式时提供“返回自动”，沿用异步模式操作与断线失效机制。
-- 动机：让自动设置与用户明确选择的含义一致，并提供直接恢复自动管理的入口。
-- 影响：物理开关优先、采样失效撤销、显示事务与匹配代次回执保持有效，协议及设置格式不变。
-- 同步：控制器、共用前端、GTK/Fluent 页面与演示客户端、翻译、README 和回归测试。
-
-### 2026-11-07 - 主动关闭通知后抑制同一次提示
-
-- 变更：补充“恢复被姿态波动中断的通知”，订阅桌面通知关闭事件，仅用户主动关闭
-  时记住该 epoch 和提示类型，姿态短暂不稳后也不再重弹。主页确认仍可用，新提示可再次通知。
-- 动机：尊重用户本次忽略提示的选择，同时保留程序收起通知后的稳定重现能力。
-- 影响：沿用锁屏和会话恢复的通知重置、失败退避与确认条件，迟到关闭事件忽略，状态与协议不变。
-- 同步：会话通知和事件订阅、通知/会话/UI 回归测试、README。
-
-### 2026-11-07 - 安装维护指南改名
-
-安装、排查、打包和发布共用的指南从 `USAGE.md` 改名为 `MAINTENANCE.md`，让文件名体现维护用途。此路径取代此前的根目录旧名。README 链接、AUR 注释和发布文件检查同步改名，用户文档仍为两页。
-
-
-### 2026-11-07 - 核对触屏挂起唤醒的上游条件
-
-- 变更：补充只开启触摸屏自身唤醒的实现。先只读验证固定触摸屏到根集线器和所属 PCI USB
-  控制器的路径，上游未启用唤醒时报告不可用，撤回程序此前启用的触摸屏设置。
-- 动机：本机 2.4.0 只开启触摸屏后不能通过触摸唤醒；临时开启 usb1 根集线器后，
-  用户在未触摸时即恢复，拔掉外接 USB 鼠标后仍复现。恢复根集线器原值后能保持睡眠。
-- 约束：保留唯一直接触摸屏、固定端口链、设备实例及原有单设备所有权记录。
-  上游缺失不能作为支持证据。共享根集线器与控制器只读检查，由系统决定其唤醒策略。
-  用户选择保留当前睡眠设置，未执行深度挂起对比。该机触摸挂起唤醒尚未通过真机验证。
-- 同步：Linux 唤醒策略、模拟 USB 路径和条件失效测试、README 和维护指南。
-
-
-### 2026-11-08 - 移除触屏唤醒挂起电脑的实验功能
-
-- 变更：按用户要求完全移除挂起触摸唤醒的设置页、偏好、状态字段、D-Bus 设置方法、
-  平台接口、USB 唤醒属性管理和对应单元配置；旧设置中的实验字段被忽略并在下次保存时清除。
-- 动机：本机未能获得可靠的触摸挂起唤醒，开启共享 USB 路径会出现未触摸即恢复，用户决定放弃。
-- 约束：本条取代此前“登录和唤醒时直接判定姿态，Linux 可选触屏唤醒挂起”中的挂起选项，
-  以及“核对触屏挂起唤醒的上游条件”。仅熄屏时既有的接触确认、专用唤醒键和鉴权路径继续有效；
-  登录、熄屏和挂起恢复后的姿态判断继续按现行策略执行。服务不再写入 USB 唤醒属性。
-- 同步：服务、设置/状态编解码、D-Bus、共用前端、GTK、翻译、打包配置、回归测试和用户文档。
-
-### 2026-11-08 - 调整 Windows 预览间距与页面切换
-
-- 变更：主页插画略微缩小，设置行依照当前宽度重新测量文字；姿态页和设置页之间淡入 150 毫秒，遵循系统减少动态效果偏好。
-- 动机：收紧插画和标题的距离，避免说明换行后留下多余空白，让切页更连贯。
-- 影响：页面切换立即生效，动画只影响绘制，操作不等待动画结束。
-- 同步：Fluent 窗口与两页布局、README、窗口缩放及连续切页测试。
-
-### 2026-11-08 - Windows 硬件接入前的软件后台与便携构建
-
-- 变更：取代“增加 Windows Fluent 界面预览”中仅有内存客户端、默认后台未接入的规则。Windows 默认使用随界面运行的非特权子进程，以继承的私有管道传递有界 JSON v1 消息；普通模式只保存偏好，未适配设备不发布已应用结果。新增独立后台模拟，复用真实策略、引擎、会话运行时和显示事务，输入/显示端口只操作模拟对象。
-- 动机：在没有目标设备时完成进程边界、严格快照校验、持久化、断线与失败恢复、UI 接入和可重现的 Windows 便携构建，为硬件适配保留明确边界。
-- 约束：不注册系统服务、不触碰真实设备或桌面、不提升 Windows 支持等级。当前用户私有子进程不是未来特权服务的鉴权实现。每个设置文件单实例；旧连接请求失效且不重放写入。普通和模拟设置分离，只保存偏好和校准，不持久化手动模式及执行回执。`--demo` 仍为不落盘的旧演示。
-- 兼容：提取共用 `SettingsStore` 和快照字段校验，Linux 原模块继续兼容导出，Linux 传感器来源限制保持不变。Linux D-Bus、relay、鉴权、租约、状态 v2、设置 v1 不变。Windows 快照额外声明 `preferences_available` 和 `simulation`，只开放偏好不开放设备操作。
-- 同步：`windows/`、共用存储与校验、Fluent/共用前端、中文目录、Windows 构建与工作流、后台/打包/Qt 回归测试、README 和 MAINTENANCE。Windows 原生构建与解压启动须在 Windows 环境另行执行，本机模拟与离屏测试不替代真机验收。
-
-### 2026-11-08 - Windows 虚拟机验证与加速度计只读诊断
-
-- 变更：增加显式运行的 `windows.probe`，通过系统自带 PowerShell 的 WinRT 投影读取默认加速度计，保留设备标识和采样时间，校验有限数值并将 g 换算为 m/s²。诊断不改采样配置，不操作输入、触摸坐标或桌面，不接入自动模式执行。
-- 动机：利用用户提供的 Windows 测试虚拟机补齐原生验证，并为后续传感器适配提供可以核对的真实数据；修复中文版 Windows 下源码默认按 GBK 解码，以及离屏插件未发现系统字体导致的错误布局测量。
-- 约束：样本为诊断记录，时间尚未映射到引擎时钟，也未校验安装方向。仍保持 Windows 设备控制未接入和输入设备不可靠的边界，不提升机型支持等级。只读取用户本轮明确提供的直通传感器，不安装或修改宿主驱动，不抓取真实输入。
-- 同步：Windows 只读探针与解析/失败路径测试、源码 UTF-8 检查、Qt/解压包的系统字体配置、Windows Python 3.14 验证矩阵、README 和 MAINTENANCE。
-- 构建：在虚拟机中发现完整复制 Python/Qt 再压缩会产生大量重复磁盘写入，改为从原文件流式生成 ZIP 并同步计算校验。保持原文件集合、许可检查和清单格式，失败保留已有制品；测试核对流式包与物化目录逐文件一致，并拒绝无界内存读取。
-- 已验证：Windows 10 LTSC 2021 x64（19044）、Python 3.14.10、普通用户非提权运行；后台/探针/共用前端/Fluent/组装共 63 项测试通过。只读加速度计取得 5 份不同时间戳的读数，静止模长约 9.68～9.76 m/s²。输入接管、物理开关、原生显示旋转和真实触摸交互未验收；虚拟机结果不能作为整机支持证据。
-- 便携包证据：完成实际构建与解压，自带 `python.exe`/`pythonw.exe` 的中文资源、模拟事务与后台退出检查通过，原生 Windows 绘制的主页和设置页检查通过。此证据取代上一条记录中该环境的原生构建/解压启动待验证状态，不取代真实硬件适配的边界。
-
-### 2026-11-08 - Windows 持续采样与独立硬件主机边界
-
-- 变更：新增不修改传感器配置的持续 WinRT 读取端口，要求显式安装方向矩阵，唯一设备校验、原始时间戳去重、采样时钟映射、过期失效及有界重试。启动旧缓存不发布，在原有启动时限内等待新帧。诊断命令明确标记安装方向未验证，不自动接入普通软件后台。
-- 变更：经用户明确授权开发新的 Windows 权限边界，新增独立硬件主机请求分发、本地 LocalSystem 所有的有界命名管道、Windows 令牌与控制台身份校验。UI 不能伪造会话回执，只有可信主机预登记的确切进程身份可以提交；客户端 ACE 明确排除创建管道实例权限。鉴权异步且有界，过期鉴权不续期；共用引擎增加按已认证所有者撤销会话的内部入口。
-- 动机：把真实采样证据与模拟结果分开，为硬件接入准备可核对的时钟、身份与进程边界，防止缓存续期、歧义设备、伪造完成回执、PID 重用和冒充服务端。
-- 约束：普通软件后台仍仅保存偏好，不取得特权、不接入真实输入和显示；当前未注册 Windows 服务或安装驱动，不提升机型支持等级。Linux 的鉴权、租约时长、D-Bus、relay 和状态 v2 均不改变。驱动安装另行确认；用户另行授权仅在测试虚拟机安装 C++/SDK/WDK 开发工具。
-- 同步：Windows 采样、硬件分发、管道和身份模块，共用引擎，Windows 回归测试、无设备 SYSTEM/普通用户原生通信 fixture、Windows CI、README 与 MAINTENANCE。
-- 证据：虚拟机普通用户持续采样约 3.4 秒取得 23 个不同时间戳样本；原生权限通信六项检查通过。物理开关、输入过滤、方向控制及整机故障恢复仍需相应适配与硬件证据，不能用此 fixture 冒充真机验收。
-
-### 2026-11-09 - 检测 Windows 软件后台停止响应
-
-- 变更：软件客户端空闲一个请求超时周期后发送只读状态请求，复用原有请求超时、断线失效和重连流程；已有请求或持续收到状态时不额外探测。
-- 动机：后台进程与管道仍存活但事件循环停止响应时，旧逻辑没有待处理请求便无法发现故障，界面会持续保留旧快照。
-- 影响：只读探测不执行模式或偏好写入，超时不重放操作。普通后台、模拟后台和硬件权限边界不变，Linux 协议和 Windows 消息格式不变。
-- 同步：Windows 软件客户端、真实子进程隔离回归测试和 README。测试覆盖健康空闲、停止响应、探测数量上限、超时失效与重连，不代表真实硬件验收。
-
-### 2026-11-09 - Windows 真机显示事务与内部输入匹配
-
-- 变更：新增 GPIO 物理开关只读适配和原生内屏显示事务。开关核对唯一性、设备实例、驱动及 ACPI 总线；显示拒绝镜像、输出替换及不受控自动旋转，复用原有恢复日志。系统方向锁、软件平板自动旋转与原生平板交接尚未实现，普通软件后台不启用这些端口。
-- 变更：修正驱动草稿使用不存在总线常量的问题；允许精确登记的 HID 鼠标类触控板，但须匹配内部 ACPI 父设备，不扩展到外部输入或 HID 键盘。新增显式的未签名 WDK 构建，保留现有 LocalSystem 控制边界与内核租约协议。
-- 变更：Windows 软件客户端直接持有实际解释器进程并指定当前包位置，取代通过虚拟环境转发启动器间接启动后台的做法。动机是进程退出回执必须同时证明设置锁和管道已释放，不能只等待启动器退出。
-- 证据：CFQV8-1L / Windows 10 Pro 19045 真机完成四种姿态的 y/z 采样及折叠开关核对、内屏倒转与正常/强制退出恢复。厂商 Synaptics 驱动安装后由用户确认基本触控板操作正常。自研驱动仅完成编译链接，没有加载；用户选择不改变启动安全配置，不提升 Windows 支持等级。
-- 同步：Windows 显示、开关、客户端、驱动及构建器，单元/原生显示 fixture、Windows CI、README 和 MAINTENANCE。Linux 状态 v2、租约及持久化 schema 均不改变。
-
-### 2026-11-09 - 核对 Windows 内核控制回执与输入租约
-
-- 变更：新增只在 LocalSystem 下打开固定控制设备的输入执行端口。按 Windows 控制 v1 逐项校验二进制回执，发送前的单调时钟限制回执有效期；没有匹配回执不能确认输入接管，过期续租必须失败，协议或关闭异常走既有恢复错误路径。
-- 动机：将已编译的内核控制逻辑接入共用 InputActuator 契约，避免只因 IOCTL 写入成功就发布已应用状态，或由迟到回执延长内核租约。
-- 约束：不改变驱动 v1、Linux relay/D-Bus、已有会话鉴权和服务职责。普通预览不打开控制设备。纯 C DLL 联测不加载内核驱动、不读写输入内容，不能替代真机输入验收；保持用户要求的测试签名关闭状态。
-- 同步：Windows 输入端口及回归测试、显式构建器的控制 DLL fixture、共用引擎与 C ABI 联测、Windows CI 和维护指南。
-
-### 2026-11-09 - 显式连接 Windows 硬件界面与会话
-
-- 变更：新增独立硬件 UI 客户端和共用会话运行时的 Windows RPC 适配器。界面以 `--hardware-backend` 显式连接原生端点，默认仍用软件后台。UI 不能提交显示回执；会话的状态/显示与续租线程各用一条连接，绑定同一服务实例，拒绝迟到结果及跨实例回执。
-- 动机：使已有硬件通信边界能接入真实界面和共用显示事务，同时限制工作队列、确保回调在主循环完成，避免断线后重放写入或状态请求拖住续租。正常操作拒绝保留有效连接，权限拒绝和协议错误立即关闭。
-- 约束：不改变硬件 JSON v1、鉴权、预登记进程职责、租约、Linux D-Bus 或持久化 schema。原生能力不能由模拟快照取得；当前没有完整服务安装/会话启动流程，也没有加载自研驱动，不提升支持等级。保留用户要求的启动安全配置。
-- 证据：隔离测试联通 UI 消息契约及会话、显示日志、Engine，覆盖成功、显示失败和资格撤销。另在 CFQV8 真机一次性 SYSTEM 任务中核对笔记本开关、五份新鲜加速度计样本和六项普通客户端权限通信检查；任务已移除。没有将 fake 输入或 Session 0 无显示输出当作硬件控制验收。
-- 同步：硬件 UI/会话客户端、快照/操作回执校验、Fluent 显式入口、回归测试、Windows CI、README 和 MAINTENANCE。
-
-### 2026-11-09 - 原生 Windows 会话资格与无人值守撤销
-
-- 变更：装配显式原生会话进程，只用普通非提权交互令牌，先在既有工作线程证明回执资格再构造显示后端。新增本进程 WTS 会话和本会话显示电源观察；查询有一个工作槽、有效期一秒，睡眠前结果在恢复后不能生效，电源回调不执行硬件操作。
-- 动机：共用引擎会在无错误的方向准备心跳期间保留软件输入，因此 Windows 的锁屏、熄屏和未知资格必须上报既有显示不可用错误并走恢复路径。独立未就绪心跳维持允许续租的会话上下文，且必须完成后再允许恢复就绪，避免迟到心跳撤销新事务。
-- 约束：不更改命名管道鉴权、确切会话进程预登记、JSON v1、Linux 行为或日志版本。普通预览仍不启动硬件会话，没有新增服务安装或自登记入口；真实输入和系统方向锁仍未验收。显示恢复中重新取得资格不能把已回滚的事务当作成功。
-- 证据：隔离测试覆盖成功、回执拒绝、资格变化、线程通道复用、过期/睡眠前查询、资源释放及共用 Engine 输入撤销。CFQV8 真机只读取得本地会话和显示关闭的系统回调并释放所有通知注册；未主动改变锁屏、电源、方向或加载自研驱动，不据此声明整机会话验收。
-- 同步：Windows 会话装配、上下文、客户端和普通令牌检查，回归/只读原生 fixture、Windows CI、README 与 MAINTENANCE。
-
-### 2026-11-09 - Windows 主机可信会话更换与启动文件边界
-
-- 变更：新增主机内部的确切会话进程更换操作，先撤销旧租约并退休在途请求，身份查询按登记代次和确切进程绑定。新增安装运行时的逐路径句柄、所有者、有效 ACL、重解析点及解释器隔离检查；保留路径句柄，拒绝用户源码或软件预览包作为特权运行时。
-- 变更：会话进程可等待 SYSTEM 所有的随机停止事件，普通用户句柄只具有读取安全信息和等待权限；正常停止走共用显示恢复后退出。事件名称冲突、用户自建冒充及任意名称均拒绝。
-- 动机：为可信主机先创建、登记再放行会话进程提供必要边界，防止旧鉴权回执被用于替代进程、加载用户可写代码，以及在正常关闭时跳过显示恢复。进程创建与服务安装装配仍须完成。
-- 约束：没有新增 RPC 方法、客户端自登记或命令执行入口，不改变现有鉴权资格、三秒租约、Linux 行为及任何 wire/schema 版本。明确原生无人值守撤销是当前阶段保护，仍需对齐 Linux 的无人值守姿态、通知与触摸亮屏能力，不能据此声称完整等价。
-- 证据：隔离测试覆盖旧鉴权迟到、换人撤销、目录写权限、解释器搜索路径、事件冒充及停止顺序。CFQV8 普通用户实际只读检查了系统目录并拒绝源码路径；临时用户事件冒充被拒绝，句柄关闭。没有调整宿主权限、安装系统服务或加载自研驱动。
-- 同步：硬件管道、Windows 权限和可信运行时、会话停止入口、回归测试、Windows CI、MAINTENANCE 与本手册。
-
-### 2026-11-09 - 分离用户离席、显示电源上下文与会话资格
-
-- 纠正：用户要求“无人值守开发”指其离席后助手自主工作，不是增加或改变产品行为的需求。产品继续以既有 Linux 功能为对齐基准，不新增离席模式或提示。
-- 变更：取代“原生 Windows 会话资格与无人值守撤销”中把已知熄屏一律视为资格丢失的规则。原生上下文分别提供电源状态和控制资格，熄屏且仍为已认证、活跃、未锁定本地会话时不自动撤销显示完成回执或输入。未知、过期、锁屏及观测故障仍走原有撤销恢复路径。
-- 动机：Linux 将熄屏作为姿态策略上下文，不把它等同于显示失败；开发协作中的离席不应被错误扩展为产品安全策略。
-- 约束：不放宽现有管道鉴权、未锁定控制台要求或 ready/unattended 载荷校验，不改变任何 wire/schema 版本。Linux 的熄屏直接姿态切换与 Windows 原生通知/唤醒仍有适配缺口，不能以新保护路径代替它们。
-- 同步：原生会话上下文、会话装配与客户端、已知熄屏不撤销及资格失效仍撤销的线程链路回归测试、README 与 MAINTENANCE。
-
-### 2026-11-09 - 挂起创建并登记原生 Windows 会话进程
-
-- 变更：新增 LocalSystem 专用启动组件和单工作槽的主机协调器。按控制台用户令牌、已固定安装运行时和用户状态目录创建挂起进程，绑定关闭即终止的 Job，核对确切进程身份，再由主机循环登记后安排放行；放行前重查资格及停止信号。用户环境与句柄不从 SYSTEM 继承。
-- 动机：完成可信创建、身份登记、显示回执与正常退出之间的顺序，防止手动传入 PID、自行登记、跨用户创建、迟到结果、停止期间放行，以及旧资源尚未清理便运行替代进程。WTS 与清理不得阻塞控制循环。
-- 约束：不新增 RPC 方法或任意命令入口，不改变未锁定活跃本地控制台、三秒租约及现有 wire/schema。只接受同一 SID/登录实例/会话且非提权的令牌；不能取得则失败。正常停止先撤销并给五秒恢复窗口，清理确认前不发布关闭。完整服务安装与真实 SYSTEM 联合验证仍未完成。
-- 证据：隔离测试覆盖 Win64 结构与调用标志、令牌权限和关联检查、句柄清理、登记前后顺序、换人、过期结果、停止与放行并发及恢复窗口。普通用户实际调用原生启动 API 被拒绝；未在本机创建 SYSTEM 启动的会话进程、安装新服务或加载输入过滤驱动。
-- 签名路线：用户说明暂时没有正式证书资源，要求继续其他开发，并提出探索本机安装方案。后续准备公开支持的本地测试签名流程；此前暂不更改启动安全配置的约束仍保留，具体 BCD、Secure Boot、证书信任或重启操作须在可审阅方案就绪后明确确认，不能隐式执行。
-- 同步：会话启动与协调组件、回归测试、Windows CI、MAINTENANCE 与本手册。
-
-### 2026-11-09 - Windows 交付允许暂缓输入禁用
-
-- 变更：按用户新目标，Windows 继续以 Linux 类似完成度为目标，但内置输入禁用若难以实现可暂缓。优先完成普通用户会话中的真实姿态、显示、交互、常驻、自启动与恢复；特权输入主机、驱动和测试签名改为可选扩展，不再作为其余功能交付的前置。
-- 动机：用户明确调整范围，避免内核签名条件阻塞可独立完成的用户态功能。保留已开发的可选主机组件，不继续把它扩展为主线安装依赖。
-- 约束：必须如实声明输入控制能力与目标，不能用模拟成功或虚假的输入完成回执确认模式；Linux 默认行为和已有特权边界不变。未具备完整 Windows 功能及真机证据前不提升机型支持等级。
-- 同步：README、MAINTENANCE 与本手册；后续用户态装配、目标能力及界面说明须遵循此范围。
-
-### 2026-11-09 - 显式表达仅显示模式的输入能力
-
-- 变更：控制器新增仅构造时指定的输入控制能力，默认 True 保留 Linux 及已有平台行为。关闭时软件姿态目标明确不请求输入禁用；共用引擎在释放完成、租约有效及同代次显示就绪后才可确认这些显示目标。新增 Windows 无输入所有权端口，拒绝任何接管或专用唤醒请求。
-- 动机：落实用户允许暂缓输入禁用的新范围，使真实显示功能不依赖内核驱动，同时避免用模拟成功绕过输入回执或误报键盘/触控板已停用。
-- 约束：不改变任何状态、设置、日志、D-Bus 或 relay 版本；没有新增用户可修改能力的设置或 RPC。默认 Linux 输入目标、物理开关优先、失效撤销及代次规则均不改变。当前尚未接入真实 Windows 用户态后台，界面开放前必须同步明确的能力提示。
-- 同步：控制器、共用引擎、Windows 无输入端口及成功/失败/租约/物理优先回归测试，MAINTENANCE 与本手册。
-
-### 2026-11-09 - Windows 普通用户真实显示链路
-
-- 变更：新增显式 `--native-backend` 与普通用户屏幕装配，复用共用控制器、Engine、SessionRuntime、设置及显示日志；内部显示回执经有界队列交回唯一引擎线程，不能从外部提交。只选择当前有 Windows y/z 姿态证据的 CFQV8-1L 与相应传感器型号，开放固定方向模式、自动姿态及校准，暂不开放软件平板自动旋转或输入禁用。
-- 动机：落实允许暂缓输入控制的交付范围，使其余功能能脱离内核签名推进；避免模式描述误报输入禁用、模拟数据混入真实入口，以及正常退出直接杀后台来不及恢复方向。
-- 约束：取代前文“真实用户态后台尚未接入”的阶段描述，不改变 Linux 默认输入目标、现有状态/存储版本、LocalSystem wire v1、鉴权和特权职责。私有 stdio 的原生快照增加明确能力及模式白名单，仅显式原生客户端接受；预览/模拟入口保持独立。每用户固定控制器锁防止更换设置路径绕过显示单实例。物理平板交接只撤销程序旋转所有权，不改物理状态或声称写入全局方向锁；短暂保持要求原生自动旋转已禁用。
-- 生命周期：正常关闭先停止读取并请求后台恢复，最多六秒后才终止无响应进程；恢复日志覆盖崩溃后重启。WinRT 辅助进程持有并核对父实例，父进程死亡后退出。锁屏及资格丢失撤销租约；已知熄屏且未锁定仍有资格，并复用共用策略的熄屏直接姿态切换。此内部状态不放宽独立硬件 RPC 的 ready/unattended 校验。
-- 界面：模式列表按已校验的能力收窄，输入保持可用的说明始终可见；源码预览若有旧的编译中文目录，缺失的新文案仍可从原始中文目录取得翻译，不手工修改生成的 `.mo`。
-- 证据：隔离测试覆盖实际共享显示事务/日志、子进程 stdio、回执与代次、失效恢复、正常退出及强制退出重连、不重放手动选择、能力校验和界面说明；真实 CFQV8 完成新链路的鲜活采样、GPIO 读取、锁屏拒绝、正常退出，以及杀死采样父进程后辅助进程退出。整链路真实旋转尝试因锁定而未执行，仍待解锁补验，不提升为完整真机支持。
-- 同步：Windows 用户态后台、通信、显示和采样，Fluent/共用前端、翻译、源码启动器、Windows CI、单元与显式真机脚本、README 与 MAINTENANCE。
-
-### 2026-11-09 - Windows 用户态常驻与登录入口
-
-- 变更：真实用户态入口增加托盘常驻、关闭时隐藏、打开与明确退出、每用户 UI 单实例及再次启动唤回；`--background` 仅用于原生入口，无托盘时显示窗口。新增默认关闭的当前用户登录启动设置，固定绝对命令、拒绝过长命令、写后回读，只删除自己当前命令，不覆盖冲突内容；源码固定入口不依赖登录工作目录或环境变量。
-- 动机：使已接通的真实后台能按 Linux 类似的日常流程持续工作，同时提供可发现的退出与恢复入口，避免重复后台争抢、窗口关闭即停用或在用户未选择时登记自启动。
-- 通知：只根据已校验快照、会话就绪和可确认 epoch 发送托盘姿态通知；短暂隐藏不重复发送。点击只打开当前页面，不在过期通知上直接执行切换。Windows 通知设置可影响实际显示，支持标志不构成目视验收。
-- 约束：原生 UI 与后台在任何用户状态文件访问前验证非提权本地控制台身份，锁屏本地会话可启动但不能绕过原有控制资格。该限制也避免远程实例抢占同用户的 UI/控制器锁。单实例唤回文件不接收内容、执行指令或硬件回执，不新增状态传输端点；原私有 stdio 与 LocalSystem 权限边界、Linux 行为、状态和持久化 schema 均不变。Run 登记属于用户显式选择的平台登录集成，保留 Windows 自己的禁用选择。
-- 证据：隔离测试覆盖注册/撤销、失败与冲突保留、长命令、源码与便携布局、单实例及旧提示、提权/其他会话在文件操作前被拒绝、托盘隐藏/打开/退出、无托盘回退、通知去重和安全点击、设置失败回退。CFQV8 原生 Qt/真实后台验证隐藏后继续运行、独立进程用公开 CLI 唤回同一后台、无 `PYTHONPATH` 且工作目录不同的固定登录入口、退出后的后台回收与方向清理。没有更改本机 Run 登记、注销登录或目视验收通知，不提升整机支持等级；用户仍离席，真实姿态旋转联合验收继续等待解锁。
-- 同步：原生 UI 生命周期、登录集成与身份前置检查、中文翻译与目录、源码登录入口、回归与显式真机脚本、Windows CI、README 和 MAINTENANCE。
-
-### 2026-11-09 - Windows 恢复时重新核对原生方向所有权
-
-- 变更：原生显示恢复与写入重查 GPIO 物理状态和系统自动旋转。原生接管或物理平板已确认时，先持久化撤销完成及待写方向，再按共用事务释放日志，不根据方向相同推断仍有所有权；没有原生接管证据且物理未知时保留日志并拒绝写入。固定目标在最终回执前复核，包括不必实际旋转的目标。
-- 动机：复现崩溃后系统已接管、但当前方向偶然等于旧软件写入时，恢复会覆盖原生方向；同时避免无写入路径或执行中途原生接管后仍确认固定模式成功。
-- 约束：物理优先、身份匹配、原子日志与匹配代次保持不变，不新增或修改 schema。交接落盘失败必须保留旧内存和日志，不得先忘记所有权。仅调整 Windows 原生显示端口，Linux 显示和独立权限通信不变；注入的纯显示 fixture 不自动探测宿主 GPIO。
-- 同步：Windows 显示与用户态装配、崩溃/物理优先/无写入与迟到接管/落盘失败回归测试、README 与 MAINTENANCE。当前真机仍锁定，没有为这些测试改变真实物理开关、方向或自动旋转策略。
-
-### 2026-11-09 - Windows 简单方向只读采集与稳定判定
-
-- 变更：现有 WinRT 采集增加默认关闭的简单方向选项，校验唯一设备、固定身份、原始 ReadingTransform、独立观察时间及与鲜活重力帧的共同采集。增加纯四象限稳定判定，映射必须由装配显式提供，缓存不推进稳定窗口，朝上/朝下不选择新方向。
-- 动机：为软件平板自动旋转提供系统方向来源，避免依赖尚未核对的原始 X 轴、重复缓存、慢枚举后的错误稳定时长，或可选方向故障拖垮固定姿态功能。
-- 约束：不修改传感器采样设置、ReadingTransform、触摸或输入设备，不改变普通后台与现有硬件通道，不更新状态/设置/日志 schema 或支持等级。方向观察时间不是硬件方向事件时间；显示执行和界面能力尚未接入，不得据此声明自动旋转可用。采集重试保留设备身份，关闭/过期/坏时间返回无方向数据。
-- 证据：CFQV8 只读采集取得 14 个不同观察时间、唯一 SDO 源的朝上快照，附加方向时父进程强制终止清理通过。隔离测试覆盖源身份/歧义/变换/时间、重力缓存不续期、独立观察时间、可选失败隔离、关闭与四象限稳定/平放/断档；未改变真实摆放或屏幕方向，不代替四向真机验收。
-- 同步：Windows 方向模块与显式采集、纯逻辑与采集边界回归测试、父进程清理脚本、Windows CI、MAINTENANCE 与本记录。
-
-### 2026-11-09 - Windows 私有会话回执等待状态发布
-
-- 变更：普通用户后台的私有会话桥在引擎接受回执、完成本轮 tick 并发布快照后，才完成工作线程的成功回复；关闭时拒绝尚未发布的回执。
-- 动机：真实冷启动复现会话资格查询尚未就绪时进入租约恢复，回执成功与快照发布竞态使探测反复读取旧的断开状态，退避又超过租约期限，导致无法进入显示事务。
-- 约束：不改变三秒租约、身份检查、代次或通信版本；引擎仍由唯一所有者线程推进，工作线程不能修改状态。仅推迟成功回复，不以旧快照确认新回执。
-- 证据：新增发布顺序和关闭期间拒绝的回归测试；CFQV8 解锁后完整真实后台通过固定方向、设置/校准、正常退出与强制退出重连恢复。此证据取代前文该链路因锁定待验证的阶段结论，物理折叠联合验收与软件平板自动旋转仍未完成。
-- 同步：私有会话桥、回归测试、README 与 MAINTENANCE。
-
-### 2026-11-09 - Windows 真实 SYSTEM 会话生命周期验证
-
-- 证据：经用户明确授权，以哈希固定且全树 ACL/所有者校验的标准库运行时执行两轮真实 SYSTEM 任务。确切身份登记先于放行、非提权控制台子进程、租约建立、停止前撤销及回收均通过；普通客户端回执及受保护目录写入被拒绝。
-- 范围：补充“挂起创建并登记原生 Windows 会话进程”的真机证据，取代当时仅 fake 与普通用户拒绝的阶段结论；引擎始终不支持硬件，不执行输入、采样、驱动安装或启动配置更改，不代表完整服务安装、换用户或主机强制退出通过。
-- 清理：两轮任务均已自动移除。目录清理 UAC 被取消，保留维护指南所列只读运行时快照，无常驻任务或测试进程，不重复触发提权。
-- 同步：显式 SYSTEM/普通用户 fixture、受保护运行时清单与管理员测试脚本、MAINTENANCE 和本记录。
-
-### 2026-11-09 - Windows 软件平板旋转事务与可选持续刷新
-
-- 变更：会话运行时增加默认不启用的持续显示刷新端口，与已有显示操作串行，按 tick 限流，完成后核对实例和代次；失败先上报未就绪，再按原路径恢复和重试。刷新期间沿用独立租约工作槽，不允许迟到的未就绪回执覆盖成功。
-- 变更：新增 Windows 软件平板事务，显式提供四向映射与鲜活简单方向来源，使用已有稳定判定、所有权日志、写前落盘、回读及恢复。外部方向更改成为后续接管的恢复基准；物理或原生接管时撤销所有权，未知物理状态保留恢复日志。
-- 动机：让自动旋转复用已有失败恢复和代次检查，避免独立传感器线程直接写显示、缓存续期、旧目标回执或崩溃后留下方向。
-- 约束：Linux 默认不传入新端口，行为、鉴权、租约和协议/存储版本不变。当前模块尚未接入真实用户态工厂和模式能力，不据隔离测试开放软件平板或声明真机四向验收完成；输入禁用继续为 False。
-- 同步：会话接口与运行时、Windows 刷新资格包装与显示事务、四向/故障/中断/资格/代次/租约回归测试、Windows CI 和 MAINTENANCE。
-
-### 2026-11-09 - Windows 便携包提供显式原生入口
-
-- 变更：便携包新增 `Native.cmd`，固定以包内无窗口解释器、隔离模式和 `--native-backend` 启动真实用户态后台；普通入口与模拟入口保持原职责。
-- 动机：解压包中的真实功能不应要求用户从命令行额外附加参数，同时不能让普通入口隐式接触传感器、显示或硬件状态。
-- 约束：原生入口仍是非提权当前用户进程，只提供已实现的能力声明；不改鉴权、硬件管道、输入状态、设置或持久化 schema。
-- 同步：Windows 打包脚本、便携包组装测试、README 与 MAINTENANCE。
-
-### 2026-11-09 - Windows 桌面模式、平板模式与方向锁事务
-
-- 变更：Windows 固定姿态在共用显示事务中同时管理全局自动旋转锁、内屏方向和 ImmersiveShell 桌面／平板模式。帐篷与支架进入平板模式，笔记本进入桌面模式；进入物理平板先锁定当前方向再交还 Windows，退出时先恢复桌面模式并纠正过渡偏移。动态软件平板遇到原生旋转接管时保留 Windows 当前方向，固定姿态仍按原恢复约定回滚。
-- 动机：修复进入和退出硬件平板时方向跳变、帐篷和支架未触发 Windows 平板模式，以及原生旋转接管后回滚覆盖系统方向的问题。
-- 约束：所有写入先持久化恢复日志并回读；shell 写入失败、方向锁导出缺失或身份变化均拒绝确认。日志仍为 v1，新增 shell 字段可选且旧记录兼容。此项取代此前“允许暂缓输入禁用”的扩展方向：Windows 产品永久保留键盘和触控板可用，自研输入控制不再作为待完成产品或签名目标。
-- 证据：隔离测试覆盖固定模式顺序、崩溃恢复、物理接管、原生旋转接管、方向锁回读、shell 重试和日志兼容；真机只读探测确认 ImmersiveShell 可读写、方向锁可回读并在检查后恢复原值。完整姿态矩阵仍需便携成品真机验收。
-- 同步：共用显示事务、显示日志 schema、Windows 显示与 shell 适配器、Fluent 图标和文案、翻译、回归测试、README、MAINTENANCE 与本记录。
-
-### 2026-11-10 - Windows 通过原生 CSM 指示器通知系统
-
-- 变更：Windows 显示事务只管理内屏方向、全局自动旋转锁和恢复日志。新增经精确实例与 PDO 核对的 `ACPI\INT33D3` 指示器适配器，读取当前字节；目标不同时至多执行一次 toggle 并回读。每个目标先锁定当前方向，再通知 slate，最后执行显示 apply；独立原子 slate 租约日志在首次写前持久化启动值，强杀后的下一次启动先幂等恢复该值。帐篷、支架和物理平板报告平板使用状态，笔记本报告普通使用状态。Windows 根据 `ConvertibleSlateModePromptPreference` 自行决定询问、保持桌面或切换 shell；程序不调用 ImmersiveShell 强制模式接口，也不直接修改 CSM registry cache。
-- 动机：用户选择“不要切换”时，系统保持桌面并显示屏幕键盘是合法策略结果。把 shell 写入放在显示事务中会把策略响应误当执行成功，并在部分状态强制覆盖用户选择。一个字节的设备写入是 toggle 而非赋值，也必须防止重复写。
-- 约束：显示旋转失败只回滚方向和锁；平板通知失败阻止该姿态确认并恢复预锁，但不得伪造 shell 成功。slate 日志恢复或回读失败时拒绝姿态确认，保留日志供下次重试；启动时已折叠的设备不会先闪回普通状态。固定姿态写前和回执前重新检查物理资格与原生旋转；旧日志中的 shell 字段只作兼容读取并丢弃所有权。设备非独占配置由独立可逆脚本设置，记录安装前值，要求重启；普通运行不修改机器策略或用户 shell 偏好。键盘和触控板始终可用。本记录取代 2026-11-09「Windows 桌面模式、平板模式与方向锁事务」中由显示事务强制写入 shell 的部分。
-- 同步：`AGENTS.md` 运行边界、Windows 显示、用户态会话装配、平板通知设备适配、只读 shell 观察、Fluent 文案、翻译、显示/双向崩溃恢复/通知失败与顺序测试、真机显示烟测、Windows 打包脚本、README、MAINTENANCE 与本记录。
-
-### 2026-11-10 - Windows slate 租约延迟到首个姿态请求
-
-- 变更：启动时只加载 slate 租约并读取当前设备值，不再立即恢复启动值。首个姿态请求若发现设备已是目标状态，就采用当前状态并清除租约；否则以最多一次 toggle 切到目标。进程在请求前退出时仍恢复租约中的启动值。
-- 动机：折叠姿态中进程被强杀后，立即恢复启动值会在原生会话启动阶段产生 laptop→slate 闪变，与“先锁方向再通知”的成品行为冲突。
-- 约束：该协调不改变设备读回、日志原子性、方向先锁后通知、通知失败阻止确认或 shell 由 Windows 偏好决定的规则；日志 schema 仍为 v1。
-- 同步：slate 通知器、强杀恢复回归测试、真机烟测恢复步骤、README、MAINTENANCE 与本记录。本记录取代同日期「Windows 通过原生 CSM 指示器通知系统」中“下一次启动先幂等恢复该值”的描述。
-
-### 2026-11-10 - Windows 软件平板接入真实用户态入口
-
-- 变更：`--native-backend` 的已验证机型工厂改为同时采集 SimpleOrientation，并使用 `WindowsTabletDisplay` 执行手动软件平板的四向动态旋转。显示后端具备持续刷新能力时才在快照中开放 `tablet`，界面按能力显示选项；输入目标和能力仍为 False。使用固定表把系统简单方向的逆时针值转换为显示事务的顺时针象限。
-- 动机：让普通用户无需输入过滤驱动即可使用与 Linux 类似的软件平板旋转，同时保留物理平板优先、会话资格撤销、方向锁、写前日志和故障恢复。
-- 修复：共用 `SessionRuntime` 在刷新型后端完成首次或后续写入后，必须先发送当前代的成功回执，再开始下一轮持续刷新；就绪状态还需按心跳再次上报。此前每个刷新窗口都可能直接替换已完成的 verify，导致显示已写好但引擎始终得不到成功回执，软件平板永久停在未确认状态。
-- 约束：Linux 不传入持续刷新端口，行为不变。刷新仍与 apply/hold/restore 串行、受实例和代次复核、限速执行；方向失效、物理或原生接管、资格丢失仍撤销成功并走原恢复路径。原生 Windows 传输 v1 的能力白名单同时接受原有四模式和不含输入控制的五模式快照，不接受任意模式或输入声明。该记录取代 2026-11-09「Windows 普通用户真实显示链路」和同日期「Windows 软件平板旋转事务」中“真实工厂及界面能力尚未接入”的阶段描述。
-- 证据：隔离测试覆盖真实共享 Engine、四向象限、刷新前就绪回执、持续刷新、方向丢失、面板或方向设备替换、外部与物理接管、资格丢失恢复、生产工厂接线、原生能力校验和关闭期间鉴权句柄所有权。Windows 专项 222 项通过。尚未进行真实 CFQV8 四向摆放与显示联合验收，不能据此声明整机四向通过。
-- 同步：Windows 用户态会话、协议校验、共享会话刷新运行时、方向映射、回归测试、README、MAINTENANCE 与本手册。
-
-### 2026-11-10 - Windows 通知点击确认当前姿态
-
-- 变更：Windows 托盘姿态通知改为直接确认当前姿态，但必须先比对已校验快照中的后台实例、提示 epoch、提示类型，并确认支持、会话已就绪、无错误且物理平板状态明确为 False；任一条件不匹配时只打开界面。确认复用主页现有忙碌与失败处理，不新增直接写显示或绕过引擎的路径。
-- 动机：Linux 通知可直接启用当前提示模式，Windows 此前只能打开界面，形成用户可见的功能差距。绑定完整当前状态可保留过期通知安全边界。
-- 影响：替代 2026-11-09「Windows 用户态常驻与登录入口」中“点击只打开当前页面”的通知规则；epoch、目标和结果分离、物理开关优先、显示事务、状态 schema 与通信版本均不变。支持标志和隔离 UI 测试仍不等同于 Windows 实际通知可见性验收。
-- 同步：共用前端通知判定、Fluent 常驻通知、中文翻译、通知去重与过期点击回归测试、README、MAINTENANCE、运行边界和本记录。
-
-### 2026-11-10 - Windows 私有后台保留有界诊断日志
-
-- 变更：Windows 私有后台在设置文件旁写入同名 `.log`，达到 256 KiB 时滚动并仅保留一个 `.log.1`；日志创建放在原生非提权与本地控制台身份检查之后，打开失败时回退到无持久日志而不阻止后台启动。
-- 动机：此前父进程丢弃后台 `stderr`，配置、传感器、显示或恢复故障缺少类似 Linux journal 的可诊断记录，用户只能看到断线或超时。
-- 影响：不改变 stdio 协议、会话回执、权限边界、设置/显示日志 schema 或设备行为。日志只记录后台已有诊断，不新增输入内容、触摸坐标或触摸屏数据；身份检查前失败不会访问用户状态目录。
-- 同步：Windows 诊断模块、后台入口、日志命名与轮转/拒绝请求回归测试、MAINTENANCE、运行边界和本记录。
-
-### 2026-11-10 - Windows 原生启动拒绝提供明确原因
-
-- 变更：原生 Fluent 入口在启动后台前复用普通用户本地控制台检查，并新增只读 BIOS 精确机型预检；身份或机型不匹配时显示本地化说明并退出，不再让未验证设备进入反复断线重连。后台工厂仍保留原有身份、机型、传感器、开关和显示能力复核。
-- 动机：此前未验证机型的 `Native.cmd` 只能显示后台未连接，用户无法区分机型、会话权限、设备配置或后台故障。
-- 影响：预检不打开设备、不创建后台/设置锁/用户状态文件，也不提升任何机型支持等级。状态协议、D-Bus、权限边界、显示事务和设置 schema 均不变。
-- 同步：原生机型预检、Fluent 启动入口、中英文文案、身份/机型拒绝和界面提示回归测试、README、MAINTENANCE、运行边界与本记录。
-
-### 2026-11-10 - Windows 外接屏保留方向
-
-- 变更：Windows 原生显示选择新增只读外接模式。无活动内屏且至少一个活动外屏时，记录排序后的外屏身份，在每次姿态/hold 及共用持续刷新中复核；不写 CCD、不改变旋转锁、不创建内屏显示日志，也不向界面开放没有执行对象的软件平板模式。已有未恢复内屏日志时拒绝进入该模式。
-- 动机：此前 Windows 将所有无唯一内屏状态报为显示故障，而 Linux 只启用外接屏时保留其方向，停靠使用会出现无必要的模式失败。
-- 影响：内外屏并存仍要求唯一、未镜像内屏并走原事务；物理开关优先、slate 通知、会话资格、目标与结果分离均不变。外屏身份变化、无活动屏或非法拓扑仍拒绝确认。设置/显示日志 schema 与通信版本不变。
-- 同步：Windows CCD 外屏选择、只读显示适配器、原生机型装配、拓扑/旧日志/无写入回归测试、README、MAINTENANCE、系统不变量和本记录。
-
-### 2026-11-10 - Windows 显示具体操作错误
-
-- 变更：Fluent 主页和设置页把已校验快照中的稳定错误码映射为与 Linux 相同的简短用户文案；确认、返回自动、重试、切换设置或校准失败时，只在异常携带已知稳定码时显示对应原因，未知异常仍回退到通用文案。
-- 动机：此前 Windows 只显示“模式切换失败”，用户无法区分屏幕排列、方向锁、会话权限、物理开关、校准和传感器问题。
-- 影响：界面不展示内部 detail、设备标识或日志内容；目标与结果分离、重试入口、状态协议、诊断日志和显示事务均不变。
-- 同步：共用错误码文案、Fluent 主页/设置页状态与动作失败处理、具体错误/未知异常回归测试、README、MAINTENANCE 和本记录。
-
-### 2026-11-10 - 对齐 Windows 熄屏能力说明
-
-- 变更：明确普通原生 Windows 入口已复用共享的直接熄屏姿态策略，单纯熄屏保持控制资格并在亮屏后继续确认；补充分钟级恢复后的已应用状态和无遗留提示回归断言。文档不再笼统称整个 Windows 路径缺少熄屏对齐。
-- 动机：代码和隔离测试已覆盖已知熄屏直接切换，但 README、维护指南和运行边界仍使用早期阶段描述，容易把未完成真机电源验收与缺失功能混为一谈。
-- 影响：不改变会话回执、租约、显示事务或平台装配。Windows 保持键盘和触控板可用，因此不实现 Linux 输入禁用路径的专用软件触摸唤醒；真实锁屏、亮屏、睡眠恢复、LocalSystem 会话和服务安装仍是独立未验项。
-- 同步：原生屏幕会话回归测试、README、MAINTENANCE、运行边界和本记录。
-
-### 2026-11-10 - CFQV8 用户态真机验收节点
-
-- 变更：新增可复现的 Windows 独立显示事务烟测和锁屏/显示器电源交互烟测。前者验证正常倒转/回正及强杀 worker 后恢复，后者验证锁屏资格失效、解锁恢复、已知熄屏保留资格和指针唤醒。
-- 动机：完整原生后台受平板指示器独占配置阻塞时，仍需把可独立验证且不接触输入控制的内屏事务和电源上下文固化为可重复证据，而不是依赖临时脚本。
-- 证据：CFQV8-1L / Windows 10 Pro 19045 上，标准与方向传感器采集、精确父进程退出清理、5 秒会话电源观察、内屏正常事务、强杀恢复、锁屏/解锁、熄屏/亮屏均通过；最终内屏回到 transform 0 和原方向锁，证据日志清除。完整后台因 `ACPI\INT33D3` 仍为独占访问而拒绝打开，未执行管理员配置或重启。
-- 约束：显示烟测不打开平板指示器或输入设备；电源烟测不挂起系统，不证明完整姿态事务、通知可见性、四向平板、重新登录启动或内核输入。
-- 同步：两项真机烟测、MAINTENANCE 与维护验证表；后续完整验收等待平板指示器配置授权和重启。
-
-### 2026-11-10 - Windows 启动失败返回可操作原因
-
-- 变更：私有后台在产生首个状态前失败时，可发送只含固定安全原因码的 `fatal` 回执；父进程只接受已知原因。平板指示器独占配置对应明确文案，UI 提示运行设备配置并重启且停止该连接重连，其他原因回退通用启动失败说明。
-- 动机：真机验收复现平板指示器仍为独占时，后台只写日志并反复退出，UI 长期停留在“后台未连接”，用户无法判断需要一次性设备配置和重启。
-- 约束：fatal 帧不含实例、detail、路径或 traceback，不改变状态 schema、请求/响应格式、权限边界或设备写入。未知/畸形原因仍断开协议；配置修改与重启本身仍须单独授权。
-- 同步：Windows fatal 帧、后台错误分类、客户端处理和 UI 映射、协议/子进程/界面回归测试、README、MAINTENANCE、运行边界与本记录。
-
-### 2026-11-10 - 两平台弃用手动平板模式
-
-- 变更：Linux 和 Windows 的手动模式统一收窄为自动、笔记本、帐篷、支架。`SetMode("tablet")` 在共享协议、引擎和 Windows 私有快照中均拒绝；两个 UI 不再创建平板单选项。物理平板状态、硬件平板目标和桌面原生旋转保持不变。
-- 动机：物理折叠已经由硬件开关和桌面/Windows 原生旋转处理；手动软件平板只适用于展开后人为旋转，产品用途不明确，并引入 SimpleOrientation、持续刷新和额外真机验收复杂度。
-- 影响：`Mode.TABLET` 仅保留用于解码旧快照，不能由控制器选择；`TARGET_MODES` 继续兼容读取旧目标。Windows CFQV8 生产工厂不采集 SimpleOrientation，也不再实例化 `WindowsTabletDisplay`。可选后端代码和隔离测试保留，但不对用户开放。本记录取代 2026-11-10「Windows 软件平板接入真实用户态入口」中开放五模式和方向采集的生产装配说明。
-- 同步：共享模式常量、控制器、引擎、Linux/Fluent 设置页、前端能力判断、Windows 协议与原生工厂、回归测试、README、MAINTENANCE 与本记录。
-
-### 2026-11-10 - 修正 CFQV8 物理开关字节映射
-
-- 变更：CFQV8-1L 实测 PDO 原始字节和 `SM_CONVERTIBLESLATEMODE` 均为 `0`（笔记本）与 `1`（折叠平板）；硬件读取和 slate 写入映射改为 `0=laptop, 1=slate`。
-- 动机：此前按通用文档假设 `0=slate`，导致真实折叠时系统和程序仍按笔记本处理，自动旋转、屏幕键盘及设备所有权判定相反。
-- 影响：映射仅适用于已采集 CFQV8-1L 固件/驱动证据，不能直接推广到未验证机型。`SlateNotifier` 的布尔语义、目标/回读、租约、显示事务和用户 Windows shell 选择均不变。
-- 同步：PDO 读写、WindowsSwitch、硬件回归测试、MAINTENANCE 真机证据和本记录。本记录取代此前“折叠/展开 1→0→1”的阶段结论。
-
-### 2026-11-10 - 按实体姿态再次校正 CFQV8 开关映射
-
-- 变更：以用户当前实体笔记本姿态和界面实际结果复核，CFQV8-1L 最终映射为 `0=折叠平板，1=笔记本电脑`，PDO 与 `SM_CONVERTIBLESLATEMODE` 同步采用该映射。
-- 动机：此前仅凭用户口头标记的折叠/展开阶段和数值时间线推断 `0=laptop`，导致应用在实体笔记本状态下显示 Tablet；实体姿态与界面结果是最终判据。
-- 影响：仅修正已验证 CFQV8 的原始字节解释，不改变 slate 布尔语义、硬件优先、目标/结果分离、显示事务或 Windows shell 用户选择。本记录取代同日期“修正 CFQV8 物理开关字节映射”和更早的数值方向结论。
-- 同步：PDO 读写、WindowsSwitch、硬件回归测试、MAINTENANCE 与本记录。
-
-### 2026-11-10 - 正式界面隐藏验证与技术说明
-
-- 变更：Linux 和 Windows 正式界面不再显示“兼容模式”或常规托盘/屏幕控制说明；演示与模拟入口仍保留预览标识。模式选择只描述使用场景，不再暴露 Windows shell、设备报告、键盘和触控板等技术实现。Windows 使用系统 UI 字体并统一标题栏视觉对齐。
-- 动机：验证状态和实现细节属于维护信息，正式产品界面应只说明用户可理解和可采取的内容；中文系统还需避免 Qt 默认字体族造成的中英文回退渲染差异。
-- 影响：支持等级仍在快照和维护诊断中如实保留，协议、能力、硬件优先、显示事务和权限边界不变。系统托盘不可用时的可见退出说明继续保留，以避免用户失去停止入口。
-- 同步：Linux/Fluent 页面、Windows 常驻说明、字体初始化、中文翻译、界面契约与 Fluent 回归测试、本记录。
-
-### 2026-11-10 - 平滑启动与标题栏间距
-
-- 变更：Linux 和 Windows 前端在首个有效快照或真实不可用回执前不再显示“正在连接后台”等临时说明，保持内容区为空；Windows 标题栏增加 6 px 图标与标题间距，并将标题视觉中心下移 1 px。
-- 动机：后台首次启动通常只需数百毫秒，提前绘制连接说明会造成明显闪字；标题与字标也需要更宽松、更稳定的视觉基线。
-- 影响：不改变启动、状态、错误或连接协议；后台失败仍在收到不可用回执后展示真实原因，不以空白伪造成功。
-- 同步：Fluent/Linux 姿态页初始状态、标题栏布局、界面回归测试与本记录。
-
-### 2026-11-10 - 降低 WinRT 传感器常驻开销
-
-- 变更：Windows 传感器流在首次连接后复用已认证的加速度计对象，每 100 ms 只读取当前样本；设备枚举和单一身份复核改为至少间隔两秒执行一次，与样本新鲜度上限一致。
-- 动机：此前每个样本前都执行 WinRT 设备枚举，即使姿态稳定也会持续占用约单核 10%，明显高于后台和界面本身。
-- 影响：仍拒绝缺失、歧义、替换或读取失效的传感器；不修改采样间隔、挂载方向、时间戳校验、只读边界或设备设置。两秒内设备替换由旧对象读取失败或下一次身份复核拒绝，不能继续发布过期姿态。
-- 同步：WinRT 流脚本、传感器脚本契约测试与本记录。
-
-### 2026-11-11 - UI 周期性核对后台快照
-
-- 变更：Fluent 客户端继续以 100 ms 处理后台推送，同时每秒发起一次只读 `get_state` 核对。正常情况下推送仍负责即时更新，周期核对只修复漏失的最终状态。
-- 动机：真机切换后后台已确认新目标和显示事务，但偶发的会话回执时序可能让 UI 错过一次状态消息并长期停留在旧姿态；重启后读取同一快照才恢复。
-- 影响：不降低姿态识别阈值，不改变目标/结果分离或租约；每秒一个只读请求，仍沿用现有串行主线程轮询和请求去重。
-- 同步：Fluent 后台轮询、界面回归测试与本记录。
-
-### 2026-11-11 - 自动模式主页显示当前实体姿态
-
-- 变更：自动模式的主页标题和插画优先使用快照中已经稳定的 `pose`；只有手动模式或没有有效实体姿态时才使用 `applied` 回退。
-- 动机：显示事务尚在过渡时，`applied` 仍为上一姿态，界面会把已经识别的帐篷/支架错误标成旧模式，用户无法据此判断识别结果。
-- 影响：`applied` 仍是设置页和控制事务的事实源，目标/结果分离不变；主页明确表示实体姿态，不再用旧已应用目标覆盖新识别结果。
-- 同步：共用前端姿态展示、前端回归测试与本记录。本记录取代 2026-11-04「主页优先显示已应用模式」及其过渡期补充。
-
-### 2026-11-11 - Windows 实体平板开关恢复只读
-
-- 变更：Windows 原生入口停止为帐篷、支架或软件平板写入 `ACPI\INT33D3` PDO；该设备仅用于读取实体笔记本/平板状态。原生装配不再创建 SlateNotifier 或 slate 租约，帐篷/支架只执行加速度计识别和内屏方向事务。
-- 动机：纯硬件真机记录证明该 PDO 在应用未运行时能稳定按 `1=笔记本 → 0=完全折叠 → 1=展开` 变化；旧软件写入会改写同一状态，导致首次折叠后实体判据失真和极性反转。
-- 影响：Windows shell 只在真实物理姿态变化时响应驱动状态；软件帐篷/支架不再伪造平板通知，避免污染后续实体判定。输入边界、显示事务、会话资格和用户自己的 Windows shell 选择不变，可选 slate 通知代码只保留为未接入的隔离实现。
-- 同步：Windows 原生会话装配、显示开关查询、原生工厂测试、README、MAINTENANCE 与本记录。本记录取代此前“帐篷/支架通过 PDO 报告平板使用状态”的生产装配说明。
-
-### 2026-11-11 - 以连续实体切换确认 CFQV8 开关映射
-
-- 变更：用户在同一次连续真机测试中先把设备置于实体笔记本姿态并确认，随后完全折叠为平板并确认；PDO 与 `SM_CONVERTIBLESLATEMODE` 均从 `0` 变为 `1`。硬件读取和 slate 写入最终改为 `0=笔记本，1=平板`。
-- 动机：此前多次仅凭单姿态读数翻转映射，导致笔记本被当作文档所示默认平板状态，硬件优先持续覆盖帐篷、支架和笔记本策略。连续、带实体姿态确认的同一设备状态转换是最终判据。
-- 影响：修正后只有完全折叠状态进入硬件平板优先级；展开后的笔记本、帐篷和支架重新由共用姿态策略判断。slate 布尔语义、目标/结果分离、PDO 单次 toggle 与回读、显示事务和 Windows shell 用户选择均不变。
-- 同步：PDO 读写映射、WindowsSwitch、硬件回归测试与本记录。本记录取代 2026-11-10「按实体姿态再次校正 CFQV8 开关映射」及其数值结论。
-
-### 2026-11-11 - 实体离开软件平板姿态时释放 slate 所有权
-
-- 变更：帐篷或支架事务持有 `slate=True` 时，若稳定窗口结束后读到物理指示器已变为相反值，立即采用该实体状态、清除 slate 租约并归还硬件优先级，而不是持续报告歧义。
-- 动机：真机从支架返回笔记本时，物理指示器先回到 `0`，旧逻辑仍宣称拥有 `1`，导致硬件状态长期歧义，显示事务停留在支架并无法回到笔记本。
-- 影响：软件写入后的两秒异步稳定窗口保持不变；窗口内仍屏蔽瞬时反跳。窗口外的相反读数明确视为实体接管，符合硬件优先和失效撤销约束；显示事务继续通过既有恢复流程完成。
-- 同步：slate 所有权观察、转换回归测试与本记录。
-
-### 2026-11-11 - 折叠中接管不再阻断硬件平板目标
-
-- 变更：固定软件模式在写方向或回执前发现物理平板已接管时，先回滚旧事务，再把同一显示任务完成一次硬件平板交接，而不是向会话层报告失败。
-- 动机：真机从笔记本折叠为平板时，旧事务报 `physical-tablet-took-over` 并触发会话租约失败，硬件目标已完成日志移交却无法得到最终界面回执。
-- 影响：真实平板优先级不变；非物理原因的方向锁失败仍按原错误上报。交接后的会话仍通过最新代次和受租约保护的显示回执确认，不伪造旧软件目标成功。
-- 同步：WindowsDisplay 接管路径、显示竞态回归测试与本记录。
-
-### 2026-11-11 - 以静止实体笔记本重新确认 CFQV8 映射
-
-- 变更：用户明确设备一直处于实体笔记本姿态，同时加速度平面角约 `1.2°`，PDO 与 `SM_CONVERTIBLESLATEMODE` 均为 `1`。硬件映射恢复为 `0=平板，1=笔记本`。
-- 动机：`INT33D3` 指示器也会被帐篷/支架软件事务改写；只观察折叠过程中某个中间值不足以证明实体姿态。实体静止姿态与重力几何的一致证据才是可靠判据。
-- 影响：不再把正常笔记本强制判为平板。帐篷、支架和软件平板事务仍由 slate 所有权掩蔽其写入值，不能把自身写入误认成新的实体平板接管。
-- 同步：PDO 读写映射、WindowsSwitch、硬件回归测试与本记录。本记录取代同日期“以连续实体切换确认 CFQV8 开关映射”及“实体离开软件平板姿态时释放 slate 所有权”中依赖反相数值的部分。
-
-### 2026-11-11 - Windows 姿态交互与平台交接对齐 Linux
-
-- 变更：Linux 通知动作的既有语义成为两平台明确行为边界。点击仍可确认的姿态通知即视为用户明确切换，直接走当前 epoch 确认，不打开主窗口；Windows 同时收到通知点击和托盘激活时只处理一次。软件帐篷/支架通过独立 `touch_mode.py` 临时设置 Windows shell 交互模式，使系统在输入框获得焦点时按自己的平板交互逻辑显示屏幕键盘，并在离开、物理接管、失败或退出时恢复原模式。物理平板释放后的 `posture_pending` 窗口采纳 Windows 刚完成的平台方向交接，不写回第一次 hold 的方向。
-- 动机：通知点击此前不能直接完成用户意图；PDO 改为只读后，软件帐篷/支架不再触发 Windows shell，用户会失去自动出现的屏幕键盘；从平板退出到支架时，hold 与 Windows 平台交接相互竞争，造成一次额外跳变。
-- 影响：有效通知不需要二次确认或窗口中转；本地已有操作、过期或不可确认提示仍只打开界面并保留可重试提示。临时 shell 模式只用于已连接、受支持的原生会话，不写 PDO、不持久化用户偏好、不取得输入所有权，也不替代 Windows 自己的物理姿态响应。主页和托盘不增加“显示屏幕键盘”入口。等待窗口不被心跳延长，最终稳定目标仍只通过既有显示事务确认。本记录取代此前“Windows 实体平板开关恢复只读”中禁止软件帐篷/支架触发 Windows shell 的部分，以及 2026-11-09 shell 设计中“程序不调用 ImmersiveShell 强制模式接口”的绝对约束；实体指示器仍只读，临时 shell 控制仅限普通用户原生会话桥。
-- 同步：Windows 通知点击、临时 shell 交互桥、Windows 显示交接、Fluent/显示/交互回归测试、README、MAINTENANCE、运行边界与本记录。
-
-### 2026-11-11 - 尊重 Windows 平板切换偏好并避免方向交接竞争
-
-- 变更：软件帐篷/支架不再无条件调用平板模式 setter。会话桥读取 `ConvertibleSlateModePromptPreference`，分别执行“不切换”“显示 Windows 原生确认提示”或“自动切换”。通知 token 在提示短暂不可确认后继续保留，恢复同一 epoch 时允许通知点击直接确认。物理平板释放后的等待期改为纯观察，不取得旋转锁，让 Windows 完成方向交接后再由稳定目标执行一次显示事务。
-- 动机：真机反馈表明无条件 setter 会在用户选择“不切换”时强制进入平板模式；等待期第一次 hold 取得方向锁会阻断 Windows 的方向交接，造成平板退出至帐篷时再次跳变；通知在姿态短暂离开确认区时会丢失内部 token，点击只剩打开窗口。
-- 影响：Windows 对实体平板开关的用户偏好成为软件姿态 shell 响应的唯一依据；程序仍不写 PDO、不保存新的 shell 偏好，离开软件姿态时只撤销自己造成的改变。等待期不再阻止平台旋转，但仍保持不确认姿态、不续租之外的状态边界。通知点击仍以当前快照、实例、epoch 和姿态类型复核后才确认。
-- 同步：`windows/touch_mode.py`、`windows/tablet_mode.py`、`windows/display.py`、`fluent/resident.py`、Windows/Fluent 回归测试、README、MAINTENANCE 与运行边界。本记录取代“Windows 姿态交互与平台交接对齐 Linux”中无条件临时设置 shell 以及等待期提前 hold 锁的说明。
-
-### 2026-11-11 - 暂停软件平板状态模拟并预锁硬件释放方向
-
-- 变更：暂时停用软件帐篷/支架的 Windows 平板状态模拟。生产原生会话不写 `ACPI\INT33D3`、不发布 shell 平板模式、不读取切换偏好，也不自动提示 Windows 屏幕键盘。方向处理新增原始几何预锁与缓存目标：硬件仍为平板但帐篷候选持续 0.3 秒后，每周期重新锁定，开关释放首周期直接发布帐篷目标。
-- 动机：写 PDO 会覆盖真实硬件姿态；通过 shell setter 模拟平板又会在部分机器上强制切换交互模式。真机时序显示物理开关释放后 Windows 会先回正到桌面方向，随后应用再写入帐篷方向。暂停状态模拟并要求真实硬件状态只读是当前产品边界；预锁只解决方向竞争。
-- 影响：软件帐篷/支架不再声称具备 Windows 屏幕键盘能力，界面和文档必须如实说明该功能暂停。真机把跳变从约 1.6 秒缩短到约 0.9 秒，但 Windows 在 CSM 释放时仍会覆盖方向锁并短暂回到桌面方向；当前范围无法把窗口降为零。实体开关、硬件查询和姿态判断保持真实，稳定目标仍由共用显示事务核对。失败时记录警告并继续原有恢复路径。
-- 同步：`windows/screen_session.py`、`windows/display.py`、`windows/session_display.py`、`windows/touch_mode.py` 回归测试、README、MAINTENANCE 与运行边界。本记录取代“发布 shell 平板状态且保持实体开关只读”和“Windows 姿态交互与平台交接对齐 Linux”中自动发布软件平板状态的说明。
-
-### 2026-11-11 - 无驱动 ETW 物理平板状态原型
-
-- 变更：新增 `windows/etw_switch.py`，计划由 LocalSystem 服务实时消费现有 `HidEventFilter` 提供程序的 Event 115 ACPI 通知，`0xCC` 映射为平板、`0xCD` 映射为笔记本；启动时只用洁净 CSM 建立初值，此后物理状态只由该事件更新。新增同名单元测试和 `tests/windows_etw_switch_smoke.py` 只读探针。生产后台尚未接入该端口，也未安装或创建服务。
-- 动机：直接读取 CSM 无法区分用户物理切换与应用软件报告；ACPI `VGBS` 控制方法只能由驱动调用，而本机没有铰链角度传感器。现有 Intel HID Event Filter 已由签名驱动加载，可通过 ETW 提供独立物理通知，适合作为无新驱动的候选路径。
-- 影响：ETW 启动失败、权限不足、事件源丢失或状态未初始化时必须返回未知并禁止写 CSM；软件 CSM 写入不得被当作物理接管。当前原型不会改变生产行为，只有 LocalSystem 服务完成真机 `0xCC/0xCD` 映射和恢复验收后才可启用。
-- 同步：`windows/etw_switch.py`、`tests/test_windows_etw_switch.py`、`tests/windows_etw_switch_smoke.py`、`MAINTENANCE.md`、本交接状态与本记录。
-- 证据：2026-11-11 15:14–15:16 在 CFQV8-1L 上以临时 SYSTEM 计划任务运行探针。CSM 从 `1` 变为 `0` 再回到 `1`；Event 115 收到 `0xCC`、`0xCB`、`0xCD`、`0xCA` 通知。`0xCC` 对应物理平板，`0xCD` 对应笔记本，`0xCA/0xCB` 不发布状态。Python 退出码 `0`，临时任务已移除；探针没有写 CSM。
-
-### 2026-11-11 - 修复释放证据、ETW 启动与显示回滚边界
-
-- 变更：硬件平板期间的帐篷释放候选改用有效传感器时间戳计时，样本过期时清除缓存；ETW 改为先启动监听再读取 CSM 基线，启动期间的新物理事件不会被旧基线覆盖，基线失败会关闭消费者；Windows 硬件释放准备的锁写入、回读或持久化失败时恢复原显示所有权，会话限定层同步执行显示恢复和 slate 释放。
-- 动机：墙钟会把无效或重复采样误算为稳定证据，并可能在传感器过期后复用旧帐篷目标；先读基线存在丢失启动窗口物理切换的竞态；准备阶段缺少回滚会遗留旋转锁或显示日志。
-- 影响：正常有效采样仍需连续 0.3 秒才缓存帐篷，硬件优先、失效撤销、目标/结果分离和只读实体开关不变。ETW 仍是未接入生产后台的原型，基线无效时保持未知并禁止依赖物理状态；显示失败保留原始异常，清理失败仍沿用有界日志和后续恢复。
-- 同步：`controller.py`、`windows/etw_switch.py`、`windows/display.py`、`windows/session_display.py` 及对应控制器、ETW、显示和会话回归测试；本交接状态与本记录。
-- 验证：6 个针对性回归用例先从 7 个断言失败转为全部通过；四组目标测试 115 项、Windows 测试 285 项、Fluent 测试 47 项通过。未执行真机或特权操作，Linux 全套门槛仍需在支持的 Linux 环境验证。
-
-### 2026-11-11 - Windows 硬件运行时组合根与物理源准入
-
-- 变更：新增 `windows/hardware_runtime.py`，按“ETW/CSM 物理源 → WinRT 传感器 → RPC → 可信会话监管器”的顺序装配 `AcpiPhysicalSwitch`、`ProfileSensor(WindowsSensor)`、共用 `Engine`、`HardwareServer`、`NativeSessionLauncher`、`SessionSupervisor` 和 `TrustedRuntime`；控制器固定 `input_control=False`，输入端口为 `DisplayOnlyInput`。硬件主机和监管器共享物理源准入：物理值非布尔或状态非 `HardwareStatus.OK` 时拒绝 `session_update`、撤销已登记会话并停止子进程，恢复后才允许重新探测和放行。组合根不自动安装服务、不打开输入设备。
-- 动机：此前硬件主机、物理开关、传感器和可信会话只有分散组件，缺少可验证的生产启动顺序和物理源失效后的统一停用路径；单独保护 `session_update` 不足以阻止监管器在失效期间重新创建会话。
-- 影响：物理源失败时仍可启动只读 RPC（状态和故障可见），但不会取得显示租约或确认模式；恢复需要重新通过物理准入。`HardwareServer.poll()` 仍是唯一引擎 tick 入口，组合根不重复 tick。停机保留有界监管轮询，未完成清理时显式报错。软件平板状态模拟边界不变。
-- 同步：`windows/{hardware_runtime,hardware_host,hardware_ipc,session_supervisor}.py`、`tests/{test_windows_hardware_runtime,test_windows_hardware,test_windows_session_supervisor}.py`、MAINTENANCE、README 与本交接状态。
-- 验证：组合根、主机准入和监管恢复的目标测试先于本记录执行；未安装或启动服务，未执行真机 ETW、显示写入或服务安装验收。
-
-### 2026-11-11 - ETW 成为唯一物理输入，CSM 降为纯输出
-
-- 变更：删除 `AcpiPhysicalSwitch` 的 CSM 基线和 `WindowsSwitch` 依赖；首个有效 ETW `0xCC/0xCD` 事件前保持未知，启动、查询和中断都不回退 CSM。`SlateNotifier` 改为强制注入 ETW 健康查询，所有 CSM 写入、恢复和 journal 清理都先经过该门禁；删除 `software_owned`、`software_settling`、两秒 settle 计时器和外部变化猜测。崩溃恢复始终使用 `pending.original`，写入失败保留 journal 和旧内部状态。
-- 变更：Windows 会话先证明回执资格，再创建显示和 CSM 后端；两者共用同一已验证 RPC 客户端，清理顺序为先释放显示/CSM 所有权，再关闭 CSM 设备。`SessionHardwareQuery` 只从服务快照接受布尔硬件值和 `HardwareStatus.OK`，RPC、协议或会话异常统一返回读错误。
-- 变更：Windows 默认连接硬件服务，移除 `--native-backend`、`--hardware-backend`、`--simulate-backend` 和用户态 `--native`；删除生产 `native_screen_session`、`switch.py`、`tablet_mode.py`、`touch_mode.py`、`tablet_display.py` 及其测试/烟测。`--backend` 仅保留隔离软件预览，`--demo` 保留内存演示。
-- 动机：CSM 会被应用自身写入，不能证明物理姿态；读取 CSM 会把软件输出误当硬件接管。ETW 已被真机探针确认能独立区分物理平板和笔记本，因此应作为唯一物理输入，CSM 只承担向 Windows 发布的输出职责。
-- 影响：取代“无驱动 ETW 物理平板状态原型”“修复释放证据、ETW 启动与显示回滚边界”和“Windows 硬件运行时组合根与物理源准入”中的 CSM 基线/只读回退说明。物理源未知或中断时服务保持只读、拒绝 CSM 写入并保留恢复日志；恢复后重新准入。Windows shell 平板发布、屏幕键盘自动出现和手动平板模式仍不在产品范围。
-- 同步：`windows/{etw_switch,convertible_slate,session_display,session_agent,display,backend,client,protocol,screen_session,startup,hardware_runtime}.py`、`fluent/{app,__main__,pages}.py`、`packaging/windows/{build.py,configure-slate-device.ps1,launch-hardware.py}`、相关 Windows/Fluent/打包测试、`po/zh_CN.po`、README、MAINTENANCE 与本记录。
-- 验证：目标 ETW、Slate、会话装配、硬件运行时和 Windows/Fluent 套件在本轮执行；未安装或启动服务，未执行真机 CSM 写入、显示事务或 SYSTEM 联合验收。
-
-### 2026-11-11 - Windows 运行时分层与受限解释器
-
-- 变更：把 OS 控制台身份、硬件 RPC 信封、命名管道、响应校验客户端、异步鉴权服务器、会话资格栅栏、进程内同步回执、私有后台循环和 UI 操作面拆为独立模块；`hardware_ipc.py` 只保留兼容导出。生产装配移至 `hardware_application.py`，`HardwareRuntime` 仅保留生命周期状态机，并通过端口协议隔离原生服务器、启动器、运行时和监管器。
-- 变更：普通屏幕会话不再承担机型 profile、原生用户预检或会话桥职责；硬件组合根不再导入屏幕会话。UI 命令映射、owner-loop 约束和机型号支持常量各自只有一个事实源。会话关闭顺序明确为先排空并关闭共享运行时，再恢复显示和释放 CSM。
-- 变更：便携包新增受限 `python-hardware.exe`/`python-hardware._pth`，硬件主机和原生会话代理由图外路径隔离的解释器启动；UI 继续使用带 Qt 站点目录的普通解释器。可信运行时拒绝 DLL 级 `_pth`，避免其覆盖硬件搜索路径。
-- 动机：Windows 实现长期把协议、身份、传输、状态机、UI 和原生 Win32 依赖混在少数大模块中，存在反向依赖、不同客户端线程契约不一致、命令映射漂移以及打包布局与可信运行时校验互相冲突的问题。
-- 影响：ETW 单物理源、CSM 健康门禁、租约撤销、显示事务、目标/结果分离、owner-loop 回调和清理失败语义保持不变。此记录不改变产品能力边界，也不把服务安装、真机 SYSTEM 启动、显示或 CSM 写入标记为已验证。
-- 同步：`windows/{console_identity,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server,hardware_application,hardware_runtime,operations,session_bridge,session_qualification,private_backend,owner_loop,ui_operations,machine_identity,machine_profile,native_preflight,trusted_runtime,session_supervisor,session_launch}.py`、`packaging/windows/build.py`、Windows/Fluent/打包测试、`AGENTS.md` 与 `MAINTENANCE.md`。
-- 验证：Windows 264 项、会话刷新 9 项、共享前端 13 项和 Fluent 46 项通过；发布元数据 6 项中 5 项通过，UI 版本用例因 Windows 运行时缺少 PyGObject 未执行到断言。未安装服务，未执行真机显示、CSM 写入或 SYSTEM 生命周期验收。
-
-### 2026-11-11 - 可安装的 LocalSystem 硬件服务
-
-- 变更：新增 `windows/hardware_service.py`，用标准库 `ctypes` 实现 SCM 服务入口、启动/运行/停止状态、控制处理和 `HardwareRuntime` 优雅清理；ImagePath 固定为受保护目录中的 `runtime/python-hardware.exe -B -I -m ... --serve`。新增 `packaging/windows/hardware-service.ps1` 及安装、状态、移除入口：安装器从普通解压目录自举到 `%ProgramFiles%\PanasonicPostureManager`，更新前保留旧受保护目录，验证完整运行时后注册延迟自动启动的 `PanasonicPostureManagerHardware` LocalSystem 服务，配置 5/15/60 秒失败重启并立即启动。
-- 动机：`HardwareRuntime.installed()` 和可信运行时已经存在，但普通用户目录不能作为特权代码源，产品也缺少可重复的 SCM 注册与启动入口；用户无法只靠便携界面启用真实硬件链路。
-- 影响：服务只由显式管理员安装，界面和开发预览不隐式提权或自动注册。受保护安装路径、LocalSystem 身份、ETW 唯一物理输入、首个事件前拒绝会话、现有 RPC/鉴权/租约/显示事务和安全恢复边界均不变。服务不安装驱动、不修改 CSM 设备配置、不提供新 RPC 命令或任意路径入口。
-- 同步：`windows/{hardware_service,trusted_runtime}.py`、`packaging/windows/{hardware-service.ps1,build.py}`、`tests/{test_windows_hardware_service,test_windows_trusted_runtime,test_windows_packaging}.py`、README、MAINTENANCE、AGENTS 与 Windows 打包清单。
-- 证据：2026-11-11 在 CFQV8-1L 上从当前测试包实际安装。受保护目录 3010 个清单文件一致，受限解释器预检通过；`sc qc` 显示 `AUTO_START (DELAYED)`、LocalSystem、固定 `--serve` 命令，失败动作按 5/15/60 秒重启。服务进入 Running，命名管道存在，普通用户 `GetState` 返回 `backend=ready`、`sensor_source=windows-winrt`、`supported=true`。
-- 验证：Windows 完整套件 343 项通过；最终便携包解压后由自带 `python.exe`、`pythonw.exe` 和 `python-hardware.exe` 完成 Qt、中文资源、软件事务、后台回收及受限模块导入自检。
-- 未验证：首次真实服务 ETW 事件仍使 `hardware_status=absent`；会话准入、显示写入、CSM 输出、ETW 中断后的租约撤销、恢复重建、锁屏/电源切换与 SYSTEM 停止需另行真机验收。
-
-### 2026-11-11 - 回收断开的硬件管道槽位
-
-- 变更：`NativePipes.read()` 先用 `PeekNamedPipe` 判断连接状态和可读字节数；已连接但无数据返回空闲，`ERROR_BROKEN_PIPE`、`ERROR_NO_DATA`、`ERROR_PIPE_CLOSING` 视为断开并交给服务器 `_reset`，不再把非阻塞 `ReadFile` 的 `ERROR_NO_DATA` 当成永久空闲。
-- 动机：真机服务运行后，一个界面客户端曾经使第二条诊断连接得到 `ERROR_PIPE_BUSY`；连续客户端关闭后四个槽位仍可能被占满。原因是服务器无法区分空管道和已断开管道，过期连接只能等待较晚超时，期间阻塞会话代理或诊断连接。
-- 影响：最多四个连接的权限、鉴权、消息上限、超时和客户端不重放规则不变；断线槽位及时回到监听状态。该修复不改变 ETW 准入、RPC schema、租约或显示/CSM 行为。
-- 同步：`windows/hardware_pipe.py`、`tests/test_windows_hardware.py`、MAINTENANCE、AGENTS 与本记录。
-- 证据：更新后的本地服务和受保护运行时上，一个 `HardwareUIClient` 持续 15 秒并取得 21 次状态期间，第二条独立 `GetState` 连接成功；主客户端关闭并等待 7 秒后再次连接成功。Windows 完整套件 351 项通过。
-
-### 2026-11-12 - Windows MSI 作为完整安装基线
-
-- 变更：新增 WiX 5.0.2 MSI 构建器，把 UI、受保护运行时、LocalSystem 硬件服务和开始菜单入口作为同一每机器安装交付；提升权限的延迟动作执行现有可逆 `LaptopSlateExclusiveAccess=0` 配置，首次安装通过 `ScheduleReboot` 提示重启，同版本升级、修复、卸载和 CSM 原值恢复由 Windows Installer 管理。正式 Release 增加 Windows MSI 资产并纳入 `SHA256SUMS`。
-- 变更：便携式安装同时弃用。便携 ZIP 移除服务安装、状态、移除和设备配置命令及脚本；保留 `Hardware.cmd`/默认界面用于开发、诊断和连接 MSI 已安装服务。MSI 生成器单独注入服务与设备配置脚本作为内部自定义动作，不依赖便携包内容。
-- 变更：会话代理的 CSM 工厂改为可选。`NativeSlateDevice` 无法打开时返回 `None`，会话仅执行加速度、方向和显示事务，不创建 `SlateNotifier`，因此绝不写入、恢复或清理平板指示器。成功创建后的 CSM 写入失败仍按原显示回滚和姿态失败规则处理。
-- 动机：正式用户不应在安装后再手工运行服务或设备配置脚本；MSI 安装并重启后的完整 CSM 输出是产品底线。降级模式用于异常环境、尚未重启或设备不可用场景，避免无意义地阻断仍可工作的显示控制。
-- 影响：取代“首次设备非独占配置只由独立管理员脚本完成”和便携式服务安装语义；`packaging/windows/hardware-service.ps1` 的 Install 等动作只保留为内部维护/转换来源，不作为用户发布入口。不改变 ETW 唯一物理输入、CSM 纯输出、健康门禁、journal 原始值和目标/结果分离。CSM 后端不可用不代表已发布 Windows 姿态，界面/日志不得把它报告成完整 CSM 成功。
-- 同步：`packaging/windows/{build_msi.py,msi/Package.wxs,msi/LICENSE.rtf}`、`windows/session_agent.py`、Windows MSI/会话/打包/发布测试、`.github/workflows/{windows-preview,release}.yml`、README、MAINTENANCE 与本记录。
-- 验证：本机使用实际运行时与 Qt 依赖生成约 86 MiB 的 MSI，`wix msi validate -sice ICE61` 通过；反编译确认服务、开始菜单、CSM Install/Rollback/Remove 动作、重启条件和受保护解释器均进入 MSI 表。MSI、会话降级和打包目标测试 22 项通过；发布工作流与元数据合计 36/37 项通过，唯一失败是当前 Windows 运行时缺少 PyGObject。
-- 未验证：GitHub Windows 构建、签名和重启后的真机 ETW/显示/CSM 链路仍需执行。
-
-### 2026-11-12 - Windows MSI 首次实际安装回归
-
-- 变更：Windows 10 启动条件改为搜索真实 `CurrentBuildNumber >= 10240`。首次实测发现 Windows Installer 在该 Windows 10 上把 `VersionNT64` 报为兼容值 `603`，原 `>=1000` 条件导致安装立即失败并返回 1603。
-- 变更：所有 MSI PowerShell 自定义动作固定使用 `[System64Folder]WindowsPowerShell\v1.0\powershell.exe`，避免第一次成功安装时 32 位 PowerShell 把可逆 CSM 原值记录写入 `WOW6432Node`。
-- 变更：开始菜单目录从 `StartMenuFolder` 改为 per-machine 的 `ProgramMenuFolder`；快捷方式现在位于 `ProgramData\Microsoft\Windows\Start Menu\Programs\Panasonic Posture Manager`，而不是开始菜单根目录。
-- 动机：用真实清理、安装、卸载和升级流程验证 MSI，而不是只依赖 ICE 与反编译。三次问题都只能在执行安装序列时暴露。
-- 证据：清理旧便携服务、主目录、两个 previous 备份和旧用户快捷方式后，启动条件修复版首次安装返回 3010；服务 Running，`python-hardware.exe` 固定 ImagePath，`NativeSlateDevice` 只读打开成功。随后 MSI 卸载返回 3010，移除产品、服务和程序目录并恢复 `LaptopSlateExclusiveAccess`。最终修正版同版本升级返回 0；服务 Running、CSM 值 0、64 位 Setup 记录存在、程序菜单快捷方式正确、安装清单/Qt/IPC 自检通过、`%ProgramFiles%` UI 成功启动。硬件 RPC 为 `backend=ready`、WinRT 可用，ETW 首事件前保持 `hardware=null`、`session_connected=false`。
-- 影响：不改变 ETW 物理输入、CSM 健康门禁、显示事务、降级或租约语义。`MSI` 安装/升级/卸载和安装后 CSM 只读能力从候选状态提升为已在本机验证；真实姿态、ETW 首事件和 CSM 写入仍未验收。
-- 同步：`packaging/windows/msi/Package.wxs`、`tests/test_windows_msi.py`、当前交接状态与本记录。
-
-### 2026-11-12 - 帐篷折叠到物理平板的退出缓冲
-
-- 变更：新增 `PolicyConfig.tent_leave_seconds=2.0`，已确认帐篷离开姿态保持带后仍最多保留帐篷目标两秒；期间 ETW 进入物理平板会直接接管，真正稳定的笔记本姿态超过两秒仍按原规则释放。原生会话代理在 `native-display.json` 旁创建有界 `native-display.log`。
-- 动机：CFQV8 真机日志显示，从帐篷折向平板时几何先经过约 `1.2s` 的笔记本样中间角，随后 ETW 才发布 `0xCC`；旧的 `0.7s` 帐篷退出缓冲先应用笔记本，造成一次明显跳变。代理此前没有文件日志，无法核对退出时的显示预锁。
-- 影响：只改变已确认帐篷的软件退出去抖，不改变硬件优先、ETW 唯一物理输入、CSM 纯输出、lease/schema 或 prompt 规则。手动关闭帐篷仍立即释放；stand 保留自己的两秒去抖。退出物理平板时 Windows 可能仍覆盖旋转锁并短暂回正，预锁只能缩小窗口，不能在当前 CSM 架构中保证零跳变。
-- 同步：`policy.py`、`tests/{test_policy,test_controller}.py`、`windows/session_agent.py`、README、MAINTENANCE、AGENTS 与本记录。
-- 验证：策略 103 项和控制器 58 项目标测试通过；新增用例确认帐篷经过 1.5 秒笔记本样中间角仍未释放，ETW 接管后不出现 laptop；稳定超过 2 秒仍正常返回笔记本。真机退出时间窗仍待下一轮日志复核。
-
-### 2026-11-12 - 首次桌面会话、首平板交接与任务栏身份
-
-- 变更：可信会话监管器不再等待首个 ETW 有效事件。服务启动后即按活跃、未锁定的本地控制台用户启动会话代理；物理状态未知时主机只接受 `not-ready` 心跳和续租，拒绝 ready 回执、显示写入和 CSM 写入。`unavailable` 目标只完成显示恢复并续租，不再被会话运行时误报成 ready；电源初始显示回调缺失时会在 owner 线程有限频率重订阅。Windows 显示工厂同时把已验证 ETW 查询传入恢复事务，未知状态时恢复失败关闭、保留 journal 且不写旋转或锁。已从健康物理源转为失效时，主机仍撤销当前租约并拒绝心跳，恢复健康状态后重新开放。
-- 变更：主页的未知物理源提示改为指导用户完整折叠、展开一次。Windows 进程在创建 Qt 窗口前设置固定 AppUserModelID `work.mmoe.panasonic.PostureManager`，应用级窗口图标使用打包资源；MSI 开始菜单快捷方式引用同一 AUMID、显式多尺寸 ICO，Add/Remove Programs 也使用该图标。MSI 的两个提权 PowerShell 配置动作改用 `WixQuietExec`，消除安装时可见 cmd 窗口，同时保留有界输出到 MSI 日志。
-- 动机：真机首次启动时，代理只有在第一次翻到平板后才随 ETW 事件启动，界面因此长期显示“等待桌面功能就绪”；代理启动时的旧日志恢复又与 Windows 首次平板方向交接重叠，造成首次进入平板跳变。已安装快捷方式的 `IconLocation` 为空 `,0`，运行进程继承 `pythonw.exe` 的通用任务栏身份。
-- 影响：ETW 的唯一物理输入、CSM 纯输出、目标/结果分离、租约撤销和显示事务不变。首事件前会话连接不再等于姿态或写入已就绪；界面必须继续显示未知物理状态，任何显示/CSM 写入门禁不得放宽。ETW 已 open 后中断仍按失效撤销。任务栏身份配置失败只影响 shell 展示，不阻断本地设备控制。
-- 同步：`windows/{session_supervisor,hardware_runtime,hardware_host,hardware_rpc,hardware_server,session_context,session_agent,app_identity}.py`、`session/runtime.py`、`fluent/{app,pages}.py`、`ui/posture.py`、`data/assets/work.mmoe.panasonic.PostureManager.ico`、`packaging/windows/{build_msi.py,msi/Package.wxs}`、Windows/Fluent/MSI/打包/UI 契约测试、翻译、README、MAINTENANCE 与本交接状态。
-- 验证：Windows 全套 289 项、Fluent 47 项、i18n 114 个 msgid 通过；最终 MSI 构建、ICE、同版本升级安装和 UI 启动通过，安装日志确认 `WixQuietExec`，首事件前会话连续 60 次状态读取均为 connected。真机首次姿态及后续显示/CSM 行为尚未执行。
-
-### 2026-11-12 - Windows 关于页仓库入口与更新检查
-
-- 变更：Fluent「关于」页新增 GitHub 仓库链接；版本卡片增加「检查更新」，首选 `https://proxy.mmoe.work/http/https://api.github.com/repos/adogecheems/panasonic-posture-manager/releases/latest` 读取最新正式版本，GitHub 共享 API 出口限流时经同一 jsproxy 端点读取 `releases/latest` 的重写跳转头作为后备。请求使用 QtNetwork 异步执行并在 8 秒后中止，只接受 256 KiB 以内的 JSON `tag_name` 或固定仓库标签跳转，数字版本段比较后显示“已是最新”或“发现新版本”；失败只显示简短重试文案，不自动下载或安装。
-- 变更：删除 Windows 专用的“后台已就绪，设备控制尚未接入”覆盖提示，未知物理源提示缩短为折叠到平板再展开一次；硬件预检的账户和机型拒绝文案同步精简。
-- 动机：Windows 与 Linux 的关于页内容需要对齐仓库入口；版本信息需要可直接判断是否有更新，同时避免跨平台代理和 GitHub API 请求阻塞 UI。旧 Windows 专用提示与通用传感器/物理源状态重复，容易让用户误以为后台尚未连接。
-- 影响：更新检查是独立只读网络操作，不触碰硬件服务、姿态快照、设置、租约、显示事务或 CSM；GitHub 共享代理出口可能限流，失败时不会伪造“已是最新”。硬件模式的安全预检和拒绝行为不变，只精简展示文案。
-- 同步：`windows/update_check.py`、`fluent/{update_check,pages,app}.py`、`tests/{test_windows_update_check,test_fluent}.py`、`po/zh_CN.po`、README、MAINTENANCE 与本记录。
-- 验证：5 项纯逻辑更新检查、完整 Fluent 47 项、打包 2 项和 i18n 114 个 msgid 通过；安装运行时上的离屏 Qt 检查验证仓库链接、成功/失败状态、固定代理 URL、Referer、API 403 跳转后备和失败路径。真实端点完成 `2.4.0 -> 2.4.0` 只读检查。未构建或安装新 MSI。
-
-### 2026-11-12 - Windows 设置行对齐与强调按钮
-
-- 变更：GitHub、版本和外观行的右侧控件显式使用垂直居中；传感器校准和检查更新由普通描边按钮改为带同步图标的填充式强调按钮，GitHub 仓库入口继续使用强调色链接。
-- 动机：多行设置卡片的默认控件对齐会随文字高度变化产生视觉偏移；校准和检查更新是设置页中的主要可执行操作，应与普通重置、重试操作形成清晰层级。
-- 影响：只改变 Fluent 控件类型和布局对齐，不改变检查更新网络边界、校准事务、设置保存、错误码、硬件行为或其他页面交互。
-- 同步：`fluent/pages.py`、`tests/test_fluent.py`、Windows 关于页离屏检查和本记录。
-- 验证：关于页更新、双主题文字对比和中文最小窗口 3 项目标测试及完整 Fluent 47 项通过；离屏中文截图确认链接垂直居中及两个强调按钮布局。
-
-### 2026-11-12 - 双端共用模式文案
-
-- 变更：新增 `frontend/mode_copy.py`，把自动、笔记本、帐篷、支架四种手动模式的标题和说明集中为单一翻译表；Windows Fluent 和 Linux GTK 设置页都从该表生成模式行。
-- 动机：两端此前虽然文案相同，但各自保存一份字符串，后续修改容易产生差异化。集中定义后，模式名称、顺序和说明只能在一处改变，并由现有 gettext 流程统一翻译。
-- 影响：用户可见文案保持现有英文 msgid 和中文译文不变；模式代码、能力判断、平板物理状态、默认值、设置写入和硬件行为均不改变。
-- 同步：`frontend/mode_copy.py`、`fluent/pages.py`、`ui/settings.py`、i18n 源文件扫描、`po/POTFILES.in`、前端回归测试与本记录。
-- 验证：共享模式文案与前端 14 项测试通过，i18n 114 个 msgid 全部翻译且无未引用项；Windows 关于页和模式能力目标测试通过。本轮完整 Fluent 套件复跑在外部中断前已通过的用例无失败，但未完成；GTK 完整套件需在 Linux 环境继续验证。
-
-### 2026-11-12 - 解耦双端模式文案
-
-- 变更：撤销上一项的共享文案模块。Windows Fluent 在 `fluent/pages.py` 维护模式名称与说明，Linux GTK 在 `ui/settings.py` 维护自己的模式行；删除 `frontend/mode_copy.py` 及对应 i18n 扫描和前端测试接入。
-- 动机：模式文案没有跨平台运行时行为，只在两个界面内各自使用；把它放进无框架的共用层增加了不必要的间接层，使界面代码为了复用四个常量而依赖共享模块。
-- 影响：四种手动模式的顺序、英文 msgid、中文译文、能力判断、平板物理状态和设置写入均保持不变。
-- 验证：前端 13 项、Fluent 模式说明目标测试、`src` 字节码编译和 i18n 113 个 msgid 检查通过；GTK UI 契约需在带 PyGObject 的 Linux 环境复验。
-
-### 2026-11-12 - Windows 无需首个 ETW 即可启动
-
-- 变更：新增 `windows/slate_bootstrap.py`。服务启动后先启动 ETW 和传感器，再建立一次初始物理布尔状态：没有未完成 slate journal 时只读当前 CSM；有 journal、CSM 陈旧或辅助读取失败时，要求稳定的笔记本/帐篷重力几何；最多五秒仍不明确则以非平板安全值完成启动。启动完成后，运行期变化仍只接受 ETW。
-- 变更：`AcpiPhysicalSwitch` 拆分启动基线、事件监听和最终兜底；`HardwareRuntime.poll()` 在传感器启动后推进基线，不阻塞 RPC 或可信会话。Windows 会话在初始化资格暂不可读时把 `ServiceError` 映射为物理状态读错误，显示恢复保留 journal，不再退出代理。`unavailable` 目标只续租，不误报 ready；主页移除“先完整折叠一次”的提示。
-- 动机：Linux 启动直接读取当前 `SW_TABLET_MODE`，从不要求用户先触发一次状态变化；Windows 旧路径等待首个 ETW，导致从未折叠的设备长期不可用。单独读取 CSM 又会受旧软件输出影响，因此必须结合 journal 与独立几何，并设置有限安全兜底。
-- 影响：取代“ETW 成为唯一物理输入，CSM 降为纯输出”中“首事件前保持未知并拒绝会话”的部分，也取代“CSM 从不作为启动基线”的绝对表述。运行期仍不接受 CSM 回退；CSM 写入、恢复和 journal 清理仍受 ETW 健康门禁。五秒兜底只在辅助源均不明确时使用，默认非平板，之后首个 ETW 会纠正真实状态。
-- 同步：`windows/{etw_switch,slate_bootstrap,hardware_application,hardware_runtime,session_agent,session_display}.py`、`session/runtime.py`、`fluent/pages.py`、`ui/posture.py`、Windows/会话/UI 测试、`po/zh_CN.po`、README、MAINTENANCE 与本交接状态。
-- 验证：Windows 全套 299 项、Fluent 47 项和 i18n 113 个 msgid 通过。最终 MSI 构建、ICE、同版本安装和 UI 启动通过；当前未产生新 ETW 事件时真机状态为 `hardware=false`、`hardware_status=ok`、`target=laptop`、`session_connected=true`。真实进入物理平板后的 ETW 接管与显示/CSM 事务仍待授权验收。
-
-### 2026-11-12 - 软件姿态避免 Windows 双重旋转
-
-- 变更：`QualifiedDisplay` 对软件笔记本、帐篷和支架先调用显示事务，完成旋转锁、CCD 方向写入与回读后，再调用 `SlateNotifier.sync_mode()`。物理 `hardware` 目标仍先发布 CSM，再 relinquish CCD 锁并交给 Windows 原生旋转。
-- 动机：Windows 同时存在系统平板方向响应和应用 CCD 事务。旧顺序先写 CSM，可能让 Windows 原生旋转器开始运动，随后应用又为相同目标写一次方向，表现为一次姿态出现多段跳变；Linux 只有应用事务，不存在这个额外旋转源。
-- 影响：不改变姿态区间、硬件优先、CSM 健康门禁、目标/结果分离、journal 或租约。软件模式在显示事务失败时不再提前改变 CSM；CSM 发布失败会恢复已取得的显示方向。物理平板入口仍由 Windows 主持原生方向交接。
-- 同步：`windows/session_display.py`、`tests/test_windows_convertible_slate.py`、README、MAINTENANCE 与本记录。
-- 验证：Windows 全套 300 项通过；MSI 构建、ICE 和同版本覆盖安装通过，安装源文件哈希与工作树一致，服务 Running、UI 启动且启动基线正确。真实多姿态跳变观察仍需授权操作后记录。
-
-### 2026-11-12 - 物理平板退出到帐篷时保持方向锁
-
-- 变更：共用显示事务在平台状态已经满足锁请求时也刷新 `written_lock` 所有权，避免硬件交接留下的“已解锁”journal 在后续恢复中覆盖 Windows 自行恢复的方向锁。`WindowsDisplay` 提供无写入的固定目标复核；软件模式发布 CSM 后重新核对显示身份、方向锁和目标方向，若平台改写则只重发一次 CCD 事务，第二次仍不符时恢复显示、释放 CSM 所有权并且不确认 ready。
-- 动机：本机 13:29–13:34 的 `native-display.log` 记录了为待进入帐篷而预锁，但显示 journal 仍停在 `written_transform=0`，同时 CSM journal 未清理。现有测试只验证 CSM 前的显示状态；Windows 若在锁写入恰好匹配后自行恢复自动旋转，或随后完成另一轮原生方向交接，旧实现不会更新锁所有权，也不会在 CSM 之后复核，因此可能把反方向报告为已应用。
-- 影响：正常软件姿态仍只执行一次 CCD 事务。仅当 CSM 发布后检测到方向锁或固定方向被平台改写时才执行一次有界重发；任何身份变化、物理平板重新接管、会话资格丢失或第二次恢复失败都沿用原有回滚和 journal 保留路径。ETW 物理输入、CSM 健康门禁、姿态区间、租约和 RPC 契约不变。
-- 同步：`session/transaction.py`、`windows/{display,session_display}.py`、`tests/{test_windows_display,test_windows_convertible_slate}.py`、README、MAINTENANCE 与本交接状态。
-- 验证：Windows 显示/CSM 目标 47 项和会话/屏幕目标 35 项通过；Windows 发现式全套运行 304 项，303 项通过，唯一失败是 `test_venv_backend_is_directly_owned_and_releases_lock_before_stop_returns` 将测试解释器 `python-test.exe` 与固定期望的 `python.exe` 比较，与本轮显示代码无关。`test_display` 和 `test_agent` 因当前 Windows 运行时缺少 PyGObject 无法导入。未构建或安装新 MSI；未授权真机姿态操作，反向问题仍需安装后复测。
-
-### 2026-11-12 - 登录启动默认开启
-
-- 变更：生产 Fluent 在首次正常启动时调用 `LoginStartup.ensure_default_enabled()`，仅在尚未初始化且 Run 值不存在或属于本应用固定命令时登记登录启动。初始化状态写入 HKCU `Software\PanasonicPostureManager\LoginStartupInitialized`；用户在界面显式关闭后，后续启动不会因缺少 Run 值而把它误判为首次默认并自动重开。`UnavailableStartup` 对默认初始化保持无操作，`--demo`、`--backend` 和 `--settings` 隔离入口的边界不变。
-- 动机：登录启动此前是显式 opt-in，用户首次打开应用后仍需手动开启。默认开启需要同时解决“新用户首次启动应自动登记”和“已有用户主动关闭后必须保持关闭”，不能只把缺失 Run 值解释为默认开启。
-- 影响：不改变固定绝对命令、260 UTF-16 单元上限、冲突保留、写后回读和 Windows 启动管理器禁用选择；不创建服务、计划任务或提权项。登记失败只保留设置页供用户重试，不阻止界面启动。真实登录启动仍受 Windows 启动管理和登录延迟影响。
-- 同步：`windows/startup.py`、`fluent/app.py`、`tests/{test_windows_startup,test_fluent}.py`、README、MAINTENANCE、AGENTS 与本记录。
-- 验证：登录启动目标 9 项、Windows 发现式全套 305 项、Fluent 47 项、frontend 13 项和 i18n 113 个 msgid 通过；改动文件 `py_compile` 与 diff 检查通过。未在当前用户注册表执行真实登记，也未构建或安装包含本提交的 MSI，因此尚未验证实际注销再登录后的托盘启动。
-
-### 2026-11-12 - Windows 任务栏与开始菜单名称本地化
-
-- 变更：Fluent 在创建原生窗口前通过 `configure_application()` 把 Qt `applicationName` 与 `applicationDisplayName` 设置为翻译后的 `Panasonic Posture Manager`，中文为「松下姿态管理器」，不再写死英文。标题栏保留较完整的「松下二合一平板电脑姿态管理工具」。
-- 变更：新增受保护的 `windows/shortcut_locale.py`。MSI 在 `InstallFiles` 后通过 `python-hardware.exe -I` 调用它，按 Windows Installer 的 `UserLanguageID` 把 `ProgramData` 开始菜单文件夹和快捷方式从英文基础名改为当前语言名称；卸载前只删除已知 `.lnk` 并尝试移除空目录。快捷方式本身由 Windows Installer 创建，AppUserModelID、图标、目标和修复语义不变。
-- 动机：窗口标题已有中文翻译，但 Qt 应用级名称、开始菜单文件夹和短接名仍固定为英文；只翻译窗口标题不足以修正任务栏身份和开始菜单入口。
-- 影响：不改变硬件 RPC、ETW/CSM、显示事务、服务权限或安装授权；本地化动作失败被限制为 shell 展示退化，不影响硬件安装。中文判断与 UI 的 `GetUserDefaultUILanguage` 主语言规则一致，非中文系统保留英文。
-- 同步：`fluent/app.py`、`windows/shortcut_locale.py`、`packaging/windows/msi/Package.wxs`、`po/zh_CN.po`、Fluent/MSI/Start menu 测试、README、MAINTENANCE 与本记录。
-- 验证：Windows 发现式全套 309 项、Fluent 48 项和 i18n 114 个 msgid 通过；使用本机受保护运行时与 WiX 5.0.2 构建 MSI 并通过 ICE61，反编译确认安装/卸载延迟动作、`UserLanguageID` 命令和 `shortcut_locale.py` 均在 MSI 中，管理解包后的 `python-hardware.exe -I` 可导入新模块。`test_release` 的 GTK 版本检查因 Windows 运行时缺少 `gi` 跳过执行失败，`test_packaging_workflow` 的 shell 脚本检查因 Windows 缺少 `bash`/`sh` 失败；均为本机环境缺口。未安装或覆盖当前 MSI，真实任务栏和开始菜单刷新仍待安装后观察。
-
-### 2026-11-12 - 统一用户可见应用名称
-
-- 变更：新增 `product.py` 的 `APPLICATION_DISPLAY_NAME`，明确用户可见应用名就是现有窗口标题 `Panasonic 2-in-1 Tablet Posture Management Tool`；中文翻译继续使用「松下二合一平板电脑姿态管理工具」。该记录取代上一项把应用显示名缩短为 `Panasonic Posture Manager`／「松下姿态管理器」的决定。
-- 变更：Fluent 应用名、窗口标题、Linux 窗口与通知、托盘工具提示、开始菜单、MSI 产品/功能/快捷方式名称、Windows 服务显示说明、systemd 单元说明、polkit vendor 和 GitHub Release 标题统一使用完整显示名。便携入口改名为 `Panasonic 2-in-1 Tablet Posture Management Tool.cmd`。
-- 动机：短名只是仓库、包、可执行文件和内部协议使用的项目标识符，不应在任务栏、开始菜单或系统界面冒充本地化产品名；窗口标题才代表最终用户看到的完整应用程序名称。
-- 影响：项目名 `panasonic-posture-manager`、安装目录/注册表/服务/Run/管道等标识符以及 AUMID `work.mmoe.panasonic.PostureManager` 不变。开始菜单本地化会迁移上一提交产生的短名和更早的英文短名，不覆盖用户新增文件。
-- 同步：`product.py`、`fluent/{resources,app}.py`、`session/notify.py`、`ui/app.py`、`windows/{shortcut_locale,hardware_service}.py`、Windows MSI/便携包、systemd、polkit、Release workflow、翻译、README、MAINTENANCE 与相关测试。
-- 验证：Windows 发现式全套 319 项、Fluent 50 项、frontend 14 项、session refresh 9 项和 i18n 113 个 msgid 通过。使用受保护运行时与 WiX 5.0.2 构建的 MSI 通过 ICE61；反编译确认 Package、Feature、开始菜单目录/快捷方式和服务显示名均为完整应用名。便携 ZIP 实际包含 `Panasonic 2-in-1 Tablet Posture Management Tool.cmd` 与 `product.py`。未安装或覆盖当前 MSI，真实任务栏、开始菜单和文件资源管理器刷新仍待安装后观察。
-
-### 2026-11-12 - 前端增量更新与渲染缓存
-
-- 变更：Fluent 在窗口入口比较连续快照，完全相同时不再更新两个页面或托盘；`SettingsModel.render_signature()` 只覆盖设置页可见内容，无关的 generation、姿态和应用结果变化不再触发全量控件同步或卡片重排。主页只在姿态变化时请求插画绘制，`Illustration` 缓存每个姿态/主题的 `QSvgRenderer`；`Settings` 将零延时 `fit_cards()` 请求合并为一个，托盘 ToolTip 仅在文字变化时写入。
-- 变更：状态解析新增 `parse_snapshot_data()`/`parse_state_data()`。Linux D-Bus UI 先解码一次 JSON，再把同一对象交给严格字段校验，不再为预检和模型转换各执行一次 `json.loads`。
-- 动机：离屏剖析显示旧设置在每次姿态快照时都重算全部卡片布局，并在同一姿态下重新读取、替换和解析 SVG；设置页全量同步和插画重绘是稳态主要 UI 开销。Linux 界面也会对同一状态文本重复解码。
-- 影响：不改变状态 v2、D-Bus/Windows RPC、姿态策略、目标/结果分离、租约、设置串行合并、错误码或通知确认语义。相同快照不再重复发出 `state_changed`，但纯模型保留最后状态，窗口重新显示或下一次有效变化仍从完整快照渲染。
-- 同步：`frontend/actions.py`、`fluent/{app,pages,resident,widgets}.py`、`snapshot_codec.py`、`state_codec.py`、`ui/service.py`、`tests/{test_frontend,test_model,test_fluent}.py` 与本记录。
-- 验证：前端 14 项、模型 15 项和目标 Fluent 用例通过；Fluent 全套 49 项中 48 项通过，唯一导入失败来自并行存在的 `windows/hardware_server.py` 语法缩进错误，不在本轮文件内。离屏 300 次姿态变化测量把窗口回调均值从约 0.26 ms 降至 0.14 ms，设置卡片重排由 300 次降至 0，插画绘制均值从约 3.14 ms 降至 1.93 ms；5 秒、2 Hz 姿态变化约占单核 0.94%，此前约 2.08%。Linux UI 因本机缺少 PyGObject 未运行 GTK 浏览器检查，单次解码入口已用纯 Python 目标验证；未执行真机功耗或视觉验收。
-
-### 2026-11-12 - Windows 传输、操作契约与质量门禁收口
-
-- 变更：`NativePipes` 的服务器和客户端句柄改用 `FILE_FLAG_OVERLAPPED`，accept、read、write 以事件和 `GetOverlappedResult` 轮询；`PipePoll` 明确区分 idle、pending、ready，关闭或重置时先取消仍活动的操作。`HardwareServer` 将每个槽位拆为 connect、异步鉴权、request、response 阶段，pending write 不再占用服务 owner loop；客户端在原有总超时内轮询 overlapped write。
-- 变更：偏好字段移动到平台无关 `contracts.py`，Windows RPC 不再导入 `frontend.ports`；Engine 操作的偏好和提示映射改为显式分支，未知字段稳定抛出 `ValueError`。`PhysicalSwitch`、`SupervisorFactory`、会话 client 的硬件释放能力、`DisplayRefresh` 和硬件释放显示能力都使用显式 Protocol 或 runtime-checkable Protocol，不再靠隐藏 `getattr` 探测。
-- 变更：Windows preview 工作流以单个 `test_windows*.py` glob 运行全部当前测试，并先执行 `compileall`；删除三个已删除测试文件的静默 no-op。Windows 架构测试显式注入当前源码路径，防止本机隔离解释器误测安装副本。首次登录启动初始化失败由 `initialize_default_startup()` 记录警告并继续打开 UI。
-- 动机：同步 `WriteFile` 在客户端停止读取时可能阻塞硬件服务唯一 owner loop，连带延迟 supervisor、ETW 状态消费和恢复；运行时字符串映射、UI 反向依赖和隐藏能力会让静态检查失效，并在重命名时把错误推迟到生产。旧 preview 列表还会静默漏跑新增 Windows 测试。
-- 影响：RPC 帧格式、鉴权顺序、回执代次、ETW 物理优先级、CSM 门禁、显示事务、租约、错误码和恢复日志不变。overlapped 操作仍在同一槽位串行完成，客户端仍不重放写操作；pending write 只推迟该槽读取下一条请求。`--demo`、`--backend` 和隔离设置入口不启用生产自启动。
-- 同步：`contracts.py`、`frontend/ports.py`、`session/ports.py`、`windows/{hardware_pipe,hardware_rpc,hardware_server,hardware_ipc,hardware_runtime,hardware_application,request_contract,operations,backend,ui_operations,screen_session,session_display,session_agent,session_qualification,startup}.py`、`fluent/{app,demo}.py`、`.github/workflows/windows-preview.yml`、Windows/Fluent/frontend/打包测试与本记录。
-- 验证：在包含应用显示名统一提交的 `e3032fc` 隔离快照中，Windows 发现式全套 319 项、Fluent 50 项、frontend 14 项和 preview 工作流契约通过；`compileall` 通过。目标测试覆盖 overlapped 标志、pending write 不阻塞 owner loop、客户端超时内完成 write、服务器阶段推进、显式偏好/提示失败、源码架构隔离和启动初始化诊断。`test_ui_contract` 因当前 Windows 运行时缺少 PyGObject 未导入；`test_packaging_workflow` 的 POSIX shell 用例在本机因缺少 `bash`/`sh` 无法执行，单独运行新增 Windows preview 契约通过。
-- 未验证：未启动真实 LocalSystem 服务，未在真实命名管道上验证 overlapped accept/read/write 的停止与客户端中断行为；未构建或安装包含本轮改动的 MSI，未执行真机姿态、ETW、显示或 CSM 验收。
-
-### 2026-11-12 - Windows 2.4.0 发布前收尾
-
-- 变更：MSI 安装界面的许可说明从旧短名 `Panasonic Posture Manager` 改为完整用户可见名称 `Panasonic 2-in-1 Tablet Posture Management Tool`；新增回归断言，确保许可页包含 `APPLICATION_DISPLAY_NAME` 且不再出现旧短名。
-- 变更：使用当前工作树、受保护运行时、独立 Qt 依赖和 WiX 5.0.2 重新生成 Windows 便携 ZIP 与 MSI，并将最终文件时间、ICE 验证和管理解包结果写入交接状态，避免发布候选包落后于源码。
-- 动机：上一阶段虽已统一窗口、开始菜单、服务和打包元数据，但 MSI 许可页仍展示旧短名，源码与待发布安装包尚未完全一致；发布前还需要一次性核验完整测试、ICE、清单哈希和受限解释器边界。
-- 影响：只修正 MSI 用户可见许可文案及测试，不改变产品代码、RPC、ETW/CSM、显示事务、租约、权限、安装目录、AUMID、服务名或兼容契约。候选包仍是同一 `2.4.0`，同版本升级语义不变。
-- 验证：`compileall`；Windows 发现式全套 319 项、Fluent 50 项、前端 14 项、会话刷新 9 项、可选输入 6 项和 i18n 113 个 msgid 全部通过。重新构建的 ZIP 由自带 `python.exe`、`pythonw.exe` 和受限 `python-hardware.exe` 完成 Qt、中文资源、软件事务、后台回收和模块隔离 smoke；MSI 通过 `wix msi validate -sice ICE61`，管理解包包含 3006 个清单文件且哈希全部一致，反编译确认产品、功能、快捷方式、服务显示名和许可页均使用完整名称。发布版本脚本以 `v2.4.0` 校验返回 `2.4.0`。`test_release` 6 项中 5 项通过，GTK UI 版本用例因 Windows 运行时缺少 PyGObject 未导入；POSIX 打包脚本检查因本机缺少 `bash`/`sh` 不适用。
-- 产物：`dist/windows/panasonic-posture-manager-2.4.0-windows-x64.msi`，SHA-256 `582AF17B3D01C315E5D4BDF82DE279C7D57B686E18D66413B10288590C4F71BC`；`dist/windows/panasonic-posture-windows-preview.zip`，SHA-256 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。
-- 未验证：当前候选 MSI 未安装，安装/卸载/升级、首个真实 ETW 事件、SYSTEM 会话、显示与 CSM 真机行为仍需明确授权；GitHub Windows CI 和 Authenticode 签名尚未执行，当前 MSI 为 `NotSigned`。
-
-### 2026-11-12 - 修复 MSI 开始菜单本地化顺序并更新本机
-
-- 变更：`LocalizeStartMenu` 从无明确标准动作依赖的 `Before="ConfigureSlate"` 改为 `After="CreateShortcuts"`，确保 Windows Installer 先创建英文基础目录和快捷方式，再由受保护运行时按 `UserLanguageID` 改为当前 UI 语言名称。新增 XML 顺序回归测试。
-- 动机：首次安装修复版时，安装日志显示 `UserLanguageID=2052`，但自定义动作在 `CreateShortcuts` 前运行并以 `FileNotFoundError` 退出，因而留下英文开始菜单目录。安装整体返回成功掩盖了该展示退化。
-- 影响：只修正 MSI 自定义动作顺序，不改产品运行时、RPC、ETW/CSM、显示、租约、权限或卸载路径。同版本升级继续由既有 `MajorUpgrade` 处理。
-- 验证：MSI 测试 5 项通过；修复版重新构建并通过 ICE61；本机同版本升级返回 `0`，安装日志无本地化异常；开始菜单已生成「松下二合一平板电脑姿态管理工具」目录和中文快捷方式；ARP 显示完整名称 `2.4.0`，服务 Running，命名管道存在，3006 个安装清单文件哈希一致，中文快捷方式成功启动窗口。
-- 产物：修复版 MSI SHA-256 为 `EFAD51C90EF172401D79B4C58B653282DFF32B7ED3CCCD21DA74867BC7827F03`；便携 ZIP 不受该 MSI 顺序修复影响，仍为 `557E7CC7A723ECB078AD304FFAB95F74758D63544E995FDFE7B95177ACAC1702`。
-- 未验证：Authenticode 签名、GitHub Windows CI、卸载和跨版本升级、真实 ETW/显示/CSM 链路仍待执行。
-
-### 2026-11-13 - 修复 Windows 命名管道永久忙并修正快捷方式落点
-
-- 变更：`NativePipes.create()` 的 pipe mode 原为 `4 | 2 | 1 | 8`，其中 `1` 是 `PIPE_NOWAIT` 而不是 `PIPE_WAIT`。现改为显式 `PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_REJECT_REMOTE_CLIENTS`，保留 `FILE_FLAG_OVERLAPPED`；新增 pipe mode 无 `PIPE_NOWAIT` 的回归断言。
-- 变更：开始菜单快捷方式仍以广告式作者源通过 ICE 校验，同时设置 `DISABLEADVTSHORTCUTS=1`；本地化完成后由受保护安装动作删除遗留广告式 `.lnk`，再用 Windows Script Host 创建目标明确指向 `pythonw.exe` 的普通快捷方式。
-- 动机：安装后服务本身为 Running，但所有客户端连接均返回 `WinError 231`；会话日志持续记录所有管道实例忙。`PIPE_NOWAIT` 与 overlapped I/O 组合使服务槽位无法按预期监听/回收。实际安装还暴露广告式快捷方式在当前 MSI 中不可启动的问题。
-- 影响：不改变 RPC 帧、鉴权、租约、ETW/CSM、显示事务或服务权限。管道仍是本地、消息模式、拒绝远程客户端并限制四个实例；开始菜单仍为每机器入口。
-- 验证：管道/客户端/会话相关 49 项和 MSI 5 项目标测试通过；最终 MSI 通过完整 WiX 验证并安装成功。安装后 `GetState` 返回 `backend=ready`、`hardware_status=ok`、`session_connected=True`，UI 运行时连续 20 次独立 RPC 连接成功；中文开始菜单快捷方式目标为 `runtime\pythonw.exe`，可启动且窗口响应正常；3007 个安装清单文件哈希一致。
-- 未验证：真机姿态、ETW/显示/CSM、Authenticode 和 GitHub Windows CI。
-
-### 2026-11-13 - 保持帐篷/支架到物理平板的 CSM 连续性
-
-- 变更：`SlateNotifier.sync_mode()` 在已有 journal 租约的 `desired` 与当前姿态一致时保留该租约并直接幂等写入目标，不再先恢复 `pending.original`。仅当目标不同、真正释放或异常回滚时恢复原值；相同目标写入失败时继续保留 pending lease 和 journal。
-- 动机：帐篷/支架进入物理平板时，CSM 的理想值始终是平板。旧顺序会把软件租约先恢复到启动时的笔记本值，再写回平板，表现为短暂丢失 CSM 平板状态；会话在帐篷姿态重启时也会出现同类闪断。
-- 影响：不改 ETW 健康门禁、CSM 原始值映射、journal schema、姿态策略、显示事务、租约或 RPC 契约。相同目标的重复同步保持幂等；平板退出、切换到笔记本及进程关闭仍恢复 `pending.original`。
-- 同步：`windows/convertible_slate.py`、`tests/test_windows_convertible_slate.py` 与本记录。
-- 验证：新增回归先复现失败，再覆盖帐篷/支架到 `hardware`、同一姿态崩溃恢复、写入失败保留租约和关闭恢复原值；convertible-slate 22 项及 Windows 发现式全套 322 项通过，`compileall` 通过。
-- 未验证：未真机重放帐篷/支架到物理平板，未构建或安装包含本修复的 MSI；CSM 视觉连续性仍需安装后真机确认。
-
-### 2026-11-13 - 平板退出到帐篷先等待 Windows 方向交接
-
-- 变更：Windows 的 `SessionRuntime` 显式启用 `defer_hardware_handoff`。会话从首次观测到物理平板释放或 `posture_pending` 起保留 `HARDWARE_SETTLE_SECONDS` 两秒；即使姿态已稳定并切换到帐篷目标，也只按轮询周期只读观察方向，不执行 `apply`。窗口结束或物理平板重新接管后，稳定目标才走现有显示事务并报告 ready。
-- 动机：本机 `native-display.log` 在 `00:57:50` 和 `00:58:05` 两次记录了平板退出后约一秒触发 `rotation-lock-took-over`，随后重发帐篷目标。旧会话只要目标从 `unavailable` 变成帐篷便提前结束等待，Windows 的原生方向交接尚未完成，应用接管后又被平台改写，形成第二个可见阶段。
-- 影响：不改变姿态阈值、ETW 物理优先级、CSM 门禁、目标/结果分离、显示 journal、租约或 RPC；两秒窗口仍是原有上限，不因目标代次变化续期。Linux 默认路径保持原行为，只有 Windows 两个会话装配启用。期间不报告 ready，物理重新接管或健康条件失效会立即取消等待。
-- 同步：`session/runtime.py`、`windows/{screen_session,session_agent}.py`、`tests/test_session_refresh.py` 与本记录。
-- 验证：新增回归覆盖 `posture_pending` 跨目标代次、硬件直接稳定到帐篷、物理重新接管取消等待和非 Windows 默认不延迟；Windows 发现式全套 322 项、会话刷新 13 项、共享策略/控制器/前端/模型 202 项与 `compileall` 通过。
-- 未验证：未构建或安装包含本提交的 MSI，未在真机重放平板退出到帐篷；二次跳变是否完全消失仍需安装后观察日志中的重发告警与可见方向变化。
+命名和局部实现风格可按现有模式自行决定；有实质影响的假设应在交付时说明。
