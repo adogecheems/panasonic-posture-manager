@@ -27,6 +27,7 @@ from .session_display import (
 )
 from .session_qualification import (
     ClosableSessionClient as ClosableClient, QualifiedSessionClient,
+    ReleaseAwareSessionClient,
 )
 
 log = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ class WindowsSessionAgent:
     def __init__(self, *, display_factory: Callable[[ClosableClient], DisplayBackend],
                  slate_factory: Callable[[ClosableClient], SlatePosture] | None = None,
                  context_factory: Callable[[], SessionContext] = _native_context,
-                 client_factory: Callable[[Callable[[], bool]], ClosableClient] = (
+                 client_factory: Callable[[Callable[[], bool]], ReleaseAwareSessionClient] = (
                      lambda available: WindowsSessionClient(unavailable=lambda: not available())),
                  executor: Executor | None = None, lease_executor: Executor | None = None) -> None:
         self.display_factory, self.slate_factory = display_factory, slate_factory
@@ -80,7 +81,7 @@ class WindowsSessionAgent:
         self.executor, self.lease_executor = executor, lease_executor
         self.runtime: SessionRuntime | None = None
         self.context: SessionContext | None = None
-        self.client: ClosableClient | None = None
+        self.client: ReleaseAwareSessionClient | None = None
         self._stack = ExitStack()
         self._started = self._closed = False
         self._qualification_task: Future | None = None
@@ -175,9 +176,7 @@ class WindowsSessionAgent:
             self._heartbeat_at = now + AGENT_HEARTBEAT_SECONDS
             self._qualification_task = self.lease_executor.submit(self._qualification_heartbeat)
         if self.hardware_release is not None:
-            cached = getattr(self.client, 'hardware_release', None)
-            if cached is not None:
-                self.hardware_release.prepare(*cached())
+            self.hardware_release.prepare(*self.client.hardware_release())
         self.runtime.tick(now)
 
     def close(self) -> None:

@@ -19,6 +19,12 @@ class Switch:
     def query(self):
         return self.value, self.status
 
+    def bootstrap(self):
+        self.events.append('switch-bootstrap')
+
+    def finalize_bootstrap(self, fallback):
+        self.events.append(('switch-finalize', fallback))
+
     def close(self):
         self.closed = True
         self.events.append('switch-close')
@@ -155,6 +161,14 @@ class HardwareRuntimeTests(unittest.TestCase):
         runtime.start()
         self.assertIsNotNone(runtime.supervisor)
         switch.value, switch.status = False, HardwareStatus.OK
+        runtime.close()
+
+    def test_bootstrap_finalization_uses_the_explicit_switch_contract(self):
+        runtime, events, _, _, _, _ = self.make(value=None, status=HardwareStatus.ABSENT)
+        runtime.start()
+        runtime._bootstrap_until = 0.
+        runtime.poll()
+        self.assertIn(('switch-finalize', False), events)
         runtime.close()
 
     def test_physical_source_failure_is_read_only_and_recovery_reopens_admission(self):

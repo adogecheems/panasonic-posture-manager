@@ -35,61 +35,17 @@ jobs:
         run: python -m pip install -r packaging/windows/requirements-ui.txt
       - name: Check software backend, frontend and Qt widgets
         run: |
-          python -m unittest discover -s tests -p test_windows.py -v
+          python -m compileall -q src/panasonic_posture/windows src/panasonic_posture/fluent
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_probe.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_sensor.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_orientation.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_switch.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_convertible_slate.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_tablet_mode.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_display.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_tablet_display.py -v
+          python -m unittest discover -s tests -p 'test_windows*.py' -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_session_refresh.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_hardware.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_actuator.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_hardware_client.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_session_client.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_session_context.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_session_agent.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_session_stop.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_trusted_runtime.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_hardware_service.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_session_launch.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_session_supervisor.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_optional_input.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_screen_session.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_startup.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_frontend.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_fluent.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_packaging.py -v
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python -m unittest discover -s tests -p test_windows_msi.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tests/check_i18n.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

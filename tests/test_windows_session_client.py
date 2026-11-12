@@ -19,7 +19,7 @@ from panasonic_posture.session.failures import ServiceError, FailureKind
 from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.windows.display import Panel, WindowsDisplay
 from panasonic_posture.windows.hardware_ipc import (
-    HardwareConnection, HardwareOperationError, validated_hardware_state,
+    HardwareConnection, HardwareOperationError, validated_hardware_state, PipePoll,
 )
 from panasonic_posture.windows.hardware_host import CHANNEL, ConsoleIdentity, HardwareHost
 from panasonic_posture.windows.simulation import SimulatedInput
@@ -226,17 +226,24 @@ class ConnectionReceiptTests(unittest.TestCase):
             serial = 0
             pose = None
             omit_pose = False
+            write_count = 0
+            pending_writes = 0
             def connect(self, name):
                 return 12
             def write(self, handle, value):
+                self.write_count += 1
                 self.serial = value['id']
+                if self.pending_writes:
+                    self.pending_writes -= 1
+                    return PipePoll.pending()
+                return PipePoll.ready()
             def read(self, handle):
                 response = dict(version=1, channel=CHANNEL, type='response', id=self.serial,
                     instance='native-one', accepted=(code is None) if accepted is None else accepted,
                     error=code, state=snapshot or state(), hardware_release_pose=self.pose)
                 if self.omit_pose:
                     del response['hardware_release_pose']
-                return response
+                return PipePoll.ready(response)
             def close(self, handle):
                 self.closed = True
         pipes = Pipes()
@@ -263,6 +270,13 @@ class ConnectionReceiptTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             connection.request('get_state', {})
         self.assertTrue(pipes.closed)
+
+    def test_client_polls_overlapped_writes_within_the_same_timeout(self):
+        connection, pipes = self.connection()
+        pipes.pending_writes = 2
+        self.assertEqual(connection.request('get_state', {})['accepted'], True)
+        self.assertEqual(pipes.write_count, 3)
+        connection.close()
 
     def test_invalid_capabilities_and_inconsistent_results_close_the_channel(self):
         for snapshot, code, accepted in ((dict(state(), sensor_source='iio'), None, True),
@@ -330,9 +344,10 @@ class NativeSessionRuntimeTests(unittest.TestCase):
                     self.reply = dict(version=1, channel=CHANNEL, type='response', id=request['id'],
                         instance=fixture.host.instance, accepted=False, error=error.code,
                         state=fixture.engine.state.to_dict())
+                return PipePoll.ready()
             def read(self, handle):
                 reply, self.reply = self.reply, None
-                return reply
+                return PipePoll.ready(reply) if reply is not None else PipePoll.idle()
             def close(self, handle):
                 fixture.host.disconnected(fixture.peer)
         self.client = WindowsSessionClient(factory=lambda: HardwareConnection(pipes=Pipes()))

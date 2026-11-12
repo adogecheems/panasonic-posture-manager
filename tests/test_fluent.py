@@ -605,7 +605,7 @@ from panasonic_posture.model import SensorInfo
 from panasonic_posture.windows.backend import Backend
 from panasonic_posture.windows.hardware_client import HardwareUIClient
 from panasonic_posture.windows.hardware_host import HardwareHost, ConsoleIdentity
-from panasonic_posture.windows.hardware_ipc import HardwareConnection
+from panasonic_posture.windows.hardware_ipc import HardwareConnection, PipePoll
 window.close()
 with TemporaryDirectory() as directory:
     backend = Backend(Path(directory)/'settings.json', simulate=True)
@@ -623,9 +623,10 @@ with TemporaryDirectory() as directory:
             backend.advance(time.monotonic())
             self.reply['state'] = backend.simulation.engine.state.to_dict()
             self.reply['error'] = None
+            return PipePoll.ready()
         def read(self, handle):
             reply, self.reply = self.reply, None
-            return reply
+            return PipePoll.ready(reply) if reply is not None else PipePoll.idle()
         def close(self, handle):
             pass
     client = HardwareUIClient(factory=lambda: HardwareConnection(pipes=Pipes()))

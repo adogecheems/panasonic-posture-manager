@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 STATE_VERSION = 2
 MODES = ("auto", "laptop", "tent", "stand")
+Preference = Literal['tent_enabled', 'tent_prompt', 'stand_prompt']
+PREFERENCES = frozenset({'tent_enabled', 'tent_prompt', 'stand_prompt'})
 TARGET_MODES = ("laptop", "tent", "stand", "tablet", "hardware", "unavailable")
 POSES = ("laptop", "tent", "stand", "tablet", "unknown")
 PROMPTS = ("tent", "stand")

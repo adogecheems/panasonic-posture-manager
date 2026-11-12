@@ -30,6 +30,7 @@ from ..model import DeviceInfo, HardwareStatus
 from ..service.engine import Engine
 
 if TYPE_CHECKING:
+    from .console_identity import ConsoleIdentity
     from .hardware_server import HardwareServer
     from .session_launch import NativeSessionLauncher
     from .trusted_runtime import TrustedRuntime
@@ -43,6 +44,8 @@ class ManagedSensor(Protocol):
 class PhysicalSwitch(Protocol):
     def start(self) -> None: ...
     def query(self) -> tuple[bool | None, HardwareStatus]: ...
+    def bootstrap(self) -> None: ...
+    def finalize_bootstrap(self, fallback: bool) -> None: ...
     def close(self) -> None: ...
 
 
@@ -54,7 +57,7 @@ class SessionLifecycle(Protocol):
 
 
 class ServerLifecycle(Protocol):
-    def register_session_process(self, peer: object) -> None: ...
+    def register_session_process(self, peer: ConsoleIdentity | None) -> None: ...
     def poll(self) -> None: ...
     def close(self) -> None: ...
 
@@ -65,6 +68,16 @@ class LauncherLifecycle(Protocol):
 
 class RuntimeLifecycle(Protocol):
     def close(self) -> None: ...
+
+
+class SupervisorFactory(Protocol):
+    def __call__(
+        self,
+        launcher: LauncherLifecycle,
+        register: Callable[[ConsoleIdentity | None], None],
+        *,
+        clock: Callable[[], float],
+    ) -> SessionLifecycle: ...
 
 
 class HardwareRuntime:
@@ -79,7 +92,7 @@ class HardwareRuntime:
         runtime: RuntimeLifecycle,
         server_factory: Callable[[Callable[[], bool]], ServerLifecycle],
         launcher_factory: Callable[[], LauncherLifecycle],
-        supervisor_factory: Callable[..., SessionLifecycle] | None = None,
+        supervisor_factory: SupervisorFactory | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         stop_timeout: float = 12.,
@@ -124,8 +137,7 @@ class HardwareRuntime:
             # sensor, RPC endpoint or any session display writer exists.
             self.switch.start()
             self.engine.start()
-            if getattr(self.switch, 'bootstrap', None) is not None:
-                self._bootstrap_until = self.clock() + 5.
+            self._bootstrap_until = self.clock() + 5.
             self.server = self.server_factory(self.admitted)
             self.launcher = self.launcher_factory()
             self.supervisor = self.supervisor_factory(
@@ -145,9 +157,7 @@ class HardwareRuntime:
             if self.admitted():
                 self._bootstrap_until = None
             elif self.clock() >= self._bootstrap_until:
-                finalize = getattr(self.switch, 'finalize_bootstrap', None)
-                if finalize is not None:
-                    finalize(False)
+                self.switch.finalize_bootstrap(False)
                 self._bootstrap_until = None
         # The supervisor registers before resume and the server owns the only
         # engine tick.  Do not call engine.tick() here: HardwareServer.poll()
@@ -183,18 +193,12 @@ class HardwareRuntime:
                     self.sleep(.01)
                 if self.clock() >= deadline:
                     break
-            if supervisor.closed:
-                try:
-                    supervisor.close()
-                except BaseException as error:
-                    errors.append(error)
-            else:
-                # close() is intentionally a finalizer, not a second stop
-                # request.  Keep the incomplete supervisor visible to callers.
-                try:
-                    supervisor.close()
-                except BaseException as error:
-                    errors.append(error)
+            # close() is intentionally a finalizer, not a second stop request.
+            # It may retain incomplete child resources for a later retry.
+            try:
+                supervisor.close()
+            except BaseException as error:
+                errors.append(error)
 
         for resource in (self.launcher, self.server, self.sensor, self.switch, self.runtime):
             if resource is None:
@@ -222,7 +226,7 @@ class HardwareRuntime:
         device: DeviceInfo | None = None,
         server_factory: Callable[[Callable[[], bool]], HardwareServer] | None = None,
         launcher_factory: Callable[[], NativeSessionLauncher] | None = None,
-        supervisor_factory: Callable[..., SessionLifecycle] | None = None,
+        supervisor_factory: SupervisorFactory | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         stop_timeout: float = 12.,
@@ -245,5 +249,5 @@ class HardwareRuntime:
 
 __all__ = [
     'HardwareRuntime', 'LauncherLifecycle', 'ManagedSensor', 'PhysicalSwitch',
-    'RuntimeLifecycle', 'ServerLifecycle', 'SessionLifecycle',
+    'RuntimeLifecycle', 'ServerLifecycle', 'SessionLifecycle', 'SupervisorFactory',
 ]

@@ -257,7 +257,9 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
         except OSError:
             return hardware_start_failure(language, 'machine')
         from ..windows.activation import WindowActivation
-        from ..windows.startup import LoginStartup, startup_command, UnavailableStartup
+        from ..windows.startup import (
+            initialize_default_startup, LoginStartup, startup_command, UnavailableStartup,
+        )
         activation = WindowActivation(default_settings_path().parent)
         if not activation.acquire(background=background):
             return 0
@@ -266,12 +268,7 @@ def run(*, demo=False, language=None, scenario='laptop', backend=False,
         except (OSError, ValueError):
             startup = UnavailableStartup()
         else:
-            try:
-                startup.ensure_default_enabled()
-            except (OSError, ValueError):
-                # Keep the settings page available so the user can inspect a
-                # conflict or retry after a transient registry failure.
-                pass
+            initialize_default_startup(startup)
     try:
         app = QApplication([sys.argv[0]])
         app.setStyle('Fusion')

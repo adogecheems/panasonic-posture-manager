@@ -1,5 +1,6 @@
 """Nonblocking authenticated server loop for the hardware named pipe."""
 from collections.abc import Callable
+from concurrent.futures import Executor, Future
 from dataclasses import dataclass
 import time
 
@@ -7,7 +8,7 @@ from ..service.engine import Engine, ServiceError
 from ..tasks import thread_executor
 from .console_identity import ConsoleIdentity
 from .hardware_host import HardwareHost
-from .hardware_pipe import MAX_CLIENTS, NativePipes, PIPE_NAME
+from .hardware_pipe import MAX_CLIENTS, NativePipes, PIPE_NAME, PipeState
 from .hardware_protocol import CHANNEL
 from .protocol import ProtocolError
 from .security import AuthenticationError, WindowsSecurity
@@ -21,15 +22,16 @@ class ConsoleGuard:
 
     def __init__(self, check: Callable[[ConsoleIdentity], bool],
                  agent: ConsoleIdentity | None, *,
-                 clock: Callable[[], float] = time.monotonic, executor=None) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 executor: Executor | None = None) -> None:
         self.check, self.agent, self.clock = check, agent, clock
         self.executor = executor or thread_executor('windows-session-auth')
         self.owned_executor = executor is None
-        self.entries = {}
-        self.pending = None
+        self.entries: dict[ConsoleIdentity, tuple[float, bool]] = {}
+        self.pending: Future[tuple[float, bool]] | None = None
         self._epoch = 0
         self._pending_epoch = -1
-        self._pending_agent = None
+        self._pending_agent: ConsoleIdentity | None = None
         self.next_check = 0.
 
     def set_agent(self, peer: ConsoleIdentity | None) -> None:
@@ -60,10 +62,10 @@ class ConsoleGuard:
             current = self._pending_epoch == self._epoch and self._pending_agent == self.agent
             try:
                 checked, valid = self.pending.result()
-                if current:
+                if current and self._pending_agent is not None:
                     self.remember(self._pending_agent, checked, valid)
             except OSError:
-                if current:
+                if current and self._pending_agent is not None:
                     self.entries.pop(self._pending_agent, None)
             self.pending = None
         if self.agent is not None and self.pending is None and self.clock() >= self.next_check:
@@ -85,13 +87,14 @@ class ConsoleGuard:
 
 @dataclass
 class Slot:
-    handle: object
+    handle: int
     connected: bool = False
-    peer: object = None
+    peer: ConsoleIdentity | None = None
     serial: int = 0
     touched: float = 0.
-    pending: object = None
-    request: object = None
+    pending: Future[tuple[ConsoleIdentity, float]] | None = None
+    request: dict | None = None
+    reply: dict | None = None
     retired: bool = False
 
 
@@ -99,7 +102,7 @@ class HardwareServer:
     def __init__(self, engine: Engine, *, session_process: ConsoleIdentity | None = None,
                  security: WindowsSecurity | None = None, pipes: NativePipes | None = None,
                  pipe_name: str = PIPE_NAME, clock: Callable[[], float] = time.monotonic,
-                 executor=None, guard_executor=None,
+                 executor: Executor | None = None, guard_executor: Executor | None = None,
                  session_admission: Callable[[], bool] | None = None) -> None:
         self.security = security or WindowsSecurity()
         self.security.require_system()
@@ -114,7 +117,7 @@ class HardwareServer:
         )
         self.executor = executor or thread_executor('windows-request-auth')
         self.owned_executor = executor is None
-        self.slots = []
+        self.slots: list[Slot] = []
         self.closed = False
         try:
             for index in range(MAX_CLIENTS):
@@ -154,7 +157,7 @@ class HardwareServer:
             return
         self.pipes.reset(slot.handle)
         slot.connected, slot.serial, slot.pending = False, 0, None
-        slot.request, slot.retired = None, False
+        slot.request, slot.reply, slot.retired = None, None, False
 
     def poll(self) -> None:
         if self.closed:
@@ -163,57 +166,89 @@ class HardwareServer:
         self.host.tick()
         for slot in self.slots:
             try:
-                if slot.retired:
-                    if slot.pending.done():
-                        self._reset(slot)
-                    continue
-                if not slot.connected:
-                    if not self.pipes.accept(slot.handle):
-                        continue
-                    slot.connected, slot.touched = True, self.clock()
-                if self.clock() - slot.touched >= CLIENT_TIMEOUT:
-                    self._reset(slot)
-                    continue
-                if slot.pending is not None:
-                    if not slot.pending.done():
-                        continue
-                    peer, checked = slot.pending.result()
-                    slot.pending = None
-                    if slot.peer is not None and slot.peer != peer:
-                        raise AuthenticationError('pipe client identity changed')
-                    slot.peer = peer
-                    self.guard.remember(peer, checked)
-                    request = slot.request
-                    if type(request.get('id')) is not int or request['id'] <= slot.serial:
-                        raise ProtocolError('replayed hardware request')
-                    slot.serial = request['id']
-                    try:
-                        reply = self.host.dispatch(peer, request)
-                        reply['error'] = None
-                    except ServiceError as error:
-                        reply = dict(
-                            version=1, channel=CHANNEL, type='response', id=request['id'],
-                            instance=self.host.instance, accepted=False, error=error.code,
-                            error_detail=error.detail,
-                            state=self.host.engine.state.to_dict(),
-                            hardware_release_pose=self.host.engine.hardware_release_pose,
-                        )
-                    self.pipes.write(slot.handle, reply)
-                    slot.request = None
-                    slot.touched = self.clock()
-                    continue
-                request = self.pipes.read(slot.handle)
-                if request is not None:
-                    slot.request = request
-                    handle = slot.handle
-
-                    def authenticate(handle=handle):
-                        checked = self.clock()
-                        return self.security.peer(handle), checked
-
-                    slot.pending = self.executor.submit(authenticate)
+                self._poll_slot(slot)
             except (OSError, ValueError):
                 self._reset(slot)
+
+    def _poll_slot(self, slot: Slot) -> None:
+        if slot.retired:
+            if slot.pending is None or slot.pending.done():
+                self._reset(slot)
+            return
+        if not self._connect(slot):
+            return
+        if self.clock() - slot.touched >= CLIENT_TIMEOUT:
+            self._reset(slot)
+            return
+        if slot.pending is not None and not self._finish_authentication(slot):
+            return
+        if slot.reply is not None:
+            result = self.pipes.write(slot.handle, slot.reply)
+            if result.state is PipeState.PENDING:
+                return
+            if result.state is not PipeState.READY:
+                raise ProtocolError('hardware pipe rejected a response')
+            slot.request = slot.reply = None
+            slot.touched = self.clock()
+            return
+        self._read_request(slot)
+
+    def _connect(self, slot: Slot) -> bool:
+        if slot.connected:
+            return True
+        result = self.pipes.accept(slot.handle)
+        if result.state is PipeState.PENDING:
+            return False
+        if result.state is not PipeState.READY or result.value is not True:
+            return False
+        slot.connected, slot.touched = True, self.clock()
+        return True
+
+    def _finish_authentication(self, slot: Slot) -> bool:
+        pending = slot.pending
+        if pending is None:
+            raise RuntimeError('authentication state is missing')
+        if not pending.done():
+            return False
+        peer, checked = pending.result()
+        slot.pending = None
+        if slot.peer is not None and slot.peer != peer:
+            raise AuthenticationError('pipe client identity changed')
+        slot.peer = peer
+        self.guard.remember(peer, checked)
+        request = slot.request
+        if (not isinstance(request, dict) or type(request.get('id')) is not int or
+                request['id'] <= slot.serial):
+            raise ProtocolError('replayed hardware request')
+        slot.serial = request['id']
+        try:
+            reply = self.host.dispatch(peer, request)
+            reply['error'] = None
+        except ServiceError as error:
+            reply = dict(
+                version=1, channel=CHANNEL, type='response', id=request['id'],
+                instance=self.host.instance, accepted=False, error=error.code,
+                error_detail=error.detail,
+                state=self.host.engine.state.to_dict(),
+                hardware_release_pose=self.host.engine.hardware_release_pose,
+            )
+        slot.reply = reply
+        return True
+
+    def _read_request(self, slot: Slot) -> None:
+        result = self.pipes.read(slot.handle)
+        if result.state is not PipeState.READY:
+            return
+        request = result.value
+        if not isinstance(request, dict):
+            raise ProtocolError('invalid hardware request')
+        slot.request = request
+
+        def authenticate(handle=slot.handle):
+            checked = self.clock()
+            return self.security.peer(handle), checked
+
+        slot.pending = self.executor.submit(authenticate)
 
     def close(self) -> None:
         if self.closed:

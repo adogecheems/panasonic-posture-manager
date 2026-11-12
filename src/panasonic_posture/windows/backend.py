@@ -8,8 +8,7 @@ from pathlib import Path
 import uuid
 from typing import TYPE_CHECKING
 
-from ..contracts import ErrorCode
-from ..frontend.ports import PREFERENCES
+from ..contracts import ErrorCode, PREFERENCES
 from ..model import StateSnapshot
 from ..service.settings_store import SettingsStore
 from .request_contract import SOFTWARE_SIGNATURES, validate_operation

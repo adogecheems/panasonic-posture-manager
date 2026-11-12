@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from panasonic_posture.windows.activation import WindowActivation
 from panasonic_posture.windows.startup import (
-    LoginStartup, StartupError, UnavailableStartup, startup_command,
+    initialize_default_startup, LoginStartup, StartupError, UnavailableStartup, startup_command,
 )
 
 
@@ -128,6 +128,15 @@ class LoginStartupTests(unittest.TestCase):
         startup.ensure_default_enabled()
         self.assertFalse(startup.status().enabled)
         self.assertFalse(startup.status().available)
+
+    def test_default_initialization_failure_is_diagnostic_but_not_fatal(self):
+        class Failing:
+            def ensure_default_enabled(self):
+                raise StartupError('startup-entry-conflict')
+
+        with self.assertLogs('panasonic_posture.windows.startup', level='WARNING') as logs:
+            initialize_default_startup(Failing())
+        self.assertIn('startup-entry-conflict', logs.output[0])
 
 
 class WindowActivationTests(unittest.TestCase):

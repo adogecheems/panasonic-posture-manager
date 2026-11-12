@@ -1,6 +1,6 @@
 """Compatibility facade for the split hardware pipe, RPC and server modules."""
 from .hardware_pipe import (
-    CLIENT_ACCESS, MAX_CLIENTS, NativePipes, PIPE_NAME, PIPE_SDDL,
+    CLIENT_ACCESS, MAX_CLIENTS, NativePipes, PIPE_NAME, PIPE_SDDL, PipePoll, PipeState,
 )
 from .hardware_rpc import (
     HardwareConnection, HardwareOperationError, RPCConnection,
@@ -11,6 +11,7 @@ from .hardware_server import AUTH_SECONDS, CLIENT_TIMEOUT, ConsoleGuard, Hardwar
 __all__ = [
     'AUTH_SECONDS', 'CLIENT_ACCESS', 'CLIENT_TIMEOUT', 'ConsoleGuard',
     'HardwareConnection', 'HardwareOperationError', 'HardwareServer', 'MAX_CLIENTS',
-    'NativePipes', 'PIPE_NAME', 'PIPE_SDDL', 'RPCConnection', 'Slot',
+    'NativePipes', 'PIPE_NAME', 'PIPE_SDDL', 'PipePoll', 'PipeState',
+    'RPCConnection', 'Slot',
     'validated_hardware_state',
 ]

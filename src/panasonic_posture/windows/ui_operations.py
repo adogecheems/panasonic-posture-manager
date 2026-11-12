@@ -1,7 +1,7 @@
 """Shared user-operation surface for Windows UI transports."""
 from concurrent.futures import Future
 
-from ..frontend.ports import Preference
+from ..contracts import Preference
 
 
 class UIClientOperations:

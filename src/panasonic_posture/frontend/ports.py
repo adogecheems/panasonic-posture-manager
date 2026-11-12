@@ -1,9 +1,8 @@
 """UI operations independent of widgets, wire method names and parameter types."""
 from concurrent.futures import Future
-from typing import Callable, Literal, Protocol
+from typing import Callable, Protocol
 
-Preference = Literal['tent_enabled', 'tent_prompt', 'stand_prompt']
-PREFERENCES = frozenset({'tent_enabled', 'tent_prompt', 'stand_prompt'})
+from ..contracts import PREFERENCES, Preference
 
 
 class UIClient(Protocol):

@@ -6,7 +6,7 @@ from typing import Protocol
 from ..contracts import ALL_ERROR_CODES, ErrorCode
 from ..model import StateSnapshot
 from ..service.engine import ServiceError
-from .hardware_pipe import NativePipes, PIPE_NAME
+from .hardware_pipe import NativePipes, PIPE_NAME, PipeState
 from .hardware_protocol import CHANNEL
 from .protocol import ProtocolError
 from .state_contract import parse_complete_snapshot, parse_hardware_release_pose
@@ -57,16 +57,33 @@ class HardwareConnection:
             raise OSError('hardware connection is closed')
         self.serial += 1
         try:
-            self.pipes.write(self.handle, dict(
+            request = dict(
                 version=1, channel=CHANNEL, id=self.serial, instance=self.instance,
                 method=method, params=params,
-            ))
+            )
             deadline = self.clock() + self.timeout
+            while True:
+                result = self.pipes.write(self.handle, request)
+                if result.state is PipeState.READY:
+                    if self.clock() >= deadline:
+                        raise TimeoutError('hardware request timed out')
+                    break
+                if result.state is PipeState.IDLE:
+                    raise ProtocolError('hardware pipe rejected a write')
+                if self.clock() >= deadline:
+                    raise TimeoutError('hardware request timed out')
+                time.sleep(.01)
             while self.clock() < deadline:
-                reply = self.pipes.read(self.handle)
-                if reply is None:
+                result = self.pipes.read(self.handle)
+                if result.state is PipeState.IDLE:
                     time.sleep(.01)
                     continue
+                if result.state is PipeState.PENDING:
+                    time.sleep(.005)
+                    continue
+                reply = result.value
+                if not isinstance(reply, dict):
+                    raise ProtocolError('invalid hardware response')
                 if (reply.get('channel') != CHANNEL or reply.get('type') != 'response' or
                         type(reply.get('id')) is not int or reply['id'] != self.serial or
                         type(reply.get('accepted')) is not bool or 'error' not in reply or

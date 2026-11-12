@@ -3,7 +3,7 @@ from concurrent.futures import Future
 from copy import deepcopy
 from typing import Callable
 
-from ..frontend.ports import PREFERENCES
+from ..contracts import PREFERENCES
 from ..model import StateSnapshot
 
 

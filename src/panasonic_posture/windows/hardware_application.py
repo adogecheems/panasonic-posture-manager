@@ -8,7 +8,7 @@ from ..presentation import PosePresentation
 from ..service.engine import Engine
 from .display_only_input import DisplayOnlyInput
 from .etw_switch import AcpiPhysicalSwitch
-from .hardware_runtime import HardwareRuntime, SessionLifecycle
+from .hardware_runtime import HardwareRuntime, SupervisorFactory
 from .hardware_server import HardwareServer
 from .machine_profile import ProfileSensor, verified_machine
 from .sensor import IDENTITY, WindowsSensor
@@ -24,7 +24,7 @@ def create_hardware_runtime(
     device: DeviceInfo | None = None,
     server_factory: Callable[[Callable[[], bool]], HardwareServer] | None = None,
     launcher_factory: Callable[[], NativeSessionLauncher] | None = None,
-    supervisor_factory: Callable[..., SessionLifecycle] | None = None,
+    supervisor_factory: SupervisorFactory | None = None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
     stop_timeout: float = 12.,

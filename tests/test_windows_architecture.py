@@ -1,13 +1,17 @@
 """Import-boundary checks for the refactored Windows layers."""
+from pathlib import Path
 import subprocess
 import sys
 import textwrap
 import unittest
 
+SOURCE = Path(__file__).resolve().parents[1] / 'src'
+
 
 def run_isolated(source: str) -> subprocess.CompletedProcess:
+    bootstrap = f'import sys; sys.path.insert(0, {str(SOURCE)!r})\n'
     return subprocess.run(
-        [sys.executable, '-S', '-c', textwrap.dedent(source)],
+        [sys.executable, '-S', '-c', bootstrap + textwrap.dedent(source)],
         capture_output=True,
         text=True,
         timeout=10,
@@ -57,6 +61,17 @@ from panasonic_posture.windows.hardware_client import HardwareUIClient
 from panasonic_posture.windows.hardware_protocol import validate_request
 from panasonic_posture.windows.hardware_rpc import HardwareConnection
 assert HardwareUIClient and HardwareConnection and validate_request
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_hardware_protocol_does_not_depend_on_the_frontend(self):
+        result = run_isolated(BLOCKER + '''
+blocked = {
+    'panasonic_posture.frontend',
+    'panasonic_posture.frontend.ports',
+}
+from panasonic_posture.windows.hardware_protocol import validate_request
+assert validate_request
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
 

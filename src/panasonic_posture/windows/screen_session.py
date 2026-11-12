@@ -19,7 +19,7 @@ from ..service.engine import Engine
 from ..service.ports import SensorBackend, SessionOwner, SettingsBackend
 from ..session.failures import DisplayError
 from ..session.runtime import SessionRuntime
-from ..session.ports import DisplayBackend
+from ..session.ports import DisplayBackend, DisplayRefresh
 from .display_only_input import DisplayOnlyInput
 from .hardware_release import HardwareReleaseCoordinator
 from .machine_profile import ProfileSensor, verified_machine
@@ -31,11 +31,6 @@ from .session_display import (
 )
 
 SCREEN_MODES = MODES
-
-
-def available_screen_modes(display: object) -> tuple[str, ...]:
-    del display
-    return SCREEN_MODES
 
 
 class ManagedSensor(SensorBackend, Protocol):
@@ -64,10 +59,8 @@ class ScreenSession:
         self.qualified = qualified
         self.hardware_release = HardwareReleaseCoordinator(qualified)
         self._stack.callback(qualified.restore)
-        self.available_modes = available_screen_modes(display)
-        refreshable = callable(getattr(display, 'needs_refresh', None)) and callable(
-            getattr(display, 'refresh', None)
-        )
+        self.available_modes = SCREEN_MODES
+        refreshable = isinstance(display, DisplayRefresh)
         self.owner = SessionOwner('windows-screen-session', instance)
         try:
             self.engine = Engine(controller=Controller(input_control=False), sensor=sensor,

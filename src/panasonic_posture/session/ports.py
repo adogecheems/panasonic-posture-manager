@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from ..model import StateSnapshot, Target
 
@@ -35,6 +35,7 @@ class DisplayBackend(Protocol):
     def restore(self, normal: bool = False) -> None: ...
 
 
+@runtime_checkable
 class DisplayRefresh(Protocol):
     """Optional ongoing display work, serialized with apply/restore."""
 

@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from ..contracts import ALL_ERROR_CODES, MODES, PROMPTS
-from ..frontend.ports import PREFERENCES
+from ..contracts import ALL_ERROR_CODES, MODES, PREFERENCES, PROMPTS
 
 
 SOFTWARE_SIGNATURES = {

@@ -272,6 +272,24 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("files=(*.deb *.rpm *.pkg.tar.zst *.msi)", self.workflow)
         self.assertIn("expected four package files", self.workflow)
 
+    def test_windows_preview_runs_the_complete_current_windows_suite(self) -> None:
+        preview = read(".github/workflows/windows-preview.yml")
+        self.assertIn(
+            "python -m unittest discover -s tests -p 'test_windows*.py' -v",
+            preview,
+        )
+        self.assertIn(
+            "python -m compileall -q src/panasonic_posture/windows src/panasonic_posture/fluent",
+            preview,
+        )
+        for retired in (
+            "test_windows_switch.py",
+            "test_windows_tablet_mode.py",
+            "test_windows_tablet_display.py",
+        ):
+            with self.subTest(retired=retired):
+                self.assertNotIn(retired, preview)
+
     def test_arch_job_installs_python_cairo_for_ui_checks(self) -> None:
         arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
         install = arch.split("pacman -Syu --noconfirm --needed", 1)[1].split(

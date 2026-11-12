@@ -12,6 +12,10 @@ class ClosableSessionClient(SessionClient, Protocol):
     def close(self) -> None: ...
 
 
+class ReleaseAwareSessionClient(ClosableSessionClient, Protocol):
+    def hardware_release(self) -> tuple[StateSnapshot, str | None]: ...
+
+
 def unavailable_session_error(detail: str = 'native-session-unavailable') -> ServiceError:
     return ServiceError(
         ErrorCode.DISPLAY_UNAVAILABLE,
@@ -72,5 +76,6 @@ class QualifiedSessionClient:
 
 
 __all__ = [
-    'ClosableSessionClient', 'QualifiedSessionClient', 'unavailable_session_error',
+    'ClosableSessionClient', 'QualifiedSessionClient', 'ReleaseAwareSessionClient',
+    'unavailable_session_error',
 ]

@@ -1,6 +1,7 @@
 """Default-on current-user login startup; never installs a service or elevates."""
 from collections.abc import Sequence
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import subprocess
 import sys
@@ -10,6 +11,7 @@ RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 RUN_NAME = 'PanasonicPostureManager'
 PREFERENCE_KEY = r'Software\PanasonicPostureManager'
 PREFERENCE_NAME = 'LoginStartupInitialized'
+log = logging.getLogger(__name__)
 
 
 class StartupError(OSError):
@@ -22,6 +24,10 @@ class StartupRegistry(Protocol):
     def delete(self) -> None: ...
     def read_initialized(self) -> bool: ...
     def mark_initialized(self) -> None: ...
+
+
+class DefaultStartupInitializer(Protocol):
+    def ensure_default_enabled(self) -> None: ...
 
 
 class NativeRunRegistry:
@@ -142,6 +148,14 @@ class UnavailableStartup:
 
     def set_enabled(self, enabled: bool) -> None:
         raise StartupError('startup-location-unavailable')
+
+
+def initialize_default_startup(startup: DefaultStartupInitializer) -> None:
+    """Apply the first-run default without making UI startup depend on registry health."""
+    try:
+        startup.ensure_default_enabled()
+    except (OSError, ValueError) as error:
+        log.warning('cannot initialize login startup preference: %s', error)
 
 
 def startup_command(*, executable: Path | None = None, root: Path | None = None) -> tuple[str, ...]:

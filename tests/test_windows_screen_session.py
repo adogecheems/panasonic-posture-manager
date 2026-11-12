@@ -21,7 +21,7 @@ from panasonic_posture.windows.display import Panel
 from panasonic_posture.windows.orientation import OrientationReading
 from panasonic_posture.windows.protocol import validate_state, ProtocolError
 from panasonic_posture.windows.screen_session import (
-    SCREEN_MODES, ScreenSession, SessionBridge, ProfileSensor, available_screen_modes,
+    SCREEN_MODES, ScreenSession, SessionBridge, ProfileSensor,
     select_native_display, verified_machine,
 )
 from panasonic_posture.windows.session_display import QualifiedDisplay
@@ -202,17 +202,7 @@ class HardwareReleasePreparationTests(unittest.TestCase):
 
 class BridgeTests(unittest.TestCase):
     def test_refreshable_display_does_not_advertise_manual_tablet(self):
-        refreshable = SimpleNamespace(
-            needs_refresh=lambda target: True,
-            refresh=lambda state: None,
-            supports_software_tablet=False,
-        )
-        self.assertEqual(available_screen_modes(refreshable), SCREEN_MODES)
-        tablet = SimpleNamespace(
-            needs_refresh=lambda target: True,
-            refresh=lambda state: None,
-        )
-        self.assertEqual(available_screen_modes(tablet), SCREEN_MODES)
+        self.assertEqual(SCREEN_MODES, ('auto', 'laptop', 'tent', 'stand'))
 
     def test_native_machine_preflight_requires_the_collected_exact_model(self):
         from unittest.mock import patch

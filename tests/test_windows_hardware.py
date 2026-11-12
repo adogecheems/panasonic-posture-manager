@@ -3,6 +3,7 @@ from concurrent.futures import Future
 import ctypes as C
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 
 from panasonic_posture.model import HardwareStatus
@@ -10,7 +11,7 @@ from panasonic_posture.service.hardware_monitor import HardwareMonitor
 from panasonic_posture.service.ports import SessionOwner
 from panasonic_posture.windows.backend import Backend
 from panasonic_posture.windows.hardware_host import ConsoleIdentity, HardwareHost, CHANNEL, validate_request
-from panasonic_posture.windows.hardware_pipe import NativePipes
+from panasonic_posture.windows.hardware_pipe import FILE_FLAG_OVERLAPPED, NativePipes, PipePoll
 from panasonic_posture.windows.protocol import ProtocolError
 from panasonic_posture.windows.hardware_ipc import ConsoleGuard, HardwareServer, HardwareConnection, CLIENT_ACCESS
 from panasonic_posture.windows.security import foreground_matches
@@ -211,10 +212,12 @@ class PipeTests(HostFixture):
         handles = iter(range(4))
         class Pipes:
             def create(self, name, *, first): return next(handles)
-            def accept(self, handle): return False
+            def accept(self, handle): return PipePoll.pending()
             def close(self, handle): pass
             def reset(self, handle): resets.append(handle)
-            def write(self, handle, value): replies.append(value)
+            def write(self, handle, value):
+                replies.append(value)
+                return PipePoll.ready()
         class Security:
             def require_system(self): pass
             def is_active(self, peer): return True
@@ -274,9 +277,9 @@ class PipeTests(HostFixture):
             def create(self, name, *, first):
                 return next(self.handles)
             def accept(self, handle):
-                return True
+                return PipePoll.ready(True)
             def read(self, handle):
-                return {'version': 1}
+                return PipePoll.ready({'version': 1})
             def close(self, handle):
                 pass
         class Security:
@@ -297,6 +300,53 @@ class PipeTests(HostFixture):
         self.assertTrue(all(slot.retired for slot in server.slots))
         self.assertEqual(len(ticks), 101)
 
+    def test_pending_response_write_never_blocks_the_owner_loop(self):
+        writes, ticks = [], []
+
+        class Pipes:
+            handles = iter(range(4))
+
+            def create(self, name, *, first):
+                return next(self.handles)
+
+            def accept(self, handle):
+                return PipePoll.pending()
+
+            def write(self, handle, value):
+                writes.append(value)
+                return PipePoll.pending() if len(writes) == 1 else PipePoll.ready()
+
+            def close(self, handle):
+                pass
+
+            def reset(self, handle):
+                pass
+
+        class Security:
+            def require_system(self):
+                pass
+
+            def is_active(self, peer):
+                return True
+
+        self.engine.tick = lambda: ticks.append(True)
+        server = HardwareServer(
+            self.engine, security=Security(), pipes=Pipes(), executor=InlineExecutor(),
+            guard_executor=InlineExecutor(),
+        )
+        self.addCleanup(server.close)
+        slot = server.slots[0]
+        slot.connected, slot.touched = True, server.clock()
+        slot.reply = dict(version=1, channel=CHANNEL, type='response', id=1)
+        server.poll()
+        self.assertEqual(len(writes), 1)
+        self.assertIsNotNone(slot.reply)
+        self.assertEqual(len(ticks), 1)
+        server.poll()
+        self.assertEqual(len(writes), 2)
+        self.assertIsNone(slot.reply)
+        self.assertEqual(len(ticks), 2)
+
     def test_close_never_unlinks_a_pipe_while_authentication_still_owns_it(self):
         now, jobs, closed = [10.], [], []
 
@@ -310,8 +360,8 @@ class PipeTests(HostFixture):
         class Pipes:
             handles = iter(range(4))
             def create(self, name, *, first): return next(self.handles)
-            def accept(self, handle): return True
-            def read(self, handle): return {'version': 1}
+            def accept(self, handle): return PipePoll.ready(True)
+            def read(self, handle): return PipePoll.ready({'version': 1})
             def close(self, handle): closed.append(handle)
             def reset(self, handle): pass
 
@@ -336,11 +386,13 @@ class PipeTests(HostFixture):
             def create(self, name, *, first):
                 return len(requests)
             def accept(self, handle):
-                return True
+                return PipePoll.ready(True)
             def read(self, handle):
-                return requests.pop(handle, None)
+                request = requests.pop(handle, None)
+                return PipePoll.ready(request) if request is not None else PipePoll.idle()
             def write(self, handle, reply):
                 responses.append(reply)
+                return PipePoll.ready()
             def reset(self, handle):
                 resets.append(handle)
             def close(self, handle):
@@ -377,8 +429,9 @@ class PipeTests(HostFixture):
                 return 1
             def write(self, handle, value):
                 sent.append(value)
+                return PipePoll.ready()
             def read(self, handle):
-                return {'version': 1, 'channel': 'wrong'}
+                return PipePoll.ready({'version': 1, 'channel': 'wrong'})
             def close(self, handle):
                 closed.append(handle)
         client = HardwareConnection(pipes=Pipes())
@@ -389,6 +442,57 @@ class PipeTests(HostFixture):
 
 
 class NativePipeReadTests(unittest.TestCase):
+    def test_server_and_client_handles_request_overlapped_io(self):
+        calls = []
+
+        class Kernel:
+            def CreateNamedPipeW(self, *args):
+                calls.append(('server', args))
+                return 10
+
+            def CreateFileW(self, *args):
+                calls.append(('client', args))
+                return 11
+
+            def SetNamedPipeHandleState(self, *args):
+                del args
+                return 1
+
+            def LocalFree(self, descriptor):
+                del descriptor
+
+        class Advapi:
+            @staticmethod
+            def ConvertStringSecurityDescriptorToSecurityDescriptorW(*args):
+                del args
+                return 1
+
+        class Security:
+            kernel = Kernel()
+            advapi = Advapi()
+
+            def require_system(self):
+                pass
+
+            def require_system_pipe(self, handle):
+                del handle
+
+            @staticmethod
+            def _check(value):
+                return value
+
+        pipes = object.__new__(NativePipes)
+        pipes.security = Security()
+        pipes.kernel = pipes.security.kernel
+        pipes._operations = {}
+        pipes._lock = threading.Lock()
+        self.assertEqual(pipes.create(r'\\.\pipe\fixture', first=True), 10)
+        open_mode = calls[0][1][1]
+        self.assertTrue(open_mode & FILE_FLAG_OVERLAPPED)
+        self.assertEqual(pipes.connect(r'\\.\pipe\fixture'), 11)
+        client_flags = calls[1][1][5]
+        self.assertTrue(client_flags & FILE_FLAG_OVERLAPPED)
+
     def pipes(self, *, connected, available=0, error=0):
         reads = []
         class Kernel:
@@ -404,11 +508,13 @@ class NativePipeReadTests(unittest.TestCase):
                 return 0
         pipes = object.__new__(NativePipes)
         pipes.kernel = Kernel()
+        pipes._operations = {}
+        pipes._lock = threading.Lock()
         return pipes, reads
 
     def test_empty_connected_pipe_is_idle_without_a_read(self):
         pipes, reads = self.pipes(connected=True)
-        self.assertIsNone(pipes.read(1))
+        self.assertEqual(pipes.read(1), PipePoll.idle())
         self.assertEqual(reads, [])
 
     def test_broken_pipe_is_reported_as_disconnected_instead_of_idle(self):
@@ -417,3 +523,48 @@ class NativePipeReadTests(unittest.TestCase):
             pipes.read(1)
         self.assertEqual(caught.exception.errno, 109)
         self.assertEqual(reads, [])
+
+    def test_response_write_is_overlapped_and_polls_without_blocking(self):
+        calls = []
+        events = []
+
+        class Kernel:
+            expected = 0
+            waits = 0
+
+            def CreateEventW(self, *args):
+                calls.append(('event', args))
+                return 100
+
+            def WriteFile(self, handle, buffer, size, written, overlapped):
+                calls.append(('write', handle, size, overlapped))
+                self.expected = size
+                C.set_last_error(997)
+                return 0
+
+            def WaitForSingleObject(self, event, timeout):
+                calls.append(('wait', event, timeout))
+                self.waits += 1
+                return 258 if self.waits == 1 else 0
+
+            def GetOverlappedResult(self, handle, overlapped, transferred, wait):
+                calls.append(('result', handle, wait))
+                C.cast(transferred, C.POINTER(C.c_uint32))[0] = self.expected
+                return 1
+
+            def CloseHandle(self, handle):
+                events.append(handle)
+                return 1
+
+        pipes = object.__new__(NativePipes)
+        pipes.kernel = Kernel()
+        pipes._operations = {}
+        pipes._lock = threading.Lock()
+        first = pipes.write(1, {'ok': 1})
+        self.assertEqual(first, PipePoll.pending())
+        write = next(call for call in calls if call[0] == 'write')
+        self.assertIsNotNone(write[3])
+        self.assertNotEqual(write[3], 0)
+        self.assertEqual(events, [])
+        self.assertEqual(pipes.write(1, {'ok': 1}), PipePoll.ready())
+        self.assertEqual(events, [100])

@@ -67,6 +67,12 @@ class DispatchEngineOperationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unknown method'):
             self.dispatch('session_update', generation=1)
 
+    def test_unknown_preference_and_prompt_fail_explicitly(self):
+        with self.assertRaisesRegex(ValueError, 'unknown preference'):
+            self.dispatch('set_preference', field='sideways', enabled=True)
+        with self.assertRaisesRegex(ValueError, 'unknown prompt'):
+            self.dispatch('confirm_prompt', prompt='folded', epoch=1)
+
 
 if __name__ == '__main__':
     unittest.main()

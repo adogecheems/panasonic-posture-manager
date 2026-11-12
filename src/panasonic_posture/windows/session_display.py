@@ -1,7 +1,7 @@
 """Nonprivileged display qualification shared by both Windows compositions."""
 from collections.abc import Callable
 import logging
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from ..contracts import ErrorCode
 from ..model import HardwareStatus, StateSnapshot, Target
@@ -26,6 +26,11 @@ class SlatePosture(Protocol):
     def close(self) -> None: ...
 
 
+@runtime_checkable
+class HardwareReleasableDisplay(Protocol):
+    def prepare_hardware_release(self) -> None: ...
+
+
 class SessionHardwareQuery:
     """Read the physical switch state from the authenticated session service.
 
@@ -40,8 +45,8 @@ class SessionHardwareQuery:
     def __call__(self) -> tuple[bool | None, HardwareStatus]:
         try:
             state = self.state_loader()
-            hardware = getattr(state, 'hardware', None)
-            status = getattr(state, 'hardware_status', None)
+            hardware = state.hardware
+            status = state.hardware_status
         except (OSError, RuntimeError, ServiceError, ValueError, TypeError):
             return None, HardwareStatus.READ_ERROR
         if hardware is None:
@@ -59,6 +64,11 @@ class QualifiedDisplay:
         slate: SlatePosture | None = None,
     ) -> None:
         self.display, self.context, self.slate = display, context, slate
+        self.prepare_release = (
+            display.prepare_hardware_release
+            if isinstance(display, HardwareReleasableDisplay)
+            else None
+        )
 
     def _require_available(self) -> None:
         if not self.context.control_available():
@@ -174,12 +184,11 @@ class QualifiedDisplay:
             raise
 
     def prepare_hardware_release(self) -> None:
-        prepare = getattr(self.display, 'prepare_hardware_release', None)
-        if prepare is None:
+        if self.prepare_release is None:
             return
         self._require_available()
         try:
-            prepare()
+            self.prepare_release()
         except BaseException:
             self._restore_after_failed_transaction()
             self._release_slate()
