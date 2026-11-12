@@ -88,6 +88,31 @@ class QualifiedDisplay:
                 'convertible-slate-notification-failed',
             ) from error
 
+    def _verify_after_slate(self, target: Target) -> None:
+        verify = getattr(self.display, 'verify_software_target', None)
+        if verify is None:
+            return
+        try:
+            verify(target)
+        except (DisplayError, OSError, ValueError) as error:
+            if (not isinstance(error, DisplayError)
+                    or error.code not in (ErrorCode.DISPLAY_LOCK, ErrorCode.DISPLAY_TRANSFORM)
+                    or error.detail == 'physical-tablet-took-over'):
+                raise
+            # Publishing the software CSM posture can make Windows finish a
+            # native rotation after the initial CCD transaction. Reassert the
+            # already-fixed target while the notification is unchanged; this
+            # avoids a second CSM response while ensuring the lock and
+            # direction that are reported ready are the final platform state.
+            log.warning(
+                'Windows display changed after slate notification; reasserting %s: %s',
+                target.mode,
+                error,
+            )
+            self._require_available()
+            self.display.apply(target)
+            verify(target)
+
     def _restore_after_failed_transaction(self) -> None:
         try:
             self.display.restore()
@@ -122,6 +147,8 @@ class QualifiedDisplay:
                         'session changed before slate notification',
                     )
                 self._sync_slate(target)
+                if self.slate is not None:
+                    self._verify_after_slate(target)
             if not self.context.control_available():
                 raise DisplayError(
                     ErrorCode.DISPLAY_UNAVAILABLE,

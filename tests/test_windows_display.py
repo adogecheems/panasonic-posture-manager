@@ -304,6 +304,31 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertEqual(api.current.transform, 2)
         self.assertTrue(bool(api.current.auto_rotation & 1))
 
+    def test_tent_transition_reclaims_a_lock_windows_restored_before_apply(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
+        display.apply(dict(mode='hardware', tablet=True, rotation=None,
+                           disable_internal_input=False))
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+
+        # While the switch is opening, Windows can restore automatic rotation
+        # before the settled tent target arrives. The journal still records
+        # the hardware unlock, so a no-op lock request must adopt the new
+        # platform state as transaction ownership rather than leave stale
+        # ownership that can disable the lock after a later restore.
+        api.current = replace(api.current, auto_rotation=1)
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
+        self.assertEqual(api.current.transform, 2)
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertTrue(journal.document['written_lock'])
+
+        display.restore()
+        self.assertEqual(api.current.transform, 0)
+        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertIsNone(journal.document)
+
     def test_failed_physical_release_readback_restores_the_original_lock(self):
         class ReadbackFailure(Api):
             def __init__(self):

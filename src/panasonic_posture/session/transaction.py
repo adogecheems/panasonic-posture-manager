@@ -401,6 +401,14 @@ class SoftwareDisplay:
         if not state.lock_supported:
             raise DisplayError(ErrorCode.DISPLAY_LOCK, "orientation-lock-unavailable")
         if state.lock == self._lock_value(locked):
+            # The platform may restore a lock after a hardware handoff. An
+            # already-satisfied request still becomes part of this transaction,
+            # otherwise a stale "we unlocked it" journal entry would leave the
+            # platform state in place when restore runs.
+            if self.owned.get("written_lock") != locked:
+                self.owned["written_lock"] = locked
+                self.owned.pop("pending_lock", None)
+                self._persist()
             return
         if not self._owns_lock(state):
             # A fresh write takes ownership of the current desktop preference.

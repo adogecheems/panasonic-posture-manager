@@ -363,14 +363,7 @@ class WindowsDisplay(SoftwareDisplay):
         try:
             super().apply(target)
             if mode in ('laptop', 'tent', 'stand'):
-                current = self._read_state()
-                self._require_software_ownership()
-                if not current.lock:
-                    raise DisplayError(ErrorCode.DISPLAY_LOCK, 'rotation-lock-took-over')
-                if current.identity != tuple(self.owned['spec']):
-                    raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
-                if current.transform != (2 if mode == 'tent' else 0):
-                    raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'fixed-rotation-changed-before-receipt')
+                self.verify_software_target(target)
         except (DisplayError, OSError, ValueError) as error:
             self._rollback()
             if (isinstance(error, DisplayError)
@@ -387,6 +380,21 @@ class WindowsDisplay(SoftwareDisplay):
         else:
             if mode == 'hardware':
                 self._adopt_native_handoff = True
+
+    def verify_software_target(self, target: Target | dict) -> None:
+        """Verify a fixed mode still owns the lock and direction after CSM."""
+
+        mode = target.get('mode') if isinstance(target, dict) else target.mode
+        if mode not in ('laptop', 'tent', 'stand'):
+            return
+        current = self._read_state()
+        self._require_software_ownership()
+        if not current.lock:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'rotation-lock-took-over')
+        if not self.owned or current.identity != tuple(self.owned['spec']):
+            raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
+        if current.transform != (2 if mode == 'tent' else 0):
+            raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'fixed-rotation-changed-before-receipt')
 
     def hold_orientation(self) -> None:
         """Observe, but do not interrupt, Windows' post-tablet direction handoff."""

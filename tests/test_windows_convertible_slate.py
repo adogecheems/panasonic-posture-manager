@@ -72,6 +72,30 @@ class FakeDisplay:
         self.calls.append(('restore', normal))
 
 
+class StatefulDisplay(FakeDisplay):
+    """Model a Windows display changed by the platform after a CSM write."""
+
+    def __init__(self):
+        super().__init__()
+        self.mode = None
+        self.locked = False
+        self.corrupted = False
+        self.sticky_corruption = False
+
+    def apply(self, target):
+        super().apply(target)
+        self.mode = target.mode
+        self.locked = True
+        if not self.sticky_corruption:
+            self.corrupted = False
+
+    def verify_software_target(self, target):
+        if self.corrupted:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'rotation-lock-took-over')
+        if not self.locked or self.mode != target.mode:
+            raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'fixed-rotation-changed')
+
+
 def healthy(value=False):
     return lambda: (value, HardwareStatus.OK)
 
@@ -273,6 +297,49 @@ class QualifiedDisplayTests(unittest.TestCase):
         display.apply = apply
         QualifiedDisplay(display, context, slate).apply(Target(mode='tent'))
         self.assertEqual(events, [('apply', 'tent'), ('notify', 'tent')])
+
+    def test_platform_change_after_slate_notification_reasserts_the_fixed_target(self):
+        events = []
+        display = StatefulDisplay()
+        original_apply = display.apply
+
+        def apply(target):
+            events.append(('apply', target.mode))
+            original_apply(target)
+
+        display.apply = apply
+        slate = mock.Mock()
+
+        def notify(mode):
+            events.append(('notify', mode))
+            # Windows can finish its own tablet response even though the CCD
+            # transaction had already engaged the lock.
+            display.corrupted = True
+
+        slate.sync_mode.side_effect = notify
+        QualifiedDisplay(display, FakeContext(), slate).apply(Target(mode='tent'))
+        self.assertEqual(events, [
+            ('apply', 'tent'),
+            ('notify', 'tent'),
+            ('apply', 'tent'),
+        ])
+        self.assertEqual(display.mode, 'tent')
+        self.assertTrue(display.locked)
+
+    def test_failed_post_slate_reassertion_restores_without_a_ready_receipt(self):
+        display = StatefulDisplay()
+        display.sticky_corruption = True
+        slate = mock.Mock()
+        slate.sync_mode.side_effect = lambda mode: setattr(display, 'corrupted', True)
+        proxy = QualifiedDisplay(display, FakeContext(), slate)
+        with self.assertRaises(DisplayError):
+            proxy.apply(Target(mode='tent'))
+        self.assertEqual(display.calls, [
+            ('apply', 'tent'),
+            ('apply', 'tent'),
+            ('restore', False),
+        ])
+        slate.release.assert_called_once_with()
 
     def test_hardware_handoff_keeps_slate_notification_first(self):
         events = []
