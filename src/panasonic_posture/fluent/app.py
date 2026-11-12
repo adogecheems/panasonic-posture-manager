@@ -150,6 +150,7 @@ class Window(FluentWidget):
                 setCustomStyleSheet(button, style + f'{selector}:enabled {{color: {TEXT_LIGHT};}}',
                                    style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
         setFont(self.titleBar.titleLabel, 13)
+        self._last_state = None
         self.client.start(self.update_state, self.unavailable)
         self._backend_poll_count = 0
         self.backend_timer = QTimer(self)
@@ -199,11 +200,15 @@ class Window(FluentWidget):
             self.page_fade.start()
 
     def update_state(self, state):
+        if state == self._last_state:
+            return
+        self._last_state = state
         self.home.update_state(state)
         self.settings.update_state(state)
         self.state_changed.emit(state)
 
     def unavailable(self):
+        self._last_state = None
         self.home.unavailable()
         self.settings.unavailable()
         self.connection_lost.emit()

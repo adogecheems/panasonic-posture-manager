@@ -1,12 +1,23 @@
 """Strict platform-neutral state-v2 field validation."""
 
-from .model import (StateSnapshot, Target, Pose, HardwareStatus, Mode, BackendState, loads_state)
-from .contracts import PROMPTS, SUPPORT_TIERS
+import json
+
+from .model import StateSnapshot, Target, Pose, HardwareStatus, Mode, BackendState
+from .contracts import PROMPTS, STATE_VERSION, SUPPORT_TIERS
 
 
 def parse_snapshot(text: str) -> StateSnapshot:
     """Validate shared fields; transports additionally constrain sensor sources."""
-    data = loads_state(text)
+    return parse_snapshot_data(json.loads(text))
+
+
+def parse_snapshot_data(data: dict) -> StateSnapshot:
+    """Validate one already-decoded state object without parsing JSON again."""
+    if not isinstance(data, dict):
+        raise ValueError("state must be a JSON object")
+    version = data.get("version")
+    if version != STATE_VERSION:
+        raise ValueError(f"unsupported state version {version!r}")
 
     def boolean(key: str, default: bool) -> bool:
         value = data.get(key, default)

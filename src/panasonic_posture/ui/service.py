@@ -5,7 +5,7 @@ import logging
 from concurrent.futures import Future
 from gi.repository import Gio, GLib
 from ..linux_contract import NAME as BUS_NAME, PATH as OBJECT_PATH, IFACE as INTERFACE
-from ..state_codec import parse_state_snapshot
+from ..state_codec import parse_state_data
 from ..frontend.ports import Preference
 from .errors import ServiceUnavailable, unknown_method
 
@@ -20,7 +20,7 @@ def parse_state(text: str) -> dict:
         raise ValueError('state must contain an integer generation')
     if not isinstance(raw.get('target'), dict):
         raise ValueError('state must contain a target')
-    return parse_state_snapshot(text).to_dict()
+    return parse_state_data(raw).to_dict()
 
 
 class PostureService:

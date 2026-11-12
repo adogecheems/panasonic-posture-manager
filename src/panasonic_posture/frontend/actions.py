@@ -88,6 +88,22 @@ class SettingsModel:
                     and mode in self.state.get('available_modes', MODES)
                     and self.state['hardware'] is not True)
 
+    def render_signature(self) -> tuple:
+        """Return only state that changes visible settings controls."""
+        state = self.state
+        if state is None:
+            return ()
+        fields = tuple(sorted(PREFERENCES))
+        return (
+            self.value('manual'),
+            tuple(self.value(field) for field in fields),
+            tuple(self.preference_enabled(field) for field in fields),
+            tuple(self.mode_enabled(mode) for mode in MODES),
+            state.get('sensor_calibrated', False),
+            state['supported'],
+            state['hardware'] is not True,
+        )
+
     def queue(self, field: str, value: str | bool) -> None:
         if field != 'manual' and field not in PREFERENCES:
             raise ValueError(f'unknown setting: {field}')

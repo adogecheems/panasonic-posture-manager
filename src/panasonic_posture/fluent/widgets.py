@@ -22,15 +22,26 @@ class Illustration(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.pose = 'laptop'
+        self._renderers = {}
         self.setFixedHeight(200)
         qconfig.themeChanged.connect(self.update)
+
+    def _renderer(self, path, dark):
+        key = str(path), dark
+        renderer = self._renderers.get(key)
+        if renderer is None:
+            svg = path.read_text(encoding='utf-8').replace(
+                'currentColor', '#d6dfee' if dark else '#40516e')
+            svg = svg.replace('var(--app-bg, white)',
+                              '#2b3445' if dark else '#eff4fc')
+            renderer = QSvgRenderer(svg.encode())
+            self._renderers[key] = renderer
+        return renderer
 
     def paintEvent(self, event):
         path = data_root() / 'assets' / f'{self.pose}.svg'
         dark = isDarkTheme()
-        svg = path.read_text(encoding='utf-8').replace('currentColor', '#d6dfee' if dark else '#40516e')
-        svg = svg.replace('var(--app-bg, white)', '#2b3445' if dark else '#eff4fc')
-        renderer = QSvgRenderer(svg.encode())
+        renderer = self._renderer(path, dark)
         painter = QPainter(self)
         width = min(self.width(), self.height() * 4 / 3)
         bounds = QRectF(0, 0, width, width * 3 / 4)

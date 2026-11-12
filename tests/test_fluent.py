@@ -803,6 +803,55 @@ assert client.refreshes == 1
 window.close()
 ''')
 
+    def test_unchanged_presentation_skips_widget_work_and_reuses_svg(self):
+        self.run_ui('''
+import panasonic_posture.fluent.widgets as widget_module
+client = window.client
+home_calls = []
+settings_fits = []
+illustration_updates = []
+original_home = window.home.update_state
+original_fit = window.settings.fit_cards
+window.home.update_state = lambda state: (home_calls.append(True), original_home(state))
+window.settings.fit_cards = lambda: (settings_fits.append(True), original_fit())
+window.home.illustration.update = lambda: illustration_updates.append(True)
+
+current = dict(client.state)
+window.update_state(current)
+window.update_state(dict(current))
+assert not home_calls, 'An identical snapshot must not redraw either page'
+
+unrelated = dict(current, generation=current['generation'] + 1,
+                 applied={'mode': 'tent'})
+window.update_state(unrelated)
+QTest.qWait(20)
+assert len(home_calls) == 1
+assert not illustration_updates, 'An unchanged pose must not request another SVG paint'
+assert not settings_fits, 'Unrelated state fields must not relayout settings cards'
+
+relevant = dict(unrelated, tent_enabled=not unrelated['tent_enabled'])
+window.update_state(relevant)
+QTest.qWait(20)
+assert len(settings_fits) == 1
+
+renderers = []
+real_renderer = widget_module.QSvgRenderer
+class CountingRenderer:
+    def __init__(self, payload):
+        renderers.append(payload)
+        self.renderer = real_renderer(payload)
+    def render(self, *args):
+        return self.renderer.render(*args)
+widget_module.QSvgRenderer = CountingRenderer
+window.home.illustration._renderers.clear()
+window.home.illustration.pose = 'tent'
+window.home.illustration.update()
+QTest.qWait(20)
+window.home.illustration.update()
+QTest.qWait(20)
+assert len(renderers) == 1, 'The same pose and theme must reuse one SVG renderer'
+''')
+
     def test_hardware_backend_failure_has_actionable_message(self):
         self.run_ui('''
 client = UnavailableClient()

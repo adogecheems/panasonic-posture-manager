@@ -27,14 +27,38 @@ from .update_check import UpdateChecker
 GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
 
 
+def mode_label(mode, _):
+    if mode == 'auto':
+        return _('Automatic')
+    if mode == 'laptop':
+        return _('Laptop')
+    if mode == 'tent':
+        return _('Tent')
+    if mode == 'stand':
+        return _('Stand')
+    if mode == 'tablet':
+        return _('Tablet')
+    return _('Waiting for the desktop to get ready…')
+
+
 def mode_labels(_):
-    return {
-        'auto': _('Automatic'),
-        'laptop': _('Laptop'),
-        'tent': _('Tent'),
-        'stand': _('Stand'),
-        'tablet': _('Tablet'),
-    }
+    return {mode: mode_label(mode, _) for mode in
+            ('auto', 'laptop', 'tent', 'stand', 'tablet')}
+
+
+def set_visible(widget, visible: bool) -> None:
+    if widget.isHidden() == visible:
+        widget.setVisible(visible)
+
+
+def set_enabled(widget, enabled: bool) -> None:
+    if widget.isEnabled() != enabled:
+        widget.setEnabled(enabled)
+
+
+def set_text(widget, text: str) -> None:
+    if widget.text() != text:
+        widget.setText(text)
 
 
 def stable_error_text(code: str | None, _) -> str:
@@ -96,6 +120,7 @@ class Home(Page):
         box.setSpacing(4)
         box.addStretch()
         self.illustration = Illustration()
+        self.illustration.setAccessibleName(self.labels['laptop'])
         box.addWidget(self.illustration)
         self.heading = TitleLabel(self.labels['laptop'])
         self.heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -125,20 +150,22 @@ class Home(Page):
 
     def update_state(self, state):
         self.action_detail = None
+        old_pose = self.model.pose
         old_deadline = self.model.deadline
         self.model.update(state, time.monotonic())
         if old_deadline != self.model.deadline:
             self.timer.stop()
             if self.model.deadline is not None:
                 self.timer.start(max(1, math.ceil((self.model.deadline - time.monotonic()) * 1000)))
-        self.illustration.pose = self.model.pose
-        self.illustration.setAccessibleName(self.labels[self.model.pose])
-        self.illustration.update()
-        self.heading.setText(self.labels[self.model.pose])
+        if self.model.pose != old_pose:
+            self.illustration.pose = self.model.pose
+            self.illustration.setAccessibleName(self.labels[self.model.pose])
+            self.illustration.update()
+            self.heading.setText(self.labels[self.model.pose])
         self.render_detail()
-        self.confirm_button.setVisible(state['pending_notification'] is not None)
-        self.retry_button.setVisible(bool(state['error_code']))
-        self.auto_button.setVisible(self.model.can_return_auto)
+        set_visible(self.confirm_button, state['pending_notification'] is not None)
+        set_visible(self.retry_button, bool(state['error_code']))
+        set_visible(self.auto_button, self.model.can_return_auto)
         self.sync_buttons()
 
     def render_detail(self):
@@ -159,10 +186,10 @@ class Home(Page):
             text = f"{_('Mode change failed')}: {stable_error_text(code, _)}"
         else:
             text = messages[self.model.detail]
-        self.detail.setText(text)
+        set_text(self.detail, text)
         if self.model.state and self.model.state.get('simulation') and self.model.detail == Detail.COMPATIBLE:
-            self.detail.setText('')
-        self.detail.setVisible(bool(self.detail.text()))
+            set_text(self.detail, '')
+        set_visible(self.detail, bool(self.detail.text()))
 
     def show_slow(self):
         self.model.advance(time.monotonic())
@@ -200,13 +227,14 @@ class Home(Page):
 
     def sync_buttons(self):
         prompt = self.model.state and self.model.state['pending_prompt']
-        self.confirm_button.setText(self._('Enter stand mode') if prompt == 'stand' else self._('Enter tent mode'))
-        self.retry_button.setText(
+        set_text(self.confirm_button,
+                 self._('Enter stand mode') if prompt == 'stand' else self._('Enter tent mode'))
+        set_text(self.retry_button,
             self._('Retrying…') if self.actions.busy == 'retry' else self._('Retry')
         )
-        self.confirm_button.setEnabled(self.actions.busy is None)
-        self.retry_button.setEnabled(self.actions.busy is None)
-        self.auto_button.setEnabled(self.actions.busy is None)
+        set_enabled(self.confirm_button, self.actions.busy is None)
+        set_enabled(self.retry_button, self.actions.busy is None)
+        set_enabled(self.auto_button, self.actions.busy is None)
 
     def confirm(self):
         state = self.model.state
@@ -225,6 +253,8 @@ class Settings(Page):
     def __init__(self, client: UIClient, _, notify, parent=None, *, startup=None,
                  update_checker=None):
         super().__init__('settings', parent)
+        self._render_signature = None
+        self._fit_scheduled = False
         self._, self.client, self.notify = _, client, notify
         self.model = SettingsModel(client, self.render, self.action_failed)
         self.calibration = ActionRunner(self.render_calibration, self.action_failed, self.calibrated)
@@ -386,7 +416,7 @@ class Settings(Page):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.scroll_edge.setGeometry(0, self.viewport().height() - 14, self.viewport().width(), 14)
-        QTimer.singleShot(0, self.fit_cards)
+        self._schedule_fit()
 
     def tint_scroll_edge(self):
         color = WINDOW_DARK if isDarkTheme() else WINDOW_LIGHT
@@ -398,7 +428,14 @@ class Settings(Page):
         bar = self.verticalScrollBar()
         self.scroll_edge.setVisible(bar.value() < bar.maximum())
 
+    def _schedule_fit(self):
+        if self._fit_scheduled:
+            return
+        self._fit_scheduled = True
+        QTimer.singleShot(0, self.fit_cards)
+
     def fit_cards(self):
+        self._fit_scheduled = False
         for card, controls in self.cards:
             reserve = sum(control.sizeHint().width() for control in controls if not control.isHidden())
             gap = 6 if card is self.sensor_card else 0
@@ -438,7 +475,7 @@ class Settings(Page):
         self.version_card.setContent(f'{__version__} · {status}')
         self.update_button.setText(self._('Check for updates'))
         self.update_button.setEnabled(True)
-        QTimer.singleShot(0, self.fit_cards)
+        self._schedule_fit()
 
     def update_failed(self):
         self.update_checking = False
@@ -446,7 +483,7 @@ class Settings(Page):
         self.version_card.setContent(f'{__version__} · {status}')
         self.update_button.setText(self._('Check for updates'))
         self.update_button.setEnabled(True)
-        QTimer.singleShot(0, self.fit_cards)
+        self._schedule_fit()
 
     def shutdown(self):
         self.update_checker.shutdown()
@@ -468,7 +505,7 @@ class Settings(Page):
                 _('Login startup is unavailable from this location.') if not available else
                 _('Start in the system tray when you sign in. Keep this app in its current folder.'))
         self.startup_card.setContent(text)
-        QTimer.singleShot(0, self.fit_cards)
+        self._schedule_fit()
 
     def change_startup(self, enabled):
         try:
@@ -484,29 +521,35 @@ class Settings(Page):
         _ = self._
         if self.model.state is None:
             return
-        descriptions = dict(self.mode_descriptions)
-        for key, card in self.mode_cards.items():
-            card.setContent(descriptions[key])
+        signature = self.model.render_signature()
+        if signature == self._render_signature:
+            return
+        self._render_signature = signature
         for key, radio in self.radios.items():
-            radio.setChecked(self.model.value('manual') == key)
-            radio.setEnabled(self.model.mode_enabled(key))
+            checked = self.model.value('manual') == key
+            if radio.isChecked() != checked:
+                radio.setChecked(checked)
+            set_enabled(radio, self.model.mode_enabled(key))
         for field, switch in self.switches.items():
-            switch.blockSignals(True)
-            switch.setChecked(self.model.value(field))
-            switch.blockSignals(False)
-            switch.setEnabled(self.model.preference_enabled(field))
+            checked = self.model.value(field)
+            if switch.isChecked() != checked:
+                switch.blockSignals(True)
+                switch.setChecked(checked)
+                switch.blockSignals(False)
+            set_enabled(switch, self.model.preference_enabled(field))
         self.render_calibration()
-        QTimer.singleShot(0, self.fit_cards)
+        self._schedule_fit()
 
     def render_calibration(self):
         state = self.model.state
         enabled = bool(state and state['supported'] and self.calibration.busy is None)
-        self.calibrate_button.setEnabled(enabled and state['hardware'] is not True)
-        self.reset_button.setEnabled(enabled)
+        set_enabled(self.calibrate_button, enabled and state['hardware'] is not True)
+        set_enabled(self.reset_button, enabled)
         calibrated = bool(state and state['sensor_calibrated'])
-        self.reset_button.setVisible(calibrated)
-        self.calibration_hint.setText(self._('A custom flat-desk reference is in use.') if calibrated else
-                                      self._('Place the device in laptop form on a flat desk, then calibrate.'))
+        set_visible(self.reset_button, calibrated)
+        set_text(self.calibration_hint,
+                 self._('A custom flat-desk reference is in use.') if calibrated else
+                 self._('Place the device in laptop form on a flat desk, then calibrate.'))
 
     def calibrated(self):
         self.notify(True)
@@ -528,5 +571,6 @@ class Settings(Page):
     def unavailable(self):
         self.model.disconnect()
         self.calibration.disconnect()
+        self._render_signature = None
         for widget in (*self.radios.values(), *self.switches.values(), self.calibrate_button, self.reset_button):
             widget.setEnabled(False)

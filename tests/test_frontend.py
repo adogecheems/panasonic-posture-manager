@@ -54,6 +54,24 @@ class FrontendTests(unittest.TestCase):
         model.update(state(supported=False, support_tier='unsupported'))
         self.assertFalse(model.preference_enabled('tent_enabled'))
 
+    def test_settings_render_signature_tracks_only_visible_control_content(self):
+        model = SettingsModel(Client(), lambda: None, lambda error: None)
+        model.update(state())
+        baseline = model.render_signature()
+
+        model.update(state(generation=99, pose='stand',
+                           target={'mode': 'laptop'}, applied={'mode': 'laptop'}))
+        self.assertEqual(model.render_signature(), baseline)
+
+        model.update(state(tent_enabled=False))
+        self.assertNotEqual(model.render_signature(), baseline)
+
+        model.update(state(manual='stand'))
+        self.assertNotEqual(model.render_signature(), baseline)
+
+        model.queue('stand_prompt', True)
+        self.assertNotEqual(model.render_signature(), baseline)
+
     def test_import_without_gui_or_linux(self):
         result = subprocess.run([sys.executable, '-S', '-c', '''
 import sys

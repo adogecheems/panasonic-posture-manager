@@ -17,6 +17,7 @@ from panasonic_posture.model import (
     parse_state_snapshot,
 )
 from panasonic_posture.protocol import STATE_VERSION
+from panasonic_posture.snapshot_codec import parse_snapshot_data
 
 
 class TargetTests(unittest.TestCase):
@@ -133,6 +134,15 @@ class StateSnapshotTests(unittest.TestCase):
         state = StateSnapshot().to_dict()
         state.pop("posture_pending")
         self.assertFalse(parse_state_snapshot(json.dumps(state)).posture_pending)
+
+    def test_parsed_state_object_uses_the_same_strict_decoder(self):
+        document = StateSnapshot(instance="parsed", generation=7,
+                                 target=Target("tent", True, 180, True)).to_dict()
+        parsed = parse_snapshot_data(document)
+        self.assertEqual(parsed.instance, "parsed")
+        self.assertEqual(parsed.generation, 7)
+        with self.assertRaises(ValueError):
+            parse_snapshot_data(dict(document, version=STATE_VERSION + 1))
 
     def test_version_mismatch_rejected(self):
         with self.assertRaises(ValueError):

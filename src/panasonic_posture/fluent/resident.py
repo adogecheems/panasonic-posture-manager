@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from qfluentwidgets import CaptionLabel
 
 from ..frontend.state import notice_confirmable, notice_token
-from .pages import mode_labels
+from .pages import mode_label
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ class ResidentTray(QObject):
         self.notice = None
         self._notice_click_until = 0.0
         self.instance = None
+        self._tooltip = None
         self.timer = QTimer(self)
         self._ = window._
         _ = self._
@@ -116,9 +117,11 @@ class ResidentTray(QObject):
     def update_state(self, state):
         _ = self._
         mode = (state.get('applied') or {}).get('mode')
-        text = mode_labels(_).get('tablet' if mode == 'hardware' else mode,
-                                  _('Waiting for the desktop to get ready…'))
-        self.tray.setToolTip(self.window.windowTitle() + ' · ' + text)
+        text = mode_label('tablet' if mode == 'hardware' else mode, _)
+        tooltip = self.window.windowTitle() + ' · ' + text
+        if tooltip != self._tooltip:
+            self._tooltip = tooltip
+            self.tray.setToolTip(tooltip)
         if state['instance'] != self.instance:
             self.instance = state['instance']
             self.sent.clear()
