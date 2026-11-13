@@ -203,7 +203,7 @@ class QualificationTests(unittest.TestCase):
 
 
 class HardwareHandoffTests(unittest.TestCase):
-    def make_runtime(self, state, *, defer=True):
+    def make_runtime(self, state, *, defer=True, release_target=None):
         events = []
         current = [state]
 
@@ -224,6 +224,7 @@ class HardwareHandoffTests(unittest.TestCase):
             executor=InlineExecutor(),
             lease_executor=InlineExecutor(),
             defer_hardware_handoff=defer,
+            hardware_release_target=release_target,
         )
         self.addCleanup(runtime.close)
         return events, runtime, current
@@ -290,6 +291,94 @@ class HardwareHandoffTests(unittest.TestCase):
         runtime.tick(2.21)
         self.assertEqual([event for event in events if event[0] == 'apply'],
                          [('apply', 'hardware'), ('apply', 'tent')])
+        self.assertTrue(runtime.ready)
+
+    def test_prelocked_release_applies_the_same_target_without_the_handoff_wait(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=True,
+            hardware_status=HardwareStatus.OK,
+            target=Target(mode='hardware'),
+        )
+        events, runtime, current = self.make_runtime(
+            state,
+            release_target=lambda instance: 'tent' if instance == 'fixture' else None,
+        )
+        runtime.tick(0.)
+
+        current[0] = replace(
+            state,
+            generation=2,
+            hardware=False,
+            target=Target(mode='tent'),
+        )
+        runtime.tick(.2)
+
+        self.assertEqual(
+            [event for event in events if event[0] == 'apply'],
+            [('apply', 'hardware'), ('apply', 'tent')],
+        )
+        self.assertNotIn(('hold',), events)
+        self.assertTrue(runtime.ready)
+
+    def test_prelocked_release_does_not_bypass_the_wait_for_another_target(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=True,
+            hardware_status=HardwareStatus.OK,
+            target=Target(mode='hardware'),
+        )
+        events, runtime, current = self.make_runtime(
+            state,
+            release_target=lambda instance: 'tent' if instance == 'fixture' else None,
+        )
+        runtime.tick(0.)
+
+        current[0] = replace(
+            state,
+            generation=2,
+            hardware=False,
+            target=Target(mode='stand'),
+        )
+        runtime.tick(.2)
+        runtime.tick(1.9)
+        self.assertNotIn(('apply', 'stand'), events)
+
+        runtime.tick(2.21)
+        self.assertIn(('apply', 'stand'), events)
+
+    def test_prelocked_target_cancels_an_already_started_handoff_wait(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=False,
+            hardware_status=HardwareStatus.OK,
+            posture_pending=True,
+            target=Target(mode='unavailable'),
+        )
+        events, runtime, current = self.make_runtime(
+            state,
+            release_target=lambda instance: 'tent' if instance == 'fixture' else None,
+        )
+        runtime.tick(0.)
+        self.assertIn(('hold',), events)
+
+        current[0] = replace(
+            state,
+            generation=2,
+            posture_pending=False,
+            target=Target(mode='tent'),
+        )
+        runtime.tick(.2)
+        self.assertIn(('apply', 'tent'), events)
         self.assertTrue(runtime.ready)
 
     def test_physical_reentry_cancels_the_windows_release_hold(self):

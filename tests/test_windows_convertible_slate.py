@@ -159,6 +159,21 @@ class SlateNotifierTests(unittest.TestCase):
                 self.assertFalse(device.state)
                 self.assertIsNone(journal.load())
 
+    def test_physical_tablet_ignores_a_stale_laptop_notification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            journal.save(False, True)
+            device = FakeSlateDevice(True)
+            notifier = SlateNotifier(device, journal, hardware_query=healthy(True))
+            self.assertFalse(notifier.sync_mode('tent'))
+            self.assertFalse(notifier.sync_mode('laptop'))
+            self.assertTrue(device.state)
+            self.assertEqual(device.sets, [True])
+            self.assertIsNotNone(journal.load())
+            notifier.close()
+            self.assertFalse(device.state)
+            self.assertIsNone(journal.load())
+
     def test_recovery_for_laptop_restores_and_clears_without_an_extra_flash(self):
         with tempfile.TemporaryDirectory() as directory:
             journal = SlateJournal(Path(directory) / 'slate.json')
@@ -408,6 +423,47 @@ class QualifiedDisplayTests(unittest.TestCase):
         display.apply = apply
         QualifiedDisplay(display, context, slate).apply(Target(mode='hardware'))
         self.assertEqual(events, [('notify', 'hardware'), ('apply', 'hardware')])
+
+    def test_stale_software_target_does_not_republish_after_native_handoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            journal.save(False, True)
+            device = FakeSlateDevice(True)
+            slate = SlateNotifier(device, journal, hardware_query=healthy(True))
+            slate.sync_mode('tent')
+
+            class HandoffDisplay(FakeDisplay):
+                native_handoff_active = True
+
+            display = HandoffDisplay()
+            QualifiedDisplay(display, FakeContext(), slate).apply(Target(mode='laptop'))
+            self.assertEqual(display.calls, [('apply', 'laptop')])
+            self.assertTrue(device.state)
+            self.assertEqual(device.sets, [True, True])
+            self.assertIsNotNone(journal.load())
+            slate.close()
+
+    def test_physical_takeover_during_verification_keeps_the_tablet_lease(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            journal.save(False, True)
+            device = FakeSlateDevice(True)
+            slate = SlateNotifier(device, journal, hardware_query=healthy(True))
+            slate.sync_mode('tent')
+
+            class TakeoverDisplay(FakeDisplay):
+                def verify_software_target(self, target):
+                    raise DisplayError(
+                        ErrorCode.DISPLAY_LOCK,
+                        'physical-tablet-took-over',
+                    )
+
+            display = TakeoverDisplay()
+            QualifiedDisplay(display, FakeContext(), slate).apply(Target(mode='tent'))
+            self.assertTrue(device.state)
+            self.assertEqual(device.sets, [True, True, True])
+            self.assertIsNotNone(journal.load())
+            slate.close()
 
     def test_notification_failure_restores_display_and_releases_slate(self):
         slate = mock.Mock()

@@ -310,6 +310,12 @@ class WindowsDisplay(SoftwareDisplay):
         self._adopt_native_handoff = False
         super().__init__(journal=journal)
 
+    @property
+    def native_handoff_active(self) -> bool:
+        """Whether Windows currently owns the physical tablet direction."""
+
+        return self._adopt_native_handoff
+
     def _read_state(self):
         current = self.api.read()
         return DisplayState(

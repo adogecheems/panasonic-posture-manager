@@ -88,16 +88,23 @@ class QualifiedDisplay:
             # shutdown will make another bounded release attempt.
             pass
 
-    def _sync_slate(self, target: Target) -> None:
-        if self.slate is None or target.mode == 'unavailable':
+    def _sync_slate_mode(self, mode: str) -> None:
+        if self.slate is None or mode == 'unavailable':
             return
         try:
-            self.slate.sync_mode(target.mode)
+            self.slate.sync_mode(mode)
         except (OSError, ValueError) as error:
             raise DisplayError(
                 ErrorCode.DISPLAY_UNAVAILABLE,
                 'convertible-slate-notification-failed',
             ) from error
+
+    def _sync_slate(self, target: Target) -> None:
+        self._sync_slate_mode(target.mode)
+
+    def _native_handoff_active(self) -> bool:
+        active = getattr(self.display, 'native_handoff_active', False)
+        return bool(active() if callable(active) else active)
 
     def _verify_after_slate(self, target: Target) -> None:
         verify = getattr(self.display, 'verify_software_target', None)
@@ -107,9 +114,14 @@ class QualifiedDisplay:
             verify(target)
         except (DisplayError, OSError, ValueError) as error:
             if (not isinstance(error, DisplayError)
-                    or error.code not in (ErrorCode.DISPLAY_LOCK, ErrorCode.DISPLAY_TRANSFORM)
-                    or error.detail == 'physical-tablet-took-over'):
+                    or error.code not in (ErrorCode.DISPLAY_LOCK, ErrorCode.DISPLAY_TRANSFORM)):
                 raise
+            if error.detail == 'physical-tablet-took-over':
+                # The display already handed ownership to Windows. Publishing
+                # the older software target here would fight the physical
+                # tablet before the next service generation is read.
+                self._sync_slate_mode('hardware')
+                return
             # Publishing the software CSM posture can make Windows finish a
             # native rotation after the initial CCD transaction. Reassert the
             # already-fixed target while the notification is unchanged; this
@@ -157,8 +169,12 @@ class QualifiedDisplay:
                         ErrorCode.DISPLAY_UNAVAILABLE,
                         'session changed before slate notification',
                     )
-                self._sync_slate(target)
-                if self.slate is not None:
+                native_handoff = self._native_handoff_active()
+                if native_handoff:
+                    self._sync_slate_mode('hardware')
+                else:
+                    self._sync_slate(target)
+                if self.slate is not None and not native_handoff:
                     self._verify_after_slate(target)
             if not self.context.control_available():
                 raise DisplayError(
@@ -192,7 +208,6 @@ class QualifiedDisplay:
             self.prepare_release()
         except BaseException:
             self._restore_after_failed_transaction()
-            self._release_slate()
             raise
 
     def restore(self, normal: bool = False) -> None:

@@ -77,12 +77,14 @@ class SessionRuntime:
         schedule_completion: Callable[[], None] | None = None,
         display_refresh: DisplayRefresh | None = None,
         defer_hardware_handoff: bool = False,
+        hardware_release_target: Callable[[str], str | None] | None = None,
     ) -> None:
         self.client = client
         self.display = display
         self.notifier = notifier
         self._display_refresh = display_refresh
         self._defer_hardware_handoff = defer_hardware_handoff
+        self._hardware_release_target = hardware_release_target
         self._refresh_at = float('-inf')
         self._screen_locked = screen_locked
         self._adapter_errors = (OSError, ValueError, *adapter_errors)
@@ -530,14 +532,24 @@ class SessionRuntime:
             elif (
                 state.hardware is False
                 and state.hardware_status == HardwareStatus.OK
-                and (self._hardware_seen or state.posture_pending)
-                and self._hardware_release_until is None
+                and (
+                    self._hardware_seen
+                    or state.posture_pending
+                    or self._hardware_release_until is not None
+                )
             ):
-                # Start on the release itself. The policy may settle directly
-                # on tent before the next poll, so waiting only for
-                # posture_pending would miss that path.
-                self._hardware_release_until = now + HARDWARE_SETTLE_SECONDS
-                self._hold_check_at = now
+                if self._prepared_release(state) is not None:
+                    # The session pre-locked the exact target while the
+                    # physical switch still reported tablet. Repeating the
+                    # generic read-only wait here lets Windows undo that lock
+                    # and rotate before the same target is finally applied.
+                    self._hardware_release_until = None
+                elif self._hardware_release_until is None:
+                    # Start on the release itself. The policy may settle
+                    # directly on tent before the next poll, so waiting only
+                    # for posture_pending would miss that path.
+                    self._hardware_release_until = now + HARDWARE_SETTLE_SECONDS
+                    self._hold_check_at = now
             if state.hardware is False:
                 self._hardware_seen = False
 
@@ -575,6 +587,23 @@ class SessionRuntime:
             # current code is an echo of our last report: keep retrying.
             return ""
         return code
+
+    def _prepared_release(self, state: StateSnapshot) -> str | None:
+        """Return a pre-locked target only while the current target still matches."""
+
+        if (
+            self._hardware_release_target is None
+            or state.hardware is not False
+            or state.hardware_status != HardwareStatus.OK
+        ):
+            return None
+        try:
+            target = self._hardware_release_target(state.instance)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return None
+        if target not in ('tent', 'stand') or state.target.mode != target:
+            return None
+        return target
 
     def _maybe_apply(
         self, state: StateSnapshot, generation: int, now: float
@@ -625,9 +654,9 @@ class SessionRuntime:
                         )
                         self._hold_check_at = now + contracts.TICK_SECONDS
                     # Keep the old generation not-ready while Windows finishes
-                    # its tablet-to-desktop direction handoff. A settled tent
-                    # target may already be known, but applying it during this
-                    # window makes the platform rotate twice.
+                    # its tablet-to-desktop direction handoff. A pre-locked
+                    # target with matching evidence never enters this path;
+                    # applying an unprepared target here can rotate twice.
                     return False
         key = (state.instance, generation)
         waiting = (

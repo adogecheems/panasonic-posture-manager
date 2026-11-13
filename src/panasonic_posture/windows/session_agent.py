@@ -159,6 +159,7 @@ class WindowsSessionAgent:
             executor=self.executor,
             lease_executor=self.lease_executor,
             defer_hardware_handoff=True,
+            hardware_release_target=self.hardware_release.target_for,
         )
 
     def _qualification_heartbeat(self) -> None:

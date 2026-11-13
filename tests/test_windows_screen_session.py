@@ -122,6 +122,20 @@ class NativeScreenTests(unittest.TestCase):
         self.assertIs(self.backend.snapshot()['hardware'], True)
         self.assertEqual(self.backend.snapshot()['manual'], 'auto')
 
+    def test_prelocked_tent_release_reaches_tent_before_the_fallback_deadline(self):
+        self.hardware = True
+        self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'hardware')
+        self.vector = (0., -9.81, 0.)
+        self.until(lambda: self.backend.screen.engine.hardware_release_pose == 'tent')
+
+        self.hardware = False
+        self.advance(30)
+
+        state = self.backend.snapshot()
+        self.assertIs(state['hardware'], False)
+        self.assertEqual((state['applied'] or {}).get('mode'), 'tent')
+        self.assertEqual(self.display.current.transform, 2)
+
     def test_preferences_calibration_and_close_restore(self):
         self.backend.call('set_preference', {'field': 'tent_enabled', 'enabled': False})
         self.assertFalse(self.backend.snapshot()['tent_enabled'])
@@ -152,7 +166,7 @@ class NativeScreenTests(unittest.TestCase):
 
 
 class HardwareReleasePreparationTests(unittest.TestCase):
-    def test_failed_preparation_restores_display_and_releases_slate(self):
+    def test_failed_preparation_restores_display_without_dropping_slate_state(self):
         class FailingDisplay:
             def __init__(self):
                 self.restore_calls = 0
@@ -173,7 +187,7 @@ class HardwareReleasePreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(OSError, 'readback failed'):
             qualified.prepare_hardware_release()
         self.assertEqual(display.restore_calls, 1)
-        self.assertEqual(releases, [True])
+        self.assertEqual(releases, [])
 
     def test_tent_pose_while_still_physically_folded_prepares_once(self):
         class Prepared:
@@ -199,6 +213,47 @@ class HardwareReleasePreparationTests(unittest.TestCase):
         session.engine.hardware_release_pose = 'tent'
         session._prepare_hardware_release()
         self.assertEqual(session.qualified.calls, 3)
+
+    def test_release_target_requires_success_and_is_scoped_to_the_instance(self):
+        class Prepared:
+            fail = False
+            def prepare_hardware_release(self):
+                if self.fail:
+                    raise OSError('preparation failed')
+
+        display = Prepared()
+        coordinator = HardwareReleaseCoordinator(display)
+        hardware = StateSnapshot(
+            instance='one',
+            generation=3,
+            hardware=True,
+            target=Target(mode='hardware'),
+        )
+
+        coordinator.prepare(hardware, 'tent')
+        self.assertEqual(coordinator.target_for('one'), 'tent')
+        self.assertIsNone(coordinator.target_for('two'))
+
+        coordinator.prepare(StateSnapshot(
+            instance='one',
+            generation=4,
+            hardware=False,
+            target=Target(mode='tent'),
+        ), None)
+        self.assertEqual(coordinator.target_for('one'), 'tent')
+
+        coordinator.prepare(StateSnapshot(
+            instance='one',
+            generation=5,
+            hardware=True,
+            target=Target(mode='hardware'),
+        ), None)
+        self.assertIsNone(coordinator.target_for('one'))
+
+        coordinator.prepare(hardware, 'tent')
+        display.fail = True
+        coordinator.prepare(hardware, 'tent')
+        self.assertIsNone(coordinator.target_for('one'))
 
 
 class BridgeTests(unittest.TestCase):

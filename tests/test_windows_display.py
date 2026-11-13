@@ -375,6 +375,7 @@ class WindowsDisplayTests(unittest.TestCase):
         display = self.make(api, journal, lambda: (True, HardwareStatus.OK))
         display.apply(dict(mode='tent', tablet=True, rotation=180,
                            disable_internal_input=False))
+        self.assertTrue(display.native_handoff_active)
         self.assertEqual(api.writes, [])
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document['written_transform'])
@@ -399,6 +400,7 @@ class WindowsDisplayTests(unittest.TestCase):
         display = self.make(api, journal, lambda: (physical[0], HardwareStatus.OK))
         display.apply(dict(mode='tent', tablet=True, rotation=180,
                            disable_internal_input=False))
+        self.assertTrue(display.native_handoff_active)
         self.assertEqual(api.current.transform, 2)
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document['written_transform'])

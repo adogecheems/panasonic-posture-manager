@@ -372,13 +372,14 @@ class SlateNotifier:
             return False
         return None
 
-    def _require_hardware(self) -> None:
+    def _require_hardware(self) -> bool:
         try:
             hardware, status = self.hardware_query()
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             raise SlateError('physical tablet state is unavailable') from error
         if type(hardware) is not bool or status != HardwareStatus.OK:
             raise SlateError('physical tablet state is unavailable')
+        return hardware
 
     def _recover(self) -> bool:
         """Restore the journal's startup value before applying a new posture."""
@@ -399,7 +400,12 @@ class SlateNotifier:
         desired = self.desired(mode)
         if desired is None:
             return False
-        self._require_hardware()
+        hardware = self._require_hardware()
+        if hardware and desired is False:
+            # A software task can finish after Event 115 has already made the
+            # physical tablet authoritative. Never publish that stale laptop
+            # result over the active tablet lease.
+            return False
         if self.pending is not None and self.pending.desired == desired:
             # A pending lease that already targets this posture is still the
             # same software ownership. Replaying its original laptop value
