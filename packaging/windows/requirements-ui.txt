@@ -1,3 +1,6 @@
 # Optional Windows UI build environment; the core package has no runtime dependencies.
-PyQt6==6.12.0
+# Keep the binding and Qt runtime on the 6.8 LTS line. Newer Qt releases drop
+# Windows versions that this product still supports.
+PyQt6==6.8.1
+PyQt6-Qt6==6.8.2
 PyQt6-Fluent-Widgets==1.11.3

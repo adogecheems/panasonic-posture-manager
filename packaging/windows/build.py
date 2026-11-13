@@ -17,6 +17,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
+PYQT6_LICENSE = ROOT / 'packaging/windows/PyQt6-LICENSE'
 
 
 def _application_display_name() -> str:
@@ -40,9 +41,15 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
         if not (dependencies / name).is_dir():
             raise ValueError(f'UI dependency is missing {name}')
     metadata = list(dependencies.glob('*.dist-info'))
-    if not metadata or any(not any('license' in path.name.lower() or 'copying' in path.name.lower()
-                                  for path in directory.rglob('*') if path.is_file())
-                           for directory in metadata):
+    has_license = lambda directory: any(
+        'license' in path.name.lower() or 'copying' in path.name.lower()
+        for path in directory.rglob('*') if path.is_file()
+    )
+    missing_licenses = [directory for directory in metadata if not has_license(directory)]
+    if (not metadata
+            or any(not directory.name.casefold().startswith('pyqt6-')
+                   for directory in missing_licenses)
+            or not PYQT6_LICENSE.is_file()):
         raise ValueError('dependency license metadata is missing')
     files: dict[str, Path | bytes] = {}
 
@@ -66,6 +73,10 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
                                  'python*._pth'))
     add_tree(dependencies, 'runtime/Lib/site-packages',
              ('*.chm', 'qml', 'pywin32_test*', *development_trees))
+    # PyQt6 6.8 wheels omit the license from their dist-info metadata. Carry
+    # the exact GPLv3 text from the matching upstream source distribution.
+    for directory in missing_licenses:
+        files[f'runtime/Lib/site-packages/{directory.name}/LICENSE'] = PYQT6_LICENSE
     add_tree(ROOT / 'src/panasonic_posture', 'app/panasonic_posture', ('__pycache__', '*.pyc'))
     add_tree(ROOT / 'data/assets', 'data/assets')
     add_tree(ROOT / 'data/profiles', 'data/profiles')

@@ -39,6 +39,12 @@ class WindowsPackagingTests(unittest.TestCase):
             for name in ('PyQt6', 'qfluentwidgets', 'qframelesswindow', 'Qt-1.dist-info/licenses'):
                 (dependencies / name).mkdir(parents=True)
             (dependencies / 'Qt-1.dist-info/licenses/LICENSE').write_text('license', encoding='utf-8')
+            pyqt_metadata = dependencies / 'PyQt6-6.8.1.dist-info'
+            pyqt_metadata.mkdir()
+            (pyqt_metadata / 'METADATA').write_text(
+                'Name: PyQt6\nVersion: 6.8.1\nLicense: GPL v3\n',
+                encoding='utf-8',
+            )
             (dependencies / 'qfluentwidgets/__init__.py').write_text('', encoding='utf-8')
             qml = dependencies / 'PyQt6/Qt6/qml/Unused/Long/Path/asset.png'
             qml.parent.mkdir(parents=True)
@@ -74,8 +80,13 @@ class WindowsPackagingTests(unittest.TestCase):
                              'data/profiles/cfqv9.json',
                              'data/profiles/cfqv1.json',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
+                             'runtime/Lib/site-packages/PyQt6-6.8.1.dist-info/LICENSE',
                              f'{builder.APPLICATION_DISPLAY_NAME}.cmd', 'Hardware.cmd'):
                     self.assertIn(prefix + name, names)
+                self.assertEqual(
+                    bundle.read(prefix + 'runtime/Lib/site-packages/PyQt6-6.8.1.dist-info/LICENSE'),
+                    (ROOT / 'packaging/windows/PyQt6-LICENSE').read_bytes(),
+                )
                 self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in names))
                 self.assertFalse(any('/qml/' in name for name in names))
                 self.assertFalse(any('/test/' in name or '/tests/' in name or

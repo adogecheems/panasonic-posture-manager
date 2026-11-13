@@ -171,9 +171,20 @@ class Window(FluentWidget):
         path = data_root() / 'assets' / name
         self.setWindowIcon(QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png')))
         mark = QPixmap(str(path))
-        # Keep every source pixel. Qt samples the original at the destination
-        # screen's scale instead of enlarging an already downsampled 1x image.
-        mark.setDevicePixelRatio(mark.width() / 72)
+        # Qt 6.12 scales QPixmap while loading, but Qt 6.8 leaves the source at
+        # 1x. Normalize both paths to the current screen's physical pixels.
+        ratio = self.devicePixelRatioF()
+        if ratio <= 1.0:
+            screen = self.screen() or QApplication.primaryScreen()
+            if screen is not None:
+                ratio = screen.devicePixelRatio()
+        ratio = max(1.0, ratio)
+        target_width = max(1, round(72 * ratio))
+        if mark.width() != target_width:
+            mark = mark.scaledToWidth(
+                target_width, Qt.TransformationMode.SmoothTransformation
+            )
+        mark.setDevicePixelRatio(ratio)
         self.titleBar.iconLabel.setPixmap(mark)
 
     def resizeEvent(self, event):
