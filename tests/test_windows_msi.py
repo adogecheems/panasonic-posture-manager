@@ -487,6 +487,11 @@ class MsiPayloadTests(unittest.TestCase):
         for element in styles.values():
             self.assertEqual(element.get('FaceName'), 'Microsoft YaHei UI')
         self.assertGreaterEqual(int(styles['WixUI_Font_Normal'].get('Size')), 9)
+        self.assertEqual(
+            styles['WixUI_Font_Title'].get('Bold'),
+            'no',
+            'Page titles must use the same regular weight as the welcome heading',
+        )
 
         install_dir = next(
             element for element in root.iter()
