@@ -271,6 +271,36 @@ class MsiPayloadTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unsupported MSI culture'):
             msi.culture_files('fr-FR')
 
+    def test_banner_page_copy_is_placed_right_of_the_brand_panel(self):
+        banner_dialogs = {
+            'BrowseDlg',
+            'DiskCostDlg',
+            'FilesInUse',
+            'LicenseAgreementDlg',
+            'MaintenanceTypeDlg',
+            'MsiRMFilesInUse',
+            'OutOfDiskDlg',
+            'OutOfRbDiskDlg',
+        }
+        for culture in ('en-US', 'zh-CN'):
+            localization, _ = msi.culture_files(culture)
+            root = ET.parse(localization).getroot()
+            overrides = {
+                (element.get('Dialog'), element.get('Control')): element
+                for element in root
+                if element.tag.endswith('}UI')
+            }
+            for dialog in banner_dialogs:
+                for control in ('Title', 'Description'):
+                    with self.subTest(
+                        culture=culture,
+                        dialog=dialog,
+                        control=control,
+                    ):
+                        override = overrides[(dialog, control)]
+                        self.assertEqual(override.get('X'), '135')
+                        self.assertEqual(override.get('Width'), '220')
+
     def test_installer_selects_main_location_and_fixes_the_service_location(self):
         source = (ROOT / 'packaging/windows/msi/Package.wxs').read_text(
             encoding='utf-8'
@@ -384,6 +414,10 @@ class MsiPayloadTests(unittest.TestCase):
             for element in install_dir
             if element.tag.endswith('Control')
         }
+        for control_id in ('Title', 'Description'):
+            with self.subTest(control=control_id):
+                self.assertEqual(controls[control_id].get('X'), '135')
+                self.assertEqual(controls[control_id].get('Width'), '220')
         folder_label = controls['FolderLabel']
         folder = controls['Folder']
         change = controls['ChangeFolder']

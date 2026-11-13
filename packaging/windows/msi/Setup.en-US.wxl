@@ -41,4 +41,20 @@
   <String Id="VerifyReadyDlgInstall" Overridable="yes" Value="&amp;Confirm install" />
   <String Id="ExitDialogOptionalText"
       Value="You may need to restart Windows after installation for the new settings to take effect." />
+  <UI Dialog="LicenseAgreementDlg" Control="Title" X="135" Width="220" />
+  <UI Dialog="LicenseAgreementDlg" Control="Description" X="135" Width="220" />
+  <UI Dialog="BrowseDlg" Control="Title" X="135" Width="220" />
+  <UI Dialog="BrowseDlg" Control="Description" X="135" Width="220" />
+  <UI Dialog="MaintenanceTypeDlg" Control="Title" X="135" Width="220" />
+  <UI Dialog="MaintenanceTypeDlg" Control="Description" X="135" Width="220" />
+  <UI Dialog="DiskCostDlg" Control="Title" X="135" Width="220" />
+  <UI Dialog="DiskCostDlg" Control="Description" X="135" Width="220" />
+  <UI Dialog="FilesInUse" Control="Title" X="135" Width="220" />
+  <UI Dialog="FilesInUse" Control="Description" X="135" Width="220" />
+  <UI Dialog="MsiRMFilesInUse" Control="Title" X="135" Width="220" />
+  <UI Dialog="MsiRMFilesInUse" Control="Description" X="135" Width="220" />
+  <UI Dialog="OutOfRbDiskDlg" Control="Title" X="135" Width="220" />
+  <UI Dialog="OutOfRbDiskDlg" Control="Description" X="135" Width="220" />
+  <UI Dialog="OutOfDiskDlg" Control="Title" X="135" Width="220" />
+  <UI Dialog="OutOfDiskDlg" Control="Description" X="135" Width="220" />
 </WixLocalization>
