@@ -12,6 +12,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import subprocess
 import sys
@@ -92,6 +93,33 @@ def project_version() -> str:
     return version
 
 
+def _validate_test_build(test_build: int | None) -> int | None:
+    if test_build is None:
+        return None
+    if type(test_build) is not int or not 1 <= test_build <= 65535:
+        raise ValueError('test build number must be an integer from 1 to 65535')
+    return test_build
+
+
+def test_build_label(version: str, test_build: int) -> str:
+    test_build = _validate_test_build(test_build)
+    if test_build is None:
+        raise ValueError('test build number is required')
+    return f'{version}-build{test_build}'
+
+
+def installer_version(version: str, test_build: int | None) -> str:
+    """Return the numeric four-part ProductVersion used by Windows Installer."""
+
+    test_build = _validate_test_build(test_build)
+    if test_build is None:
+        return version
+    parts = version.split('.')
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise ValueError('test builds require a three-part numeric release version')
+    return f'{version}.{test_build}'
+
+
 def product_code(version: str) -> str:
     """Return one ProductCode shared by every culture of *version*."""
 
@@ -101,11 +129,35 @@ def product_code(version: str) -> str:
     )).upper()
 
 
-def artifact_name(version: str, culture: str) -> str:
+def artifact_name(
+    version: str,
+    culture: str,
+    test_build: int | None = None,
+) -> str:
     """Return a culture-specific MSI name so both installers can coexist."""
 
     culture_files(culture)
-    return f'panasonic-posture-manager-{version}-{culture}-windows-x64.msi'
+    label = version if test_build is None else test_build_label(version, test_build)
+    return f'panasonic-posture-manager-{label}-{culture}-windows-x64.msi'
+
+
+def next_test_build(output: Path, version: str) -> int:
+    """Return the next unused installation-test build number for a release."""
+
+    pattern = re.compile(
+        rf'^panasonic-posture-manager-{re.escape(version)}-build([1-9][0-9]*)-'
+        r'(?:zh-CN|en-US)-windows-x64\.msi$'
+    )
+    builds = []
+    if output.is_dir():
+        for path in output.iterdir():
+            match = pattern.fullmatch(path.name)
+            if match is not None:
+                builds.append(int(match.group(1)))
+    build = _validate_test_build(max(builds, default=0) + 1)
+    if build is None:  # pragma: no cover - the computed value is always numeric
+        raise ValueError('test build number is required')
+    return build
 
 
 def culture_files(culture: str) -> tuple[Path, Path]:
@@ -383,6 +435,7 @@ def build(
     *,
     version: str | None = None,
     culture: str = DEFAULT_MSI_CULTURE,
+    test_build: int | None = None,
     wix: str = 'wix',
     runner=subprocess.run,
 ) -> Path:
@@ -390,6 +443,7 @@ def build(
     version = version or project_version()
     if version != project_version():
         raise ValueError(f'MSI version {version!r} does not match the project version')
+    test_build = _validate_test_build(test_build)
     if not PACKAGE_WXS.is_file():
         raise ValueError('MSI package source is missing')
     if sys.platform != 'win32':
@@ -400,10 +454,16 @@ def build(
             raise ValueError(f'MSI culture resource is missing: {resource}')
 
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / artifact_name(version, culture)
+    archive = output / artifact_name(version, culture, test_build)
     with tempfile.TemporaryDirectory(prefix='posture-msi-', dir=output) as temporary:
         work = Path(temporary)
         groups = payload_files(runtime, dependencies)
+        if test_build is not None:
+            label = test_build_label(version, test_build)
+            for role in groups:
+                groups[role]['app/panasonic_posture/BUILD-VERSION'] = (
+                    f'{label}\n'.encode('ascii')
+                )
         generated = work / 'generated'
         generated.mkdir()
         sources = {}
@@ -446,7 +506,7 @@ def build(
             '-ext', 'WixToolset.UI.wixext',
             '-ext', 'WixToolset.Util.wixext',
             '-loc', str(localization),
-            '-d', f'ProductVersion={version}',
+            '-d', f'ProductVersion={installer_version(version, test_build)}',
             '-d', f'ProductCode={product_code(version)}',
             '-d', f'ProjectRoot={ROOT}',
             '-d', f'LicenseRtf={license_rtf}',
@@ -481,14 +541,34 @@ def main(argv=None) -> int:
         default=DEFAULT_MSI_CULTURE,
         help='Windows Installer UI culture (default: zh-CN)',
     )
+    parser.add_argument(
+        '--test-build',
+        nargs='?',
+        const=0,
+        type=int,
+        metavar='N',
+        help='build installation-test MSI as VERSION-buildN; omit N for the next number',
+    )
     parser.add_argument('--wix', default='wix')
     options = parser.parse_args(argv)
+    test_build = options.test_build
+    if test_build == 0:
+        try:
+            test_build = next_test_build(options.output, project_version())
+        except ValueError as error:
+            parser.error(str(error))
+    elif test_build is not None:
+        try:
+            test_build = _validate_test_build(test_build)
+        except ValueError as error:
+            parser.error(str(error))
     print(build(
         options.output,
         options.runtime,
         options.dependencies,
         version=options.version,
         culture=options.culture,
+        test_build=test_build,
         wix=options.wix,
     ))
     return 0

@@ -13,6 +13,7 @@ from qfluentwidgets import (
 )
 
 from .. import __version__
+from ..build_info import display_version
 from ..contracts import ALL_ERROR_CODES, MODES, ErrorCode
 from ..frontend.actions import ActionRunner, SettingsModel
 from ..frontend.ports import UIClient
@@ -25,6 +26,7 @@ from .update_check import UpdateChecker
 
 
 GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
+APP_VERSION = display_version()
 
 
 def mode_label(mode, _):
@@ -338,7 +340,7 @@ class Settings(Page):
             self.add_card(group, self.startup_card, (self.startup_switch,))
             self.refresh_startup()
         group = self.add_group(_('About'))
-        self.version_card = SettingRow(QIcon(), _('Version'), __version__)
+        self.version_card = SettingRow(QIcon(), _('Version'), APP_VERSION)
         self.update_button = PrimaryPushButton(Icon.SYNC, _('Check for updates'))
         self.update_button.clicked.connect(self.check_updates)
         self.version_card.hBoxLayout.addWidget(
@@ -470,7 +472,7 @@ class Settings(Page):
         self.update_checking = False
         status = (self._('New version available: {version}').format(version=info.latest)
                   if info.update_available else self._('Up to date'))
-        self.version_card.setContent(f'{__version__} · {status}')
+        self.version_card.setContent(f'{APP_VERSION} · {status}')
         self.update_button.setText(self._('Check for updates'))
         self.update_button.setEnabled(True)
         self._schedule_fit()
@@ -478,7 +480,7 @@ class Settings(Page):
     def update_failed(self):
         self.update_checking = False
         status = self._('Unable to check for updates. Try again later.')
-        self.version_card.setContent(f'{__version__} · {status}')
+        self.version_card.setContent(f'{APP_VERSION} · {status}')
         self.update_button.setText(self._('Check for updates'))
         self.update_button.setEnabled(True)
         self._schedule_fit()

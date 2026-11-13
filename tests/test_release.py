@@ -21,6 +21,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from panasonic_posture import __version__  # noqa: E402
+from panasonic_posture.build_info import display_version  # noqa: E402
 
 
 def read(relative: str) -> str:
@@ -44,6 +45,22 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_python_package_and_project_versions_match(self) -> None:
         self.assertEqual(self.project_version, __version__)
+
+    def test_packaged_test_build_version_is_validated_and_display_only(self) -> None:
+        self.assertEqual(
+            display_version(f'{self.project_version}-build12'),
+            f'{self.project_version}-build12',
+        )
+        self.assertEqual(display_version(), self.project_version)
+        for invalid in (
+            f'{self.project_version}-build0',
+            f'{self.project_version}-build-1',
+            '2.4.1-build12',
+            f'{self.project_version}-build12\n',
+            '',
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertEqual(display_version(invalid), self.project_version)
 
     def test_arch_package_version_and_source_tag_match(self) -> None:
         pkgver = match(r"^pkgver=(\S+)$", self.pkgbuild, "PKGBUILD pkgver")

@@ -181,9 +181,14 @@ python tests/check_i18n.py
 | Arch | `(cd packaging/aur && makepkg --cleanbuild)` | 当前目录 |
 | Debian / Ubuntu | `make package-deb` | `dist/packages/` |
 | Fedora | `make package-rpm` | `dist/packages/` |
-| Windows MSI | 分别使用 `--culture zh-CN` 和 `--culture en-US` 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | `dist/windows/` 下两个带 culture 的文件名 |
+| Windows MSI（正式） | 分别使用 `--culture zh-CN` 和 `--culture en-US` 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | `dist/windows/` 下两个带 culture 的文件名 |
+| Windows MSI（安装测试） | 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies --test-build` | `dist/windows/` 下带 `build<N>` 的文件名 |
 
 Windows 的正式构建、发布和兼容契约只覆盖两个本地化 MSI。`panasonic-posture-windows-portable.zip` 不属于发布产物；开发时若通过 `packaging/windows/build.py` 生成，只用于诊断，其文件名、目录布局、校验文件和兼容性均不受支持。
+
+每次安装测试必须使用新的 build 编号。`--test-build` 会根据 `dist/windows/` 中同版本产物自动选择下一个编号，也可用 `--test-build 7` 显式指定。用户可见版本为 `2.4.0-build7`，MSI 内部四段版本为 `2.4.0.7`；ProductCode 仍由正式版本 `2.4.0` 决定。安装包的 `BUILD-VERSION` 和关于页显示该测试版本，正式发布构建不带此后缀。
+
+安装测试的 MSI 版本高于同一基础版本的正式包。在测试机上安装同基础版本的正式包前，应先卸载测试构建，或先提升正式版本号。
 
 Windows MSI 默认构建简体中文界面；正式发布同时生成简体中文和英文安装包。两种文化使用相同的版本 ProductCode 和 UpgradeCode，文件名分别包含 `zh-CN` 或 `en-US`，不能相互覆盖。安装与卸载共用同一套方形应用标志、欢迎/完成页背景、微软雅黑字体、最终确认页和重启提示，界面资源位于 `packaging/windows/msi/`；卸载流程提供明确的维护说明、卸载确认、带品牌背景的执行页和卸载专用完成提示。主程序可安装到用户选择的本地固定磁盘目录，输入上级目录时自动补全 `PanasonicPostureManager` 叶目录；安装器拒绝磁盘根、Windows/系统目录、固定服务目录、重解析点、过长路径和已有陌生文件的目录。静默安装必须在 `INSTALLFOLDER` 中给出包含该叶目录的完整绝对路径。硬件运行时和服务固定安装到 `Program Files\PanasonicPostureManagerService`，不随主程序路径变化。
 

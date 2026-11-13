@@ -726,6 +726,73 @@ class MsiPayloadTests(unittest.TestCase):
             msi.product_code('2.4.1'),
         )
 
+    def test_installation_test_builds_have_a_visible_suffix(self):
+        self.assertEqual(
+            msi.artifact_name('2.4.0', 'zh-CN', test_build=7),
+            'panasonic-posture-manager-2.4.0-build7-zh-CN-windows-x64.msi',
+        )
+        self.assertEqual(msi.test_build_label('2.4.0', 7), '2.4.0-build7')
+        self.assertEqual(msi.installer_version('2.4.0', 7), '2.4.0.7')
+        self.assertEqual(
+            msi.product_code('2.4.0'),
+            msi.product_code('2.4.0'),
+        )
+        for invalid in (0, -1, 65536, True, '7'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                msi.test_build_label('2.4.0', invalid)
+
+    def test_next_installation_test_build_ignores_other_releases(self):
+        output = self.root / 'numbered-output'
+        output.mkdir()
+        for name in (
+            msi.artifact_name('2.4.0', 'zh-CN', test_build=2),
+            msi.artifact_name('2.4.0', 'en-US', test_build=5),
+            msi.artifact_name('2.4.0', 'zh-CN'),
+            msi.artifact_name('2.4.1', 'zh-CN', test_build=20),
+        ):
+            (output / name).write_bytes(b'msi')
+        self.assertEqual(msi.next_test_build(output, '2.4.0'), 6)
+
+    def test_test_build_injects_label_and_numeric_product_version(self):
+        output = self.root / 'test-build-output'
+        commands = []
+
+        def build_with_fixture(command, **options):
+            commands.append(command)
+            if command[0] == 'wix-fixture' and command[1] == 'build':
+                components = Path(command[-1]).read_text(encoding='utf-8')
+                root = ET.fromstring(components)
+                sources = [
+                    element.get('Source')
+                    for element in root.iter()
+                    if element.tag.endswith('File')
+                    and (element.get('Source') or '').endswith('BUILD-VERSION')
+                ]
+                self.assertEqual(len(sources), 2)
+                self.assertTrue(all(
+                    Path(source).read_text(encoding='ascii') == '2.4.0-build7\n'
+                    for source in sources
+                ))
+                destination = Path(command[command.index('-o') + 1])
+                destination.write_bytes(b'msi fixture')
+            return None
+
+        package = msi.build(
+            output,
+            self.runtime,
+            self.dependencies,
+            version='2.4.0',
+            culture='zh-CN',
+            test_build=7,
+            wix='wix-fixture',
+            runner=build_with_fixture,
+        )
+        self.assertEqual(package.name,
+                         'panasonic-posture-manager-2.4.0-build7-zh-CN-windows-x64.msi')
+        compile_command = commands[0]
+        self.assertIn('ProductVersion=2.4.0.7', compile_command)
+        self.assertIn(f'ProductCode={msi.product_code("2.4.0")}', compile_command)
+
     def test_both_cultures_build_with_distinct_names_and_one_product_identity(self):
         output = self.root / 'localized-output'
         commands = []
@@ -763,6 +830,7 @@ class MsiPayloadTests(unittest.TestCase):
                 f'ProductCode={msi.product_code("2.4.0")}',
                 command,
             )
+            self.assertIn('ProductVersion=2.4.0', command)
         self.assertNotEqual(
             build_commands[0][build_commands[0].index('-culture') + 1],
             build_commands[1][build_commands[1].index('-culture') + 1],

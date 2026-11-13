@@ -1,14 +1,14 @@
 """Settings widgets with serial, coalesced asynchronous writes."""
 from typing import Callable
 from gi.repository import Adw, Gdk, Gtk
-from .. import __version__
+from ..build_info import display_version
 from ..frontend.ports import UIClient
 from ..frontend.actions import SettingsModel, ActionRunner
 from .common import _
 from .errors import describe_error
 
 AUTHOR_NAME = 'adogecheems'
-APP_VERSION = __version__
+APP_VERSION = display_version()
 GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
 MODES = (
     ('auto', _('Automatic'), _('Switch automatically with the current posture')),
