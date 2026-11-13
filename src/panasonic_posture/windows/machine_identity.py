@@ -1,16 +1,14 @@
-"""Single source of truth for the verified Windows machine identity."""
-
-SUPPORTED_WINDOWS_MACHINE = ('Panasonic Corporation', 'CFQV8-1L')
+"""Read the Windows BIOS identity used only for profile selection."""
 
 
 def read_machine_identity() -> tuple[str, str]:
-    """Read only the BIOS identity strings; callers own support decisions."""
+    """Return normalized BIOS strings without imposing a model allowlist."""
     import winreg
 
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'HARDWARE\DESCRIPTION\System\BIOS') as key:
         vendor = winreg.QueryValueEx(key, 'SystemManufacturer')[0]
         product = winreg.QueryValueEx(key, 'SystemProductName')[0]
-    return vendor, product
+    return str(vendor or '').strip(), str(product or '').strip()
 
 
-__all__ = ['SUPPORTED_WINDOWS_MACHINE', 'read_machine_identity']
+__all__ = ['read_machine_identity']

@@ -51,6 +51,16 @@ def configure_application(language=None):
     return name
 
 
+def _prefers_reduced_motion(hints) -> bool:
+    """Read the accessibility preference when the Qt API exposes it."""
+    accessibility = getattr(hints, 'accessibility', None)
+    motion_preference = getattr(Qt, 'MotionPreference', None)
+    if accessibility is None or motion_preference is None:
+        # Qt 6.8 and other older Qt 6 releases predate the accessibility API.
+        return False
+    return accessibility().motionPreference() == motion_preference.ReducedMotion
+
+
 class Window(FluentWidget):
     state_changed = pyqtSignal(dict)
     connection_lost = pyqtSignal()
@@ -180,8 +190,9 @@ class Window(FluentWidget):
         self.page_fade.stop()
         self.stackedWidget.setCurrentWidget(page)
         self.navigation.setCurrentItem(page.objectName())
-        motion = QApplication.styleHints().accessibility().motionPreference()
-        self.page_opacity.setEnabled(motion != Qt.MotionPreference.ReducedMotion)
+        self.page_opacity.setEnabled(
+            not _prefers_reduced_motion(QApplication.styleHints())
+        )
         if self.page_opacity.isEnabled():
             self.page_fade.start()
 
@@ -238,15 +249,11 @@ def run(*, language=None, background=False) -> int:
         from ..windows.app_identity import configure_process_identity
         configure_process_identity()
     if hardware_ui:
-        from ..windows.machine_profile import verified_machine
         from ..windows.native_preflight import require_native_user
         try:
             require_native_user()  # UI activation/startup never runs with an elevated token.
-            verified_machine()
-        except PermissionError:
+        except (PermissionError, OSError):
             return hardware_start_failure(language, 'session')
-        except OSError:
-            return hardware_start_failure(language, 'machine')
         from ..windows.activation import WindowActivation
         from ..windows.startup import (
             initialize_default_startup, LoginStartup, startup_command, UnavailableStartup,
@@ -299,12 +306,10 @@ def run(*, language=None, background=False) -> int:
 
 def hardware_start_failure(language, reason: str) -> int:
     """Explain a preflight rejection without starting a backend or touching state."""
-    if reason not in ('session', 'machine'):
+    if reason != 'session':
         raise ValueError('unknown hardware startup failure')
     _ = translator(language)
-    detail = (_('Run from the active local desktop with a normal user account.')
-              if reason == 'session' else
-              _('This device is not verified for Windows hardware mode.'))
+    detail = _('Run from the active local desktop with a normal user account.')
     app = QApplication.instance() or QApplication([sys.argv[0]])
     QMessageBox.critical(None, _('Hardware mode is unavailable'), detail)
     return 1

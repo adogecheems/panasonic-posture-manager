@@ -174,7 +174,10 @@ class TrustedRuntime:
             for name in (HARDWARE_EXECUTABLE, 'runtime/Lib/os.py',
                          HARDWARE_PTH,
                          'app/panasonic_posture/windows/hardware_service.py',
-                         'app/panasonic_posture/windows/session_agent.py'):
+                         'app/panasonic_posture/windows/session_agent.py',
+                         'data/profiles/cfqv8.json',
+                         'data/profiles/cfqv9.json',
+                         'data/profiles/cfqv1.json'):
                 if not (self.root / name).is_file():
                     raise ValueError(f'incomplete installed runtime: {name}')
             paths = list((self.root / 'runtime').glob('python*._pth'))

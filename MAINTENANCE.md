@@ -104,13 +104,13 @@ Windows MSI 会停止并移除服务，同时恢复安装前的平板指示器�
 
 ## Windows 运维
 
-正式安装支持 Windows 10/11 x64，当前只对 `Panasonic Corporation CFQV8-1L` 开放。MSI 包含受保护运行时、桌面界面、LocalSystem 硬件服务和可逆的 `ACPI\INT33D3` 非独占配置。
+正式安装支持 Windows 10/11 x64。Panasonic CFQV8、CFQV9、CFQV1 全系使用明确的已验证产品族配置；其他机型回退到与 Linux 相同的 `generic/compatible` 路径，由 WinRT 传感器、ETW 物理源、唯一 `ACPI\INT33D3` 输出和显示会话实际探测能力。MSI 包含受保护运行时、桌面界面、LocalSystem 硬件服务和可逆的 `ACPI\INT33D3` 非独占配置。
 
 运行期边界：
 
 - 物理姿态变化只接受 Intel HID Event Filter Event 115：`0xCC` 为平板，`0xCD` 为笔记本。
-- 启动时只读取一次平板指示器和恢复记录，建立初始状态；无法明确时最多等待五秒，然后使用非平板安全基线。
-- `ACPI\INT33D3` 只用于发布软件帐篷/支架姿态，不用于反推运行期物理状态，也不会发布 shell 平板模式或自动打开屏幕键盘。
+- 明确 QV8/QV9/QV1 配置在启动时只读取一次平板指示器和恢复记录，建立初始状态；无法明确时最多等待五秒，然后使用非平板安全基线。其他机型必须通过能力探测收到一次合法 ETW Event 115 后才开放物理准入。
+- `ACPI\INT33D3` 按硬件 ID 唯一发现，不绑定某个固件实例后缀；它只用于发布软件帐篷/支架姿态，不用于反推运行期物理状态，也不会发布 shell 平板模式或自动打开屏幕键盘。
 - 界面通过经过身份校验的本地命名管道连接硬件服务；服务不可用时显示断线，不回退到模拟数据。
 - 界面和会话进程以普通用户运行；显示操作与硬件写入都必须匹配服务登记、会话资格、姿态代次和租约。
 - MSI 开始菜单快捷方式与界面进程使用同一个固定 AUMID；快捷方式重建后必须回读校验，避免通知来源回退为 `Python`。
@@ -127,7 +127,7 @@ Linux 依赖 Python 3.11+、C11 编译器、Make、gettext、PyGObject、GTK 4�
 PYTHONPATH=src /usr/bin/python3 -m panasonic_posture.cli
 ```
 
-Windows 源码运行使用 64 位 Python 3.11+：
+Windows 源码运行使用 64 位 Python 3.11+。Windows UI 固定使用 PyQt6 6.8.1 和 Qt 6.8.2；如需升级 Qt，必须先重新核对 Windows 支持范围和完成 UI 回归测试：
 
 ```bat
 py -3 -m venv .venv-windows

@@ -13,7 +13,7 @@
 ## 1. 当前产品边界
 
 - Linux 支持 x86_64 GNOME Wayland 与 KDE Plasma 6 Wayland。仓库为 Panasonic CFQV8、CFQV9、CFQV1 提供已验证机型配置；其他 360° 翻转本只有在硬件探测明确匹配时才可使用。
-- Windows 支持 Windows 10/11 x64，当前只对 `Panasonic Corporation CFQV8-1L` 开放。正式安装使用每机器 MSI。
+- Windows 支持 Windows 10/11 x64。Panasonic CFQV8、CFQV9、CFQV1 全系使用明确机型配置；其他机型使用与 Linux 相同的通用能力探测，不得恢复整机白名单。正式安装使用每机器 MSI。
 - 两个平台的手动模式都只有自动、笔记本、帐篷、支架。平板是物理状态，不是手动模式。
 - Windows 保持内置键盘和触控板可用，不发布 shell 平板模式，不自动打开屏幕键盘，不加载自研输入过滤驱动。
 - Windows 正式用户界面只连接已安装的 LocalSystem 硬件服务。服务不可用时显示断线；不得回退到模拟状态、测试客户端或 CSM 推断。
@@ -50,9 +50,10 @@
 ### 硬件服务
 
 - `HardwareRuntime` 以 LocalSystem 运行。启动顺序为 ETW 物理源、注入查询的共用 Engine、WinRT 传感器、RPC 端点和可信会话监管器。
-- 启动阶段只允许一次只读平板指示器/恢复记录基线。存在旧恢复记录或结果冲突时，用稳定笔记本/帐篷几何校验；五秒内仍不明确时使用非平板安全基线，不等待首个 ETW 事件。
+- Windows 机型 profile 只选择已知设备与朝向语义，不授予硬件访问；未命中 profile 时回退到 `generic/compatible`，由实际传感器、ETW、CSM 和显示端口决定可用能力。
+- 明确 QV8/QV9/QV1 profile 只允许一次只读平板指示器/恢复记录基线。存在旧恢复记录或结果冲突时，用稳定笔记本/帐篷几何校验；五秒内仍不明确时使用非平板安全基线，不等待首个 ETW 事件。通用能力探测机型必须先收到一次合法 ETW Event 115 才开放物理准入，不得用超时伪造成健康状态。
 - 运行期物理变化只来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本；`0xCA/0xCB` 不改变状态。
-- `ACPI\INT33D3` 只用于向 Windows 发布软件帐篷/支架姿态，不能反推物理状态。所有写入、恢复和恢复记录清理必须先取得健康 ETW 门禁。
+- `ACPI\INT33D3` 按 ACPI 硬件 ID 唯一发现，不绑定固定实例后缀，只用于向 Windows 发布软件帐篷/支架姿态，不能反推物理状态。所有写入、恢复和恢复记录清理必须先取得健康 ETW 门禁。
 - 相同目标的 CSM 租约应直接复用；不同目标或真正释放时才恢复 `pending.original`。
 - 平板指示器无法打开时可降级为仅显示模式；不得创建写入器、伪造 CSM 成功或触碰其恢复记录。
 

@@ -298,10 +298,18 @@ class AcpiPhysicalSwitch:
     this application's own writes.  It must never seed or replace this state.
     """
 
-    def __init__(self, backend: EtwBackend | None = None,
-                 initial_reader: Callable[[], bool | None] | None = None) -> None:
+    def __init__(
+        self,
+        backend: EtwBackend | None = None,
+        initial_reader: Callable[[], bool | None] | None = None,
+        *,
+        trusted_startup_baseline: bool = True,
+    ) -> None:
+        if type(trusted_startup_baseline) is not bool:
+            raise ValueError('startup baseline trust must be explicit')
         self.backend = backend or WindowsHidEventFilterBackend()
         self.initial_reader = initial_reader
+        self.trusted_startup_baseline = trusted_startup_baseline
         self._lock = threading.Lock()
         self._state = _SwitchState(None, HardwareStatus.ABSENT)
         self._started = self._bootstrap_failed = False
@@ -328,7 +336,8 @@ class AcpiPhysicalSwitch:
     def bootstrap(self) -> None:
         """Acquire the optional read-only startup baseline after sensor start."""
 
-        if self.initial_reader is None or self._bootstrap_failed:
+        if (not self.trusted_startup_baseline or self.initial_reader is None
+                or self._bootstrap_failed):
             return
         with self._lock:
             if not self._started or self._state.status != HardwareStatus.ABSENT:
@@ -356,6 +365,8 @@ class AcpiPhysicalSwitch:
 
         if type(fallback) is not bool:
             raise ValueError('fallback physical state must be boolean')
+        if not self.trusted_startup_baseline:
+            return
         if self.backend.failure is not None:
             return
         with self._lock:

@@ -104,6 +104,23 @@ class PhysicalSwitchTests(unittest.TestCase):
         self.assertEqual(switch.query(), (False, HardwareStatus.OK))
         switch.close()
 
+    def test_generic_mode_requires_a_real_event_before_admission(self):
+        backend = FakeBackend()
+        reads = []
+        switch = AcpiPhysicalSwitch(
+            backend,
+            initial_reader=lambda: reads.append(True) or False,
+            trusted_startup_baseline=False,
+        )
+        switch.start()
+        switch.bootstrap()
+        switch.finalize_bootstrap(False)
+        self.assertEqual(reads, [])
+        self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+        backend.emit(0xC0, ACPI_LAPTOP_NOTIFY)
+        self.assertEqual(switch.query(), (False, HardwareStatus.OK))
+        switch.close()
+
     def test_state_is_unknown_until_an_independent_etw_event_arrives(self):
         backend = FakeBackend()
         switch = AcpiPhysicalSwitch(backend)

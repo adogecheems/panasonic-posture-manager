@@ -1,11 +1,11 @@
-"""Narrow access to the verified laptop/slate GPIO indicator.
+"""Narrow access to the unique Intel convertible-slate GPIO indicator.
 
 The Windows PDO consumes a one-byte write which toggles the indicator; it is
-not an assignment API.  This module identifies the one supported device,
-opens only its physical-device-object path, reads the current raw state before
-every change, performs at most one toggle, and verifies the result by reading
-it back.  It never writes the shell tablet mode and never patches the CSM
-registry cache.
+not an assignment API. This module discovers one present device with the
+supported ACPI hardware ID, opens only its physical-device-object path, reads
+the current raw state before every change, performs at most one toggle, and
+verifies the result by reading it back. It never writes the shell tablet mode
+and never patches the CSM registry cache.
 """
 from __future__ import annotations
 
@@ -16,11 +16,9 @@ import time
 from typing import Callable, Protocol
 
 from ..model import HardwareStatus
-from .machine_identity import SUPPORTED_WINDOWS_MACHINE, read_machine_identity
 from .slate_journal import SlateJournal, SlateLease
 
-SUPPORTED_INSTANCE_ID = r"ACPI\INT33D3\2&DABA3FF&0"
-SUPPORTED_MANUFACTURER, SUPPORTED_PRODUCT = SUPPORTED_WINDOWS_MACHINE
+SLATE_HARDWARE_ID = r"ACPI\INT33D3"
 
 _GENERIC_READ = 0x80000000
 _GENERIC_WRITE = 0x40000000
@@ -34,14 +32,26 @@ _DIGCF_PRESENT = 0x00000002
 _DIGCF_ALLCLASSES = 0x00000004
 _INVALID_HANDLE_VALUE = C.c_void_p(-1).value
 _ERROR_NO_MORE_ITEMS = 259
-# The verified CFQV8 laptop posture exposes 1. SlateNotifier may also write 0
-# to publish a software tent/stand posture to Windows.
+# The verified convertible-slate driver exposes 1 for laptop. SlateNotifier
+# may write 0 to publish a software tent/stand posture to Windows.
 _SLATE_RAW = 0
 _LAPTOP_RAW = 1
 
 
 class SlateError(OSError):
     """The supported convertible-slate indicator is unavailable or invalid."""
+
+
+def slate_instance_matches(
+    instance_id: object,
+    hardware_id: str = SLATE_HARDWARE_ID,
+) -> bool:
+    """Match the ACPI hardware ID while allowing firmware instance suffixes."""
+    if not isinstance(instance_id, str) or not isinstance(hardware_id, str):
+        return False
+    value = instance_id.strip().casefold()
+    expected = hardware_id.strip().casefold()
+    return bool(expected) and (value == expected or value.startswith(expected + '\\'))
 
 
 class GUID(C.Structure):
@@ -78,25 +88,24 @@ _DEVPKEY_DEVICE_PDO_NAME = DevicePropertyKey(
 
 
 class NativeSlateDevice:
-    """Open and toggle the exact verified child device."""
+    """Open and toggle the unique supported child device."""
 
     def __init__(
         self,
         *,
-        expected_machine: tuple[str, str] = (SUPPORTED_MANUFACTURER, SUPPORTED_PRODUCT),
-        expected_instance: str = SUPPORTED_INSTANCE_ID,
+        expected_hardware_id: str = SLATE_HARDWARE_ID,
         sleep=time.sleep,
     ) -> None:
         if sys.platform != "win32":
             raise OSError("convertible-slate access requires Windows")
-        self.expected_machine = expected_machine
-        self.expected_instance = expected_instance
+        if not isinstance(expected_hardware_id, str) or not expected_hardware_id.strip():
+            raise ValueError("a convertible-slate hardware ID is required")
+        self.expected_hardware_id = expected_hardware_id.strip()
         self.sleep = sleep
         self.handle = None
         self._bind()
         try:
-            self._verify_machine()
-            pdo_name = self._physical_device_object_name(expected_instance)
+            pdo_name = self._physical_device_object_name(self.expected_hardware_id)
             self.handle = self._open_pdo(pdo_name)
         except BaseException:
             self.close()
@@ -190,15 +199,7 @@ class NativeSlateDevice:
             self.kernel, "CloseHandle", wintypes.BOOL, wintypes.HANDLE
         )
 
-    def _verify_machine(self) -> None:
-        try:
-            actual = read_machine_identity()
-        except OSError as error:
-            raise SlateError("cannot identify the installed Windows machine") from error
-        if actual != self.expected_machine:
-            raise SlateError("convertible-slate control is not verified for this machine")
-
-    def _physical_device_object_name(self, instance_id: str) -> str:
+    def _physical_device_object_name(self, hardware_id: str) -> str:
         handle = self.SetupDiGetClassDevsW(
             None, None, None, _DIGCF_PRESENT | _DIGCF_ALLCLASSES
         )
@@ -220,7 +221,7 @@ class NativeSlateDevice:
                     handle, C.byref(info), buffer, len(buffer), None
                 ):
                     raise SlateError(C.get_last_error(), "cannot read device identity")
-                if buffer.value.casefold() == instance_id.casefold():
+                if slate_instance_matches(buffer.value, hardware_id):
                     found.append(info)
                 index += 1
             if len(found) != 1:
@@ -451,10 +452,6 @@ class SlateNotifier:
 
 
 __all__ = [
-    "NativeSlateDevice",
-    "SUPPORTED_INSTANCE_ID",
-    "SUPPORTED_MANUFACTURER",
-    "SUPPORTED_PRODUCT",
-    "SlateError",
-    "SlateNotifier",
+    "NativeSlateDevice", "SLATE_HARDWARE_ID", "SlateError", "SlateNotifier",
+    "slate_instance_matches",
 ]

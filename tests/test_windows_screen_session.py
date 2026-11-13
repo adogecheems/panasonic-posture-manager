@@ -17,10 +17,8 @@ from panasonic_posture.service.engine import Engine
 from panasonic_posture.session.failures import DisplayError, ServiceError
 from panasonic_posture.session.journal import Journal
 from panasonic_posture.windows.display import Panel
-from panasonic_posture.windows.orientation import OrientationReading
 from panasonic_posture.windows.screen_session import (
-    SCREEN_MODES, ScreenSession, SessionBridge, ProfileSensor,
-    select_native_display, verified_machine,
+    SCREEN_MODES, ScreenSession, SessionBridge, select_native_display,
 )
 from panasonic_posture.windows.session_display import QualifiedDisplay
 from panasonic_posture.windows.hardware_release import HardwareReleaseCoordinator
@@ -207,29 +205,6 @@ class BridgeTests(unittest.TestCase):
     def test_refreshable_display_does_not_advertise_manual_tablet(self):
         self.assertEqual(SCREEN_MODES, ('auto', 'laptop', 'tent', 'stand'))
 
-    def test_native_machine_preflight_requires_the_collected_exact_model(self):
-        from unittest.mock import patch
-
-        class Key:
-            def __enter__(self): return self
-            def __exit__(self, *args): return False
-
-        def identity(vendor, product):
-            def query(key, name):
-                del key
-                return (vendor if name == 'SystemManufacturer' else product), 1
-            return query
-
-        with patch('winreg.OpenKey', return_value=Key()):
-            with patch('winreg.QueryValueEx', side_effect=identity('Panasonic Corporation', 'CFQV8-1L')):
-                self.assertEqual(verified_machine(), ('Panasonic Corporation', 'CFQV8-1L'))
-            for vendor, product in (('Panasonic Corporation', 'CFQV9-1L'),
-                                    ('Other', 'CFQV8-1L')):
-                with self.subTest(vendor=vendor, product=product), \
-                        patch('winreg.QueryValueEx', side_effect=identity(vendor, product)), \
-                        self.assertRaises(OSError):
-                    verified_machine()
-
     def test_native_display_selection_uses_read_only_external_layout_or_keeps_recovery(self):
         external = Panel('external', r'\\.\DISPLAY2', (1, 0, 1), 5, 0, 1920, 1080, 0)
         api = SimpleNamespace(panels=lambda: [external])
@@ -322,21 +297,5 @@ from panasonic_posture.windows.screen_session import ScreenSession
             bridge.close()
             with self.assertRaises(ServiceError): pending.result(timeout=2)
         with self.assertRaises(ServiceError): bridge.get_state()
-
-    def test_profile_does_not_apply_mount_to_another_device(self):
-        direction = OrientationReading(1, 10., 'orientation-1')
-        sensor = SimpleNamespace(info=SensorInfo(ready=True, backend='windows-winrt', device='other'),
-                                 reading=lambda: SensorReading((0., 0., -9.81), 10.),
-                                 orientation=lambda: direction)
-        port = ProfileSensor(sensor)
-        self.assertFalse(port.info.ready)
-        self.assertFalse(port.reading().valid)
-        self.assertIsNone(port.orientation())
-        sensor.info = replace(sensor.info, device='')
-        self.assertFalse(port.info.ready)
-        sensor.info = replace(sensor.info, device=r'\\?\HID#Vid_8087&Pid_0AC2#unique')
-        self.assertTrue(port.info.ready)
-        self.assertTrue(port.reading().valid)
-        self.assertIs(port.orientation(), direction)
 
 if __name__ == '__main__': unittest.main()

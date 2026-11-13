@@ -310,9 +310,6 @@ msgstr "硬件模式不可用"
 msgid "Run from the active local desktop with a normal user account."
 msgstr "请从当前活动的本地桌面使用普通用户账户运行。"
 
-msgid "This device is not verified for Windows hardware mode."
-msgstr "此设备尚未通过 Windows 硬件模式验证。"
-
 msgid "Background"
 msgstr "后台运行"
 

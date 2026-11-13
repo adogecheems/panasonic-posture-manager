@@ -54,13 +54,23 @@ class BuiltinProfileTests(unittest.TestCase):
         self.assertTrue(profile.supported)
         self.assertEqual(profile.label, "CFQV8")
 
-    def test_qv9_and_qv1_profiles_are_found(self):
-        for product, identifier in (
+    def test_all_qv_family_variants_are_found(self):
+        families = (
+            ("CFQV8", "cfqv8"),
+            ("CFQV8-1L", "cfqv8"),
+            ("CFQV8ANY", "cfqv8"),
+            ("CF-QV8", "cfqv8"),
+            ("CF-QV8-TEST", "cfqv8"),
             ("CFQV9", "cfqv9"),
+            ("CFQV9-1L", "cfqv9"),
+            ("CFQV9ANY", "cfqv9"),
             ("CF-QV9-TEST", "cfqv9"),
             ("CFQV1", "cfqv1"),
+            ("CFQV1-1L", "cfqv1"),
+            ("CFQV1ANY", "cfqv1"),
             ("CF-QV1-TEST", "cfqv1"),
-        ):
+        )
+        for product, identifier in families:
             with self.subTest(product=product):
                 profile = load_profile(("Panasonic Corporation", product), [PROFILES])
                 self.assertEqual(profile.id, identifier)

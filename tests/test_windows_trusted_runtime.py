@@ -47,7 +47,10 @@ class RuntimeTests(unittest.TestCase):
                      'runtime/Lib/os.py',
                      'runtime/DLLs/dummy.dll',
                      'app/panasonic_posture/windows/hardware_service.py',
-                     'app/panasonic_posture/windows/session_agent.py'):
+                     'app/panasonic_posture/windows/session_agent.py',
+                     'data/profiles/cfqv8.json',
+                     'data/profiles/cfqv9.json',
+                     'data/profiles/cfqv1.json'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'fixture')
@@ -109,3 +112,9 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             TrustedRuntime(self.root, verifier=guard)
         self.assertTrue(guard.closed)
+
+    def test_missing_product_profiles_are_rejected_as_an_incomplete_runtime(self):
+        (self.root / 'data/profiles/cfqv9.json').unlink()
+        with self.assertRaisesRegex(ValueError, 'data/profiles/cfqv9.json'):
+            TrustedRuntime(self.root, verifier=self.guard)
+        self.assertTrue(self.guard.closed)

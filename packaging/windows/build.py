@@ -68,6 +68,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
              ('*.chm', 'qml', 'pywin32_test*', *development_trees))
     add_tree(ROOT / 'src/panasonic_posture', 'app/panasonic_posture', ('__pycache__', '*.pyc'))
     add_tree(ROOT / 'data/assets', 'data/assets')
+    add_tree(ROOT / 'data/profiles', 'data/profiles')
     files['po/zh_CN.po'] = ROOT / 'po/zh_CN.po'
     for name in ('LICENSE', 'README.md', 'MAINTENANCE.md'):
         files[name] = ROOT / name

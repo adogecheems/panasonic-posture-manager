@@ -160,6 +160,7 @@ def payload_files(
     service = {
         name: value for name, value in selected.items()
         if name.startswith(('runtime/', 'app/'))
+        or name.startswith('data/profiles/')
         or name in FIXED_SERVICE_SCRIPTS
     }
     required = {
@@ -172,6 +173,9 @@ def payload_files(
             'configure-slate-device.ps1',
             'hardware-service.ps1',
             'repair-start-menu-shortcut.ps1',
+            'data/profiles/cfqv8.json',
+            'data/profiles/cfqv9.json',
+            'data/profiles/cfqv1.json',
             'runtime/python-hardware.exe',
             'runtime/pythonw.exe',
         },

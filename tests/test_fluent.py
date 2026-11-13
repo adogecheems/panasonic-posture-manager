@@ -155,6 +155,14 @@ class UiClientTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent UI dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def test_reduced_motion_falls_back_before_qt_accessibility_api(self):
+        self.run_ui('''
+from panasonic_posture.fluent.app import _prefers_reduced_motion
+class LegacyStyleHints:
+    pass
+assert not _prefers_reduced_motion(LegacyStyleHints())
+''')
+
     def test_application_name_follows_the_windows_ui_language(self):
         self.run_ui('''
 from panasonic_posture.fluent.app import configure_application
@@ -236,7 +244,7 @@ assert errors[-1] == (
 assert all('PRIVATE' not in content for _, content in errors)
 ''')
 
-    def test_hardware_preflight_explains_session_and_machine_rejections(self):
+    def test_hardware_preflight_explains_local_session_rejection(self):
         self.run_ui('''
 from panasonic_posture.fluent.app import hardware_start_failure
 from PyQt6.QtWidgets import QMessageBox
@@ -246,11 +254,6 @@ assert hardware_start_failure('en', 'session') == 1
 assert messages[-1] == (
     'Hardware mode is unavailable',
     'Run from the active local desktop with a normal user account.',
-)
-assert hardware_start_failure('en', 'machine') == 1
-assert messages[-1] == (
-    'Hardware mode is unavailable',
-    'This device is not verified for Windows hardware mode.',
 )
 try:
     hardware_start_failure('en', 'unknown')

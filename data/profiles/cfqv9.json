@@ -2,10 +2,8 @@
   "id": "cfqv9",
   "match": {
     "product_glob": [
-      "CFQV9",
-      "CFQV9-*",
-      "CF-QV9",
-      "CF-QV9-*"
+      "CFQV9*",
+      "CF-QV9*"
     ]
   },
   "support_tier": "validated",

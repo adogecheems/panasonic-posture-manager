@@ -29,6 +29,19 @@ sys.meta_path.insert(0, Block())
 
 
 class WindowsArchitectureTests(unittest.TestCase):
+    def test_windows_composition_has_no_machine_identity_allowlist(self):
+        root = SOURCE / 'panasonic_posture'
+        for relative in (
+            'windows/hardware_application.py',
+            'windows/machine_profile.py',
+            'windows/screen_session.py',
+            'fluent/app.py',
+        ):
+            with self.subTest(relative=relative):
+                source = (root / relative).read_text(encoding='utf-8')
+                self.assertNotIn('SUPPORTED_WINDOWS_MACHINE', source)
+                self.assertNotIn('verified_machine', source)
+
     def test_legacy_development_backend_is_absent_from_the_product(self):
         windows = SOURCE / 'panasonic_posture/windows'
         for name in ('backend.py', 'client.py', 'private_backend.py', 'simulation.py'):
@@ -89,8 +102,8 @@ blocked = {
     'panasonic_posture.windows.security',
     'panasonic_posture.windows.session_agent',
 }
-from panasonic_posture.windows.machine_profile import ProfileSensor, verified_machine
-assert ProfileSensor and verified_machine
+from panasonic_posture.windows.machine_profile import resolve_windows_profile
+assert resolve_windows_profile
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
 

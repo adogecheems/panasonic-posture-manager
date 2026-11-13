@@ -11,6 +11,7 @@ from panasonic_posture.windows.convertible_slate import (
     NativeSlateDevice,
     SlateError,
     SlateNotifier,
+    slate_instance_matches,
 )
 from panasonic_posture.windows.session_display import QualifiedDisplay, SessionHardwareQuery
 from panasonic_posture.windows.slate_journal import SlateJournal, lease_path
@@ -267,6 +268,24 @@ class SlateNotifierTests(unittest.TestCase):
 
 
 class NativeSlateDeviceTests(unittest.TestCase):
+    def test_slate_capability_uses_the_unique_hardware_id_not_one_instance(self):
+        for instance in (
+            r"ACPI\INT33D3\2&DABA3FF&0",
+            r"ACPI\INT33D3\2&OTHERFIRMWARE&0",
+            r"acpi\int33d3\different",
+        ):
+            with self.subTest(instance=instance):
+                self.assertTrue(slate_instance_matches(instance))
+        for instance in (
+            "",
+            r"ACPI\INT33D30\2&DABA3FF&0",
+            r"ACPI\INT33D4\2&DABA3FF&0",
+            r"PCI\INT33D3\2&DABA3FF&0",
+        ):
+            with self.subTest(instance=instance):
+                self.assertFalse(slate_instance_matches(instance))
+        self.assertFalse(slate_instance_matches(r"ACPI\INT33D3\x", ""))
+
     def test_device_toggle_is_conditional_and_read_back(self):
         device = object.__new__(NativeSlateDevice)
         state = [1]

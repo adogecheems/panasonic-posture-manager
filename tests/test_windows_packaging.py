@@ -15,6 +15,18 @@ spec.loader.exec_module(builder)
 
 
 class WindowsPackagingTests(unittest.TestCase):
+    def test_ui_requirements_pin_the_supported_qt_lts_runtime(self):
+        requirements = (ROOT / 'packaging/windows/requirements-ui.txt').read_text(
+            encoding='utf-8'
+        )
+        for requirement in (
+            'PyQt6==6.8.1',
+            'PyQt6-Qt6==6.8.2',
+            'PyQt6-Fluent-Widgets==1.11.3',
+        ):
+            with self.subTest(requirement=requirement):
+                self.assertIn(requirement, requirements)
+
     def test_bundle_contains_resources_licenses_isolated_runtime_and_checksums(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -58,6 +70,9 @@ class WindowsPackagingTests(unittest.TestCase):
                              'data/assets/lets-note-window-icon.png',
                              'data/assets/work.mmoe.panasonic.PostureManager.ico',
                              'data/assets/notification-badge.svg',
+                             'data/profiles/cfqv8.json',
+                             'data/profiles/cfqv9.json',
+                             'data/profiles/cfqv1.json',
                              'po/zh_CN.po', 'LICENSE', 'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
                              f'{builder.APPLICATION_DISPLAY_NAME}.cmd', 'Hardware.cmd'):
                     self.assertIn(prefix + name, names)

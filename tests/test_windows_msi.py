@@ -60,6 +60,10 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn('app/panasonic_posture/windows/hardware_service.py', service)
         self.assertIn('configure-slate-device.ps1', service)
         self.assertIn('hardware-service.ps1', service)
+        self.assertIn('data/profiles/cfqv8.json', service)
+        self.assertIn('data/profiles/cfqv9.json', service)
+        self.assertIn('data/profiles/cfqv1.json', service)
+        self.assertNotIn('data/profiles/cfqv8.json', main)
         self.assertNotIn('Install Hardware Service.cmd', service)
         self.assertNotIn('Configure Slate Device.cmd', service)
         for role, expected in manifest.items():

@@ -22,7 +22,6 @@ from ..session.runtime import SessionRuntime
 from ..session.ports import DisplayBackend, DisplayRefresh
 from .display_only_input import DisplayOnlyInput
 from .hardware_release import HardwareReleaseCoordinator
-from .machine_profile import ProfileSensor, verified_machine
 from .native_preflight import require_native_user
 from .operations import dispatch_engine_operation
 from .session_bridge import SessionBridge
