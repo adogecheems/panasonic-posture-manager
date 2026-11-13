@@ -87,7 +87,7 @@ class WindowsPackagingTests(unittest.TestCase):
                              'app/panasonic_posture/fluent/update_check.py',
                              'data/assets/lets-note-window-icon.png',
                              'data/assets/work.mmoe.panasonic.PostureManager.ico',
-                             'data/assets/notification-badge.svg',
+                             'data/assets/work.mmoe.panasonic.PostureManager-square.png',
                              'data/profiles/cfqv8.json',
                              'data/profiles/cfqv9.json',
                              'data/profiles/cfqv1.json',
@@ -95,6 +95,7 @@ class WindowsPackagingTests(unittest.TestCase):
                              'runtime/Lib/site-packages/PyQt6-6.8.1.dist-info/LICENSE',
                              f'{builder.APPLICATION_DISPLAY_NAME}.cmd', 'Hardware.cmd'):
                     self.assertIn(prefix + name, names)
+                self.assertNotIn(prefix + 'data/assets/notification-badge.svg', names)
                 self.assertEqual(
                     bundle.read(prefix + 'runtime/Lib/site-packages/PyQt6-6.8.1.dist-info/LICENSE'),
                     (ROOT / 'packaging/windows/PyQt6-LICENSE').read_bytes(),

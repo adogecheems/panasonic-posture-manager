@@ -3,7 +3,7 @@ import logging
 import time
 
 from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
-from PyQt6.QtGui import QIcon, QPainter, QPixmap
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from qfluentwidgets import CaptionLabel
 
@@ -14,23 +14,11 @@ from .resources import data_root
 log = logging.getLogger(__name__)
 
 
-def notification_icon(icon):
-    """Keep the complete artwork while preventing Shell accent bleed-through."""
-    pixmap = icon.pixmap(256, 256)
-    if pixmap.isNull():
-        return icon
-    opaque = QPixmap(pixmap.size())
-    opaque.setDevicePixelRatio(pixmap.devicePixelRatio())
-    opaque.fill(Qt.GlobalColor.white)
-    painter = QPainter(opaque)
-    painter.drawPixmap(0, 0, pixmap)
-    painter.end()
-    return QIcon(opaque)
-
-
-def notification_badge():
-    """Use a legible mark where Windows displays only a small app identity."""
-    return QIcon(str(data_root() / 'assets' / 'notification-badge.svg'))
+def resident_icon():
+    """Return the opaque, square application icon shared by Shell surfaces."""
+    return QIcon(str(
+        data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager-square.png'
+    ))
 
 
 class ResidentTray(QObject):
@@ -46,6 +34,7 @@ class ResidentTray(QObject):
         self._notice_click_until = 0.0
         self.instance = None
         self._tooltip = None
+        self.icon = resident_icon()
         self.timer = QTimer(self)
         self._tray_activation = QTimer(self)
         self._tray_activation.setSingleShot(True)
@@ -57,7 +46,7 @@ class ResidentTray(QObject):
         self.open_action.triggered.connect(self.show_window)
         self.quit_action = self.menu.addAction(_('Quit'))
         self.quit_action.triggered.connect(self.quit)
-        self.tray = tray_factory(notification_badge(), self)
+        self.tray = tray_factory(self.icon, self)
         self.tray.setContextMenu(self.menu)
         self.tray.setToolTip(window.windowTitle())
         self.tray.activated.connect(self.activated)
@@ -174,10 +163,8 @@ class ResidentTray(QObject):
         title = _('Tent mode is available') if prompt == 'tent' else _('Stand mode is available')
         self._notice_click_until = 0.0
         self.notice = notice_token(state)
-        # Windows may composite transparent icon pixels over its accent color.
-        # Preserve the complete artwork on an opaque backing for the notice.
         self.tray.showMessage(title, _('Tap to enable the current posture.'),
-                              notification_icon(self.window.windowIcon()), 15000)
+                              self.icon, 15000)
 
     def unavailable(self):
         self.notice = None

@@ -430,6 +430,7 @@ resident = ResidentTray(window, tray_factory=FakeTray)
 assert resident.enabled and resident.tray.visible
 assert not resident.tray.icon.pixmap(16, 16).isNull()
 assert resident.tray.icon.cacheKey() != window.windowIcon().cacheKey()
+assert resident.tray.icon.cacheKey() == resident.icon.cacheKey()
 assert not app.quitOnLastWindowClosed()
 assert not any('system tray' in label.text().lower() for label in window.findChildren(QLabel))
 window.close()
@@ -484,8 +485,10 @@ client.scenario('prompt')
 assert len(resident.tray.messages) == 1
 assert resident.tray.messages[0][0] == 'Tent mode is available'
 assert isinstance(resident.tray.messages[0][2], QIcon)
+assert resident.tray.messages[0][2].cacheKey() == resident.icon.cacheKey()
 notice = resident.tray.messages[0][2].pixmap(256, 256).toImage()
 original = window.windowIcon().pixmap(256, 256).toImage()
+assert notice.pixelColor(0, 0).getRgb() == (255, 255, 255, 255)
 assert notice.pixelColor(0, 0).alpha() == 255
 assert min(notice.pixelColor(x, y).alpha() for y in range(0, notice.height(), 16)
            for x in range(0, notice.width(), 16)) == 255
