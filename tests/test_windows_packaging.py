@@ -1,4 +1,5 @@
 """Portable Windows bundle assembly, using a synthetic runtime on any host."""
+import codecs
 import hashlib
 import importlib.util
 import json
@@ -15,6 +16,17 @@ spec.loader.exec_module(builder)
 
 
 class WindowsPackagingTests(unittest.TestCase):
+    def test_packaged_powershell_with_non_ascii_is_utf8_bom(self):
+        for script in sorted((ROOT / 'packaging/windows').rglob('*.ps1')):
+            with self.subTest(script=script.relative_to(ROOT).as_posix()):
+                source = script.read_bytes()
+                if not source.isascii():
+                    self.assertTrue(
+                        source.startswith(codecs.BOM_UTF8),
+                        'Windows PowerShell 5.1 must recognize non-ASCII '
+                        'script source as UTF-8',
+                    )
+
     def test_ui_requirements_pin_the_supported_qt_lts_runtime(self):
         requirements = (ROOT / 'packaging/windows/requirements-ui.txt').read_text(
             encoding='utf-8'

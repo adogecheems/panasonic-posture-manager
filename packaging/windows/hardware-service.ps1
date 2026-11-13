@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('Configure', 'Install', 'Start', 'Stop', 'Status', 'Remove')]
     [string]$Action = 'Install',
     [switch]$Force

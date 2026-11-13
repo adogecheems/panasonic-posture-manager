@@ -184,6 +184,8 @@ python tests/check_i18n.py
 
 Windows MSI 默认构建简体中文界面；正式发布同时生成简体中文和英文安装包。两种文化使用相同的版本 ProductCode 和 UpgradeCode，文件名分别包含 `zh-CN` 或 `en-US`，不能相互覆盖。它们都使用同一套方形应用标志、欢迎/完成页背景、安装许可、主程序安装位置选择、最终确认页和重启提示，界面资源位于 `packaging/windows/msi/`。主程序可安装到用户选择的本地固定磁盘目录，输入上级目录时自动补全 `PanasonicPostureManager` 叶目录；安装器拒绝磁盘根、Windows/系统目录、固定服务目录、重解析点、过长路径和已有陌生文件的目录。静默安装必须在 `INSTALLFOLDER` 中给出包含该叶目录的完整绝对路径。硬件运行时和服务固定安装到 `Program Files\PanasonicPostureManagerService`，不随主程序路径变化。
 
+含非 ASCII 文本的 PowerShell 脚本必须保存为带 BOM 的 UTF-8；Windows PowerShell 5.1 会按系统 ANSI 代码页解释无 BOM 的 UTF-8，可能破坏安装自定义动作的字符串边界。打包测试会检查 `packaging/windows/` 下的脚本。
+
 Windows 构建前准备依赖和 WiX：
 
 ```bat
