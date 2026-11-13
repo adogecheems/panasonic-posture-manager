@@ -529,7 +529,7 @@ class WindowsDisplay(SoftwareDisplay):
                 # it. Rolling it back here would rotate the panel again right
                 # after the switch opened and force a second visible jump when
                 # the final target is applied.
-                log.info(
+                log.warning(
                     'physical tablet release raced the pre-lock; keeping the '
                     'prepared %s direction',
                     mode,
@@ -612,5 +612,5 @@ class WindowsDisplay(SoftwareDisplay):
         self._require_software_ownership()
         if not self.api.read().auto_rotation & 1:
             raise DisplayError(ErrorCode.DISPLAY_LOCK, 'native-auto-rotation-took-over')
-        log.info('writing internal panel rotation %s -> %s', state.transform, transform)
+        log.warning('writing internal panel rotation %s -> %s', state.transform, transform)
         self.api.rotate(state.identity[0], state.transform, transform)

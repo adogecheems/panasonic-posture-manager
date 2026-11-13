@@ -1,4 +1,6 @@
 """Qualification fence around the authenticated native-session RPC client."""
+import logging
+import time
 from typing import Protocol
 
 from ..contracts import ErrorCode
@@ -6,6 +8,8 @@ from ..model import StateSnapshot
 from ..session.failures import FailureKind, ServiceError
 from ..session.ports import SessionClient
 from .session_display import SessionContext
+
+log = logging.getLogger(__name__)
 
 
 class ClosableSessionClient(SessionClient, Protocol):
@@ -27,8 +31,11 @@ def unavailable_session_error(detail: str = 'native-session-unavailable') -> Ser
 class QualifiedSessionClient:
     """Reject display-adjacent work as soon as local qualification is lost."""
 
-    def __init__(self, client: ClosableSessionClient, context: SessionContext) -> None:
+    def __init__(self, client: ClosableSessionClient, context: SessionContext, *,
+                 clock=time.monotonic) -> None:
         self.client, self.context = client, context
+        self.clock = clock
+        self._last_unavailable_log = float('-inf')
 
     @staticmethod
     def _rejected(detail: str = 'native session control is unavailable') -> ServiceError:
@@ -36,6 +43,13 @@ class QualifiedSessionClient:
 
     def _require_available(self) -> None:
         if not self.context.control_available():
+            if self.clock() - self._last_unavailable_log >= 2.0:
+                self._last_unavailable_log = self.clock()
+                snapshot = getattr(self.context, 'snapshot', None)
+                log.warning(
+                    'native session control is unavailable: %s',
+                    snapshot() if callable(snapshot) else 'no context snapshot',
+                )
             raise self._rejected()
 
     def _report_lost(self, generation: int) -> None:
