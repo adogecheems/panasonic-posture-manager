@@ -95,15 +95,7 @@ class ScreenSession:
         self.bridge.drain(self.engine, self.owner)
         self.engine.tick()
         self.bridge.publish(self.engine.state)
-        self._prepare_hardware_release()
         self.session.tick(now)
-
-    def _prepare_hardware_release(self) -> None:
-        self.session.call_display(
-            self.hardware_release.prepare,
-            self.engine.state,
-            self.engine.hardware_release_pose,
-        )
 
     def call(self, method: str, params: dict) -> None:
         dispatch_engine_operation(self.engine, method, params)

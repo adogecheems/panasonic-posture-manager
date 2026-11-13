@@ -459,12 +459,15 @@ class WindowsDisplay(SoftwareDisplay):
         if not self._adopt_native_handoff:
             super().hold_orientation()
             return
-        # Locking the first sample prevents Windows from finishing the native
-        # desktop/tablet orientation transition. Keep the panel read-only for
-        # the bounded wait and treat the last observed platform direction as
-        # the transaction baseline. The settled target then performs at most
-        # one visible rotation through the normal apply path.
         state = self._read_transaction_state()
+        # Field logs showed Windows overrides the rotation lock when the
+        # convertible-slate metric is released, then rotates the panel to the
+        # native desktop direction. Re-asserting the lock on every hold tick
+        # closes that override as early as possible without touching the
+        # direction, so the settled target still performs at most one visible
+        # rotation through the normal apply path.
+        self._write_owned_lock(state, True)
+        state = self._read_state()
         self._held_orientation = state
         if not self.owned:
             self.owned = self._journal_document(state)
@@ -472,71 +475,6 @@ class WindowsDisplay(SoftwareDisplay):
         elif self.owned.get('written_transform') is None:
             self.owned['original_transform'] = state.transform
             self._persist()
-
-    def prepare_hardware_release(self, mode: str) -> None:
-        """Pre-lock the pending software direction before the switch opens."""
-
-        if mode not in ('tent', 'stand'):
-            raise ValueError('physical release mode must be tent or stand')
-        if self._hardware() is not True:
-            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'physical-tablet-release-changed')
-        state = self._read_state()
-        if not self.owned:
-            self.owned = self._journal_document(state)
-            self._persist()
-        try:
-            self._write_owned_lock(state, True)
-            current = self._read_state()
-            if current.identity != state.identity:
-                raise DisplayError(
-                    ErrorCode.DISPLAY_IDENTITY,
-                    'display-changed-while-preparing-hardware-release',
-                )
-            if self.owned.get('written_transform') is None:
-                self.owned['original_transform'] = current.transform
-                self._persist()
-            target = desired_transform(mode)
-            if current.transform != target:
-                if self._hardware() is not True:
-                    raise DisplayError(
-                        ErrorCode.DISPLAY_LOCK,
-                        'physical-tablet-took-over',
-                    )
-                self.owned['pending_transform'] = target
-                self._persist()
-                self.api.rotate(current.identity[0], current.transform, target)
-                self.owned.pop('pending_transform', None)
-                current = self._read_state()
-                if (current.identity != state.identity
-                        or current.transform != target):
-                    raise DisplayError(
-                        ErrorCode.DISPLAY_TRANSFORM,
-                        'physical-release-target-not-applied',
-                    )
-            if self.owned.get('written_transform') != target:
-                self.owned['written_transform'] = target
-                self._persist()
-            self._held_orientation = current
-        except (DisplayError, OSError, ValueError) as error:
-            if (
-                isinstance(error, DisplayError)
-                and error.detail
-                in ("physical-tablet-release-changed", "physical-tablet-took-over")
-            ):
-                # The physical switch released (or the gate became unknown)
-                # between the cached snapshot and this write. The direction
-                # already pre-locked is exactly the release target, so keep
-                # it. Rolling it back here would rotate the panel again right
-                # after the switch opened and force a second visible jump when
-                # the final target is applied.
-                log.warning(
-                    'physical tablet release raced the pre-lock; keeping the '
-                    'prepared %s direction',
-                    mode,
-                )
-                raise
-            self._rollback()
-            raise
 
     def restore(self, normal: bool = False, *, release_lock: bool = False,
                 keep_journal: bool = False) -> None:

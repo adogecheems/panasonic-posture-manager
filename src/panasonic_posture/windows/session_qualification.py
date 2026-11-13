@@ -43,14 +43,17 @@ class QualifiedSessionClient:
 
     def _require_available(self) -> None:
         if not self.context.control_available():
-            if self.clock() - self._last_unavailable_log >= 2.0:
-                self._last_unavailable_log = self.clock()
-                snapshot = getattr(self.context, 'snapshot', None)
-                log.warning(
-                    'native session control is unavailable: %s',
-                    snapshot() if callable(snapshot) else 'no context snapshot',
-                )
+            self._log_unavailable_once()
             raise self._rejected()
+
+    def _log_unavailable_once(self) -> None:
+        if self.clock() - self._last_unavailable_log >= 2.0:
+            self._last_unavailable_log = self.clock()
+            snapshot = getattr(self.context, 'snapshot', None)
+            log.warning(
+                'native session control is unavailable: %s',
+                snapshot() if callable(snapshot) else 'no context snapshot',
+            )
 
     def _report_lost(self, generation: int) -> None:
         self.client.session_update(
@@ -63,6 +66,7 @@ class QualifiedSessionClient:
     def get_state(self) -> StateSnapshot:
         state = self.client.get_state()
         if not self.context.control_available():
+            self._log_unavailable_once()
             self._report_lost(state.generation)
             raise self._rejected()
         return state
@@ -71,6 +75,7 @@ class QualifiedSessionClient:
                        error_code: str | None = None,
                        error_detail: str | None = None) -> None:
         if not self.context.control_available():
+            self._log_unavailable_once()
             self._report_lost(generation)
             raise self._rejected()
         self.client.session_update(generation, ready, error_code, error_detail)

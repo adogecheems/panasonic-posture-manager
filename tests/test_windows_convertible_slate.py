@@ -435,39 +435,6 @@ class NativeSlateDeviceTests(unittest.TestCase):
 
 
 class QualifiedDisplayTests(unittest.TestCase):
-    def test_release_gate_change_during_preparation_keeps_the_prelocked_transaction(self):
-        class ReleaseDisplay(FakeDisplay):
-            def prepare_hardware_release(self, mode):
-                self.calls.append(('prepare', mode))
-                raise DisplayError(
-                    ErrorCode.DISPLAY_LOCK,
-                    'physical-tablet-release-changed',
-                )
-
-        display = ReleaseDisplay()
-        proxy = QualifiedDisplay(display, FakeContext())
-        with self.assertRaises(DisplayError) as caught:
-            proxy.prepare_hardware_release('tent')
-        self.assertEqual(caught.exception.detail, 'physical-tablet-release-changed')
-        # A release race must keep the pre-locked direction instead of
-        # restoring it and forcing a second rotation after the release.
-        self.assertEqual(display.calls, [('prepare', 'tent')])
-
-    def test_other_preparation_failures_still_restore_the_display(self):
-        class FailingDisplay(FakeDisplay):
-            def prepare_hardware_release(self, mode):
-                self.calls.append(('prepare', mode))
-                raise DisplayError(
-                    ErrorCode.DISPLAY_TRANSFORM,
-                    'physical-release-target-not-applied',
-                )
-
-        display = FailingDisplay()
-        proxy = QualifiedDisplay(display, FakeContext())
-        with self.assertRaises(DisplayError):
-            proxy.prepare_hardware_release('tent')
-        self.assertEqual(display.calls, [('prepare', 'tent'), ('restore', False)])
-
     def test_software_display_apply_precedes_slate_notification(self):
         events = []
         slate = mock.Mock()

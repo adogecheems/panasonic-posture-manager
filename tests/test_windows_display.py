@@ -15,7 +15,6 @@ except ModuleNotFoundError:
 import ctypes as C
 from types import SimpleNamespace
 from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
-from panasonic_posture.windows.session_display import SessionHardwareQuery
 
 
 def panel(**changes):
@@ -233,7 +232,7 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertIsNotNone(journal.document)
         self.assertEqual(api.writes, [2, 2])
 
-    def test_hardware_handoff_stays_unlocked_until_the_target_applies(self):
+    def test_hardware_handoff_keeps_the_hold_locked_until_the_target_applies(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)
         display = self.make(api, journal)
@@ -247,7 +246,7 @@ class WindowsDisplayTests(unittest.TestCase):
         api.current = replace(api.current, transform=2)
         display.hold_orientation()
         self.assertEqual(api.current.transform, 2)
-        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(journal.document['original_transform'], 2)
 
         display.apply(dict(mode='stand', tablet=True, rotation=0,
@@ -268,7 +267,9 @@ class WindowsDisplayTests(unittest.TestCase):
         api.current = replace(api.current, transform=0)
         display.hold_orientation()
         self.assertEqual(api.current.transform, 0)
-        self.assertFalse(bool(api.current.auto_rotation & 1))
+        # The release hold re-asserts the lock so Windows cannot override it
+        # while the bounded handoff wait runs.
+        self.assertTrue(bool(api.current.auto_rotation & 1))
 
         # Leaving physical tablet mode may let the shell finish a direction
         # handoff after the first hold reading. The bounded pending-posture
@@ -279,7 +280,7 @@ class WindowsDisplayTests(unittest.TestCase):
         display.hold_orientation()
         self.assertEqual(api.current.transform, 2)
         self.assertEqual(api.writes, [])
-        self.assertFalse(bool(api.current.auto_rotation & 1))
+        self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(journal.document['original_transform'], 2)
         self.assertIsNone(journal.document['written_transform'])
 
@@ -289,104 +290,28 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(api.writes, [])
 
-    def test_physical_release_preparation_rotates_to_the_pending_target(self):
+    def test_release_hold_relocks_without_rewriting_the_direction(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)
-        physical = [True]
         display = self.make(
             api,
             journal,
-            lambda: (physical[0], HardwareStatus.OK),
+            lambda: (False, HardwareStatus.OK),
         )
         display.apply(dict(mode='hardware', tablet=True, rotation=None,
                            disable_internal_input=False))
-        self.assertEqual(api.current.transform, 0)
-
+        self.assertTrue(display.native_handoff_active)
+        api.lock_writes.clear()
         api.writes.clear()
-        display.prepare_hardware_release('tent')
-        self.assertEqual(api.current.transform, 2)
-        self.assertTrue(bool(api.current.auto_rotation & 1))
-        self.assertEqual(journal.document['original_transform'], 0)
-        self.assertEqual(journal.document['written_transform'], 2)
-        self.assertEqual(api.writes, [2])
 
-        # The release transaction now starts from the final direction, so the
-        # platform cannot produce a second visible orientation after CSM.
-        physical[0] = False
+        # The release hold re-asserts the rotation lock so Windows cannot
+        # override it and rotate the panel during the bounded handoff wait.
         display.hold_orientation()
-        display.apply(dict(mode='tent', tablet=True, rotation=180,
-                           disable_internal_input=False))
-        self.assertEqual(api.current.transform, 2)
-        self.assertTrue(bool(api.current.auto_rotation & 1))
-        self.assertEqual(api.writes, [2])
-
-    def test_gate_release_mid_preparation_keeps_the_prelocked_transaction(self):
-        api, journal = Api(), MemoryJournal()
-        api.current = panel(auto_rotation=0)
-        gate = [True, False]
-        display = self.make(
-            api,
-            journal,
-            lambda: (gate.pop(0) if gate else False, HardwareStatus.OK),
-        )
-        display.apply(dict(mode='hardware', tablet=True, rotation=None,
-                           disable_internal_input=False))
-        api.writes.clear()
-        api.lock_writes.clear()
-
-        with self.assertRaises(DisplayError) as raised:
-            display.prepare_hardware_release('tent')
-        self.assertEqual(raised.exception.detail, 'physical-tablet-took-over')
-        # The switch released between the cached snapshot and the rotation
-        # write. The lock and the pending direction stay owned so the released
-        # posture is applied with exactly one rotation instead of rolling the
-        # pre-lock back and rotating again after the release.
-        self.assertEqual(api.current.transform, 0)
-        self.assertTrue(bool(api.current.auto_rotation & 1))
-        self.assertEqual(api.writes, [])
-        self.assertEqual(journal.document['written_lock'], True)
-        self.assertIsNotNone(display.owned)
-
-        display.apply(dict(mode='tent', tablet=True, rotation=180,
-                           disable_internal_input=False))
-        self.assertEqual(api.current.transform, 2)
-        self.assertEqual(api.writes, [2])
-
-    def test_transient_state_read_loss_does_not_rollback_a_prelocked_release(self):
-        api, journal = Api(), MemoryJournal()
-        api.current = panel(auto_rotation=0)
-        physical = [True]
-        reads = []
-
-        def load_state():
-            reads.append(True)
-            if len(reads) == 3:
-                raise OSError(233, 'hardware pipe write failed')
-            return StateSnapshot(
-                instance='fixture',
-                hardware=physical[0],
-                hardware_status=HardwareStatus.OK,
-            )
-
-        display = self.make(
-            api,
-            journal,
-            SessionHardwareQuery(load_state, sleep=lambda _delay: None),
-        )
-        display.apply(dict(mode='hardware', tablet=True, rotation=None,
-                           disable_internal_input=False))
-        api.writes.clear()
-        api.lock_writes.clear()
-        display.prepare_hardware_release('tent')
-
-        physical[0] = False
-        display.apply(dict(mode='tent', tablet=True, rotation=180,
-                           disable_internal_input=False))
-
-        self.assertEqual(api.current.transform, 2)
-        self.assertTrue(bool(api.current.auto_rotation & 1))
-        self.assertEqual(api.writes, [2])
+        display.hold_orientation()
         self.assertEqual(api.lock_writes, [True])
+        self.assertEqual(api.writes, [])
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertEqual(journal.document['written_lock'], True)
 
     def test_refresh_reclaims_auto_rotation_without_rewriting_the_direction(self):
         api, journal = Api(), MemoryJournal()
@@ -463,28 +388,6 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertEqual(api.current.transform, 0)
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertIsNone(journal.document)
-
-    def test_failed_physical_release_readback_restores_the_original_lock(self):
-        class ReadbackFailure(Api):
-            def __init__(self):
-                super().__init__()
-                self.reads = 0
-
-            def read(self):
-                self.reads += 1
-                if self.reads == 2:
-                    raise OSError('readback failed')
-                return super().read()
-
-        api, journal = ReadbackFailure(), MemoryJournal()
-        api.current = panel(auto_rotation=0)
-        display = self.make(api, journal, lambda: (True, HardwareStatus.OK))
-        with self.assertRaisesRegex(OSError, 'readback failed'):
-            display.prepare_hardware_release('tent')
-        self.assertFalse(bool(api.current.auto_rotation & 1))
-        self.assertEqual(api.lock_writes, [True, False])
-        self.assertIsNone(journal.document)
-        self.assertIsNone(display.owned)
 
     def test_physical_takeover_during_restart_keeps_native_direction(self):
         api, journal = Api(), MemoryJournal()

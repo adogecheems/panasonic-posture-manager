@@ -9,11 +9,9 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from panasonic_posture.contracts import ErrorCode
 from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
-from panasonic_posture.session.failures import DisplayError, ServiceError, FailureKind
+from panasonic_posture.session.failures import ServiceError, FailureKind
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.hardware_release import HardwareReleaseCoordinator
 from panasonic_posture.windows.session_agent import (
     WindowsSessionAgent,
     build_display,
@@ -59,59 +57,10 @@ class Client:
         return self.state, self.release_pose
 
 
-class HardwareReleaseCoordinatorTests(unittest.TestCase):
-    def test_release_changed_keeps_the_previous_prelock_evidence(self):
-        class Display:
-            def __init__(self):
-                self.calls = []
-                self.fail = False
-
-            def prepare_hardware_release(self, mode):
-                self.calls.append(mode)
-                if self.fail:
-                    raise DisplayError(
-                        ErrorCode.DISPLAY_LOCK,
-                        'physical-tablet-release-changed',
-                    )
-
-        display = Display()
-        coordinator = HardwareReleaseCoordinator(display)
-        state = StateSnapshot(
-            instance='fixture',
-            hardware=True,
-            target=Target(mode='hardware'),
-        )
-        coordinator.prepare(state, 'tent')
-        self.assertEqual(coordinator.target_for('fixture'), 'tent')
-
-        display.fail = True
-        coordinator.prepare(state, 'tent')
-        self.assertEqual(coordinator.target_for('fixture'), 'tent')
-
-    def test_other_preparation_failures_clear_the_prelock_evidence(self):
-        class Display:
-            def prepare_hardware_release(self, mode):
-                del mode
-                raise DisplayError(
-                    ErrorCode.DISPLAY_LOCK,
-                    'rotation-lock-took-over',
-                )
-
-        coordinator = HardwareReleaseCoordinator(Display())
-        state = StateSnapshot(
-            instance='fixture',
-            hardware=True,
-            target=Target(mode='hardware'),
-        )
-        coordinator.prepare(state, 'tent')
-        self.assertIsNone(coordinator.target_for('fixture'))
-
-
 class Display:
     def __init__(self):
         self.current = 0
         self.writes = []
-        self.prepare_threads = []
         self.during_apply = lambda: None
     def apply(self, target):
         self.current = 2
@@ -122,9 +71,6 @@ class Display:
         self.writes.append(0)
     def hold_orientation(self):
         self.writes.append('hold')
-    def prepare_hardware_release(self, mode):
-        self.prepare_threads.append(threading.get_ident())
-        self.writes.append(('prepare', mode))
 
 
 class SessionAgentTests(unittest.TestCase):
@@ -225,8 +171,6 @@ class SessionAgentTests(unittest.TestCase):
         )
         self.addCleanup(agent.close)
         agent.start()
-        self.client.state = replace(self.client.state, hardware=True)
-        self.client.release_pose = 'tent'
         agent.tick(10.)
         agent.close()
 
@@ -234,7 +178,6 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(len(set(workers)), 1)
         self.assertEqual(set(restore_workers), set(workers))
         self.assertEqual(set(slate_workers), set(workers))
-        self.assertEqual(set(self.display.prepare_threads), set(workers))
 
     def test_unavailable_target_renews_the_lease_without_reporting_ready(self):
         self.client.state = replace(
@@ -251,12 +194,17 @@ class SessionAgentTests(unittest.TestCase):
         self.assertTrue(all(not ready for _, ready, _, _ in self.client.feedback))
         self.assertFalse(self.agent.runtime.ready)
 
-    def test_physical_release_uses_cached_rpc_metadata_before_runtime_tick(self):
+    def test_physical_release_never_prepares_the_display_before_the_switch_opens(self):
         self.agent.start()
-        self.client.state = replace(self.client.state, hardware=True)
+        self.client.state = replace(
+            self.client.state,
+            hardware=True,
+            target=Target(mode='hardware'),
+        )
         self.client.release_pose = 'tent'
         self.agent.tick(10.)
-        self.assertEqual(self.display.writes[0], ('prepare', 'tent'))
+        self.assertNotIn(('prepare', 'tent'), self.display.writes)
+        self.assertEqual(self.display.writes, [2])
 
     def test_screen_off_is_context_and_does_not_reject_valid_display_control(self):
         self.context.screen_off = True

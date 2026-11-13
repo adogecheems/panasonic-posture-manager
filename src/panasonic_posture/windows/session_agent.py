@@ -207,16 +207,6 @@ class WindowsSessionAgent:
         state = self.client.get_state()
         self.client.session_update(state.generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unavailable')
 
-    def _prepare_hardware_release(self) -> None:
-        self.hardware_release.prepare(*self.client.hardware_release())
-
-    def _release_preparation_needed(self) -> bool:
-        try:
-            state, pose = self.client.hardware_release()
-        except (OSError, RuntimeError, TypeError, ValueError):
-            return False
-        return state.hardware is True and pose in ('tent', 'stand')
-
     def tick(self, now: float) -> None:
         if not self._started or self._closed:
             return
@@ -236,8 +226,6 @@ class WindowsSessionAgent:
         if unavailable and self._qualification_task is None and now >= self._heartbeat_at:
             self._heartbeat_at = now + AGENT_HEARTBEAT_SECONDS
             self._qualification_task = self.lease_executor.submit(self._qualification_heartbeat)
-        if self.hardware_release is not None and self._release_preparation_needed():
-            self.runtime.call_display(self._prepare_hardware_release)
         self.runtime.tick(now)
 
     def close(self) -> None:

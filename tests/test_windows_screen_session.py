@@ -122,14 +122,14 @@ class NativeScreenTests(unittest.TestCase):
         self.assertIs(self.backend.snapshot()['hardware'], True)
         self.assertEqual(self.backend.snapshot()['manual'], 'auto')
 
-    def test_prelocked_tent_release_reaches_tent_before_the_fallback_deadline(self):
+    def test_tent_release_applies_once_after_the_bounded_handoff_wait(self):
         self.hardware = True
         self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'hardware')
         self.vector = (0., -9.81, 0.)
         self.until(lambda: self.backend.screen.engine.hardware_release_pose == 'tent')
 
         self.hardware = False
-        self.advance(30)
+        self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'tent')
 
         state = self.backend.snapshot()
         self.assertIs(state['hardware'], False)
@@ -166,68 +166,15 @@ class NativeScreenTests(unittest.TestCase):
 
 
 class HardwareReleasePreparationTests(unittest.TestCase):
-    def test_failed_preparation_restores_display_without_dropping_slate_state(self):
-        class FailingDisplay:
-            def __init__(self):
-                self.restore_calls = 0
-
-            def prepare_hardware_release(self, mode):
-                raise OSError('readback failed')
-
-            def restore(self):
-                self.restore_calls += 1
-
-        display = FailingDisplay()
-        releases = []
-        qualified = QualifiedDisplay(
-            display,
-            SimpleNamespace(control_available=lambda: True),
-            SimpleNamespace(release=lambda: releases.append(True)),
-        )
-        with self.assertRaisesRegex(OSError, 'readback failed'):
-            qualified.prepare_hardware_release('tent')
-        self.assertEqual(display.restore_calls, 1)
-        self.assertEqual(releases, [])
-
-    def test_tent_pose_while_still_physically_folded_prepares_once(self):
-        class Prepared:
+    def test_coordinator_never_prepares_or_reports_a_prelocked_target(self):
+        class Display:
             calls = 0
+
             def prepare_hardware_release(self, mode):
+                del mode
                 self.calls += 1
-                self.last_mode = mode
 
-        session = object.__new__(ScreenSession)
-        session.qualified = Prepared()
-        session.hardware_release = HardwareReleaseCoordinator(session.qualified)
-        session.session = SimpleNamespace(
-            call_display=lambda function, *args: function(*args)
-        )
-        session.engine = SimpleNamespace(state=StateSnapshot(
-            instance='one', generation=3, hardware=True, pose='tablet',
-            target=Target(mode='hardware'),
-        ), hardware_release_pose='tent')
-        session._prepare_hardware_release()
-        session._prepare_hardware_release()
-        self.assertEqual(session.qualified.calls, 2)
-        self.assertEqual(session.qualified.last_mode, 'tent')
-
-        session.engine.state.hardware = False
-        session.engine.hardware_release_pose = None
-        session._prepare_hardware_release()
-        session.engine.state.hardware = True
-        session.engine.hardware_release_pose = 'tent'
-        session._prepare_hardware_release()
-        self.assertEqual(session.qualified.calls, 3)
-
-    def test_release_target_requires_success_and_is_scoped_to_the_instance(self):
-        class Prepared:
-            fail = False
-            def prepare_hardware_release(self, mode):
-                self.last_mode = mode
-                if self.fail:
-                    raise OSError('preparation failed')
-
-        display = Prepared()
+        display = Display()
         coordinator = HardwareReleaseCoordinator(display)
         hardware = StateSnapshot(
             instance='one',
@@ -235,30 +182,13 @@ class HardwareReleasePreparationTests(unittest.TestCase):
             hardware=True,
             target=Target(mode='hardware'),
         )
-
-        coordinator.prepare(hardware, 'tent')
-        self.assertEqual(coordinator.target_for('one'), 'tent')
-        self.assertIsNone(coordinator.target_for('two'))
-
-        coordinator.prepare(StateSnapshot(
-            instance='one',
-            generation=4,
-            hardware=False,
-            target=Target(mode='tent'),
-        ), None)
-        self.assertEqual(coordinator.target_for('one'), 'tent')
-
-        coordinator.prepare(StateSnapshot(
-            instance='one',
-            generation=5,
-            hardware=True,
-            target=Target(mode='hardware'),
-        ), None)
-        self.assertIsNone(coordinator.target_for('one'))
-
-        coordinator.prepare(hardware, 'tent')
-        display.fail = True
-        coordinator.prepare(hardware, 'tent')
+        for state, pose in (
+            (hardware, 'tent'),
+            (hardware, None),
+            (replace(hardware, hardware=False), None),
+        ):
+            coordinator.prepare(state, pose)
+        self.assertEqual(display.calls, 0)
         self.assertIsNone(coordinator.target_for('one'))
 
 

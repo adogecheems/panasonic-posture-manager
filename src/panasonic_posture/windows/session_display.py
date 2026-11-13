@@ -2,7 +2,7 @@
 from collections.abc import Callable
 import logging
 import time
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from ..contracts import ErrorCode
 from ..model import HardwareStatus, StateSnapshot, Target
@@ -28,11 +28,6 @@ class SlatePosture(Protocol):
     def sync_mode(self, mode: str) -> bool: ...
     def release(self) -> None: ...
     def close(self) -> None: ...
-
-
-@runtime_checkable
-class HardwareReleasableDisplay(Protocol):
-    def prepare_hardware_release(self, mode: str) -> None: ...
 
 
 class SessionHardwareQuery:
@@ -96,14 +91,17 @@ class QualifiedDisplay:
         slate: SlatePosture | None = None,
     ) -> None:
         self.display, self.context, self.slate = display, context, slate
-        self.prepare_release = (
-            display.prepare_hardware_release
-            if isinstance(display, HardwareReleasableDisplay)
-            else None
-        )
+        self._last_unavailable_log = float('-inf')
 
     def _require_available(self) -> None:
         if not self.context.control_available():
+            if time.monotonic() - self._last_unavailable_log >= 2.0:
+                self._last_unavailable_log = time.monotonic()
+                snapshot = getattr(self.context, 'snapshot', None)
+                log.warning(
+                    'native session control is unavailable for display work: %s',
+                    snapshot() if callable(snapshot) else 'no context snapshot',
+                )
             raise DisplayError(
                 ErrorCode.DISPLAY_UNAVAILABLE,
                 'native session control is unavailable',
@@ -242,25 +240,6 @@ class QualifiedDisplay:
         except BaseException as error:
             self._restore_after_failed_transaction()
             self._release_slate_after_failure(error)
-            raise
-
-    def prepare_hardware_release(self, mode: str) -> None:
-        if self.prepare_release is None:
-            return
-        self._require_available()
-        try:
-            self.prepare_release(mode)
-        except BaseException as error:
-            if (
-                isinstance(error, DisplayError)
-                and error.detail
-                in ("physical-tablet-release-changed", "physical-tablet-took-over")
-            ):
-                # The release gate already opened: the pre-locked direction is
-                # the final target. Restoring here would undo that direction
-                # and force the released posture to rotate the panel again.
-                raise
-            self._restore_after_failed_transaction()
             raise
 
     def restore(self, normal: bool = False) -> None:
