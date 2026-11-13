@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from panasonic_posture.session.journal import JOURNAL_VERSION, Journal
+from panasonic_posture.session.journal_store import JOURNAL_VERSION, Journal
 
 
 def document(**overrides):

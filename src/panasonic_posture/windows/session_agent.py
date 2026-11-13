@@ -57,7 +57,7 @@ def build_optional_slate(client, journal: Path) -> SlatePosture | None:
 
 def build_display(client, journal: Path) -> DisplayBackend:
     """Create display recovery behind the same physical-state gate as apply."""
-    from ..session.journal import Journal
+    from ..session.journal_store import Journal
     from .display import WindowsDisplay
 
     return WindowsDisplay(

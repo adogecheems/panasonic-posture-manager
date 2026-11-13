@@ -15,7 +15,7 @@ from panasonic_posture.model import (
 )
 from panasonic_posture.service.engine import Engine
 from panasonic_posture.session.failures import DisplayError, ServiceError
-from panasonic_posture.session.journal import Journal
+from panasonic_posture.session.journal_store import Journal
 from panasonic_posture.windows.display import Panel
 from panasonic_posture.windows.screen_session import (
     SCREEN_MODES, ScreenSession, SessionBridge, select_native_display,

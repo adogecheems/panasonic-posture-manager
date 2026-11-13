@@ -90,6 +90,30 @@
 
 Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*.py`。
 
+### 6.1 平台路径归属
+
+当前布局不是两个对称的 `linux/`、`windows/` 平台包：Windows 有显式包，Linux
+适配分散在语义化目录中，共享核心也放在这些目录里。修改前先按以下归属判断，
+不得因为目录名是 `service/`、`session/` 或 `hardware/` 就默认它只属于 Linux。
+
+| 归属 | 路径 | 边界 |
+| --- | --- | --- |
+| 共享核心 | `model.py`、`contracts.py`、`policy.py`、`controller.py`、`presentation.py`、`calibration.py`、`mounting.py`、`tasks.py`、`product.py`、`localization.py`、`snapshot_codec.py`、`frontend/` | 不导入 `windows/`、`fluent/`、`ui/` 或任一本文件列出的 Linux 专属模块 |
+| 共享服务 | `service/{engine,ports,hardware_monitor,settings_schema,settings_store}.py` | 只依赖共享端口和核心；不得导入 Linux D-Bus、设备、显示或界面适配 |
+| 共享会话 | `session/{runtime,ports,failures,transaction,journal_schema,journal_store}.py` | 由两个平台复用；不得导入 Linux 桌面适配或 Windows 实现 |
+| Linux 特权服务 | `service/{access,actuator,application,callbacks,daemon,sensor,sensor_sources,settings}.py` | 可依赖共享层和 Linux 契约，不得导入 Windows 包 |
+| Linux 硬件 | `hardware/{iio,sysfs,probe}.py` | Linux IIO、sysfs、设备探测；不得导入 Windows 包 |
+| Linux 会话 | `session/{agent,client,dbus_errors,desktop,display,errors,journal,lockstate,notify,plasma,screen_context}.py` | Linux D-Bus、Wayland/GNOME/KDE、默认状态目录和通知适配；`journal.py` 保留兼容导出，Windows 使用 `journal_store.py` |
+| Linux 界面与入口 | `ui/`、`cli.py` | PyGObject/GTK/libadwaita 与 Linux 用户入口 |
+| Linux 契约 | `protocol.py`、`linux_contract.py`、`state_codec.py` | 只承载 Linux 兼容契约；共享逻辑改用 `contracts.py` 和 `snapshot_codec.py` |
+| Windows | `windows/`、`fluent/` | 可依赖上表共享层，不得导入 Linux 特权服务、Linux 会话、`ui/`、GTK `gi` 或 Linux 契约 |
+| 混合过渡文件 | `hardware/profile.py` | profile schema/parser 可供两平台使用，但默认 DMI 和目录查找属于 Linux；Windows 只能传入显式 profile 目录，不得增加对 Linux 默认路径或常量的依赖 |
+
+新增平台实现放入已有平台包，或先取得用户对新增 `linux/` 包及模块迁移的明确
+授权。禁止在共享模块内用 `sys.platform` 选择服务职责；平台组合应由入口和
+适配器完成。新增 Windows 依赖必须同步更新 `test_platform_imports.py` 的边界
+断言。
+
 | 改动 | 先读 | 目标测试 |
 | --- | --- | --- |
 | 姿态、阈值、迟滞、提示代次 | `policy.py`、`controller.py`、`presentation.py` | `test_policy`、`test_controller`、`test_presentation` |

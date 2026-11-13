@@ -8,7 +8,7 @@ import sys
 import time
 
 from panasonic_posture.model import Target
-from panasonic_posture.session.journal import Journal
+from panasonic_posture.session.journal_store import Journal
 from panasonic_posture.windows.display import WindowsDisplay
 from panasonic_posture.windows.instance import InstanceLock
 

@@ -13,7 +13,7 @@ from panasonic_posture.controller import Controller
 from panasonic_posture.model import DeviceInfo, HardwareStatus, SensorInfo, SensorReading
 from panasonic_posture.presentation import PosePresentation
 from panasonic_posture.service.engine import Engine, ServiceError as EngineError
-from panasonic_posture.session.journal import Journal
+from panasonic_posture.session.journal_store import Journal
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.session.failures import ServiceError, FailureKind
 from panasonic_posture.tasks import InlineExecutor
