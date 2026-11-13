@@ -371,6 +371,7 @@ class MsiPayloadTests(unittest.TestCase):
 
         expected = {
             'en-US': (
+                'Panasonic 2-in-1 Tablet Posture Management Tool',
                 'Maintain or uninstall [ProductName]',
                 'Uninstall [ProductName]',
                 'Uninstalling [ProductName]',
@@ -379,6 +380,7 @@ class MsiPayloadTests(unittest.TestCase):
                 'hardware service and restoring display',
             ),
             'zh-CN': (
+                '松下二合一平板电脑姿态管理工具',
                 '维护或卸载 [ProductName]',
                 '确认卸载 [ProductName]',
                 '正在卸载 [ProductName]',
@@ -387,7 +389,7 @@ class MsiPayloadTests(unittest.TestCase):
                 '停止硬件服务并恢复显示',
             ),
         }
-        for culture, fragments in expected.items():
+        for culture, (product_name, *fragments) in expected.items():
             with self.subTest(culture=culture):
                 localization, _ = msi.culture_files(culture)
                 root = ET.parse(localization).getroot()
@@ -417,6 +419,12 @@ class MsiPayloadTests(unittest.TestCase):
                     strings['ExitDialogInstallTitle'],
                     strings['ExitDialogRemoveTitle'],
                 )
+                for string_id in (
+                    'ExitDialogInstallTitle',
+                    'ExitDialogRemoveTitle',
+                ):
+                    self.assertIn(product_name, strings[string_id])
+                    self.assertNotIn('[ProductName]', strings[string_id])
                 self.assertIn('[ProductName]', strings['MaintenanceTypeDlgDescription'])
                 self.assertIn(
                     '卸载' if culture == 'zh-CN' else 'Uninstall',

@@ -69,11 +69,11 @@
   <String Id="ProgressDlgTextRemoving"
       Value="Stopping the hardware service and restoring display and tablet indicator settings. This may take a moment." />
   <String Id="ExitDialogInstallTitle"
-      Value="{\WixUI_Font_Bigger}[ProductName] setup complete" />
+      Value="{\WixUI_Font_Bigger}Panasonic 2-in-1 Tablet Posture Management Tool setup complete" />
   <String Id="ExitDialogInstallDescription"
       Value="The application and hardware service are ready to use." />
   <String Id="ExitDialogRemoveTitle"
-      Value="{\WixUI_Font_Bigger}[ProductName] uninstalled" />
+      Value="{\WixUI_Font_Bigger}Panasonic 2-in-1 Tablet Posture Management Tool uninstalled" />
   <String Id="ExitDialogRemoveDescription"
       Value="The application and hardware service have been removed from this computer." />
   <String Id="ExitDialogOptionalText"

@@ -69,11 +69,11 @@
   <String Id="ProgressDlgTextRemoving"
       Value="正在停止硬件服务并恢复显示与平板指示器配置，请稍候。" />
   <String Id="ExitDialogInstallTitle"
-      Value="{\WixUI_Font_Bigger}[ProductName] 设置完成" />
+      Value="{\WixUI_Font_Bigger}松下二合一平板电脑姿态管理工具 设置完成" />
   <String Id="ExitDialogInstallDescription"
       Value="应用与硬件服务已准备就绪。" />
   <String Id="ExitDialogRemoveTitle"
-      Value="{\WixUI_Font_Bigger}已卸载 [ProductName]" />
+      Value="{\WixUI_Font_Bigger}已卸载松下二合一平板电脑姿态管理工具" />
   <String Id="ExitDialogRemoveDescription"
       Value="应用与硬件服务已从这台电脑中移除。" />
   <String Id="ExitDialogOptionalText"
