@@ -77,7 +77,7 @@ msgid "Stand mode notification"
 msgstr "支架模式提示"
 
 msgid "Ask before switching to stand mode when the base is folded back"
-msgstr "底座倒置平放时，询问是否进入支架模式"
+msgstr "底座倒置平放时，先询问是否进入支架模式"
 
 msgid "Sensor"
 msgstr "传感器"
