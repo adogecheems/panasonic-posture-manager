@@ -501,7 +501,7 @@ class Settings(Page):
         self.startup_switch.blockSignals(False)
         text = (_('A login startup entry already points to another app or location.') if conflict else
                 _('Login startup is unavailable from this location.') if not available else
-                _('Start in the system tray when you sign in. Keep this app in its current folder.'))
+                _('Start in the system tray when you sign in.'))
         self.startup_card.setContent(text)
         self._schedule_fit()
 

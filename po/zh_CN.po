@@ -322,8 +322,8 @@ msgstr "已有登录启动项指向其他应用或位置。"
 msgid "Login startup is unavailable from this location."
 msgstr "当前位置不支持登录时启动。"
 
-msgid "Start in the system tray when you sign in. Keep this app in its current folder."
-msgstr "登录后在系统托盘运行。请将应用保留在当前文件夹。"
+msgid "Start in the system tray when you sign in."
+msgstr "登录后在系统托盘运行。"
 
 msgid "Check for updates"
 msgstr "检查更新"

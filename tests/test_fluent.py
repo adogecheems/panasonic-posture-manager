@@ -626,6 +626,7 @@ assert not window.settings.startup_switch.isEnabled()
 assert 'another app or location' in window.settings.startup_card.contentLabel.text()
 registry.value = None
 window.settings.refresh_startup()
+assert window.settings.startup_card.contentLabel.text() == 'Start in the system tray when you sign in.'
 window.unavailable()
 assert window.settings.startup_switch.isEnabled()
 ''')
