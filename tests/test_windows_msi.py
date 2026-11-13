@@ -146,7 +146,7 @@ class MsiPayloadTests(unittest.TestCase):
             'Id="SearchConfiguredSlate"',
             'SlateExclusiveConfigured',
             'Id="SearchWindowsBuild"',
-            'WINDOWS_BUILD &gt;= 10240',
+            'Installed OR (VersionNT64 AND WINDOWS_BUILD &gt;= 10240)',
             'Id="ProgramMenuFolder"',
             'Id="ARPPRODUCTICON" Value="ProductIcon.ico"',
             'Id="DISABLEADVTSHORTCUTS" Value="1"',
@@ -290,6 +290,20 @@ class MsiPayloadTests(unittest.TestCase):
             'Id="SERVICEINSTALLFOLDER" Name="PanasonicPostureManagerService"',
             source,
         )
+
+    def test_launch_condition_does_not_block_maintenance_mode(self):
+        root = ET.fromstring(
+            (ROOT / 'packaging/windows/msi/Package.wxs').read_text(encoding='utf-8')
+        )
+        launch = next(
+            element for element in root.iter()
+            if element.tag.endswith('Launch')
+        )
+        self.assertEqual(
+            launch.get('Condition'),
+            'Installed OR (VersionNT64 AND WINDOWS_BUILD >= 10240)',
+        )
+        self.assertEqual(launch.get('Message'), '!(loc.LaunchConditionMessage)')
 
     def test_main_path_actions_complete_and_guard_the_selected_location(self):
         source = ROOT / 'packaging/windows/msi/main-path-actions.js'

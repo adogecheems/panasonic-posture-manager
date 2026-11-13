@@ -23,7 +23,7 @@
     </Property>
 
     <Launch
-        Condition="VersionNT64 AND WINDOWS_BUILD &gt;= 10240"
+        Condition="Installed OR (VersionNT64 AND WINDOWS_BUILD &gt;= 10240)"
         Message="!(loc.LaunchConditionMessage)" />
 
     <Property Id="ARPHELPLINK" Value="https://github.com/adogecheems/panasonic-posture-manager" />
