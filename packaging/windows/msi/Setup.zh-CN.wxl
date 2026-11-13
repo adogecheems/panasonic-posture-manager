@@ -9,6 +9,7 @@
       Value="{\WixUI_Font_Bigger}欢迎安装 [ProductName]" />
   <String Id="WelcomeDlgDescription"
       Value="安装程序将帮助你在计算机上安装此应用。点击“下一步”继续。" />
+  <String Id="InstallDirDialogTitle" Value="[ProductName] 安装程序" />
   <String Id="InstallDirDlgTitle" Overridable="yes"
       Value="{\WixUI_Font_Title}选择安装位置" />
   <String Id="InstallDirDlgDescription"
@@ -41,20 +42,33 @@
   <String Id="VerifyReadyDlgInstall" Overridable="yes" Value="确认安装" />
   <String Id="ExitDialogOptionalText"
       Value="安装完成后可能需要重启 Windows，重启后设置才会生效。" />
-  <UI Dialog="LicenseAgreementDlg" Control="Title" X="135" Width="220" />
-  <UI Dialog="LicenseAgreementDlg" Control="Description" X="135" Width="220" />
-  <UI Dialog="BrowseDlg" Control="Title" X="135" Width="220" />
-  <UI Dialog="BrowseDlg" Control="Description" X="135" Width="220" />
-  <UI Dialog="MaintenanceTypeDlg" Control="Title" X="135" Width="220" />
-  <UI Dialog="MaintenanceTypeDlg" Control="Description" X="135" Width="220" />
-  <UI Dialog="DiskCostDlg" Control="Title" X="135" Width="220" />
-  <UI Dialog="DiskCostDlg" Control="Description" X="135" Width="220" />
-  <UI Dialog="FilesInUse" Control="Title" X="135" Width="220" />
-  <UI Dialog="FilesInUse" Control="Description" X="135" Width="220" />
-  <UI Dialog="MsiRMFilesInUse" Control="Title" X="135" Width="220" />
-  <UI Dialog="MsiRMFilesInUse" Control="Description" X="135" Width="220" />
-  <UI Dialog="OutOfRbDiskDlg" Control="Title" X="135" Width="220" />
-  <UI Dialog="OutOfRbDiskDlg" Control="Description" X="135" Width="220" />
-  <UI Dialog="OutOfDiskDlg" Control="Title" X="135" Width="220" />
-  <UI Dialog="OutOfDiskDlg" Control="Description" X="135" Width="220" />
+  <!-- Keep all banner copy in the 220-DLU content column to the right of
+       the brand panel. Ready and progress titles reserve two lines for the
+       English product name while remaining inside the 44-DLU banner. -->
+  <UI Dialog="LicenseAgreementDlg" Control="Title" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="LicenseAgreementDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="BrowseDlg" Control="Title" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="BrowseDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="MaintenanceTypeDlg" Control="Title" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="MaintenanceTypeDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="DiskCostDlg" Control="Title" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="DiskCostDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="FilesInUse" Control="Title" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="FilesInUse" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="MsiRMFilesInUse" Control="Title" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="MsiRMFilesInUse" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="OutOfRbDiskDlg" Control="Title" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="OutOfRbDiskDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="OutOfDiskDlg" Control="Title" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="OutOfDiskDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="VerifyReadyDlg" Control="InstallTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="VerifyReadyDlg" Control="ChangeTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="VerifyReadyDlg" Control="RepairTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="VerifyReadyDlg" Control="RemoveTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="VerifyReadyDlg" Control="UpdateTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="ProgressDlg" Control="TitleInstalling" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="ProgressDlg" Control="TitleChanging" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="ProgressDlg" Control="TitleRepairing" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="ProgressDlg" Control="TitleRemoving" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <UI Dialog="ProgressDlg" Control="TitleUpdating" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
 </WixLocalization>

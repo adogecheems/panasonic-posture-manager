@@ -158,6 +158,7 @@ class MsiPayloadTests(unittest.TestCase):
             'Before="ConfigureHardwareService"',
             'ScheduleReboot',
             'Id="WixUI_PostureInstallDir" InstallDirectory="INSTALLFOLDER"',
+            'Title="!(loc.InstallDirDialogTitle)"',
             'Id="MainPathActions"',
             'JScriptCall="CompleteAndValidateMainPath"',
             'JScriptCall="EnforceMainPath"',
@@ -187,6 +188,7 @@ class MsiPayloadTests(unittest.TestCase):
         expected = {
             'en-US': (
                 'Panasonic 2-in-1 Tablet Posture Management Tool',
+                '[ProductName] Setup',
                 'You may need to restart Windows',
                 'Confirm install',
                 'The default location works for most users. '
@@ -194,6 +196,7 @@ class MsiPayloadTests(unittest.TestCase):
             ),
             'zh-CN': (
                 '松下二合一平板电脑姿态管理工具',
+                '[ProductName] 安装程序',
                 '安装完成后可能需要重启 Windows',
                 '确认安装',
                 '默认位置适合大多数用户；如需安装到其他位置，请点击“更改”。',
@@ -201,6 +204,7 @@ class MsiPayloadTests(unittest.TestCase):
         }
         for culture, (
             product_name,
+            dialog_title,
             exit_text,
             confirm_text,
             folder_text,
@@ -217,6 +221,7 @@ class MsiPayloadTests(unittest.TestCase):
                 }
                 self.assertEqual(strings['ProductName'], product_name)
                 self.assertEqual(strings['FeatureTitle'], product_name)
+                self.assertEqual(strings['InstallDirDialogTitle'], dialog_title)
                 self.assertIn('[ProductName]', strings['WelcomeDlgTitle'])
                 self.assertNotIn(
                     'hardware service',
@@ -271,16 +276,30 @@ class MsiPayloadTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unsupported MSI culture'):
             msi.culture_files('fr-FR')
 
-    def test_banner_page_copy_is_placed_right_of_the_brand_panel(self):
-        banner_dialogs = {
-            'BrowseDlg',
-            'DiskCostDlg',
-            'FilesInUse',
-            'LicenseAgreementDlg',
-            'MaintenanceTypeDlg',
-            'MsiRMFilesInUse',
-            'OutOfDiskDlg',
-            'OutOfRbDiskDlg',
+    def test_banner_page_copy_is_right_aligned_right_of_the_brand_panel(self):
+        banner_controls = {
+            'BrowseDlg': ('Title', 'Description'),
+            'DiskCostDlg': ('Title', 'Description'),
+            'FilesInUse': ('Title', 'Description'),
+            'LicenseAgreementDlg': ('Title', 'Description'),
+            'MaintenanceTypeDlg': ('Title', 'Description'),
+            'MsiRMFilesInUse': ('Title', 'Description'),
+            'OutOfDiskDlg': ('Title', 'Description'),
+            'OutOfRbDiskDlg': ('Title', 'Description'),
+            'ProgressDlg': (
+                'TitleInstalling',
+                'TitleChanging',
+                'TitleRepairing',
+                'TitleRemoving',
+                'TitleUpdating',
+            ),
+            'VerifyReadyDlg': (
+                'InstallTitle',
+                'ChangeTitle',
+                'RepairTitle',
+                'RemoveTitle',
+                'UpdateTitle',
+            ),
         }
         for culture in ('en-US', 'zh-CN'):
             localization, _ = msi.culture_files(culture)
@@ -290,8 +309,8 @@ class MsiPayloadTests(unittest.TestCase):
                 for element in root
                 if element.tag.endswith('}UI')
             }
-            for dialog in banner_dialogs:
-                for control in ('Title', 'Description'):
+            for dialog, controls in banner_controls.items():
+                for control in controls:
                     with self.subTest(
                         culture=culture,
                         dialog=dialog,
@@ -300,6 +319,10 @@ class MsiPayloadTests(unittest.TestCase):
                         override = overrides[(dialog, control)]
                         self.assertEqual(override.get('X'), '135')
                         self.assertEqual(override.get('Width'), '220')
+                        self.assertEqual(override.get('RightAligned'), 'yes')
+                        if dialog in {'ProgressDlg', 'VerifyReadyDlg'}:
+                            self.assertEqual(override.get('Y'), '6')
+                            self.assertEqual(override.get('Height'), '32')
 
     def test_installer_selects_main_location_and_fixes_the_service_location(self):
         source = (ROOT / 'packaging/windows/msi/Package.wxs').read_text(
@@ -433,6 +456,28 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertLessEqual(label_bottom + 4, int(folder.get('Y')))
         self.assertLessEqual(folder_bottom + 4, int(change.get('Y')))
         self.assertGreaterEqual(int(folder_label.get('Height')), 34)
+
+    def test_all_custom_banner_copy_is_right_aligned(self):
+        root = ET.fromstring(
+            (ROOT / 'packaging/windows/msi/Package.wxs').read_text(encoding='utf-8')
+        )
+        for dialog_id in ('PostureInstallDirDlg', 'InvalidMainPathDlg'):
+            dialog = next(
+                element for element in root.iter()
+                if element.tag.endswith('Dialog')
+                and element.get('Id') == dialog_id
+            )
+            controls = {
+                element.get('Id'): element
+                for element in dialog
+                if element.tag.endswith('Control')
+            }
+            for control_id in ('Title', 'Description'):
+                with self.subTest(dialog=dialog_id, control=control_id):
+                    control = controls[control_id]
+                    self.assertEqual(control.get('X'), '135')
+                    self.assertEqual(control.get('Width'), '220')
+                    self.assertEqual(control.get('RightAligned'), 'yes')
 
     def test_installer_branding_uses_wix_bitmap_dimensions(self):
         dimensions = {
