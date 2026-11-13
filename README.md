@@ -8,24 +8,26 @@
 
 **当前版本：2.4.0**
 
-## 支持范围
+## 适用设备与系统
 
 | 平台 | 支持情况 |
 | --- | --- |
-| Linux | x86_64；GNOME Wayland；KDE Plasma 6 Wayland（实验性，尚未实机验证） |
-| Windows | Windows 10/11 x64 |
-| 已验证机型 | Panasonic CFQV8、CFQV9、CFQV1 全系，包括 `CF-QV*` 产品名变体 |
+| Linux | GNOME；KDE Plasma 6 |
+| Windows | 64 位 Windows 10/11 |
+| 已验证设备 | Panasonic Let's note QV 系列 |
 
-**KDE Plasma 6 Wayland 目前为实验性支持。** 方向调整和异常恢复可能不稳定，请谨慎使用。
+KDE Plasma 6 目前为实验性支持，尚未实机验证。方向调整和异常恢复可能不稳定，请谨慎使用。
 
-其他 360° 翻转本可能可用，实际功能取决于系统能否识别设备硬件。
+其他 360° 翻转本可能可用，实际功能取决于系统兼容性。
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases) 下载对应安装包：
+从 [GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases) 下载对应平台的安装程序：
 
-- Windows：按界面语言选择文件名带 `zh-CN` 或 `en-US` 的 MSI，双击并按安装向导完成安装；如提示重启，请重启电脑。
+- Windows：运行安装程序并按向导完成安装；如提示重启，请重启电脑。
 - Arch Linux、Ubuntu、Debian、Fedora：安装对应软件包，然后注销并重新登录。
+
+Windows 不提供受支持的便携版。
 
 更完整的安装、卸载和排障说明见[维护指南](MAINTENANCE.md)。
 
@@ -60,7 +62,7 @@ Linux 默认随桌面登录启动，Windows 可在设置中开关「登录时启
 
 | 问题 | 处理方法 |
 | --- | --- |
-| 应用显示「未连接」 | 重新打开应用；Linux 刚安装或升级时先注销再登录；Windows 仍无法连接时重新运行 MSI 并选择修复，然后重启。 |
+| 应用显示「未连接」 | 重新打开应用；Linux 刚安装或升级时先注销再登录；Windows 仍无法连接时重新运行安装程序并选择修复，然后重启。 |
 | 屏幕方向没有变化 | 点击「重试」；使用外接屏时检查镜像和屏幕排列。 |
 | 帐篷或支架没有提示 | 检查「设置 → 自动模式」中的提示开关，并把设备放稳。 |
 | 键盘或触控板没有恢复 | 翻回笔记本姿态，并将模式切回「自动」。 |
