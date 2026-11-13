@@ -24,21 +24,7 @@ def exercise_platform_boundaries():
 
     class BlockPlatformImports:
         def find_spec(self, name, path=None, target=None):
-            if name in {
-                "gi",
-                "panasonic_posture.protocol",
-                "panasonic_posture.linux_contract",
-                "panasonic_posture.state_codec",
-                "panasonic_posture.session.errors",
-                "panasonic_posture.service.callbacks",
-                "panasonic_posture.session.journal",
-                "panasonic_posture.service.actuator",
-                "panasonic_posture.service.access",
-                "panasonic_posture.service.sensor",
-                "panasonic_posture.service.settings",
-                "panasonic_posture.session.desktop",
-                "panasonic_posture.session.lockstate",
-            } or name.startswith("panasonic_posture.hardware."):
+            if name == "gi" or name.startswith("panasonic_posture.linux"):
                 raise AssertionError(f"Unexpected platform import: {name}")
 
     sys.meta_path.insert(0, BlockPlatformImports())

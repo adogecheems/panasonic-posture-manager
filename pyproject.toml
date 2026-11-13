@@ -27,8 +27,8 @@ Homepage = "https://github.com/adogecheems/panasonic-posture-manager"
 Repository = "https://github.com/adogecheems/panasonic-posture-manager"
 
 [project.scripts]
-panasonic-posture-manager = "panasonic_posture.cli:launch_ui"
-panasonic-posture-manager-probe = "panasonic_posture.hardware.probe:main"
+panasonic-posture-manager = "panasonic_posture.linux.cli:launch_ui"
+panasonic-posture-manager-probe = "panasonic_posture.linux.hardware.probe:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
@@ -38,4 +38,4 @@ where = ["src"]
 include = ["panasonic_posture*"]
 
 [tool.setuptools.package-data]
-panasonic_posture = ["resources/*.xml"]
+"panasonic_posture.linux.resources" = ["*.xml"]

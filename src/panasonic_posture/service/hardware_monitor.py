@@ -1,6 +1,6 @@
 """Hardware-switch observation and transient-failure debouncing.
 
-Device discovery belongs to :mod:`panasonic_posture.hardware.sysfs`; this
+Device discovery belongs to :mod:`panasonic_posture.linux.hardware.sysfs`; this
 module owns the service-level policy for invalid or temporarily unreadable
 values.  Keeping it separate from the transaction engine makes the safety
 behaviour directly testable and ensures every consumer sees the same raw,

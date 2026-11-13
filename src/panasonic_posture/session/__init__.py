@@ -1,8 +1,5 @@
-"""Shared session state machine plus the Linux desktop adapter.
+"""Platform-neutral session runtime, transactions and persistence.
 
-``runtime``, ``ports``, ``failures``, ``transaction``, ``journal_schema`` and
-``journal_store`` are platform-neutral and are reused by Windows.  The
-remaining modules in this package are Linux D-Bus, desktop, display,
-notification and default-path adapters; Windows session code lives under
-``panasonic_posture.windows``.
+Linux desktop and D-Bus adapters live under ``panasonic_posture.linux``;
+Windows session code lives under ``panasonic_posture.windows``.
 """

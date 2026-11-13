@@ -57,6 +57,7 @@ from ..contracts import (
 )
 from ..policy import geometry
 from ..tasks import thread_executor
+from .callbacks import guard
 from .hardware_monitor import HardwareMonitor, HardwareObservation
 from .ports import (
     ActuatorError, InputActuator, SensorBackend, Settings, SettingsBackend, SessionOwner,
@@ -77,7 +78,7 @@ MODE_TO_POSE = {
 
 
 class ServiceError(Exception):
-    """A method failure carrying a stable :class:`~panasonic_posture.protocol.ErrorCode`."""
+    """A method failure carrying a stable :class:`~panasonic_posture.contracts.ErrorCode`."""
 
     def __init__(self, code: str, detail: str | None = None) -> None:
         self.code = str(code or ErrorCode.INTERNAL)
@@ -1076,10 +1077,3 @@ class Engine:
 
 
 __all__ = ["MODE_TO_POSE", "Engine", "ServiceError", "guard"]
-
-
-def __getattr__(name: str):
-    if name == "guard":
-        from .callbacks import guard
-        return guard
-    raise AttributeError(name)

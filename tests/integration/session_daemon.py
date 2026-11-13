@@ -21,7 +21,7 @@ SRC_DIR = REPO_ROOT / "src"
 if SRC_DIR.is_dir() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from panasonic_posture.service.daemon import main  # noqa: E402  (after sys.path setup)
+from panasonic_posture.linux.service.daemon import main  # noqa: E402  (after sys.path setup)
 
 
 def run(argv: list[str] | None = None) -> int:

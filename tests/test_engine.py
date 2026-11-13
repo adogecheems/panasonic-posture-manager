@@ -18,14 +18,14 @@ from panasonic_posture.model import (
     SensorSource,
     Target,
 )
-from panasonic_posture.protocol import ErrorCode
-from panasonic_posture.service.access import AccessDenied
-from panasonic_posture.service.actuator import ActuatorError, RelayState
+from panasonic_posture.linux.protocol import ErrorCode
+from panasonic_posture.linux.service.access import AccessDenied
+from panasonic_posture.linux.service.actuator import ActuatorError, RelayState
 from panasonic_posture.service.engine import Engine, ServiceError, guard
 from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.model import SensorInfo, DeviceInfo
 from panasonic_posture.service.ports import SessionOwner
-from panasonic_posture.service.settings import Settings
+from panasonic_posture.linux.service.settings import Settings
 from panasonic_posture.session.runtime import SessionRuntime
 
 LAPTOP = Target(mode="laptop", tablet=False, rotation=0, disable_internal_input=False)

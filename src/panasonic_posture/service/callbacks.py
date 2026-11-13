@@ -1,4 +1,4 @@
-"""Exception boundary for the Linux GLib host callbacks."""
+"""Exception boundary for long-lived event-loop callbacks."""
 
 import functools
 import logging
@@ -8,7 +8,7 @@ LOG = logging.getLogger(__name__)
 
 
 def guard(callback: Callable[..., Any], default: Any = True) -> Callable[..., Any]:
-    """Wrap a GLib callback so one exception never removes the event source.
+    """Keep one callback exception from removing its event source.
 
     ``default`` is returned after logging the exception; GLib treats a truthy
     return value from a timeout callback as ``SOURCE_CONTINUE``.
@@ -20,8 +20,12 @@ def guard(callback: Callable[..., Any], default: Any = True) -> Callable[..., An
             return callback(*args, **kwargs)
         except Exception:
             LOG.exception(
-                "unhandled exception in %s", getattr(callback, "__name__", repr(callback))
+                "unhandled exception in %s",
+                getattr(callback, "__name__", repr(callback)),
             )
             return default
 
     return wrapper
+
+
+__all__ = ["guard"]

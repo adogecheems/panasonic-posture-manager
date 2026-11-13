@@ -12,7 +12,7 @@ class PlatformSeparationTests(unittest.TestCase):
             SessionOwner("", "1000")
 
     def test_relay_completion_requires_both_effects(self):
-        from panasonic_posture.service.actuator import RelayState
+        from panasonic_posture.linux.service.actuator import RelayState
         from panasonic_posture.model import Target
         target = Target(mode="tent", tablet=True, disable_internal_input=True)
         for tablet in (False, True):
@@ -42,14 +42,15 @@ class PlatformSeparationTests(unittest.TestCase):
             ServiceError(detail="not-session-adapter", kind=FailureKind.TRANSIENT)))
 
     def test_linux_decoder_still_rejects_unknown_sensor_sources(self):
-        from panasonic_posture.model import StateSnapshot, dumps_state, parse_state_snapshot
+        from panasonic_posture.model import StateSnapshot, dumps_state
+        from panasonic_posture.linux.state_codec import parse_state_snapshot
         with self.assertRaises(ValueError):
             parse_state_snapshot(dumps_state(StateSnapshot(sensor_source="test-sensor")))
         state = parse_state_snapshot(dumps_state(StateSnapshot(sensor_source="iio")))
         self.assertEqual(state.sensor_source, "iio")
 
     def test_linux_client_classifies_legacy_errors(self):
-        from panasonic_posture.session.dbus_errors import service_error
+        from panasonic_posture.linux.session.dbus_errors import service_error
         from panasonic_posture.session.failures import FailureKind
         from panasonic_posture.contracts import ErrorCode
         for name in ("AccessDenied", "AuthFailed", "NotAuthorized"):

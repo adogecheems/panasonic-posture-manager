@@ -1,4 +1,4 @@
-"""Tests for panasonic_posture.hardware.iio (type parsing, channel order, IO)."""
+"""Tests for panasonic_posture.linux.hardware.iio (type parsing, channel order, IO)."""
 
 import os
 import struct
@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from panasonic_posture.hardware import iio
+from panasonic_posture.linux.hardware import iio
 
 
 def write(path, value):

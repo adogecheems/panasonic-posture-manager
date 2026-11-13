@@ -12,9 +12,9 @@ from unittest import mock
 from panasonic_posture.controller import Controller
 from panasonic_posture.model import HardwareStatus, SensorReading, SensorInfo
 from panasonic_posture.service.ports import SessionOwner
-from panasonic_posture.service.application import ServiceApplication
+from panasonic_posture.linux.service.application import ServiceApplication
 from panasonic_posture.service.hardware_monitor import HardwareMonitor
-from panasonic_posture.service.settings import SettingsStore
+from panasonic_posture.linux.service.settings import SettingsStore
 
 
 class FakePresentation:
@@ -136,7 +136,7 @@ class ApplicationTests(unittest.TestCase):
     def test_close_survives_engine_shutdown_failure(self) -> None:
         application = self.make()
         application.engine.shutdown = mock.Mock(side_effect=RuntimeError("boom"))
-        with mock.patch("panasonic_posture.service.application.LOG"):
+        with mock.patch("panasonic_posture.linux.service.application.LOG"):
             application.close()
         self.assertEqual(self.sensor.closed, 1)
 

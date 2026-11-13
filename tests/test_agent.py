@@ -11,14 +11,14 @@ from unittest import mock
 
 from gi.repository import Gio, GLib
 
-from panasonic_posture import protocol
+from panasonic_posture.linux import protocol
 from panasonic_posture.model import StateSnapshot, Target
-from panasonic_posture.protocol import ErrorCode
-from panasonic_posture.session.agent import Agent
-from panasonic_posture.session.client import SystemClient
-from panasonic_posture.session.display import DisplayError
+from panasonic_posture.linux.protocol import ErrorCode
+from panasonic_posture.linux.session.agent import Agent
+from panasonic_posture.linux.session.client import SystemClient
+from panasonic_posture.linux.session.display import DisplayError
 from panasonic_posture.session.failures import ServiceError, FailureKind
-from panasonic_posture.session.dbus_errors import service_error
+from panasonic_posture.linux.session.dbus_errors import service_error
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.tasks import InlineExecutor
 
@@ -515,7 +515,7 @@ class AdapterTickTests(unittest.TestCase):
         runtime = harness.agent.runtime
         original_tick = runtime.tick
         runtime.tick = mock.Mock(side_effect=RuntimeError("boom"))
-        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+        with self.assertLogs("panasonic_posture.linux.session.agent", level="ERROR"):
             self.assertIs(harness.agent._tick(), GLib.SOURCE_CONTINUE)
         # The next tick works again.
         runtime.tick = original_tick
@@ -705,7 +705,7 @@ class AgentLifecycleTests(unittest.TestCase):
 
         agent, _harness = self.build_agent(
             events, own_name, system_bus=FakeSystemBus(error=denied))
-        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+        with self.assertLogs("panasonic_posture.linux.session.agent", level="ERROR"):
             self.assertEqual(agent.serve(), 1)
 
     def test_name_owned_by_another_user_fails_so_systemd_retries(self):
@@ -719,7 +719,7 @@ class AgentLifecycleTests(unittest.TestCase):
         agent, _harness = self.build_agent(
             events, own_name,
             system_bus=FakeSystemBus(owner=":1.99", owner_uid=2000))
-        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+        with self.assertLogs("panasonic_posture.linux.session.agent", level="ERROR"):
             self.assertEqual(agent.serve(), 1)
         self.assertNotIn("run", events)
 
@@ -739,7 +739,7 @@ class AgentLifecycleTests(unittest.TestCase):
         agent, _harness = self.build_agent(
             events, own_name,
             system_bus=FakeSystemBus(owner=":1.42", uid_error=uid_error))
-        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+        with self.assertLogs("panasonic_posture.linux.session.agent", level="ERROR"):
             self.assertEqual(agent.serve(), 1)
 
     def test_losing_the_name_after_acquiring_exits_with_failure(self):
@@ -819,7 +819,7 @@ class NotificationActionTests(unittest.TestCase):
         runtime = self.harness.agent.runtime
         self.assertIsNotNone(runtime)
         runtime.handle_action = mock.Mock(side_effect=RuntimeError("boom"))
-        with self.assertLogs("panasonic_posture.session.agent", level="ERROR"):
+        with self.assertLogs("panasonic_posture.linux.session.agent", level="ERROR"):
             self.action(42, "tent")
 
 

@@ -23,7 +23,7 @@ from panasonic_posture.policy import (
     geometry,
     in_tent_zone,
 )
-from panasonic_posture.protocol import IIO_NO_SAMPLE_SECONDS
+from panasonic_posture.linux.protocol import IIO_NO_SAMPLE_SECONDS
 
 GRAVITY = 9.80665
 

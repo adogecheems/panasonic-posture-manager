@@ -10,8 +10,8 @@ from unittest.mock import patch
 from gi.repository import Gio, GLib
 
 from panasonic_posture.model import Target
-from panasonic_posture.protocol import ErrorCode
-from panasonic_posture.session.display import (
+from panasonic_posture.linux.protocol import ErrorCode
+from panasonic_posture.linux.session.display import (
     Display,
     DisplayError,
     desired_transform,

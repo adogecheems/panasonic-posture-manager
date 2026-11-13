@@ -1,10 +1,10 @@
 # Files containing translatable strings, relative to the repository root.
-src/panasonic_posture/session/errors.py
-src/panasonic_posture/session/notify.py
-src/panasonic_posture/ui/app.py
-src/panasonic_posture/ui/errors.py
-src/panasonic_posture/ui/posture.py
-src/panasonic_posture/ui/settings.py
+src/panasonic_posture/linux/session/errors.py
+src/panasonic_posture/linux/session/notify.py
+src/panasonic_posture/linux/ui/app.py
+src/panasonic_posture/linux/ui/errors.py
+src/panasonic_posture/linux/ui/posture.py
+src/panasonic_posture/linux/ui/settings.py
 src/panasonic_posture/fluent/app.py
 src/panasonic_posture/fluent/labels.py
 src/panasonic_posture/fluent/pages.py

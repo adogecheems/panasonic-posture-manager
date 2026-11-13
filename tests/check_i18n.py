@@ -41,7 +41,7 @@ SOURCE_SUFFIXES = {".py"}
 POTFILES = Path("po/POTFILES.in")
 CATALOGS = (Path("po/zh_CN.po"),)
 PROTOCOL = Path("src/panasonic_posture/contracts.py")
-PY_ERRORS = Path("src/panasonic_posture/session/errors.py")
+PY_ERRORS = Path("src/panasonic_posture/linux/session/errors.py")
 FLUENT_ERRORS = Path("src/panasonic_posture/fluent/pages.py")
 DESKTOP_ENTRY = Path(
     "packaging/desktop/work.mmoe.panasonic.PostureManager.desktop"

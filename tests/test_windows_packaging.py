@@ -109,6 +109,7 @@ class WindowsPackagingTests(unittest.TestCase):
                                      for name in names))
                 self.assertFalse(any(name.endswith('.ps1') for name in names))
                 self.assertFalse(any('Hardware Service' in name for name in names))
+                self.assertFalse(any('/app/panasonic_posture/linux/' in name for name in names))
                 for retired in (
                     'app/panasonic_posture/fluent/demo.py',
                     'app/panasonic_posture/windows/backend.py',

@@ -1,6 +1,6 @@
 """Session state machine for the unprivileged adapter.
 
-The process shell in :mod:`panasonic_posture.session.agent` owns bus names,
+The process shell in :mod:`panasonic_posture.linux.session.agent` owns bus names,
 signals and GLib lifecycle.  This module owns everything that happens while the
 adapter is attached to the service: mirroring generations, applying display
 transactions, reporting the lease heartbeat, retrying transient failures,

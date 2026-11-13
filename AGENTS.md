@@ -92,38 +92,34 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 
 ### 6.1 平台路径归属
 
-当前布局不是两个对称的 `linux/`、`windows/` 平台包：Windows 有显式包，Linux
-适配分散在语义化目录中，共享核心也放在这些目录里。修改前先按以下归属判断，
-不得因为目录名是 `service/`、`session/` 或 `hardware/` 就默认它只属于 Linux。
+平台适配使用对称的 `linux/`、`windows/` 包；`service/`、`session/`、
+`frontend/` 和顶层模型文件只保留两平台共享逻辑。修改前先按以下归属判断。
 
 | 归属 | 路径 | 边界 |
 | --- | --- | --- |
-| 共享核心 | `model.py`、`contracts.py`、`policy.py`、`controller.py`、`presentation.py`、`calibration.py`、`mounting.py`、`tasks.py`、`product.py`、`localization.py`、`snapshot_codec.py`、`frontend/` | 不导入 `windows/`、`fluent/`、`ui/` 或任一本文件列出的 Linux 专属模块 |
-| 共享服务 | `service/{engine,ports,hardware_monitor,settings_schema,settings_store}.py` | 只依赖共享端口和核心；不得导入 Linux D-Bus、设备、显示或界面适配 |
+| 共享核心 | `model.py`、`contracts.py`、`policy.py`、`controller.py`、`presentation.py`、`calibration.py`、`mounting.py`、`machine_profile.py`、`tasks.py`、`product.py`、`localization.py`、`snapshot_codec.py`、`frontend/` | 不导入 `linux/`、`windows/` 或 `fluent/`；平台入口负责提供身份、路径和 I/O |
+| 共享服务 | `service/{engine,callbacks,ports,hardware_monitor,settings_schema,settings_store}.py` | 只依赖共享端口和核心；不得导入 Linux D-Bus、设备、显示或界面适配 |
 | 共享会话 | `session/{runtime,ports,failures,transaction,journal_schema,journal_store}.py` | 由两个平台复用；不得导入 Linux 桌面适配或 Windows 实现 |
-| Linux 特权服务 | `service/{access,actuator,application,callbacks,daemon,sensor,sensor_sources,settings}.py` | 可依赖共享层和 Linux 契约，不得导入 Windows 包 |
-| Linux 硬件 | `hardware/{iio,sysfs,probe}.py` | Linux IIO、sysfs、设备探测；不得导入 Windows 包 |
-| Linux 会话 | `session/{agent,client,dbus_errors,desktop,display,errors,journal,lockstate,notify,plasma,screen_context}.py` | Linux D-Bus、Wayland/GNOME/KDE、默认状态目录和通知适配；`journal.py` 保留兼容导出，Windows 使用 `journal_store.py` |
-| Linux 界面与入口 | `ui/`、`cli.py` | PyGObject/GTK/libadwaita 与 Linux 用户入口 |
-| Linux 契约 | `protocol.py`、`linux_contract.py`、`state_codec.py` | 只承载 Linux 兼容契约；共享逻辑改用 `contracts.py` 和 `snapshot_codec.py` |
-| Windows | `windows/`、`fluent/` | 可依赖上表共享层，不得导入 Linux 特权服务、Linux 会话、`ui/`、GTK `gi` 或 Linux 契约 |
-| 混合过渡文件 | `hardware/profile.py` | profile schema/parser 可供两平台使用，但默认 DMI 和目录查找属于 Linux；Windows 只能传入显式 profile 目录，不得增加对 Linux 默认路径或常量的依赖 |
+| Linux 特权服务 | `linux/service/{access,actuator,application,daemon,sensor,sensor_sources,settings}.py` | 可依赖共享层和 Linux 契约，不得导入 Windows 包 |
+| Linux 硬件 | `linux/hardware/{iio,sysfs,probe,profile}.py` | Linux IIO、sysfs、DMI、profile 默认路径和设备探测；不得导入 Windows 包 |
+| Linux 会话 | `linux/session/{agent,client,dbus_errors,desktop,display,errors,journal,lockstate,notify,plasma,screen_context}.py` | Linux D-Bus、Wayland/GNOME/KDE、默认状态目录和通知适配 |
+| Linux 界面与入口 | `linux/ui/`、`linux/cli.py` | PyGObject/GTK/libadwaita 与 Linux 用户入口 |
+| Linux 契约 | `linux/{protocol,contracts,state_codec}.py`、`linux/resources/` | 只承载 Linux 兼容契约和 D-Bus XML；共享逻辑使用 `contracts.py`、`machine_profile.py` 和 `snapshot_codec.py` |
+| Windows | `windows/`、`fluent/` | 可依赖共享层，不得导入 `linux/`、GTK `gi` 或 Linux 默认路径 |
 
-新增平台实现放入已有平台包，或先取得用户对新增 `linux/` 包及模块迁移的明确
-授权。禁止在共享模块内用 `sys.platform` 选择服务职责；平台组合应由入口和
-适配器完成。新增 Windows 依赖必须同步更新 `test_platform_imports.py` 的边界
-断言。
+禁止在共享模块内用 `sys.platform` 选择服务职责；平台组合应由入口和适配器完成。
+新增平台依赖必须同步更新 `test_platform_imports.py` 的双向边界断言。
 
 | 改动 | 先读 | 目标测试 |
 | --- | --- | --- |
 | 姿态、阈值、迟滞、提示代次 | `policy.py`、`controller.py`、`presentation.py` | `test_policy`、`test_controller`、`test_presentation` |
-| 目标、状态和服务事务 | `protocol.py`、`model.py`、`controller.py`、`service/engine.py` | `test_protocol`、`test_model`、`test_engine`、`test_application` |
-| Linux 鉴权、会话和租约 | `service/access.py`、`service/daemon.py`、`session/agent.py` | `test_access`、`test_agent`、`make check-dbus` |
-| 设置、校准、持久化 | `service/settings*.py`、`calibration.py`、`ui/settings.py` | `test_settings`、`test_calibration`、`test_ui_contract` |
-| 传感器、机型配置和设备发现 | `service/sensor*.py`、`hardware/`、`data/profiles/` | `test_sensor`、`test_iio`、`test_sysfs`、`test_profile` |
-| C relay 与内置输入 | `backend/`、`service/actuator.py` | `make check-c`、`test_actuator` |
-| Linux 显示与恢复 | `session/{desktop,display,plasma,transaction,journal,runtime}.py` | `test_desktop`、`test_display*`、`test_journal`、`test_agent` |
-| GTK/Fluent 界面 | `ui/`、`fluent/`、`frontend/` | `test_ui_contract`、`test_fluent`、`test_frontend`、`make check-i18n` |
+| 目标、状态和服务事务 | `linux/protocol.py`、`model.py`、`controller.py`、`service/engine.py` | `test_protocol`、`test_model`、`test_engine`、`test_application` |
+| Linux 鉴权、会话和租约 | `linux/service/access.py`、`linux/service/daemon.py`、`linux/session/agent.py` | `test_access`、`test_agent`、`make check-dbus` |
+| 设置、校准、持久化 | `linux/service/settings*.py`、`service/settings*.py`、`calibration.py`、`linux/ui/settings.py` | `test_settings`、`test_calibration`、`test_ui_contract` |
+| 传感器、机型配置和设备发现 | `linux/service/sensor*.py`、`linux/hardware/`、`machine_profile.py`、`data/profiles/` | `test_sensor`、`test_iio`、`test_sysfs`、`test_profile` |
+| C relay 与内置输入 | `backend/`、`linux/service/actuator.py` | `make check-c`、`test_actuator` |
+| Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_desktop`、`test_display*`、`test_journal`、`test_agent` |
+| GTK/Fluent 界面 | `linux/ui/`、`fluent/`、`frontend/` | `test_ui_contract`、`test_fluent`、`test_frontend`、`make check-i18n` |
 | Windows 硬件组合与 RPC | `windows/{hardware_application,hardware_runtime,hardware_host,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server}.py` | `test_windows_architecture`、`test_windows_hardware*` |
 | Windows ETW 与启动基线 | `windows/{etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_etw_switch`、`test_windows_slate_bootstrap` |
 | Windows 显示、CSM 和会话 | `windows/{display,screen_session,session_agent,session_display,session_client,session_context,convertible_slate,slate_journal}.py` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
@@ -135,7 +131,8 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 ## 7. 兼容契约
 
 - 状态快照 v2：`contracts.py`。
-- C relay v4、硬件 profile v1：`linux_contract.py`。
+- C relay v4：`linux/contracts.py`。
+- 硬件 profile v1：`machine_profile.py`；Linux 默认查找位于 `linux/hardware/profile.py`。
 - 设置 v1：`service/settings_schema.py`。
 - 显示恢复日志 v1：`session/journal_schema.py`。
 - Windows 硬件 RPC 信封与请求/状态 schema：`windows/hardware_protocol.py`、`request_contract.py`、`state_contract.py`。

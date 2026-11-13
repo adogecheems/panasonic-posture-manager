@@ -77,7 +77,7 @@ class FrontendTests(unittest.TestCase):
 import sys
 class Block:
     def find_spec(self, name, path=None, target=None):
-        if name == 'gi' or name.startswith(('PyQt', 'PySide')) or name.endswith('linux_contract'):
+        if name == 'gi' or name.startswith(('PyQt', 'PySide', 'panasonic_posture.linux')):
             raise AssertionError(name)
 sys.meta_path.insert(0, Block())
 from panasonic_posture.frontend import ports, state, actions
@@ -253,7 +253,7 @@ from panasonic_posture.frontend import ports, state, actions
     def test_widget_pages_do_not_encode_transport_messages(self):
         import ast
         from pathlib import Path
-        root = Path(__file__).resolve().parents[1] / 'src/panasonic_posture/ui'
+        root = Path(__file__).resolve().parents[1] / 'src/panasonic_posture/linux/ui'
         for filename in ('posture.py', 'settings.py'):
             tree = ast.parse((root / filename).read_text(encoding='utf-8'))
             for node in ast.walk(tree):

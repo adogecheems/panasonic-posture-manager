@@ -1,8 +1,8 @@
 """Regression coverage for the Python UI; widgets run on an isolated display."""
 import json
 import unittest
-from panasonic_posture.ui.service import parse_state
-from panasonic_posture.ui.posture import displayed_pose
+from panasonic_posture.linux.ui.service import parse_state
+from panasonic_posture.linux.ui.posture import displayed_pose
 
 
 class StateTests(unittest.TestCase):

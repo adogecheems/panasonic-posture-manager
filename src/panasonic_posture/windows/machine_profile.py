@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import logging
 from pathlib import Path
 
-from ..hardware.profile import load_profile
+from ..machine_profile import load_profile
 from .machine_identity import read_machine_identity
 from .sensor import IDENTITY
 

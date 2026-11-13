@@ -1,4 +1,4 @@
-"""Tests for :mod:`panasonic_posture.service.sensor` with fake data sources."""
+"""Tests for :mod:`panasonic_posture.linux.service.sensor` with fake data sources."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from unittest import mock
 from panasonic_posture.model import SensorSource
 from panasonic_posture.service import sensor as sensor_module
 from panasonic_posture.service import sensor_sources
-from panasonic_posture.service.sensor import (
+from panasonic_posture.linux.service.sensor import (
     IioSampleSource,
     SensorManager,
     SourceUnavailable,

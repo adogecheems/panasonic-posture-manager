@@ -1,4 +1,4 @@
-"""Tests for panasonic_posture.hardware.sysfs.
+"""Tests for panasonic_posture.linux.hardware.sysfs.
 
 Capability bitmap fixtures are copied from a real CF-QV8 kernel (space
 separated 64-bit words, most significant word first) so the parser is tested
@@ -12,9 +12,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from panasonic_posture.hardware import sysfs
+from panasonic_posture.linux.hardware import sysfs
 from panasonic_posture.model import HardwareStatus
-from panasonic_posture.protocol import RELAY_VIRTUAL_NAME, RELAY_VIRTUAL_PHYS
+from panasonic_posture.linux.protocol import RELAY_VIRTUAL_NAME, RELAY_VIRTUAL_PHYS
 
 # Real `capabilities/key` fixtures.
 KEYBOARD_KEY_BITMAP = (
@@ -510,7 +510,7 @@ class ProbeSummaryTests(unittest.TestCase):
     """The read-only probe must not count the relay's own output as hardware."""
 
     def test_summary_excludes_the_relays_own_virtual_switch(self):
-        from panasonic_posture.hardware import probe as hardware_probe
+        from panasonic_posture.linux.hardware import probe as hardware_probe
 
         with tempfile.TemporaryDirectory() as tmp:
             make_input(tmp, "event0", "Intel HID switches",

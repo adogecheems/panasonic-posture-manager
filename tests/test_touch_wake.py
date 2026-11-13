@@ -11,11 +11,12 @@ from gi.repository import GLib
 import test_agent as session_fixtures
 import test_engine as engine_fixtures
 import test_access as access_fixtures
-from panasonic_posture.model import StateSnapshot, dumps_state, parse_state_snapshot
-from panasonic_posture.service.actuator import Actuator
+from panasonic_posture.model import StateSnapshot, dumps_state
+from panasonic_posture.linux.state_codec import parse_state_snapshot
+from panasonic_posture.linux.service.actuator import Actuator
 from panasonic_posture.service.ports import SessionOwner, TouchActivity
 from panasonic_posture.session.runtime import SessionRuntime
-from panasonic_posture.session.client import SystemClient
+from panasonic_posture.linux.session.client import SystemClient
 from panasonic_posture.session.failures import FailureKind, ServiceError
 from panasonic_posture.tasks import InlineExecutor
 

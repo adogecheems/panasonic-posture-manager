@@ -821,7 +821,7 @@ for directory in os.environ.get('PANASONIC_POSTURE_DLL_DIRECTORIES', '').split(o
 sys.path[:0] = [{str(root / "src")!r}, {str(root / "tests")!r}]
 class Block:
     def find_spec(self, name, path=None, target=None):
-        if name == 'gi' or name.endswith('linux_contract'):
+        if name == 'gi' or name.startswith('panasonic_posture.linux'):
             raise AssertionError(name)
 sys.meta_path.insert(0, Block())
 from PyQt6.QtWidgets import QApplication

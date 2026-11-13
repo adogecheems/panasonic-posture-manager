@@ -4,15 +4,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from panasonic_posture.protocol import ErrorCode
-from panasonic_posture.session.desktop import (
+from panasonic_posture.linux.protocol import ErrorCode
+from panasonic_posture.linux.session.desktop import (
     UnsupportedDisplay,
     create_display,
     detect_backend,
 )
-from panasonic_posture.session.display import Display
-from panasonic_posture.session.errors import DisplayError
-from panasonic_posture.session.plasma import KScreenCtlCommand, PlasmaDisplay
+from panasonic_posture.linux.session.display import Display
+from panasonic_posture.linux.session.errors import DisplayError
+from panasonic_posture.linux.session.plasma import KScreenCtlCommand, PlasmaDisplay
 
 
 class DetectionTests(unittest.TestCase):

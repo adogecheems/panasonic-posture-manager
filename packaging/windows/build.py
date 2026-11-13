@@ -63,12 +63,18 @@ def _bytecode_name(source_name: str) -> str:
     return str(path.parent / '__pycache__' / filename)
 
 
-def _add_bytecode_tree(files: dict[str, Path | bytes], source: Path, prefix: str) -> None:
+def _add_bytecode_tree(
+    files: dict[str, Path | bytes],
+    source: Path,
+    prefix: str,
+    excluded_top_level: frozenset[str] = frozenset(),
+) -> None:
     """Precompile selected pure-Python trees for read-only installations."""
     for path in sorted(source.rglob('*.py')):
-        if '__pycache__' in path.parts:
+        relative = path.relative_to(source)
+        if '__pycache__' in path.parts or relative.parts[0] in excluded_top_level:
             continue
-        installed = f'{prefix}/{path.relative_to(source).as_posix()}'
+        installed = f'{prefix}/{relative.as_posix()}'
         files[_bytecode_name(installed)] = _compiled_bytecode(path, installed)
 
 
@@ -116,8 +122,17 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
     # the exact GPLv3 text from the matching upstream source distribution.
     for directory in missing_licenses:
         files[f'runtime/Lib/site-packages/{directory.name}/LICENSE'] = PYQT6_LICENSE
-    add_tree(ROOT / 'src/panasonic_posture', 'app/panasonic_posture', ('__pycache__', '*.pyc'))
-    _add_bytecode_tree(files, ROOT / 'src/panasonic_posture', 'app/panasonic_posture')
+    add_tree(
+        ROOT / 'src/panasonic_posture',
+        'app/panasonic_posture',
+        ('__pycache__', '*.pyc', 'linux'),
+    )
+    _add_bytecode_tree(
+        files,
+        ROOT / 'src/panasonic_posture',
+        'app/panasonic_posture',
+        excluded_top_level=frozenset({'linux'}),
+    )
     for package in ('darkdetect', 'qfluentwidgets', 'qframelesswindow'):
         source = dependencies / package
         if source.is_dir():

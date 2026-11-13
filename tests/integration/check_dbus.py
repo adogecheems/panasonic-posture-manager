@@ -32,7 +32,7 @@ SRC_DIR = REPO_ROOT / "src"
 if SRC_DIR.is_dir() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from panasonic_posture.protocol import (  # noqa: E402  (after sys.path setup)
+from panasonic_posture.linux.protocol import (  # noqa: E402  (after sys.path setup)
     NAME,
     PATH,
     STATE_VERSION,

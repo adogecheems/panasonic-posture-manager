@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-DAEMON_MODULE = "panasonic_posture.service.daemon"
+DAEMON_MODULE = "panasonic_posture.linux.service.daemon"
 RELAY_BASENAME = "relay"
 
 
@@ -34,7 +34,7 @@ def is_daemon_process(pid: int) -> bool:
         text = arg.decode(errors="replace")
         if text == DAEMON_MODULE or text.endswith("/panasonic_posture/service/daemon.py"):
             return True
-        if text == "panasonic_posture.service.daemon":
+        if text == "panasonic_posture.linux.service.daemon":
             return True
     return False
 

@@ -7,7 +7,7 @@ from gi.repository import Gio, GLib
 
 from panasonic_posture.controller import Controller
 from panasonic_posture.model import SensorReading, SensorSource
-from panasonic_posture.session.notify import RETRY_DELAYS, Notifier
+from panasonic_posture.linux.session.notify import RETRY_DELAYS, Notifier
 
 
 class FakeReply:

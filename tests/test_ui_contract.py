@@ -13,10 +13,10 @@ import xml.etree.ElementTree as ET
 
 from panasonic_posture.contracts import ALL_ERROR_CODES
 from panasonic_posture.model import StateSnapshot, Target
-from panasonic_posture.ui.errors import describe_error, ServiceUnavailable
-from panasonic_posture.session.errors import ERROR_MESSAGES, error_text
-from panasonic_posture.ui.service import PostureService, parse_state
-from panasonic_posture.ui.common import DATA_ROOT
+from panasonic_posture.linux.ui.errors import describe_error, ServiceUnavailable
+from panasonic_posture.linux.session.errors import ERROR_MESSAGES, error_text
+from panasonic_posture.linux.ui.service import PostureService, parse_state
+from panasonic_posture.linux.ui.common import DATA_ROOT
 from gi.repository import GLib
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -171,7 +171,7 @@ class ProtocolTests(unittest.TestCase):
         service = PostureService()
         proxy = object()
         service._proxy = proxy
-        with self.assertLogs('panasonic_posture.ui.service', level='ERROR'):
+        with self.assertLogs('panasonic_posture.linux.ui.service', level='ERROR'):
             service._signal(proxy, '', 'StateChanged', GLib.Variant('()', ()))
         self.assertIs(service._proxy, proxy)
         service.stop()
@@ -181,7 +181,7 @@ class ProtocolTests(unittest.TestCase):
         proxy = object()
         service._proxy = proxy
         service._on_state = lambda value: (_ for _ in ()).throw(RuntimeError('widget'))
-        with self.assertLogs('panasonic_posture.ui.service', level='ERROR'):
+        with self.assertLogs('panasonic_posture.linux.ui.service', level='ERROR'):
             service._emit_state('[]')
             service._emit_state(json.dumps(state()))
         self.assertIs(service._proxy, proxy)
@@ -189,12 +189,12 @@ class ProtocolTests(unittest.TestCase):
 
     def test_per_uid_name_remains_valid(self):
         from gi.repository import Gio
-        from panasonic_posture.linux_contract import session_name
+        from panasonic_posture.linux.contracts import session_name
         self.assertTrue(Gio.dbus_is_name(session_name(1000)))
 
     def test_python_entry_and_packaging(self):
         import inspect
-        from panasonic_posture.cli import launch_ui
+        from panasonic_posture.linux.cli import launch_ui
         self.assertNotIn('execv', inspect.getsource(launch_ui))
         for name in ('packaging/aur/PKGBUILD', 'packaging/aur/.SRCINFO',
                      'packaging/aur-bin/PKGBUILD.in', 'packaging/deb/control.in',
@@ -254,9 +254,9 @@ class WidgetTests(unittest.TestCase):
     def run_ui(self, body):
         prelude = '''
 from test_ui_contract import FakeService, state
-from panasonic_posture.ui import app
-from panasonic_posture.ui.posture import PosturePage
-from panasonic_posture.ui.settings import SettingsPage
+from panasonic_posture.linux.ui import app
+from panasonic_posture.linux.ui.posture import PosturePage
+from panasonic_posture.linux.ui.settings import SettingsPage
 from gi.repository import Adw, Gtk, Gdk, GLib
 Adw.init()
 service = FakeService()
@@ -298,7 +298,7 @@ import subprocess, sys
 application = app.Application(service_factory=lambda: service)
 assert application.register(None)
 application.ensure_ui()
-remote = subprocess.Popen([sys.executable, '-m', 'panasonic_posture.cli', '--settings'],
+remote = subprocess.Popen([sys.executable, '-m', 'panasonic_posture.linux.cli', '--settings'],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 loop = GLib.MainLoop()
 expired = []
@@ -490,8 +490,8 @@ page.close()
     def test_real_async_bus_connection_signal_retry_and_reconnect(self):
         self.run_ui('''
 from gi.repository import Gio
-from panasonic_posture.ui.service import PostureService
-from panasonic_posture.linux_contract import NAME, PATH, IFACE, DBUS_XML
+from panasonic_posture.linux.ui.service import PostureService
+from panasonic_posture.linux.contracts import NAME, PATH, IFACE, DBUS_XML
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 flags = Gio.DBusCallFlags.NONE
 bus.call_sync('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus',
@@ -550,8 +550,8 @@ page.close()
 
     def test_four_illustrations_all_themes_cache_and_missing_assets(self):
         self.run_ui('''
-from panasonic_posture.ui.illustration import POSES, posture_pixbuf, _CACHE, CACHE_LIMIT
-from panasonic_posture.ui.common import DATA_ROOT
+from panasonic_posture.linux.ui.illustration import POSES, posture_pixbuf, _CACHE, CACHE_LIMIT
+from panasonic_posture.linux.ui.common import DATA_ROOT
 from pathlib import Path
 import tempfile
 import unittest
@@ -567,8 +567,8 @@ assert len(_CACHE) <= CACHE_LIMIT
 assert posture_pixbuf(DATA_ROOT, '../bad') is None
 assert posture_pixbuf(DATA_ROOT, 'unknown') is None
 with tempfile.TemporaryDirectory() as directory:
-    with patch('panasonic_posture.ui.posture.DATA_ROOT', Path(directory)):
-        with unittest.TestCase().assertLogs('panasonic_posture.ui.posture', level='ERROR'):
+    with patch('panasonic_posture.linux.ui.posture.DATA_ROOT', Path(directory)):
+        with unittest.TestCase().assertLogs('panasonic_posture.linux.ui.posture', level='ERROR'):
             page.refresh_theme()
         assert page._pixbuf is None
 page.close()

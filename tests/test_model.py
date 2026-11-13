@@ -14,9 +14,9 @@ from panasonic_posture.model import (
     Target,
     dumps_state,
     loads_state,
-    parse_state_snapshot,
 )
-from panasonic_posture.protocol import STATE_VERSION
+from panasonic_posture.linux.state_codec import parse_state_snapshot
+from panasonic_posture.linux.protocol import STATE_VERSION
 from panasonic_posture.snapshot_codec import parse_snapshot_data
 
 

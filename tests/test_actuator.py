@@ -1,4 +1,4 @@
-"""Tests for :mod:`panasonic_posture.service.actuator`.
+"""Tests for :mod:`panasonic_posture.linux.service.actuator`.
 
 A temporary fake relay executable is spawned for real, which exercises the
 heartbeat/report/exit/recover protocol without root, /dev/uinput or a real
@@ -18,9 +18,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from panasonic_posture.protocol import RELAY_HEARTBEAT_SECONDS, ErrorCode
+from panasonic_posture.linux.protocol import RELAY_HEARTBEAT_SECONDS, ErrorCode
 from panasonic_posture.service import actuator as actuator_module
-from panasonic_posture.service.actuator import (
+from panasonic_posture.linux.service.actuator import (
     ENV_RELAY,
     RECOVER_TIMEOUT_SECONDS,
     RELEASE_TIMEOUT_SECONDS,
@@ -207,7 +207,7 @@ class CommandTests(unittest.TestCase):
         # exists); the repository fallback must still be selected when it does
         # not.
         with mock.patch(
-            "panasonic_posture.service.actuator.RELAY_INSTALL_PATH",
+            "panasonic_posture.linux.service.actuator.RELAY_INSTALL_PATH",
             "/nonexistent/panasonic-posture-manager/relay",
         ):
             actuator = Actuator(environ={})

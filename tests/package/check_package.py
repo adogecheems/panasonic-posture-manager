@@ -581,7 +581,7 @@ class PackageAcceptance:
             if self.require(user_unit is not None, "user session unit is missing"):
                 assert user_unit is not None
                 self.require(
-                    "ExecStart=/usr/bin/python3 -m panasonic_posture.session.agent"
+                    "ExecStart=/usr/bin/python3 -m panasonic_posture.linux.session.agent"
                     in user_unit.read_text(encoding="utf-8"),
                     "user unit has the wrong session entry point",
                 )
@@ -721,8 +721,8 @@ class PackageAcceptance:
             env["PANASONIC_POSTURE_UI_DIR"] = str(ui_dir.parent / "ui")
             code = (
                 "import panasonic_posture\n"
-                "from panasonic_posture import protocol\n"
-                "from panasonic_posture.ui.common import DATA_ROOT\n"
+                "from panasonic_posture.linux import protocol\n"
+                "from panasonic_posture.linux.ui.common import DATA_ROOT\n"
                 f"assert panasonic_posture.__version__ == {self.version!r}\n"
                 f"assert protocol.NAME == {INTERFACE!r}\n"
                 "assert (DATA_ROOT / 'assets/laptop.svg').is_file()\n"

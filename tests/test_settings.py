@@ -1,4 +1,4 @@
-"""Tests for :mod:`panasonic_posture.service.settings`."""
+"""Tests for :mod:`panasonic_posture.linux.service.settings`."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from panasonic_posture.service import settings as settings_module
-from panasonic_posture.service.settings import Settings, SettingsStore
+from panasonic_posture.linux.service.settings import Settings, SettingsStore
 
 CORRUPT_GLOB = "settings.json.corrupt-*"
 

@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 
 from gi.repository import GLib
 
-from panasonic_posture.session.screen_context import ScreenContext, desktop_context
-from panasonic_posture.session.client import SystemClient
+from panasonic_posture.linux.session.screen_context import ScreenContext, desktop_context
+from panasonic_posture.linux.session.client import SystemClient
 from panasonic_posture.session.failures import ServiceError
 
 

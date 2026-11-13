@@ -79,7 +79,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         )
 
     def test_ui_about_version_matches_release(self) -> None:
-        from panasonic_posture.ui.settings import APP_VERSION
+        from panasonic_posture.linux.ui.settings import APP_VERSION
         self.assertEqual(APP_VERSION, self.project_version)
 
     def test_packaging_metadata_matches_the_release(self) -> None:
@@ -136,7 +136,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             "packaging/windows/msi/main-path-actions.js",
             "packaging/windows/msi/Setup.zh-CN.wxl",
             "packaging/windows/msi/Setup.en-US.wxl",
-            "src/panasonic_posture/resources/dbus.xml",
+            "src/panasonic_posture/linux/resources/dbus.xml",
             "MAINTENANCE.md",
         ):
             with self.subTest(relative=relative):

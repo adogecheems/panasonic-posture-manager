@@ -1,4 +1,4 @@
-"""Tests for panasonic_posture.hardware.profile (strict validation + lookup)."""
+"""Tests for panasonic_posture.linux.hardware.profile (strict validation + lookup)."""
 
 import json
 from pathlib import Path
@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from panasonic_posture.hardware import profile as hardware_profile
-from panasonic_posture.hardware.profile import (
+from panasonic_posture.linux.hardware import profile as hardware_profile
+from panasonic_posture.linux.hardware.profile import (
     PROFILE_DIRS,
     Profile,
     apply_mount,
@@ -17,7 +17,7 @@ from panasonic_posture.hardware.profile import (
 )
 
 PROFILES = Path(__file__).resolve().parents[1] / "data" / "profiles"
-LOGGER = "panasonic_posture.hardware.profile"
+LOGGER = "panasonic_posture.linux.hardware.profile"
 
 
 def write_json(directory, name, data, *, raw=None):

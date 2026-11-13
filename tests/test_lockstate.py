@@ -4,7 +4,7 @@ import unittest
 
 from gi.repository import Gio, GLib
 
-from panasonic_posture.session.lockstate import (
+from panasonic_posture.linux.session.lockstate import (
     login1_locked,
     query_locked,
     screensaver_locked,

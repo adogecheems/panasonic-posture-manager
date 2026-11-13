@@ -13,6 +13,7 @@ from enum import StrEnum
 from typing import Any
 
 from .contracts import (
+    SensorSource,
     STATE_VERSION,
     SUPPORT_TIERS,
     TARGET_MODES,
@@ -227,26 +228,6 @@ def loads_state(text: str) -> dict[str, Any]:
     if version != STATE_VERSION:
         raise ValueError(f"unsupported state version {version!r}")
     return data
-
-
-def parse_state_snapshot(text: str) -> StateSnapshot:
-    """Compatibility entry point for the Linux v2 state decoder."""
-    from .state_codec import parse_state_snapshot as parse
-    return parse(text)
-
-
-def ensure_sensor_source(value: str):
-    from .state_codec import ensure_sensor_source as ensure
-    return ensure(value)
-
-
-def __getattr__(name: str):
-    # Keep existing Linux callers compatible without loading platform enums
-    # when the domain model is imported by another platform.
-    if name == "SensorSource":
-        from .linux_contract import SensorSource
-        return SensorSource
-    raise AttributeError(name)
 
 
 def ensure_support_tier(value: str) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Literal
 
 STATE_VERSION = 2
@@ -14,6 +15,7 @@ PROMPTS = ("tent", "stand")
 HARDWARE_STATUSES = ("ok", "absent", "ambiguous", "permission", "read_error")
 BACKENDS = ("ready", "error", "development", "unsupported")
 SUPPORT_TIERS = ("validated", "compatible", "unsupported")
+SENSOR_SOURCES = ("starting", "iio", "sysfs")
 TICK_SECONDS = 0.1
 LEASE_SECONDS = 3.0
 SESSION_CHECK_SECONDS = 1.0
@@ -25,6 +27,12 @@ DISPLAY_RETRY_BASE_SECONDS = 2.0
 DISPLAY_RETRY_MAX_SECONDS = 10.0
 SLOW_TICK_WARN_SECONDS = 0.25
 TOUCH_WAKE_SECONDS = 2.0
+
+
+class SensorSource(StrEnum):
+    STARTING = "starting"
+    IIO = "iio"
+    SYSFS = "sysfs"
 
 
 class ErrorCode:
