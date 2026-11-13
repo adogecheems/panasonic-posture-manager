@@ -59,6 +59,17 @@ class HardwareServiceRunnerTests(unittest.TestCase):
         self.assertIn('松下二合一平板电脑姿态管理工具 硬件服务', source)
         self.assertIn('提供经过身份验证的 LocalSystem 硬件端点', source)
 
+    def test_service_uses_non_delayed_automatic_start(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / 'packaging/windows/hardware-service.ps1'
+        ).read_text(encoding='utf-8')
+        self.assertEqual(
+            source.count('sc.exe config $ServiceName start= auto obj= LocalSystem'),
+            2,
+        )
+        self.assertNotIn('delayed-auto', source)
+
     def test_service_reports_startup_polling_and_clean_stop(self):
         events, reports = [], []
         stop = threading.Event()

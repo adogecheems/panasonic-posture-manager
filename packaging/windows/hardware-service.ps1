@@ -53,7 +53,7 @@ function Stop-InstalledService {
 }
 
 function Configure-ServiceRecovery {
-    & sc.exe config $ServiceName start= delayed-auto obj= LocalSystem | Out-Null
+    & sc.exe config $ServiceName start= auto obj= LocalSystem | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Cannot configure the hardware service startup.' }
     & sc.exe failure $ServiceName reset= 86400 `
         actions= restart/5000/restart/15000/restart/60000 | Out-Null
@@ -97,7 +97,7 @@ if ($Action -eq 'Configure') {
     if ($null -eq (Get-ServiceRecord)) {
         throw 'Hardware service is not installed.'
     }
-    & sc.exe config $ServiceName start= delayed-auto obj= LocalSystem | Out-Null
+    & sc.exe config $ServiceName start= auto obj= LocalSystem | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Cannot configure the hardware service startup.' }
     & sc.exe failure $ServiceName reset= 86400 `
         actions= restart/5000/restart/15000/restart/60000 | Out-Null
