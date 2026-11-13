@@ -107,6 +107,8 @@ class UiClientTests(unittest.TestCase):
             (root / 'po/zh_CN.po').write_text('msgid "Laptop"\nmsgstr "笔记本"\n', encoding='utf-8')
             with patch.dict(os.environ, PANASONIC_POSTURE_DATA_DIR=str(root / 'data')):
                 self.assertEqual(translator('zh_CN')('Laptop'), '笔记本')
+                self.assertEqual(translator('zh-Hans')('Laptop'), '笔记本')
+                self.assertEqual(translator('zh_TW')('Laptop'), 'Laptop')
                 self.assertEqual(translator('en')('Laptop'), 'Laptop')
 
     def test_application_display_name_matches_the_window_title_source(self):

@@ -2,9 +2,16 @@
 import ast
 import ctypes
 import gettext
-import locale
 import os
 from pathlib import Path
+
+from ..localization import (
+    SIMPLIFIED_CHINESE_CATALOG,
+    catalog_language,
+    catalog_languages,
+    environment_languages,
+    windows_catalog_language,
+)
 
 
 def data_root() -> Path:
@@ -25,29 +32,26 @@ def _windows_language() -> str | None:
         return None
     if langid <= 0:
         return None
-    # The project ships one Chinese catalog. Use it for every Chinese
-    # Windows UI language rather than falling back to process LANG=C.UTF-8.
-    return 'zh_CN' if langid & 0x3ff == 0x04 else 'en'
+    # Use the Windows UI language rather than process LANG=C.UTF-8. Traditional
+    # Chinese intentionally falls back to English because only zh_CN ships.
+    return windows_catalog_language(langid)
 
 
 def default_language() -> str:
     system_language = _windows_language()
     if system_language:
         return system_language
-    return (os.environ.get('LANGUAGE', '').split(':')[0] or
-            os.environ.get('LC_ALL', '') or
-            os.environ.get('LC_MESSAGES', '') or
-            os.environ.get('LANG', '') or
-            locale.getlocale()[0] or
-            'en')
+    languages = environment_languages()
+    return languages[0] if languages else 'en'
 
 
 def translator(language: str | None = None):
     language = language or default_language()
     root = data_root().parent
+    languages = catalog_languages((language,))
     compiled = gettext.translation('panasonic-posture-manager', localedir=root / 'locale',
-                                   languages=[language], fallback=True)
-    if not language.lower().startswith('zh'):
+                                   languages=languages, fallback=True)
+    if catalog_language(language) != SIMPLIFIED_CHINESE_CATALOG:
         return compiled.gettext
     # Windows source runs do not require the GNU msgfmt executable.
     # The project catalog contains singular entries only. Installed builds can

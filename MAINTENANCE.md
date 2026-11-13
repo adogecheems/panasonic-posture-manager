@@ -17,7 +17,8 @@ sha256sum --ignore-missing --check SHA256SUMS
 | Arch Linux | `sudo pacman -U ./panasonic-posture-manager-2.4.0-1-x86_64.pkg.tar.zst` |
 | Ubuntu / Debian | `sudo apt install ./panasonic-posture-manager_2.4.0-1_amd64.deb` |
 | Fedora | `sudo dnf install ./panasonic-posture-manager-2.4.0-1.x86_64.rpm` |
-| Windows | 双击 `panasonic-posture-manager-2.4.0-windows-x64.msi`，完成后重启 |
+| Windows（简体中文） | 双击 `panasonic-posture-manager-2.4.0-zh-CN-windows-x64.msi`，完成后重启 |
+| Windows（英文） | 双击 `panasonic-posture-manager-2.4.0-en-US-windows-x64.msi`，完成后重启 |
 
 文件名以实际发布版本为准。Ubuntu/Debian 需要 GTK 4.12+ 和 libadwaita 1.4+，依赖由包管理器安装。
 
@@ -102,6 +103,8 @@ Linux 卸载后会保留以下状态，确认屏幕方向已恢复后可手动�
 
 Windows MSI 会停止并移除服务，同时恢复安装前的平板指示器配置。用户日志和恢复记录可在确认应用已正常退出后，从 `%LOCALAPPDATA%\PanasonicPostureManager` 清理。
 
+应用和安装器支持英文与简体中文；繁体中文及其他语言当前回退到英文。Linux desktop entry、polkit description/message 提供简体中文；systemd 不支持本地化 unit `Description`，因此系统服务描述保持英文。polkit 的 vendor 是不支持翻译的固定项目名。
+
 ## Windows 运维
 
 正式安装支持 Windows 10/11 x64。Panasonic CFQV8、CFQV9、CFQV1 全系使用明确的已验证产品族配置；其他机型回退到与 Linux 相同的 `generic/compatible` 路径，由 WinRT 传感器、ETW 物理源、唯一 `ACPI\INT33D3` 输出和显示会话实际探测能力。MSI 包含受保护运行时、桌面界面、LocalSystem 硬件服务和可逆的 `ACPI\INT33D3` 非独占配置。
@@ -164,6 +167,7 @@ python -m unittest discover -s tests -p "test_session_refresh.py" -v
 python -m unittest discover -s tests -p "test_optional_input.py" -v
 python -m unittest discover -s tests -p "test_frontend.py" -v
 python -m unittest discover -s tests -p "test_fluent.py" -v
+python -m unittest tests.test_localization tests.test_i18n_check -v
 python tests/check_i18n.py
 ```
 
@@ -175,9 +179,9 @@ python tests/check_i18n.py
 | Debian / Ubuntu | `make package-deb` | `dist/packages/` |
 | Fedora | `make package-rpm` | `dist/packages/` |
 | Windows 便携包 | `python packaging\windows\build.py --dependencies build\windows-dependencies` | `dist/windows/` |
-| Windows MSI | `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | `dist/windows/` |
+| Windows MSI | 分别使用 `--culture zh-CN` 和 `--culture en-US` 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | `dist/windows/` 下两个带 culture 的文件名 |
 
-Windows MSI 默认构建简体中文界面；需要英文界面时追加 `--culture en-US`。两种文化都使用同一套方形应用标志、欢迎/完成页背景、安装许可、主程序安装位置选择、最终确认页和重启提示，界面资源位于 `packaging/windows/msi/`。主程序可安装到用户选择的本地固定磁盘目录，输入上级目录时自动补全 `PanasonicPostureManager` 叶目录；安装器拒绝磁盘根、Windows/系统目录、固定服务目录、重解析点、过长路径和已有陌生文件的目录。静默安装必须在 `INSTALLFOLDER` 中给出包含该叶目录的完整绝对路径。硬件运行时和服务固定安装到 `Program Files\PanasonicPostureManagerService`，不随主程序路径变化。
+Windows MSI 默认构建简体中文界面；正式发布同时生成简体中文和英文安装包。两种文化使用相同的版本 ProductCode 和 UpgradeCode，文件名分别包含 `zh-CN` 或 `en-US`，不能相互覆盖。它们都使用同一套方形应用标志、欢迎/完成页背景、安装许可、主程序安装位置选择、最终确认页和重启提示，界面资源位于 `packaging/windows/msi/`。主程序可安装到用户选择的本地固定磁盘目录，输入上级目录时自动补全 `PanasonicPostureManager` 叶目录；安装器拒绝磁盘根、Windows/系统目录、固定服务目录、重解析点、过长路径和已有陌生文件的目录。静默安装必须在 `INSTALLFOLDER` 中给出包含该叶目录的完整绝对路径。硬件运行时和服务固定安装到 `Program Files\PanasonicPostureManagerService`，不随主程序路径变化。
 
 Windows 构建前准备依赖和 WiX：
 
@@ -207,7 +211,7 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 python packaging/scripts/release_version.py --tag v2.4.0
 ```
 
-3. 通过完整测试后推送版本标签。发布工作流会构建 Arch、Deb、RPM 和 Windows MSI，生成 `SHA256SUMS`，上传 GitHub Release，并更新两个 AUR 包。
+3. 通过完整测试后推送版本标签。发布工作流会构建 Arch、Deb、RPM 和简体中文/英文 Windows MSI，生成 `SHA256SUMS`，上传 GitHub Release，并更新两个 AUR 包。
 4. 重建已有版本时手动运行发布工作流，指定源码提交和标签；同名附件会被替换。
 
 包内必须保留 Python、PyQt6、Qt、Fluent Widgets 及其传递依赖的许可。

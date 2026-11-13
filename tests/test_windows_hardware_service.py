@@ -46,6 +46,19 @@ class HardwareServiceRunnerTests(unittest.TestCase):
         )
         self.assertIn(APPLICATION_DISPLAY_NAME, SERVICE_DESCRIPTION)
 
+    def test_manual_service_install_localizes_simplified_chinese_labels(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / 'packaging/windows/hardware-service.ps1'
+        ).read_text(encoding='utf-8')
+        self.assertIn(
+            "[Globalization.CultureInfo]::CurrentUICulture.Name -match "
+            "'^zh-(CN|SG|Hans)(-|$)'",
+            source,
+        )
+        self.assertIn('松下二合一平板电脑姿态管理工具 硬件服务', source)
+        self.assertIn('提供经过身份验证的 LocalSystem 硬件端点', source)
+
     def test_service_reports_startup_polling_and_clean_stop(self):
         events, reports = [], []
         stop = threading.Event()

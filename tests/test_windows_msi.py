@@ -2,13 +2,20 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
+
+from panasonic_posture.windows.shortcut_locale import (
+    START_MENU_RELATIVE_PATH,
+    remove_start_menu_entries,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -63,6 +70,7 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn('data/profiles/cfqv8.json', service)
         self.assertIn('data/profiles/cfqv9.json', service)
         self.assertIn('data/profiles/cfqv1.json', service)
+        self.assertIn('po/zh_CN.po', service)
         self.assertNotIn('data/profiles/cfqv8.json', main)
         self.assertNotIn('Install Hardware Service.cmd', service)
         self.assertNotIn('Configure Slate Device.cmd', service)
@@ -78,6 +86,25 @@ class MsiPayloadTests(unittest.TestCase):
                     hashlib.sha256((payload / role / name).read_bytes()).hexdigest(),
                     digest,
                 )
+
+    def test_service_payload_can_remove_a_localized_start_menu_entry(self):
+        payload = self.root / 'payload'
+        msi.stage_payload(payload, self.runtime, self.dependencies)
+        program_data = self.root / 'ProgramData'
+        programs = program_data / START_MENU_RELATIVE_PATH
+        localized = programs / '松下二合一平板电脑姿态管理工具'
+        localized.mkdir(parents=True)
+        shortcut = localized / '松下二合一平板电脑姿态管理工具.lnk'
+        shortcut.write_bytes(b'shortcut')
+
+        with patch.dict(
+            os.environ,
+            {'PANASONIC_POSTURE_DATA_DIR': str(payload / 'service/data')},
+        ):
+            remove_start_menu_entries(program_data)
+
+        self.assertFalse(shortcut.exists())
+        self.assertFalse(localized.exists())
 
     def test_generated_components_are_deterministic_and_register_the_service(self):
         groups = msi.payload_files(self.runtime, self.dependencies)
@@ -116,7 +143,13 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn('Key="System.AppUserModel.ID"', first)
         self.assertIn('Value="work.mmoe.panasonic.PostureManager"', first)
         self.assertIn(f'Name="{msi.APPLICATION_DISPLAY_NAME}"', first)
-        self.assertIn(f'DisplayName="{msi.APPLICATION_DISPLAY_NAME} Hardware Service"', first)
+        self.assertEqual(shortcut.get('Description'), '!(loc.ShortcutDescription)')
+        service = next(
+            element for element in root.iter()
+            if element.tag.endswith('ServiceInstall')
+        )
+        self.assertEqual(service.get('DisplayName'), '!(loc.ServiceDisplayName)')
+        self.assertEqual(service.get('Description'), '!(loc.ServiceDescription)')
         self.assertIn('Name="PanasonicPostureManagerHardware"', first)
         self.assertIn('Account="LocalSystem"', first)
         self.assertIn('panasonic_posture.windows.hardware_service --serve', first)
@@ -133,6 +166,7 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn(msi.APPLICATION_DISPLAY_NAME, license_text)
         self.assertNotIn('Panasonic Posture Manager', license_text)
         for value in (
+            'ProductCode="$(var.ProductCode)"',
             'Name="!(loc.ProductName)"',
             'Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
             'Id="Complete" Title="!(loc.FeatureTitle)"',
@@ -197,6 +231,9 @@ class MsiPayloadTests(unittest.TestCase):
                 'Confirm install',
                 'The default location works for most users. '
                 'To install somewhere else, select Change.',
+                'Open [ProductName]',
+                '[ProductName] Hardware Service',
+                'Provides the authenticated LocalSystem hardware endpoint for [ProductName].',
             ),
             'zh-CN': (
                 '松下二合一平板电脑姿态管理工具',
@@ -204,6 +241,9 @@ class MsiPayloadTests(unittest.TestCase):
                 '安装完成后可能需要重启 Windows',
                 '确认安装',
                 '默认位置适合大多数用户；如需安装到其他位置，请点击“更改”。',
+                '打开 [ProductName]',
+                '[ProductName] 硬件服务',
+                '为 [ProductName] 提供经过身份验证的 LocalSystem 硬件端点。',
             ),
         }
         for culture, (
@@ -212,6 +252,9 @@ class MsiPayloadTests(unittest.TestCase):
             exit_text,
             confirm_text,
             folder_text,
+            shortcut_description,
+            service_display_name,
+            service_description,
         ) in expected.items():
             with self.subTest(culture=culture):
                 localization, license_rtf = msi.culture_files(culture)
@@ -225,6 +268,18 @@ class MsiPayloadTests(unittest.TestCase):
                 }
                 self.assertEqual(strings['ProductName'], product_name)
                 self.assertEqual(strings['FeatureTitle'], product_name)
+                self.assertEqual(
+                    strings['ShortcutDescription'],
+                    shortcut_description,
+                )
+                self.assertEqual(
+                    strings['ServiceDisplayName'],
+                    service_display_name,
+                )
+                self.assertEqual(
+                    strings['ServiceDescription'],
+                    service_description,
+                )
                 self.assertEqual(strings['InstallDirDialogTitle'], dialog_title)
                 self.assertIn('[ProductName]', strings['WelcomeDlgTitle'])
                 self.assertNotIn(
@@ -515,7 +570,7 @@ class MsiPayloadTests(unittest.TestCase):
     def test_failed_msi_build_preserves_the_existing_artifact(self):
         output = self.root / 'output'
         output.mkdir()
-        original = output / 'panasonic-posture-manager-2.4.0-windows-x64.msi'
+        original = output / msi.artifact_name('2.4.0', 'zh-CN')
         original.write_bytes(b'existing')
 
         commands = []
@@ -537,8 +592,67 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertEqual(original.read_bytes(), b'existing')
         command = commands[0]
         self.assertIn('zh-CN', command)
+        self.assertIn(f'ProductCode={msi.product_code("2.4.0")}', command)
         self.assertTrue(any('Setup.zh-CN.wxl' in part for part in command))
         self.assertTrue(any('LICENSE.zh-CN.rtf' in part for part in command))
+        self.assertEqual(
+            msi.artifact_name('2.4.0', 'zh-CN'),
+            'panasonic-posture-manager-2.4.0-zh-CN-windows-x64.msi',
+        )
+        self.assertEqual(
+            msi.artifact_name('2.4.0', 'en-US'),
+            'panasonic-posture-manager-2.4.0-en-US-windows-x64.msi',
+        )
+        self.assertEqual(
+            msi.product_code('2.4.0'),
+            msi.product_code('2.4.0'),
+        )
+        self.assertNotEqual(
+            msi.product_code('2.4.0'),
+            msi.product_code('2.4.1'),
+        )
+
+    def test_both_cultures_build_with_distinct_names_and_one_product_identity(self):
+        output = self.root / 'localized-output'
+        commands = []
+
+        def build_with_fixture(command, **options):
+            commands.append(command)
+            if 'build' in command:
+                destination = Path(command[command.index('-o') + 1])
+                destination.write_bytes('msi fixture'.encode('utf-8'))
+            return None
+
+        packages = [
+            msi.build(
+                output,
+                self.runtime,
+                self.dependencies,
+                version='2.4.0',
+                culture=culture,
+                wix='wix-fixture',
+                runner=build_with_fixture,
+            )
+            for culture in ('zh-CN', 'en-US')
+        ]
+        self.assertEqual(
+            [package.name for package in packages],
+            [
+                'panasonic-posture-manager-2.4.0-zh-CN-windows-x64.msi',
+                'panasonic-posture-manager-2.4.0-en-US-windows-x64.msi',
+            ],
+        )
+        build_commands = [command for command in commands if 'build' in command]
+        self.assertEqual(len(build_commands), 2)
+        for command in build_commands:
+            self.assertIn(
+                f'ProductCode={msi.product_code("2.4.0")}',
+                command,
+            )
+        self.assertNotEqual(
+            build_commands[0][build_commands[0].index('-culture') + 1],
+            build_commands[1][build_commands[1].index('-culture') + 1],
+        )
 
 
 if __name__ == '__main__':

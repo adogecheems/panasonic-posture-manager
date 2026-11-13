@@ -272,10 +272,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("dotnet tool install --global wix --version 5.0.2", windows)
         self.assertIn("WixToolset.UI.wixext/5.0.2", windows)
         self.assertIn("python packaging/windows/build_msi.py", windows)
+        self.assertIn("foreach ($culture in @('zh-CN', 'en-US'))", windows)
+        self.assertIn("--culture $culture", windows)
         self.assertIn("name: windows-package", windows)
         self.assertIn("dist/windows/*.msi", windows)
         self.assertIn("files=(*.deb *.rpm *.pkg.tar.zst *.msi)", self.workflow)
-        self.assertIn("expected four package files", self.workflow)
+        self.assertIn("expected five package files", self.workflow)
 
     def test_windows_workflows_install_required_wix_extensions(self) -> None:
         extensions = (
@@ -302,6 +304,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertIn(
             "python -m compileall -q src/panasonic_posture/windows src/panasonic_posture/fluent",
+            windows,
+        )
+        self.assertIn(
+            "python -m unittest tests.test_localization tests.test_i18n_check -v",
             windows,
         )
         for retired in (

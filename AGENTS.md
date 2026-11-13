@@ -116,6 +116,8 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 
 `panasonic-posture-manager`、`PanasonicPostureManager`、AUMID、Run 键和管道名是内部标识，不随显示名称变化。UI 文案同步英文 msgid、`po/zh_CN.po` 和契约测试。发布版本同步 `pyproject.toml`、`__version__`、README、AUR、翻译文件头和其他发布元数据。
 
+运行期只支持英文和简体中文；`zh_CN`、`zh_Hans`、`zh_SG` 使用同一份目录，繁体中文及其他语言回退英文。Windows 正式发布同时提供 `zh-CN` 和 `en-US` MSI，二者同一版本共享 ProductCode，产物文件名必须包含 culture。
+
 ## 8. 系统不变量
 
 1. 硬件状态优先，禁止伪造或从软件输出反推物理姿态。
@@ -170,6 +172,7 @@ make WERROR=1 check
 
 - C 改动至少运行 `make check-c`；涉及 relay 与会话联动时加 `make check-dbus`。
 - UI 文案或错误码改动必须运行 `make check-i18n`。
+- i18n 门禁同时校验运行时 source msgid、错误码映射、desktop、WiX 和 polkit 元数据；扩展这些资源时必须同步更新 `tests/check_i18n.py` 及其回归测试。
 - 版本、README、AUR 或发布元数据改动至少运行 `test_release.py`。
 - D-Bus 集成测试使用临时会话总线，应使用普通用户并在未映射真实传感器的隔离环境中运行。
 - UI 测试因缺少 PyGObject、GTK 或离屏后端而跳过时，必须记录跳过项和残余风险。
@@ -185,6 +188,7 @@ python -m unittest discover -s tests -p "test_session_refresh.py" -v
 python -m unittest discover -s tests -p "test_optional_input.py" -v
 python -m unittest discover -s tests -p "test_frontend.py" -v
 python -m unittest discover -s tests -p "test_fluent.py" -v
+python -m unittest tests.test_localization tests.test_i18n_check -v
 python tests/check_i18n.py
 ```
 

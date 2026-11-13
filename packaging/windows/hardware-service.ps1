@@ -6,8 +6,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ServiceName = 'PanasonicPostureManagerHardware'
-$DisplayName = 'Panasonic 2-in-1 Tablet Posture Management Tool Hardware Service'
-$Description = 'Provides the authenticated LocalSystem hardware endpoint for Panasonic 2-in-1 Tablet Posture Management Tool.'
+$simplifiedChinese = [Globalization.CultureInfo]::CurrentUICulture.Name -match '^zh-(CN|SG|Hans)(-|$)'
+$DisplayName = if ($simplifiedChinese) {
+    '松下二合一平板电脑姿态管理工具 硬件服务'
+} else {
+    'Panasonic 2-in-1 Tablet Posture Management Tool Hardware Service'
+}
+$Description = if ($simplifiedChinese) {
+    '为松下二合一平板电脑姿态管理工具提供经过身份验证的 LocalSystem 硬件端点。'
+} else {
+    'Provides the authenticated LocalSystem hardware endpoint for Panasonic 2-in-1 Tablet Posture Management Tool.'
+}
 
 $identity = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

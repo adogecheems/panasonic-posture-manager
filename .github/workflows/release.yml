@@ -284,6 +284,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_optional_input.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest tests.test_localization tests.test_i18n_check -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tests/check_i18n.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
@@ -293,22 +295,31 @@ jobs:
         run: |
           $version = python packaging/scripts/release_version.py --tag $env:RELEASE_TAG
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $package = Get-Item dist/windows/*.msi | Select-Object -First 1
-          $target = Join-Path $env:RUNNER_TEMP 'posture-msi-admin'
-          $process = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
-            '/a', "`"$($package.FullName)`"", '/qn', "TARGETDIR=`"$target`""
-          )
-          if ($process.ExitCode -notin 0, 3010) { exit $process.ExitCode }
-          $service = Get-ChildItem $target -Recurse -File -Filter hardware_service.py |
-            Select-Object -First 1
-          $runtime = Get-ChildItem $target -Recurse -File -Filter python-hardware.exe |
-            Select-Object -First 1
-          $manifest = Get-ChildItem $target -Recurse -File -Filter MANIFEST.json |
-            Select-Object -First 1
-          if ($null -eq $service -or $null -eq $runtime -or $null -eq $manifest) {
-            throw 'MSI administrative payload is incomplete.'
+          foreach ($culture in @('zh-CN', 'en-US')) {
+            python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture $culture
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          $packages = @(Get-ChildItem dist/windows/*.msi)
+          if ($packages.Count -ne 2) {
+            throw "Expected two localized MSI packages, found $($packages.Count)."
+          }
+          foreach ($package in $packages) {
+            $target = Join-Path $env:RUNNER_TEMP "posture-msi-admin-$($package.BaseName)"
+            $process = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+              '/a', "`"$($package.FullName)`"", '/qn', "TARGETDIR=`"$target`""
+            )
+            if ($process.ExitCode -notin 0, 3010) { exit $process.ExitCode }
+            $service = Get-ChildItem $target -Recurse -File -Filter hardware_service.py |
+              Select-Object -First 1
+            $runtime = Get-ChildItem $target -Recurse -File -Filter python-hardware.exe |
+              Select-Object -First 1
+            $manifest = Get-ChildItem $target -Recurse -File -Filter MANIFEST.json |
+              Select-Object -First 1
+            $catalog = Get-ChildItem $target -Recurse -File -Filter zh_CN.po |
+              Select-Object -First 1
+            if ($null -eq $service -or $null -eq $runtime -or $null -eq $manifest -or $null -eq $catalog) {
+              throw "MSI administrative payload is incomplete: $($package.Name)"
+            }
           }
 
       - name: Upload Windows MSI
@@ -343,8 +354,8 @@ jobs:
           cd release-assets
           shopt -s nullglob
           files=(*.deb *.rpm *.pkg.tar.zst *.msi)
-          if [ "${#files[@]}" -ne 4 ]; then
-            echo "error: expected four package files, found ${#files[@]}" >&2
+          if [ "${#files[@]}" -ne 5 ]; then
+            echo "error: expected five package files, found ${#files[@]}" >&2
             printf '%s\n' "${files[@]}" >&2
             exit 1
           fi

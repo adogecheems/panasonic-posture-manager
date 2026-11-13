@@ -9,8 +9,9 @@ them.
 The translation catalog is resolved at import time.  Installed systems have
 ``/usr/share/locale/<lang>/LC_MESSAGES/panasonic-posture-manager.mo``; a
 source checkout falls back to ``<repo>/locale`` (the directory ``make``
-builds).  No language is hard coded: any catalog present in either root is
-used according to the user's locale.
+builds).  The only shipped runtime catalog is Simplified Chinese.  Chinese
+locale variants are normalized centrally, and Traditional Chinese falls back
+to the English source text.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from typing import Callable
 
 from ..linux_contract import LOCALE_DIR, LOCALE_DOMAIN
 from ..contracts import ErrorCode
+from ..localization import catalog_languages, environment_languages
 from .failures import (
     DisplayError as DisplayError, SessionError as SessionError,
     ServiceError as ServiceError, describe_error as describe_error,
@@ -58,7 +60,10 @@ def locate_locale_root() -> str | None:
 
 
 _TRANSLATION = _gettext.translation(
-    LOCALE_DOMAIN, localedir=locate_locale_root(), fallback=True
+    LOCALE_DOMAIN,
+    localedir=locate_locale_root(),
+    languages=catalog_languages(environment_languages()),
+    fallback=True,
 )
 _ = _TRANSLATION.gettext
 

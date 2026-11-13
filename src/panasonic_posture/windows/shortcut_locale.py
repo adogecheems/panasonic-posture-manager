@@ -7,6 +7,7 @@ from pathlib import Path
 import stat
 
 from ..fluent.resources import application_name
+from ..localization import windows_catalog_language
 from ..product import APPLICATION_DISPLAY_NAME
 
 SOURCE_FOLDER = APPLICATION_DISPLAY_NAME
@@ -33,8 +34,7 @@ def _ordinary_file(path: Path) -> bool:
 def _display_name(language_id: int) -> str:
     if type(language_id) is not int or not 0 <= language_id <= 0xFFFF:
         raise ValueError('Windows language ID must be an unsigned 16-bit integer')
-    language = 'zh_CN' if language_id & 0x3FF == 0x04 else 'en'
-    return application_name(language)
+    return application_name(windows_catalog_language(language_id))
 
 
 def _known_names() -> tuple[str, ...]:

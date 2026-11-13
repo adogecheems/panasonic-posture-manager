@@ -3,6 +3,9 @@
   <String Id="ProductName" Value="Panasonic 2-in-1 Tablet Posture Management Tool" />
   <String Id="FeatureTitle" Value="Panasonic 2-in-1 Tablet Posture Management Tool" />
   <String Id="ArpComments" Value="Panasonic 2-in-1 tablet posture, direction and hardware service." />
+  <String Id="ServiceDisplayName" Value="[ProductName] Hardware Service" />
+  <String Id="ServiceDescription" Value="Provides the authenticated LocalSystem hardware endpoint for [ProductName]." />
+  <String Id="ShortcutDescription" Value="Open [ProductName]" />
   <String Id="DowngradeErrorMessage" Value="A newer version of [ProductName] is already installed." />
   <String Id="LaunchConditionMessage" Value="[ProductName] requires 64-bit Windows 10 or later." />
   <String Id="WelcomeDlgTitle" Overridable="yes"

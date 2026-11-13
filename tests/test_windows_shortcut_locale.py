@@ -31,7 +31,7 @@ class ShortcutLocaleTests(unittest.TestCase):
         self.assertEqual(localize_start_menu(self.program_data, 0x0804), expected)
         self.assertTrue(expected.is_file())
         self.assertFalse(self.folder.exists())
-        self.assertEqual(localize_start_menu(self.program_data, 0x0404), expected)
+        self.assertEqual(localize_start_menu(self.program_data, 0x1004), expected)
         self.assertEqual(expected.read_bytes(), b'shortcut')
 
     def test_english_ui_restores_the_base_names(self):
@@ -42,6 +42,23 @@ class ShortcutLocaleTests(unittest.TestCase):
         self.assertEqual(localize_start_menu(self.program_data, 0x0409), self.shortcut)
         self.assertTrue(self.shortcut.is_file())
         self.assertFalse(chinese.exists())
+
+    def test_traditional_chinese_uses_english_installer_names(self):
+        chinese = self.programs / '松下二合一平板电脑姿态管理工具'
+        chinese.mkdir()
+        (chinese / '松下二合一平板电脑姿态管理工具.lnk').write_bytes(b'shortcut')
+        for language_id in (0x0404, 0x0C04, 0x1404):
+            with self.subTest(language_id=language_id):
+                self.assertEqual(
+                    localize_start_menu(self.program_data, language_id),
+                    self.shortcut,
+                )
+                self.assertTrue(self.shortcut.is_file())
+                self.assertFalse(chinese.exists())
+                self.folder.rename(chinese)
+                (chinese / SOURCE_SHORTCUT).rename(
+                    chinese / '松下二合一平板电脑姿态管理工具.lnk'
+                )
 
     def test_removal_only_deletes_known_links_and_empty_folders(self):
         localized = self.programs / '松下二合一平板电脑姿态管理工具'

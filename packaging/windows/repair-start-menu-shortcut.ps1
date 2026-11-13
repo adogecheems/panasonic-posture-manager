@@ -12,10 +12,16 @@ $InstallFolder = [IO.Path]::GetFullPath(
     $InstallFolder.Trim('"').TrimEnd([char[]]@('\', '/'))
 )
 $RuntimeFolder = Join-Path (Split-Path -Parent $PSCommandPath) 'runtime'
-$displayName = if (($LanguageId -band 0x3ff) -eq 0x04) {
+$simplifiedChinese = $LanguageId -in @(0x0004, 0x0804, 0x1004)
+$displayName = if ($simplifiedChinese) {
     '松下二合一平板电脑姿态管理工具'
 } else {
     'Panasonic 2-in-1 Tablet Posture Management Tool'
+}
+$shortcutDescription = if ($simplifiedChinese) {
+    "打开 $displayName"
+} else {
+    "Open $displayName"
 }
 $knownNames = @(
     'Panasonic 2-in-1 Tablet Posture Management Tool',
@@ -57,7 +63,7 @@ $shortcut.TargetPath = $target
 $shortcut.Arguments = "-I `"$launcher`""
 $shortcut.WorkingDirectory = $InstallFolder
 $shortcut.IconLocation = "$icon,0"
-$shortcut.Description = "Open $displayName"
+$shortcut.Description = $shortcutDescription
 $shortcut.Save()
 
 # WScript.Shell cannot persist System.AppUserModel.ID. Without this property

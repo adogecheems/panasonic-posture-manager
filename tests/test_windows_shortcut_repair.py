@@ -121,7 +121,8 @@ class ShortcutRepairTests(unittest.TestCase):
                 (
                     '$s=(New-Object -ComObject WScript.Shell).CreateShortcut('
                     f"'{shortcut}'); "
-                    'Write-Output $s.TargetPath; Write-Output $s.Arguments'
+                    'Write-Output $s.TargetPath; Write-Output $s.Arguments; '
+                    'Write-Output $s.Description'
                 ),
             ],
             check=False,
@@ -132,12 +133,51 @@ class ShortcutRepairTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(inspect.returncode, 0, inspect.stderr)
-        target, arguments = inspect.stdout.splitlines()
+        target, arguments, description = inspect.stdout.splitlines()
         self.assertTrue(
             os.path.samefile(target, self.runtime / 'pythonw.exe')
         )
         self.assertTrue(arguments.startswith('-I "'))
         self.assertTrue(arguments.endswith('\\launch.py"'))
+        self.assertEqual(
+            description,
+            '打开 松下二合一平板电脑姿态管理工具',
+        )
+
+    def test_traditional_chinese_uses_english_shortcut_copy(self):
+        result = self.run_repair(0x0404)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        shortcut = (
+            self.program_data
+            / 'Microsoft/Windows/Start Menu/Programs'
+            / 'Panasonic 2-in-1 Tablet Posture Management Tool'
+            / 'Panasonic 2-in-1 Tablet Posture Management Tool.lnk'
+        )
+        self.assertTrue(shortcut.is_file())
+        inspect = subprocess.run(
+            [
+                shutil.which('powershell.exe'),
+                '-NoLogo',
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                (
+                    '$s=(New-Object -ComObject WScript.Shell).CreateShortcut('
+                    f"'{shortcut}'); Write-Output $s.Description"
+                ),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=30,
+        )
+        self.assertEqual(inspect.returncode, 0, inspect.stderr)
+        self.assertEqual(
+            inspect.stdout.strip(),
+            'Open Panasonic 2-in-1 Tablet Posture Management Tool',
+        )
 
     def test_invalid_language_is_rejected_before_creating_a_shortcut(self):
         result = self.run_repair(0x10000)

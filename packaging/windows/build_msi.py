@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_WXS = ROOT / 'packaging/windows/msi/Package.wxs'
 WIX_NAMESPACE = 'http://wixtoolset.org/schemas/v4/wxs'
 COMPONENT_NAMESPACE = uuid.UUID('2D4F313E-76E4-4E38-A886-B14075283C26')
+PRODUCT_CODE_NAMESPACE = uuid.UUID('A22AA71E-57BC-40B7-AC4C-1903F752B6D5')
 DEFAULT_MSI_CULTURE = 'zh-CN'
 CULTURE_FILES = {
     'en-US': (
@@ -89,6 +90,22 @@ def project_version() -> str:
     if not version:
         raise ValueError('pyproject.toml has no project.version')
     return version
+
+
+def product_code(version: str) -> str:
+    """Return one ProductCode shared by every culture of *version*."""
+
+    return str(uuid.uuid5(
+        PRODUCT_CODE_NAMESPACE,
+        f'panasonic-posture-manager/{version}',
+    )).upper()
+
+
+def artifact_name(version: str, culture: str) -> str:
+    """Return a culture-specific MSI name so both installers can coexist."""
+
+    culture_files(culture)
+    return f'panasonic-posture-manager-{version}-{culture}-windows-x64.msi'
 
 
 def culture_files(culture: str) -> tuple[Path, Path]:
@@ -161,6 +178,7 @@ def payload_files(
         name: value for name, value in selected.items()
         if name.startswith(('runtime/', 'app/'))
         or name.startswith('data/profiles/')
+        or name == 'po/zh_CN.po'
         or name in FIXED_SERVICE_SCRIPTS
     }
     required = {
@@ -176,6 +194,7 @@ def payload_files(
             'data/profiles/cfqv8.json',
             'data/profiles/cfqv9.json',
             'data/profiles/cfqv1.json',
+            'po/zh_CN.po',
             'runtime/python-hardware.exe',
             'runtime/pythonw.exe',
         },
@@ -225,11 +244,8 @@ def _append_service(component: ET.Element) -> None:
     ET.SubElement(component, 'ServiceInstall', {
         'Id': 'HardwareServiceInstall',
         'Name': 'PanasonicPostureManagerHardware',
-        'DisplayName': f'{APPLICATION_DISPLAY_NAME} Hardware Service',
-        'Description': (
-            'Provides the authenticated LocalSystem hardware endpoint for '
-            f'{APPLICATION_DISPLAY_NAME}.'
-        ),
+        'DisplayName': '!(loc.ServiceDisplayName)',
+        'Description': '!(loc.ServiceDescription)',
         'Type': 'ownProcess',
         'Start': 'auto',
         'ErrorControl': 'normal',
@@ -253,7 +269,7 @@ def _append_shortcut(file_element: ET.Element) -> None:
         'Id': 'ApplicationStartMenuShortcut',
         'Directory': 'ApplicationProgramsFolder',
         'Name': APPLICATION_DISPLAY_NAME,
-        'Description': f'Open {APPLICATION_DISPLAY_NAME}',
+        'Description': '!(loc.ShortcutDescription)',
         'Advertise': 'yes',
         'Icon': 'ProductIcon.ico',
         'Arguments': '-I "[INSTALLFOLDER]launch.py"',
@@ -384,7 +400,7 @@ def build(
             raise ValueError(f'MSI culture resource is missing: {resource}')
 
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / f'panasonic-posture-manager-{version}-windows-x64.msi'
+    archive = output / artifact_name(version, culture)
     with tempfile.TemporaryDirectory(prefix='posture-msi-', dir=output) as temporary:
         work = Path(temporary)
         groups = payload_files(runtime, dependencies)
@@ -431,6 +447,7 @@ def build(
             '-ext', 'WixToolset.Util.wixext',
             '-loc', str(localization),
             '-d', f'ProductVersion={version}',
+            '-d', f'ProductCode={product_code(version)}',
             '-d', f'ProjectRoot={ROOT}',
             '-d', f'LicenseRtf={license_rtf}',
             '-o', str(temporary_msi),

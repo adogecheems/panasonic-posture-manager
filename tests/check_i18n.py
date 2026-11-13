@@ -5,14 +5,17 @@ The check is part of ``make check`` and uses only the Python standard library.
 
 What is checked
 ---------------
-* source scan: ``_('...')`` / ``_("...")`` and ``gettext(...)`` literals in the
-  Python session and UI packages (``self._(...)`` included);
+* source scan: ``_('...')`` / ``_("...")`` and ``gettext(...)`` literals across
+  the application package (``self._(...)`` included);
 * catalog: every referenced msgid has a non-empty, non-fuzzy ``msgstr`` and
-  keeps the same printf placeholders; duplicate msgids are reported;
+  keeps the same printf and brace-format placeholders; duplicate msgids are
+  reported;
 * catalog cleanliness: msgids that are no longer referenced are an error
   (``--allow-stale`` demotes this to a warning);
-* parity: the shared Python error mapping (``session/errors.py``) covers all
-  ``protocol.ErrorCode`` values; the UI reuses this mapping;
+* parity: the session and Fluent error mappings cover the same protocol error
+  codes and source msgids;
+* desktop, WiX and polkit metadata have an English source and a non-empty
+  ``zh_CN`` value where the format supports localized labels;
 * ``po/POTFILES.in`` lists exactly the files that contain translatable
   strings.
 
@@ -23,30 +26,44 @@ from __future__ import annotations
 
 import argparse
 import ast
+import configparser
 import re
 import sys
+import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+from string import Formatter
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOTS = (Path("src/panasonic_posture/session"), Path("src/panasonic_posture/ui"),
-                Path("src/panasonic_posture/fluent"))
+SOURCE_ROOT = Path("src/panasonic_posture")
 SOURCE_SUFFIXES = {".py"}
 POTFILES = Path("po/POTFILES.in")
 CATALOGS = (Path("po/zh_CN.po"),)
 PROTOCOL = Path("src/panasonic_posture/contracts.py")
 PY_ERRORS = Path("src/panasonic_posture/session/errors.py")
+FLUENT_ERRORS = Path("src/panasonic_posture/fluent/pages.py")
+DESKTOP_ENTRY = Path(
+    "packaging/desktop/work.mmoe.panasonic.PostureManager.desktop"
+)
+MSI_LOCALIZATION_DIR = Path("packaging/windows/msi")
+POLKIT_POLICY = Path("packaging/polkit/work.mmoe.panasonic.Posture.policy")
+REQUIRED_INSTALLER_STRINGS = frozenset({
+    "FeatureTitle",
+    "ProductName",
+    "ServiceDescription",
+    "ServiceDisplayName",
+    "ShortcutDescription",
+})
+_XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
+_CJK_RE = re.compile(r"[\u3400-\u9fff]")
 
 #: Entries that are intentionally kept although currently unreferenced.
 STALE_WHITELIST: frozenset[str] = frozenset()
 
 _STRING = r"""(?P<quote>['"])(?P<text>(?:\\.|(?!\1).)*?)(?P=quote)"""
-_CALL_RE = re.compile(
-    r"(?<![A-Za-z0-9_])(?:_|gettext)\(\s*" + _STRING + r"\s*[,)]", re.S
-)
 _PY_MAP_RE = re.compile(r"ErrorCode\.([A-Z_]+):\s*_\(\s*" + _STRING + r"\s*\)", re.S)
-_PLACEHOLDER_RE = re.compile(r"%[a-zA-Z%]")
+_PRINTF_PLACEHOLDER_RE = re.compile(r"%(?:\([^)]+\))?[a-zA-Z%]")
 
 
 # ---------------------------------------------------------------------------
@@ -68,25 +85,46 @@ def _unescape(quote: str, text: str) -> str:
 
 
 def source_files() -> list[Path]:
-    files: list[Path] = []
-    for root in SOURCE_ROOTS:
-        base = REPO_ROOT / root
-        if not base.is_dir():
-            continue
-        files.extend(
-            path
-            for path in sorted(base.rglob("*"))
-            if path.is_file() and path.suffix in SOURCE_SUFFIXES
-        )
-    return files
+    base = REPO_ROOT / SOURCE_ROOT
+    if not base.is_dir():
+        return []
+    return [
+        path
+        for path in sorted(base.rglob("*"))
+        if path.is_file() and path.suffix in SOURCE_SUFFIXES
+    ]
 
 
 def extracted_msgids(path: Path) -> list[str]:
-    text = path.read_text(encoding="utf-8")
-    return [
-        _unescape(match.group("quote"), match.group("text"))
-        for match in _CALL_RE.finditer(text)
-    ]
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    msgids: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        function = node.func
+        name = (
+            function.id if isinstance(function, ast.Name)
+            else function.attr if isinstance(function, ast.Attribute)
+            else None
+        )
+        if name not in {"_", "gettext"}:
+            continue
+        argument = node.args[0]
+        if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+            msgids.append(argument.value)
+    return msgids
+
+
+def placeholders(text: str) -> tuple[Counter[str], Counter[str]]:
+    """Return printf and brace-format placeholders used by *text*."""
+
+    printf = Counter(_PRINTF_PLACEHOLDER_RE.findall(text))
+    braces = Counter(
+        field_name
+        for _, field_name, _, _ in Formatter().parse(text)
+        if field_name is not None
+    )
+    return printf, braces
 
 
 # ---------------------------------------------------------------------------
@@ -188,13 +226,122 @@ def _error_code_values() -> dict[str, str]:
     return dict(re.findall(r'^[ \t]+([A-Z_]+) = "([^"]+)"$', block.group(1), re.M))
 
 
-def _python_error_mapping() -> dict[str, str]:
-    text = (REPO_ROOT / PY_ERRORS).read_text(encoding="utf-8")
+def _error_mapping(path: Path) -> dict[str, str]:
+    text = path.read_text(encoding="utf-8")
     return {
         name: _unescape(match.group("quote"), match.group("text"))
         for match in _PY_MAP_RE.finditer(text)
         for name in [match.group(1)]
     }
+
+
+def _check_desktop_metadata(errors: list[str]) -> None:
+    path = REPO_ROOT / DESKTOP_ENTRY
+    if not path.is_file():
+        errors.append(f"missing desktop entry {DESKTOP_ENTRY}")
+        return
+    parser = configparser.RawConfigParser(interpolation=None, strict=True)
+    parser.optionxform = str
+    try:
+        with path.open(encoding="utf-8") as stream:
+            parser.read_file(stream)
+    except (configparser.Error, OSError) as error:
+        errors.append(f"{DESKTOP_ENTRY}: cannot parse desktop entry: {error}")
+        return
+    section = "Desktop Entry"
+    if not parser.has_section(section):
+        errors.append(f"{DESKTOP_ENTRY}: missing [{section}]")
+        return
+    for key in ("Name", "Name[zh_CN]", "Comment", "Comment[zh_CN]",
+                "Keywords", "Keywords[zh_CN]"):
+        value = parser.get(section, key, fallback="").strip()
+        if not value:
+            errors.append(f"{DESKTOP_ENTRY}: missing {key}")
+        elif key.endswith("[zh_CN]") and not _CJK_RE.search(value):
+            errors.append(f"{DESKTOP_ENTRY}: {key} is not Chinese copy")
+
+
+def _check_installer_metadata(errors: list[str]) -> None:
+    directory = REPO_ROOT / MSI_LOCALIZATION_DIR
+    files = sorted(directory.glob("Setup.*.wxl"))
+    if not files:
+        errors.append(f"missing MSI localization files in {MSI_LOCALIZATION_DIR}")
+        return
+    cultures: dict[str, dict[str, str]] = {}
+    for path in files:
+        try:
+            root = ET.parse(path).getroot()
+        except (ET.ParseError, OSError) as error:
+            errors.append(f"{path.relative_to(REPO_ROOT)}: cannot parse: {error}")
+            continue
+        culture = root.get("Culture", "")
+        strings = {
+            element.get("Id", ""): element.get("Value", "")
+            for element in root
+            if element.tag.endswith("String")
+        }
+        if culture in cultures:
+            errors.append(f"{path.relative_to(REPO_ROOT)}: duplicate culture {culture}")
+            continue
+        cultures[culture] = strings
+
+    required_cultures = {"en-US", "zh-CN"}
+    missing_cultures = sorted(required_cultures - set(cultures))
+    if missing_cultures:
+        errors.append(f"MSI localizations missing cultures: {missing_cultures}")
+    if not cultures:
+        return
+    expected_ids = set(cultures.get("en-US", next(iter(cultures.values()))))
+    for culture, strings in cultures.items():
+        ids = set(strings)
+        if ids != expected_ids:
+            errors.append(
+                f"MSI localization {culture} has mismatched string IDs: "
+                f"missing={sorted(expected_ids - ids)} "
+                f"extra={sorted(ids - expected_ids)}"
+            )
+        missing = sorted(REQUIRED_INSTALLER_STRINGS - ids)
+        if missing:
+            errors.append(f"MSI localization {culture} misses strings: {missing}")
+        for key, value in strings.items():
+            if not value.strip():
+                errors.append(f"MSI localization {culture} has empty {key}")
+        if culture == "zh-CN":
+            untranslated = sorted(
+                key for key, value in strings.items()
+                if value and not _CJK_RE.search(value)
+            )
+            if untranslated:
+                errors.append(
+                    f"MSI localization zh-CN has no Chinese copy for: {untranslated}"
+                )
+
+
+def _check_polkit_metadata(errors: list[str]) -> None:
+    path = REPO_ROOT / POLKIT_POLICY
+    if not path.is_file():
+        errors.append(f"missing polkit policy {POLKIT_POLICY}")
+        return
+    try:
+        root = ET.parse(path).getroot()
+    except (ET.ParseError, OSError) as error:
+        errors.append(f"{POLKIT_POLICY}: cannot parse: {error}")
+        return
+    for name in ("description", "message"):
+        elements = list(root.iter(name))
+        source = next(
+            (element for element in elements if _XML_LANG not in element.attrib),
+            None,
+        )
+        chinese = next(
+            (element for element in elements
+             if element.get(_XML_LANG) == "zh_CN"),
+            None,
+        )
+        if source is None or not "".join(source.itertext()).strip():
+            errors.append(f"{POLKIT_POLICY}: missing English {name}")
+        if chinese is None or not _CJK_RE.search("".join(chinese.itertext())):
+            errors.append(f"{POLKIT_POLICY}: missing Chinese {name}")
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +358,12 @@ def run(allow_stale: bool = False) -> int:
     files_with_strings: set[str] = set()
     for path in source_files():
         relative = path.relative_to(REPO_ROOT).as_posix()
-        for msgid in extracted_msgids(path):
+        try:
+            msgids = extracted_msgids(path)
+        except (OSError, SyntaxError, UnicodeError) as error:
+            errors.append(f"{relative}: cannot scan translatable strings: {error}")
+            continue
+        for msgid in msgids:
             occurrences.setdefault(msgid, set()).add(relative)
             files_with_strings.add(relative)
     if not occurrences:
@@ -242,12 +394,19 @@ def run(allow_stale: bool = False) -> int:
             if not entry.msgstr:
                 errors.append(f"{catalog_path}:{entry.line}: empty msgstr for {msgid!r}")
                 continue
-            if Counter(_PLACEHOLDER_RE.findall(msgid)) != Counter(
-                _PLACEHOLDER_RE.findall(entry.msgstr)
-            ):
+            try:
+                source_placeholders = placeholders(msgid)
+                translated_placeholders = placeholders(entry.msgstr)
+            except ValueError as error:
                 errors.append(
-                    f"{catalog_path}:{entry.line}: placeholders differ for {msgid!r}"
+                    f"{catalog_path}:{entry.line}: malformed placeholders: {error}"
                 )
+            else:
+                if source_placeholders != translated_placeholders:
+                    errors.append(
+                        f"{catalog_path}:{entry.line}: "
+                        f"placeholders differ for {msgid!r}"
+                    )
             translated += 1
         stale = sorted(set(catalog) - set(occurrences) - STALE_WHITELIST)
         if stale:
@@ -285,7 +444,8 @@ def run(allow_stale: bool = False) -> int:
 
     # 4. error code parity -------------------------------------------------
     codes = _error_code_values()
-    python_mapping = _python_error_mapping()
+    python_mapping = _error_mapping(PY_ERRORS)
+    fluent_mapping = _error_mapping(FLUENT_ERRORS)
     if not codes:
         errors.append(f"{PROTOCOL}: cannot read the ErrorCode constants")
     if set(python_mapping) != set(codes):
@@ -294,7 +454,25 @@ def run(allow_stale: bool = False) -> int:
             f"missing={sorted(set(codes) - set(python_mapping))} "
             f"unknown={sorted(set(python_mapping) - set(codes))}"
         )
-    # 5. report ------------------------------------------------------------
+    if set(fluent_mapping) != set(codes):
+        errors.append(
+            "fluent/pages.py mapping does not cover exactly protocol.ErrorCode: "
+            f"missing={sorted(set(codes) - set(fluent_mapping))} "
+            f"unknown={sorted(set(fluent_mapping) - set(codes))}"
+        )
+    if python_mapping != fluent_mapping:
+        errors.append(
+            "session and Fluent error mappings use different source msgids: "
+            f"python_only={sorted(set(python_mapping.items()) - set(fluent_mapping.items()))} "
+            f"fluent_only={sorted(set(fluent_mapping.items()) - set(python_mapping.items()))}"
+        )
+
+    # 5. platform metadata ------------------------------------------------
+    _check_desktop_metadata(errors)
+    _check_installer_metadata(errors)
+    _check_polkit_metadata(errors)
+
+    # 6. report ------------------------------------------------------------
     for warning in warnings:
         print(f"i18n warning: {warning}", file=sys.stderr)
     if errors:

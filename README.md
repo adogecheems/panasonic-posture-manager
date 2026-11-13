@@ -24,10 +24,12 @@
 
 从 [GitHub Releases](https://github.com/adogecheems/panasonic-posture-manager/releases) 下载对应安装包：
 
-- Windows：双击 MSI，按安装向导完成安装；如提示重启，请重启电脑。
+- Windows：按界面语言选择文件名带 `zh-CN` 或 `en-US` 的 MSI，双击并按安装向导完成安装；如提示重启，请重启电脑。
 - Arch Linux、Ubuntu、Debian、Fedora：安装对应软件包，然后注销并重新登录。
 
 更完整的安装、卸载和排障说明见[维护指南](MAINTENANCE.md)。
+
+应用界面支持英文和简体中文。其他语言以及繁体中文当前回退到英文。
 
 ## 使用
 
