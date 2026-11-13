@@ -20,12 +20,17 @@ from .resources import application_name, data_root, translator
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     PageSwitcher, apply_app_font, BODY_SIZE, CAPTION_SIZE, HEADING_SIZE,
-    SECTION_TITLE_SIZE, EMPHASIS_WEIGHT,
+    SECTION_TITLE_SIZE, EMPHASIS_WEIGHT, restyle_notice_bar,
 )
 
 
 def configure_application_font():
-    """Use the platform UI font for both Latin and CJK text."""
+    """Use the platform UI font with its native antialiasing.
+
+    Full grid-fitting hinting renders CJK glyphs with visibly stepped edges
+    on Windows. Leave hinting at the platform default so DirectWrite keeps
+    its ClearType antialiasing, and ask for antialiased glyphs explicitly.
+    """
     app = QApplication.instance()
     if app is None:
         return
@@ -33,7 +38,7 @@ def configure_application_font():
     families = [family for family in font.families() if family]
     if families:
         setFontFamilies(families)
-    font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+    font.setHintingPreference(QFont.HintingPreference.PreferDefaultHinting)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(font)
 
@@ -233,6 +238,10 @@ class Window(FluentWidget):
                                 duration=3500, position=InfoBarPosition.TOP, parent=self)
         apply_app_font(bar.titleLabel, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
         apply_app_font(bar.contentLabel, BODY_SIZE)
+        if isinstance(bar, InfoBar):
+            # Widget tests stub the banner factories with plain labels;
+            # only real banners carry the geometry this restyle manages.
+            restyle_notice_bar(bar)
 
     def shutdown(self):
         if self._stopped:

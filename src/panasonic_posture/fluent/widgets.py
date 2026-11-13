@@ -1,5 +1,5 @@
 """Shared Fluent controls and their existing appearance and touch behavior."""
-from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtCore import Qt, QRectF, QSize
 from PyQt6.QtGui import QColor, QFont, QPainter, QRadialGradient
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
@@ -8,7 +8,10 @@ from PyQt6.QtWidgets import (
 from qfluentwidgets import (
     RadioButton, ScrollArea, SegmentedWidget, SettingCard, SwitchSettingCard,
     fontStyleSheet, getFont, isDarkTheme, qconfig, setCustomStyleSheet, setFont,
+    setStyleSheet, CustomStyleSheet, StyleSheetBase,
+    InfoBarIcon, drawIcon, themeColor,
 )
+from qfluentwidgets.common.style_sheet import addStyleSheet
 
 from .resources import data_root
 
@@ -24,22 +27,122 @@ HEADING_SIZE = 24
 BODY_SIZE = 13
 CAPTION_SIZE = 12
 SECTION_TITLE_SIZE = 13
+DIALOG_TITLE_SIZE = 14
+DIALOG_BODY_SIZE = 12
 EMPHASIS_WEIGHT = QFont.Weight.Medium
 
 
-def apply_app_font(widget, size, weight=QFont.Weight.Normal):
+def apply_app_font(widget, size, weight=QFont.Weight.Normal,
+                   light_color=None, dark_color=None):
     """Pin a widget to an application text role ahead of Fluent QSS rules.
 
     Fluent dialog and banner stylesheets declare ``font:`` sizes that outrank
     ``setFont`` in the style cascade. Setting the same rule on the widget
     itself keeps the application typography while themed colors and other
-    declarations continue to arrive from the inherited sheets.
+    declarations continue to arrive from the inherited sheets. When both
+    colors are given the rule is registered as a themed custom style sheet so
+    transient surfaces also follow theme switches.
     """
     setFont(widget, size, weight)
     rule = fontStyleSheet(getFont(size, weight))
     if weight != QFont.Weight.Normal:
         rule += f'; font-weight: {int(weight)}'
-    widget.setStyleSheet(rule)
+    if light_color is not None and dark_color is not None:
+        setCustomStyleSheet(widget, f'{rule}; color: {light_color};',
+                            f'{rule}; color: {dark_color};')
+        # setCustomStyleSheet() only stores the themed rules. Registering the
+        # widget with the style manager applies them now and on theme changes;
+        # transient surfaces are created after the manager exists, so they
+        # never receive the fluent sheets that would register them implicitly.
+        setStyleSheet(widget, CustomStyleSheet(widget))
+    else:
+        widget.setStyleSheet(rule)
+
+
+class NoticeIcon(QWidget):
+    """Compact success/error glyph for the slim in-app notice bars."""
+
+    def __init__(self, icon, parent=None):
+        super().__init__(parent)
+        self.icon = icon
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHints(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(2, 2, -2, -2)
+        if self.icon == InfoBarIcon.INFORMATION:
+            drawIcon(self.icon, painter, rect, indexes=[0],
+                     fill=themeColor().name())
+        else:
+            drawIcon(self.icon, painter, rect)
+
+
+def restyle_notice_bar(bar):
+    """Slim the stock banner and center its text on the 24 px glyph."""
+    icon = NoticeIcon(bar.iconWidget.icon, bar)
+    if bar.hBoxLayout.replaceWidget(bar.iconWidget, icon) is None:
+        raise RuntimeError('notice icon replacement failed')
+    bar.iconWidget.deleteLater()
+    bar.iconWidget = icon
+    # The banner is already visible when the stock factory returns it, so the
+    # swapped-in tile is not shown by the layout and would stay unmanaged.
+    icon.show()
+    icon.setFixedSize(24, 24)
+    bar.closeButton.setFixedSize(28, 28)
+    bar.closeButton.setIconSize(QSize(12, 12))
+    bar.hBoxLayout.setContentsMargins(10, 4, 10, 4)
+    bar.hBoxLayout.setAlignment(
+        icon, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+    bar.hBoxLayout.setAlignment(bar.closeButton, Qt.AlignmentFlag.AlignVCenter)
+    bar.textLayout.setContentsMargins(0, 0, 0, 0)
+    bar.textLayout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+    bar.textLayout.setAlignment(bar.titleLabel, Qt.AlignmentFlag.AlignVCenter)
+    bar.textLayout.setAlignment(bar.contentLabel, Qt.AlignmentFlag.AlignVCenter)
+    # showEvent() already measured the bar around the stock 36 px tiles;
+    # re-measure so the frame tracks the compact geometry.
+    bar.adjustSize()
+
+
+class _FixedRule(StyleSheetBase):
+    """Static QSS source that the style manager reapplies on theme changes."""
+
+    def __init__(self, rule):
+        super().__init__()
+        self._rule = rule
+
+    def path(self, theme=None):
+        return ''
+
+    def content(self, theme=None):
+        return self._rule
+
+
+def style_message_box(dialog):
+    """Compact the stock message box insets to match the settings rows.
+
+    The stock frame reserves a fixed 105 px allowance below the content for
+    the 81 px button band plus a 24 px gap. Rebuild the band as an 8 px gap
+    over a 68 px group, then restore the frame from the layout minimum so the
+    bottom inset follows the real margins instead of the hard-coded number.
+    The title keeps the application primary color and the detail follows the
+    muted settings-row role through the Fluent theme mechanism.
+    """
+    apply_app_font(dialog.titleLabel, DIALOG_TITLE_SIZE,
+                   light_color=TEXT_LIGHT, dark_color=TEXT_DARK)
+    apply_app_font(dialog.contentLabel, DIALOG_BODY_SIZE)
+    dialog.contentLabel.setTextColor(MUTED_LIGHT, MUTED_DARK)
+    # BodyLabel repaints its own color sheet whenever the theme changes,
+    # which replaces the widget style sheet. Append the size rule as a
+    # stable source so the app size survives those repaints and outranks
+    # the stock 14 px rule from the fluent dialog sheet.
+    addStyleSheet(dialog.contentLabel, _FixedRule(
+        f'QLabel#contentLabel {{ {fontStyleSheet(getFont(DIALOG_BODY_SIZE))}; }}'))
+    dialog.textLayout.setContentsMargins(24, 24, 24, 8)
+    dialog.buttonGroup.setFixedHeight(68)
+    dialog.buttonLayout.setContentsMargins(24, 16, 24, 16)
+    dialog.widget.setMinimumSize(0, 0)
+    dialog.widget.setMaximumSize(16777215, 16777215)
+    dialog.widget.adjustSize()
 
 
 class Illustration(QWidget):

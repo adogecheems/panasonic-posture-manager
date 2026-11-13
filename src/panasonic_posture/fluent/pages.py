@@ -21,7 +21,7 @@ from ..frontend.state import PostureModel, Detail
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     Illustration, Page, ModeRadio, SettingRow, SwitchRow, row_style,
-    apply_app_font, BODY_SIZE, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT,
+    SECTION_TITLE_SIZE, EMPHASIS_WEIGHT, style_message_box,
 )
 from .update_check import UpdateChecker
 from .labels import mode_label
@@ -553,8 +553,9 @@ class Settings(Page):
                             _('Place the device in laptop form on a flat, stable desk and wait about two seconds before confirming. Its current direction will become the level reference.'), self.window())
         dialog.yesButton.setText(_('Calibrate'))
         dialog.cancelButton.setText(_('Cancel'))
-        apply_app_font(dialog.titleLabel, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
-        apply_app_font(dialog.contentLabel, BODY_SIZE)
+        # Match the settings row roles: a primary title over a muted detail,
+        # with the compact insets of the surrounding page.
+        style_message_box(dialog)
         if dialog.exec() and connection == self.model.connection:
             self.calibration.run('calibrate', self.client.calibrate)
 

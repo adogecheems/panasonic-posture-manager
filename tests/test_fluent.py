@@ -1104,7 +1104,8 @@ assert (window.width(), window.height()) == (500, 660)
 assert window.stackedWidget.count() == 2
 assert not hasattr(window, 'navigationInterface')
 assert window.stackedWidget.currentWidget() is window.home
-assert app.font().hintingPreference() == QFont.HintingPreference.PreferFullHinting
+assert app.font().hintingPreference() == QFont.HintingPreference.PreferDefaultHinting
+assert app.font().styleStrategy() == QFont.StyleStrategy.PreferAntialias
 assert fontFamilies() == app.font().families()
 assert window.titleBar.titleLabel.font().families() == fontFamilies()
 assert window.titleBar.titleLabel.font().pixelSize() == 13
@@ -1132,34 +1133,61 @@ assert window.home.verticalScrollBar().maximum() == 0
     def test_dialogs_and_banners_use_the_app_text_roles(self):
         self.run_ui('''
 from PyQt6.QtGui import QFont
-from qfluentwidgets import InfoBar, MessageBox
+from qfluentwidgets import InfoBar, MessageBox, Theme, setTheme
 from panasonic_posture.fluent.widgets import (
     BODY_SIZE, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT,
+    DIALOG_TITLE_SIZE, DIALOG_BODY_SIZE,
+    TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
 )
 
 def effective(label):
     label.ensurePolished()
     return label.font().pixelSize(), label.font().weight()
 
+def center_y(widget, parent):
+    origin = widget.mapTo(parent, widget.rect().topLeft())
+    return origin.y() + widget.height() / 2
+
 window.notify(True)
 bar = window.findChildren(InfoBar)[-1]
 assert effective(bar.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
 assert effective(bar.contentLabel) == (BODY_SIZE, QFont.Weight.Normal)
 assert bar.titleLabel.font().families() == app.font().families()
+assert bar.height() < 40, 'the notice bar must stay slim'
+assert bar.iconWidget.width() == 24
+assert bar.closeButton.width() == 28
+for item in (bar.titleLabel, bar.iconWidget, bar.closeButton):
+    assert abs(center_y(item, bar) - bar.height() / 2) <= 2
 window.notify(False, 'Please try again.')
 error_bar = window.findChildren(InfoBar)[-1]
 assert effective(error_bar.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
 assert effective(error_bar.contentLabel) == (BODY_SIZE, QFont.Weight.Normal)
 assert error_bar.contentLabel.font().families() == app.font().families()
+assert error_bar.height() < 40
+for item in (error_bar.titleLabel, error_bar.contentLabel,
+             error_bar.iconWidget, error_bar.closeButton):
+    assert abs(center_y(item, error_bar) - error_bar.height() / 2) <= 2
 
 opened = []
 MessageBox.exec = lambda self: opened.append(self) or False
 window.settings.ask_calibration()
 assert opened, 'the calibration dialog must be created through the shared typography'
 dialog = opened[0]
-assert effective(dialog.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
-assert effective(dialog.contentLabel) == (BODY_SIZE, QFont.Weight.Normal)
+assert effective(dialog.titleLabel) == (DIALOG_TITLE_SIZE, QFont.Weight.Normal)
+assert effective(dialog.contentLabel) == (DIALOG_BODY_SIZE, QFont.Weight.Normal)
 assert dialog.contentLabel.font().families() == app.font().families()
+# The title keeps the app text color hierarchy instead of the stock black.
+assert TEXT_LIGHT[1:] in dialog.titleLabel.styleSheet()
+assert MUTED_LIGHT[1:] in dialog.contentLabel.styleSheet()
+assert dialog.buttonGroup.height() == 68
+assert dialog.textLayout.contentsMargins().bottom() == 8
+bottom = dialog.contentLabel.geometry().bottom() + 1
+assert dialog.widget.height() <= bottom + 8 + 68 + 2, 'the frame tracks the compact insets'
+assert dialog.widget.height() < bottom + 105, 'the stock bottom allowance must be removed'
+setTheme(Theme.DARK)
+QTest.qWait(50)
+assert TEXT_DARK[1:] in dialog.titleLabel.styleSheet()
+assert MUTED_DARK[1:] in dialog.contentLabel.styleSheet()
 ''')
 
     def test_touch_drag_scrolls_without_changing_mode(self):
