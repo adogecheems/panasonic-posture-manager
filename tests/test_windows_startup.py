@@ -69,6 +69,47 @@ class LoginStartupTests(unittest.TestCase):
         self.assertFalse(self.startup.status().enabled)
         self.assertIsNone(self.registry.value)
 
+    def test_upgrade_migrates_a_recognized_previous_command_in_place(self):
+        command = [self.command[0], '-B', *self.command[1:]]
+        startup = LoginStartup(command, registry=self.registry)
+        self.registry.value = subprocess.list2cmdline(self.command)
+        self.registry.initialized = True
+
+        status = startup.status()
+        self.assertTrue(status.enabled)
+        self.assertTrue(status.available)
+        self.assertFalse(status.conflict)
+
+        startup.ensure_default_enabled()
+        self.assertEqual(self.registry.value, startup.command)
+        self.assertEqual(self.registry.writes, [startup.command])
+        self.assertEqual(self.registry.marker_writes, 0)
+
+    def test_previous_command_can_be_disabled_without_reopening_it(self):
+        command = [self.command[0], '-B', *self.command[1:]]
+        startup = LoginStartup(command, registry=self.registry)
+        self.registry.value = subprocess.list2cmdline(self.command)
+        self.registry.initialized = True
+
+        startup.set_enabled(False)
+        self.assertIsNone(self.registry.value)
+        startup.ensure_default_enabled()
+        self.assertIsNone(self.registry.value)
+        self.assertFalse(startup.status().enabled)
+        self.assertTrue(startup.status().available)
+
+    def test_previous_command_migration_requires_readback(self):
+        command = [self.command[0], '-B', *self.command[1:]]
+        startup = LoginStartup(command, registry=self.registry)
+        legacy = subprocess.list2cmdline(self.command)
+        self.registry.value = legacy
+        self.registry.initialized = True
+        self.registry.ignore = True
+
+        with self.assertRaises(StartupError):
+            startup.ensure_default_enabled()
+        self.assertEqual(self.registry.value, legacy)
+
     def test_foreign_or_replaced_entry_is_preserved_and_never_overwritten_or_deleted(self):
         for enabled in (True, False):
             self.registry.value = 'another user command'
@@ -79,6 +120,11 @@ class LoginStartupTests(unittest.TestCase):
             self.assertEqual(self.registry.value, 'another user command')
         self.assertEqual(self.registry.writes, [])
         self.assertEqual(self.registry.marker_writes, 0)
+        self.registry.initialized = True
+        with self.assertRaises(StartupError):
+            self.startup.ensure_default_enabled()
+        self.assertEqual(self.registry.value, 'another user command')
+        self.assertEqual(self.registry.writes, [])
 
     def test_denied_and_ignored_writes_do_not_report_enabled(self):
         self.registry.fail = True

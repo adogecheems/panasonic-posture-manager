@@ -83,52 +83,64 @@ class StartupStatus:
 
 class LoginStartup:
     def __init__(self, command: Sequence[str], *, registry: StartupRegistry | None = None) -> None:
-        if (isinstance(command, (str, bytes)) or not command or
-                any(not isinstance(value, str) or not value or '\0' in value for value in command)
-                or not Path(command[0]).is_absolute()):
+        values = tuple(command) if not isinstance(command, (str, bytes)) else ()
+        if (not values or
+                any(not isinstance(value, str) or not value or '\0' in value for value in values)
+                or not Path(values[0]).is_absolute()):
             raise ValueError('an absolute fixed startup command is required')
-        self.command = subprocess.list2cmdline(command)
+        self.command = subprocess.list2cmdline(values)
         # HKCU Run has the documented 260-character command limit. Count UTF-16
         # units, rather than accepting a Python-length string Windows truncates.
         if len(self.command.encode('utf-16-le')) // 2 > 260:
             raise StartupError('startup-command-too-long')
+        self._legacy_commands = frozenset(
+            [subprocess.list2cmdline(_without_bytecode_flag(values))]
+            if '-B' in values else []
+        )
         self.registry = registry if registry is not None else NativeRunRegistry()
 
     def status(self) -> StartupStatus:
         value = self.registry.read()
-        return StartupStatus(value == self.command, value in (None, self.command),
-                             value not in (None, self.command))
+        recognized = self._recognizes(value)
+        return StartupStatus(recognized and value is not None, value is None or recognized,
+                             value is not None and not recognized)
 
     def ensure_default_enabled(self) -> None:
         """Register the first-launch default without overriding an explicit choice."""
-        if self.registry.read_initialized():
-            return
         value = self.registry.read()
-        if value not in (None, self.command):
+        if value is not None and not self._recognizes(value):
             raise StartupError('startup-entry-conflict')
-        if value is None:
-            self.registry.write(self.command)
-            if self.registry.read() != self.command:
-                raise StartupError('startup-change-not-applied')
+        if self.registry.read_initialized():
+            if value in self._legacy_commands:
+                self._write_current()
+            return
+        if value != self.command:
+            self._write_current()
         self._mark_initialized()
 
     def set_enabled(self, enabled: bool) -> None:
         if type(enabled) is not bool:
             raise ValueError('startup preference must be a boolean')
         value = self.registry.read()
-        if value not in (None, self.command):
+        if value is not None and not self._recognizes(value):
             raise StartupError('startup-entry-conflict')
-        desired = self.command if enabled else None
         # Persist the explicit choice first so a later launch cannot mistake a
         # disabled value for an untouched first-run default.
         self._mark_initialized()
-        if value == desired:
-            return
         if enabled:
-            self.registry.write(self.command)
-        else:
+            if value != self.command:
+                self._write_current()
+        elif value is not None:
             self.registry.delete()
-        if self.registry.read() != desired:
+            if self.registry.read() is not None:
+                raise StartupError('startup-change-not-applied')
+
+    def _recognizes(self, value: str | None) -> bool:
+        return value == self.command or value in self._legacy_commands
+
+    def _write_current(self) -> None:
+        self.registry.write(self.command)
+        if self.registry.read() != self.command:
             raise StartupError('startup-change-not-applied')
 
     def _mark_initialized(self) -> None:
@@ -137,6 +149,13 @@ class LoginStartup:
         self.registry.mark_initialized()
         if not self.registry.read_initialized():
             raise StartupError('startup-change-not-applied')
+
+
+def _without_bytecode_flag(command: Sequence[str]) -> tuple[str, ...]:
+    """Return the pre-``-B`` bundle command used by the previous release."""
+    values = list(command)
+    values.remove('-B')
+    return tuple(values)
 
 
 class UnavailableStartup:
