@@ -145,6 +145,8 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 
 项目更新任务的既定授权：用户说“更新”时，默认要求构建、验证并把最新安装包实际安装到本机，最后核对已安装版本。该授权只覆盖本项目正常更新所需的提权安装，不包括卸载、真机验收、直接操作设备或其他宿主操作。
 
+用户明确要求“快速安装”或“测试安装且不要检查”时，授权范围是构建并安装本项目 MSI，不执行安装后的版本、服务、日志、启动或真机检查。该模式不得省略构建自身的必要校验，也不得把未执行的安装后检查表述为通过。
+
 以下操作必须由用户本轮明确授权：
 
 - 安装或卸载其他软件，执行 `sudo`/`pkexec`，启停 systemd 单元，修改 D-Bus、polkit 或桌面设置。
@@ -158,7 +160,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 
 - 覆盖、回滚或清理用户改动；擅自暂存/取消暂存用户改动。
 - 手工编辑 `backend/relay`、`locale/**/*.mo`、`build/`、`dist/`、`__pycache__` 等生成物。
-- 为验证在开发宿主安装测试包、运行 `tests/manual/`，或用自动化测试冒充真机验收。
+- 为验证在开发宿主安装测试包（用户本轮明确要求快速测试安装时除外）、运行 `tests/manual/`，或用自动化测试冒充真机验收。
 - 为测试放宽生产鉴权、把设备写入移入用户进程，或把 `--session-bus` 当作生产边界。
 - 恢复 X11/xrandr/xinput 路径或增加隐式桌面回退。
 
@@ -196,6 +198,8 @@ python -m unittest discover -s tests -p "test_fluent.py" -v
 python -m unittest tests.test_localization tests.test_i18n_check -v
 python tests/check_i18n.py
 ```
+
+用户明确要求快速测试安装时，只需确认 MSI 构建命令和安装命令成功；安装后检查可以省略，并在交付中明确写出未检查范围。
 
 交付时说明实际命令、结果、跳过项、失败和未验证范围。未执行真机验证时必须明确写出。
 
