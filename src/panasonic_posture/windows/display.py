@@ -9,6 +9,7 @@ shell policy. Ordinary UI processes never use this port.
 from dataclasses import dataclass
 import ctypes as C
 from ctypes import wintypes
+import logging
 import sys
 import time
 
@@ -17,6 +18,7 @@ from ..model import HardwareStatus, StateSnapshot, Target
 from ..session.failures import DisplayError
 from ..session.transaction import DisplayState, SoftwareDisplay, desired_transform
 
+log = logging.getLogger(__name__)
 U16, U32, I32 = C.c_uint16, C.c_uint32, C.c_int32
 INTERNAL_TECHNOLOGIES = frozenset((6, 11, 13, 0x80000000))
 
@@ -515,7 +517,24 @@ class WindowsDisplay(SoftwareDisplay):
                 self.owned['written_transform'] = target
                 self._persist()
             self._held_orientation = current
-        except (DisplayError, OSError, ValueError):
+        except (DisplayError, OSError, ValueError) as error:
+            if (
+                isinstance(error, DisplayError)
+                and error.detail
+                in ("physical-tablet-release-changed", "physical-tablet-took-over")
+            ):
+                # The physical switch released (or the gate became unknown)
+                # between the cached snapshot and this write. The direction
+                # already pre-locked is exactly the release target, so keep
+                # it. Rolling it back here would rotate the panel again right
+                # after the switch opened and force a second visible jump when
+                # the final target is applied.
+                log.info(
+                    'physical tablet release raced the pre-lock; keeping the '
+                    'prepared %s direction',
+                    mode,
+                )
+                raise
             self._rollback()
             raise
 
@@ -593,4 +612,5 @@ class WindowsDisplay(SoftwareDisplay):
         self._require_software_ownership()
         if not self.api.read().auto_rotation & 1:
             raise DisplayError(ErrorCode.DISPLAY_LOCK, 'native-auto-rotation-took-over')
+        log.info('writing internal panel rotation %s -> %s', state.transform, transform)
         self.api.rotate(state.identity[0], state.transform, transform)

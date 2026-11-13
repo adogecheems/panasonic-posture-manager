@@ -250,7 +250,16 @@ class QualifiedDisplay:
         self._require_available()
         try:
             self.prepare_release(mode)
-        except BaseException:
+        except BaseException as error:
+            if (
+                isinstance(error, DisplayError)
+                and error.detail
+                in ("physical-tablet-release-changed", "physical-tablet-took-over")
+            ):
+                # The release gate already opened: the pre-locked direction is
+                # the final target. Restoring here would undo that direction
+                # and force the released posture to rotate the panel again.
+                raise
             self._restore_after_failed_transaction()
             raise
 

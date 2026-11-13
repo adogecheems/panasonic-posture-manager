@@ -320,6 +320,38 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(api.writes, [2])
 
+    def test_gate_release_mid_preparation_keeps_the_prelocked_transaction(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        gate = [True, False]
+        display = self.make(
+            api,
+            journal,
+            lambda: (gate.pop(0) if gate else False, HardwareStatus.OK),
+        )
+        display.apply(dict(mode='hardware', tablet=True, rotation=None,
+                           disable_internal_input=False))
+        api.writes.clear()
+        api.lock_writes.clear()
+
+        with self.assertRaises(DisplayError) as raised:
+            display.prepare_hardware_release('tent')
+        self.assertEqual(raised.exception.detail, 'physical-tablet-took-over')
+        # The switch released between the cached snapshot and the rotation
+        # write. The lock and the pending direction stay owned so the released
+        # posture is applied with exactly one rotation instead of rolling the
+        # pre-lock back and rotating again after the release.
+        self.assertEqual(api.current.transform, 0)
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertEqual(api.writes, [])
+        self.assertEqual(journal.document['written_lock'], True)
+        self.assertIsNotNone(display.owned)
+
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
+        self.assertEqual(api.current.transform, 2)
+        self.assertEqual(api.writes, [2])
+
     def test_transient_state_read_loss_does_not_rollback_a_prelocked_release(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)

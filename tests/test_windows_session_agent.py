@@ -9,9 +9,11 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from panasonic_posture.contracts import ErrorCode
 from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
-from panasonic_posture.session.failures import ServiceError, FailureKind
+from panasonic_posture.session.failures import DisplayError, ServiceError, FailureKind
 from panasonic_posture.tasks import InlineExecutor
+from panasonic_posture.windows.hardware_release import HardwareReleaseCoordinator
 from panasonic_posture.windows.session_agent import (
     WindowsSessionAgent,
     build_display,
@@ -55,6 +57,54 @@ class Client:
         self.closed = True
     def hardware_release(self):
         return self.state, self.release_pose
+
+
+class HardwareReleaseCoordinatorTests(unittest.TestCase):
+    def test_release_changed_keeps_the_previous_prelock_evidence(self):
+        class Display:
+            def __init__(self):
+                self.calls = []
+                self.fail = False
+
+            def prepare_hardware_release(self, mode):
+                self.calls.append(mode)
+                if self.fail:
+                    raise DisplayError(
+                        ErrorCode.DISPLAY_LOCK,
+                        'physical-tablet-release-changed',
+                    )
+
+        display = Display()
+        coordinator = HardwareReleaseCoordinator(display)
+        state = StateSnapshot(
+            instance='fixture',
+            hardware=True,
+            target=Target(mode='hardware'),
+        )
+        coordinator.prepare(state, 'tent')
+        self.assertEqual(coordinator.target_for('fixture'), 'tent')
+
+        display.fail = True
+        coordinator.prepare(state, 'tent')
+        self.assertEqual(coordinator.target_for('fixture'), 'tent')
+
+    def test_other_preparation_failures_clear_the_prelock_evidence(self):
+        class Display:
+            def prepare_hardware_release(self, mode):
+                del mode
+                raise DisplayError(
+                    ErrorCode.DISPLAY_LOCK,
+                    'rotation-lock-took-over',
+                )
+
+        coordinator = HardwareReleaseCoordinator(Display())
+        state = StateSnapshot(
+            instance='fixture',
+            hardware=True,
+            target=Target(mode='hardware'),
+        )
+        coordinator.prepare(state, 'tent')
+        self.assertIsNone(coordinator.target_for('fixture'))
 
 
 class Display:

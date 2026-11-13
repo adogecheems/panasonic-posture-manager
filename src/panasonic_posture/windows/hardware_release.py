@@ -34,6 +34,16 @@ class HardwareReleaseCoordinator:
             try:
                 self.display.prepare_hardware_release(pose)
             except (DisplayError, OSError, ValueError) as error:
+                if (
+                    isinstance(error, DisplayError)
+                    and error.detail
+                    in ("physical-tablet-release-changed", "physical-tablet-took-over")
+                ):
+                    # The switch released between the cached snapshot and the
+                    # write. An earlier tick already pre-locked the exact
+                    # direction; keep that evidence so the released posture is
+                    # applied immediately instead of waiting again.
+                    return
                 self._key = None
                 self._prepared = None
                 log.warning('cannot prepare for physical tablet release: %s', error)
