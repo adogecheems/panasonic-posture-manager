@@ -13,7 +13,8 @@ except ModuleNotFoundError:
     from windows_fixture import MemoryJournal
 import ctypes as C
 from types import SimpleNamespace
-from panasonic_posture.model import HardwareStatus, Target
+from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
+from panasonic_posture.windows.session_display import SessionHardwareQuery
 
 
 def panel(**changes):
@@ -317,6 +318,38 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertEqual(api.current.transform, 2)
         self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(api.writes, [2])
+
+    def test_transient_state_read_loss_does_not_rollback_a_prelocked_release(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        physical = [True]
+        reads = []
+
+        def load_state():
+            reads.append(True)
+            if len(reads) == 3:
+                raise OSError(233, 'hardware pipe write failed')
+            return StateSnapshot(
+                instance='fixture',
+                hardware=physical[0],
+                hardware_status=HardwareStatus.OK,
+            )
+
+        display = self.make(api, journal, SessionHardwareQuery(load_state))
+        display.apply(dict(mode='hardware', tablet=True, rotation=None,
+                           disable_internal_input=False))
+        api.writes.clear()
+        api.lock_writes.clear()
+        display.prepare_hardware_release('tent')
+
+        physical[0] = False
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
+
+        self.assertEqual(api.current.transform, 2)
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertEqual(api.writes, [2])
+        self.assertEqual(api.lock_writes, [True])
 
     def test_tent_transition_reclaims_a_lock_windows_restored_before_apply(self):
         api, journal = Api(), MemoryJournal()

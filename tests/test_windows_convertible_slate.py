@@ -299,12 +299,45 @@ class SlateNotifierTests(unittest.TestCase):
             self.assertEqual(SessionHardwareQuery(lambda state=state: state)(),
                              (None, HardwareStatus.READ_ERROR if state.hardware_status == HardwareStatus.OK
                               else state.hardware_status))
+        broken_calls = []
+
         def broken():
+            broken_calls.append(True)
             raise OSError('service unavailable')
         self.assertEqual(SessionHardwareQuery(broken)(), (None, HardwareStatus.READ_ERROR))
+        self.assertEqual(len(broken_calls), 2)
         def rejected():
             raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'session context unavailable')
         self.assertEqual(SessionHardwareQuery(rejected)(), (None, HardwareStatus.READ_ERROR))
+
+    def test_session_query_reconnects_after_a_transport_failure(self):
+        from panasonic_posture.model import StateSnapshot
+        calls = []
+        released = StateSnapshot(hardware=False, hardware_status=HardwareStatus.OK)
+
+        def load():
+            calls.append(True)
+            if len(calls) == 1:
+                raise OSError(233, 'hardware pipe write failed')
+            return released
+
+        self.assertEqual(
+            SessionHardwareQuery(load)(),
+            (False, HardwareStatus.OK),
+        )
+        self.assertEqual(len(calls), 2)
+
+        rejected_calls = []
+
+        def rejected():
+            rejected_calls.append(True)
+            raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'session context unavailable')
+
+        self.assertEqual(
+            SessionHardwareQuery(rejected)(),
+            (None, HardwareStatus.READ_ERROR),
+        )
+        self.assertEqual(len(rejected_calls), 1)
 
     def test_journal_path_is_a_sibling_of_the_display_journal(self):
         self.assertEqual(

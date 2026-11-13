@@ -44,12 +44,25 @@ class SessionHardwareQuery:
         self.state_loader = state_loader
 
     def __call__(self) -> tuple[bool | None, HardwareStatus]:
-        try:
-            state = self.state_loader()
-            hardware = state.hardware
-            status = state.hardware_status
-        except (OSError, RuntimeError, ServiceError, ValueError, TypeError):
-            return None, HardwareStatus.READ_ERROR
+        for attempt in range(2):
+            try:
+                state = self.state_loader()
+                hardware = state.hardware
+                status = state.hardware_status
+                break
+            except ServiceError:
+                # The service returned an authoritative failure. Retrying a
+                # rejected session or failed operation cannot renew ownership.
+                return None, HardwareStatus.READ_ERROR
+            except (OSError, RuntimeError) as error:
+                if attempt:
+                    return None, HardwareStatus.READ_ERROR
+                # The service closes idle pipe instances. The session client
+                # drops a broken channel, so one immediate retry reconnects
+                # instead of making display ownership look physically invalid.
+                log.debug('retrying transient hardware-state read: %s', error)
+            except (ValueError, TypeError):
+                return None, HardwareStatus.READ_ERROR
         if hardware is None:
             return None, status if isinstance(status, HardwareStatus) else HardwareStatus.ABSENT
         if type(hardware) is not bool or status != HardwareStatus.OK:
