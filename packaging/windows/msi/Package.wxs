@@ -175,9 +175,7 @@
       <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager" />
       <Directory Id="SERVICEINSTALLFOLDER" Name="PanasonicPostureManagerService" />
     </StandardDirectory>
-    <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool" />
-    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
 
     <Icon
         Id="ProductIcon.ico"

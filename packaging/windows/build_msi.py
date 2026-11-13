@@ -325,7 +325,7 @@ def _append_shortcut(file_element: ET.Element) -> None:
     """Attach the advertised Start menu shortcut to the UI executable."""
     shortcut = ET.SubElement(file_element, 'Shortcut', {
         'Id': 'ApplicationStartMenuShortcut',
-        'Directory': 'ApplicationProgramsFolder',
+        'Directory': 'ProgramMenuFolder',
         'Name': APPLICATION_DISPLAY_NAME,
         'Description': '!(loc.ShortcutDescription)',
         'Advertise': 'yes',
@@ -336,15 +336,6 @@ def _append_shortcut(file_element: ET.Element) -> None:
     ET.SubElement(shortcut, 'ShortcutProperty', {
         'Key': 'System.AppUserModel.ID',
         'Value': 'work.mmoe.panasonic.PostureManager',
-    })
-
-
-def _append_shortcut_cleanup(component: ET.Element) -> None:
-    """Remove the product-specific Start menu folder during uninstall."""
-    ET.SubElement(component, 'RemoveFolder', {
-        'Id': 'RemoveApplicationProgramsFolder',
-        'Directory': 'ApplicationProgramsFolder',
-        'On': 'uninstall',
     })
 
 
@@ -410,7 +401,6 @@ def render_components(
             })
             if role == 'service' and name == 'runtime/pythonw.exe':
                 _append_shortcut(file_element)
-                _append_shortcut_cleanup(component_element)
             if role == 'service' and name == 'runtime/python-hardware.exe':
                 _append_service(component_element)
 

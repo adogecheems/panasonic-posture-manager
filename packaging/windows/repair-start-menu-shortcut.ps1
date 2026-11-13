@@ -29,16 +29,16 @@ $knownNames = @(
     'Panasonic Posture Manager'
 )
 $programs = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
-$destinationFolder = Join-Path $programs $displayName
-$destinationLink = Join-Path $destinationFolder "$displayName.lnk"
-
-if (-not (Test-Path -LiteralPath $destinationFolder -PathType Container)) {
-    New-Item -ItemType Directory -Path $destinationFolder | Out-Null
-}
+$destinationLink = Join-Path $programs "$displayName.lnk"
 
 foreach ($name in $knownNames) {
+    $candidateLink = Join-Path $programs "$name.lnk"
+    if ($candidateLink -ne $destinationLink -and
+            (Test-Path -LiteralPath $candidateLink -PathType Leaf)) {
+        Remove-Item -LiteralPath $candidateLink -Force
+    }
     $folder = Join-Path $programs $name
-    if ($folder -eq $destinationFolder -or -not (Test-Path -LiteralPath $folder -PathType Container)) {
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
         continue
     }
     foreach ($candidateName in $knownNames) {

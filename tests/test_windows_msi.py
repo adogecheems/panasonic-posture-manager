@@ -127,6 +127,7 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertTrue(shortcut_file.tag.endswith('File'))
         self.assertEqual(shortcut_file.get('Id'), 'ServicePythonwExe')
         self.assertIsNone(shortcut.get('Target'))
+        self.assertEqual(shortcut.get('Directory'), 'ProgramMenuFolder')
         self.assertEqual(
             shortcut.get('Arguments'),
             '-B -I "[INSTALLFOLDER]launch.py"',
@@ -140,6 +141,8 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn('Id="ApplicationStartMenuShortcut"', first)
         self.assertIn('Advertise="yes"', first)
         self.assertIn('Icon="ProductIcon.ico"', first)
+        self.assertNotIn('ApplicationProgramsFolder', first)
+        self.assertNotIn('RemoveFolder', first)
         self.assertIn('Key="System.AppUserModel.ID"', first)
         self.assertIn('Value="work.mmoe.panasonic.PostureManager"', first)
         self.assertIn(f'Name="{msi.APPLICATION_DISPLAY_NAME}"', first)
@@ -170,7 +173,6 @@ class MsiPayloadTests(unittest.TestCase):
             'UpgradeCode="7C0319E4-768D-4C48-A41C-25F0D677EA89"',
             '<MajorUpgrade',
             'Name="!(loc.ProductName)"',
-            'Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
             'Id="Complete" Title="!(loc.FeatureTitle)"',
             'Scope="perMachine"',
             'Id="ConfigureSlate"',
@@ -228,6 +230,7 @@ class MsiPayloadTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertIn(value, source)
+        self.assertNotIn('ApplicationProgramsFolder', source)
 
     def test_installer_cultures_have_complete_branding_and_copy(self):
         expected = {
@@ -681,6 +684,18 @@ class MsiPayloadTests(unittest.TestCase):
         )
         self.assertEqual(localize.get('After'), 'CreateShortcuts')
         self.assertIsNone(localize.get('Before'))
+
+    def test_shortcut_repair_uses_the_programs_root_and_migrates_old_folders(self):
+        source = (
+            ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
+        ).read_text(encoding='utf-8')
+        self.assertIn(
+            '$destinationLink = Join-Path $programs "$displayName.lnk"',
+            source,
+        )
+        self.assertNotIn('$destinationFolder', source)
+        self.assertNotIn('New-Item -ItemType Directory', source)
+        self.assertIn('$folder = Join-Path $programs $name', source)
 
     @unittest.skipUnless(sys.platform == 'win32', 'MSI build runs on Windows')
     def test_failed_msi_build_preserves_the_existing_artifact(self):

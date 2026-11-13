@@ -53,51 +53,42 @@ def _programs_root(program_data: Path) -> Path:
     return root
 
 
+def _remove_known_shortcuts(directory: Path, *, keep: Path | None = None) -> None:
+    for name in _known_names():
+        shortcut = directory / f'{name}.lnk'
+        if shortcut != keep and _ordinary_file(shortcut):
+            shortcut.unlink()
+
+
 def localize_start_menu(program_data: Path, language_id: int) -> Path:
-    """Rename the MSI-created folder and shortcut to the current UI language."""
+    """Rename the MSI-created shortcut in the shared Programs root."""
     display_name = _display_name(language_id)
     root = _programs_root(program_data)
-    desired_folder = root / display_name
-    if not _ordinary_directory(desired_folder):
-        for name in _known_names():
-            candidate = root / name
-            if _ordinary_directory(candidate):
-                candidate.rename(desired_folder)
-                break
-    if not _ordinary_directory(desired_folder):
-        raise FileNotFoundError(
-            f'application Start menu folder is unavailable: {desired_folder}'
-        )
-
-    desired_shortcut = desired_folder / f'{display_name}.lnk'
+    desired_shortcut = root / f'{display_name}.lnk'
     if not _ordinary_file(desired_shortcut):
-        folders = [desired_folder]
-        folders.extend(root / name for name in _known_names() if name != display_name)
-        for folder in folders:
-            for name in _known_names():
-                candidate = folder / f'{name}.lnk'
-                if _ordinary_file(candidate):
-                    candidate.rename(desired_shortcut)
-                    break
-            if _ordinary_file(desired_shortcut):
+        candidates = [root / f'{name}.lnk' for name in _known_names()]
+        for folder_name in _known_names():
+            folder = root / folder_name
+            if _ordinary_directory(folder):
+                candidates.extend(
+                    folder / f'{shortcut_name}.lnk'
+                    for shortcut_name in _known_names()
+                )
+        for candidate in candidates:
+            if _ordinary_file(candidate):
+                candidate.rename(desired_shortcut)
                 break
-    for name in _known_names():
-        duplicate = desired_folder / f'{name}.lnk'
-        if duplicate != desired_shortcut and _ordinary_file(duplicate):
-            duplicate.unlink()
     if not _ordinary_file(desired_shortcut):
         raise FileNotFoundError(
             f'application Start menu shortcut is unavailable: {desired_shortcut}'
         )
 
-    for name in _known_names():
-        stale_folder = root / name
-        if stale_folder == desired_folder or not _ordinary_directory(stale_folder):
+    _remove_known_shortcuts(root, keep=desired_shortcut)
+    for folder_name in _known_names():
+        stale_folder = root / folder_name
+        if not _ordinary_directory(stale_folder):
             continue
-        for shortcut_name in _known_names():
-            stale_shortcut = stale_folder / f'{shortcut_name}.lnk'
-            if _ordinary_file(stale_shortcut):
-                stale_shortcut.unlink()
+        _remove_known_shortcuts(stale_folder)
         try:
             stale_folder.rmdir()
         except OSError:
@@ -107,17 +98,14 @@ def localize_start_menu(program_data: Path, language_id: int) -> Path:
 
 
 def remove_start_menu_entries(program_data: Path) -> None:
-    """Remove only the known localized/base links and empty application folders."""
+    """Remove only known root links and empty application folders."""
     root = _programs_root(program_data)
-    names = _known_names()
-    folders = {root / name for name in names}
-    for folder in folders:
+    _remove_known_shortcuts(root)
+    for folder_name in _known_names():
+        folder = root / folder_name
         if not _ordinary_directory(folder):
             continue
-        for name in {SOURCE_SHORTCUT}.union(f'{value}.lnk' for value in names):
-            shortcut = folder / name
-            if _ordinary_file(shortcut):
-                shortcut.unlink()
+        _remove_known_shortcuts(folder)
         try:
             folder.rmdir()
         except OSError:
