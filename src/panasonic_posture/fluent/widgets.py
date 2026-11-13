@@ -1,13 +1,13 @@
 """Shared Fluent controls and their existing appearance and touch behavior."""
 from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QColor, QPainter, QRadialGradient
+from PyQt6.QtGui import QColor, QFont, QPainter, QRadialGradient
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QWidget, QFrame, QVBoxLayout, QScroller, QScrollerProperties,
 )
 from qfluentwidgets import (
     RadioButton, ScrollArea, SegmentedWidget, SettingCard, SwitchSettingCard,
-    isDarkTheme, qconfig, setCustomStyleSheet,
+    fontStyleSheet, getFont, isDarkTheme, qconfig, setCustomStyleSheet, setFont,
 )
 
 from .resources import data_root
@@ -16,6 +16,30 @@ WINDOW_LIGHT = '#f6f7f9'
 WINDOW_DARK = '#22252b'
 TEXT_LIGHT, TEXT_DARK = '#45494e', '#dcdee1'
 MUTED_LIGHT, MUTED_DARK = '#656a70', '#b4b8be'
+
+# Single source for the application's text roles. Transient surfaces such as
+# modal dialogs and info banners reuse the same sizes and emphasis weights as
+# the permanent pages instead of the Fluent library defaults.
+HEADING_SIZE = 24
+BODY_SIZE = 13
+CAPTION_SIZE = 12
+SECTION_TITLE_SIZE = 13
+EMPHASIS_WEIGHT = QFont.Weight.Medium
+
+
+def apply_app_font(widget, size, weight=QFont.Weight.Normal):
+    """Pin a widget to an application text role ahead of Fluent QSS rules.
+
+    Fluent dialog and banner stylesheets declare ``font:`` sizes that outrank
+    ``setFont`` in the style cascade. Setting the same rule on the widget
+    itself keeps the application typography while themed colors and other
+    declarations continue to arrive from the inherited sheets.
+    """
+    setFont(widget, size, weight)
+    rule = fontStyleSheet(getFont(size, weight))
+    if weight != QFont.Weight.Normal:
+        rule += f'; font-weight: {int(weight)}'
+    widget.setStyleSheet(rule)
 
 
 class Illustration(QWidget):

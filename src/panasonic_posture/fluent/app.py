@@ -22,7 +22,8 @@ from .pages import Home, Settings
 from .resources import application_name, data_root, translator
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
-    PageSwitcher,
+    PageSwitcher, apply_app_font, BODY_SIZE, CAPTION_SIZE, HEADING_SIZE,
+    SECTION_TITLE_SIZE, EMPHASIS_WEIGHT,
 )
 
 
@@ -133,8 +134,9 @@ class Window(FluentWidget):
             caption = isinstance(label, CaptionLabel)
             label.setTextColor(MUTED_LIGHT if caption else TEXT_LIGHT,
                                MUTED_DARK if caption else TEXT_DARK)
-            setFont(label, 12 if caption else 24 if isinstance(label, TitleLabel) else 13,
-                    QFont.Weight.Medium if isinstance(label, TitleLabel) else QFont.Weight.Normal)
+            setFont(label,
+                    CAPTION_SIZE if caption else HEADING_SIZE if isinstance(label, TitleLabel) else BODY_SIZE,
+                    EMPHASIS_WEIGHT if isinstance(label, TitleLabel) else QFont.Weight.Normal)
         for button in (self.home.confirm_button, self.home.retry_button, self.home.auto_button, self.settings.calibrate_button,
                        self.settings.reset_button, self.settings.update_button,
                        self.settings.findChild(ComboBox)):
@@ -145,7 +147,7 @@ class Window(FluentWidget):
             else:
                 setCustomStyleSheet(button, style + f'{selector}:enabled {{color: {TEXT_LIGHT};}}',
                                    style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
-        setFont(self.titleBar.titleLabel, 13)
+        setFont(self.titleBar.titleLabel, BODY_SIZE)
         self._last_state = None
         self.client.start(self.update_state, self.unavailable)
         self._backend_poll_count = 0
@@ -224,11 +226,13 @@ class Window(FluentWidget):
     def notify(self, success, detail: str | None = None):
         _ = self._
         if success:
-            InfoBar.success(_('Settings saved'), '', duration=3500,
-                            position=InfoBarPosition.TOP, parent=self)
+            bar = InfoBar.success(_('Settings saved'), '', duration=3500,
+                                  position=InfoBarPosition.TOP, parent=self)
         else:
-            InfoBar.error(_('Unable to complete the operation'), detail or _('Please try again.'),
-                          duration=3500, position=InfoBarPosition.TOP, parent=self)
+            bar = InfoBar.error(_('Unable to complete the operation'), detail or _('Please try again.'),
+                                duration=3500, position=InfoBarPosition.TOP, parent=self)
+        apply_app_font(bar.titleLabel, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
+        apply_app_font(bar.contentLabel, BODY_SIZE)
 
     def shutdown(self):
         if self._stopped:

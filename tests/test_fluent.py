@@ -187,9 +187,15 @@ assert app.applicationDisplayName() == APPLICATION_DISPLAY_NAME
 from concurrent.futures import Future
 from panasonic_posture.contracts import ErrorCode
 from qfluentwidgets import InfoBar
+from PyQt6.QtWidgets import QLabel
+class StubBar:
+    def __init__(self):
+        self.titleLabel = QLabel()
+        self.contentLabel = QLabel()
 client = window.client
 errors = []
-InfoBar.error = lambda title, content, **kwargs: errors.append((title, content))
+InfoBar.error = lambda title, content, **kwargs: (
+    errors.append((title, content)) or StubBar())
 client.state['error_code'] = ErrorCode.DISPLAY_TRANSFORM
 client.refresh()
 assert window.home.detail.text() == (
@@ -231,8 +237,14 @@ assert window.home.retry_button.text() == 'Retry'
         self.run_ui('''
 from panasonic_posture.contracts import ErrorCode
 from qfluentwidgets import InfoBar
+from PyQt6.QtWidgets import QLabel
+class StubBar:
+    def __init__(self):
+        self.titleLabel = QLabel()
+        self.contentLabel = QLabel()
 errors = []
-InfoBar.error = lambda title, content, **kwargs: errors.append((title, content))
+InfoBar.error = lambda title, content, **kwargs: (
+    errors.append((title, content)) or StubBar())
 window.settings.action_failed(RuntimeError(ErrorCode.CONFIG_WRITE))
 assert errors[-1] == (
     'Unable to complete the operation',
@@ -1033,6 +1045,39 @@ for theme, filename in ((Theme.LIGHT, 'lets-note-window-icon.png'),
     assert mark.deviceIndependentSize().height() > 35
 window.switchTo(window.home)
 assert window.home.verticalScrollBar().maximum() == 0
+''')
+
+    def test_dialogs_and_banners_use_the_app_text_roles(self):
+        self.run_ui('''
+from PyQt6.QtGui import QFont
+from qfluentwidgets import InfoBar, MessageBox
+from panasonic_posture.fluent.widgets import (
+    BODY_SIZE, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT,
+)
+
+def effective(label):
+    label.ensurePolished()
+    return label.font().pixelSize(), label.font().weight()
+
+window.notify(True)
+bar = window.findChildren(InfoBar)[-1]
+assert effective(bar.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
+assert effective(bar.contentLabel) == (BODY_SIZE, QFont.Weight.Normal)
+assert bar.titleLabel.font().families() == app.font().families()
+window.notify(False, 'Please try again.')
+error_bar = window.findChildren(InfoBar)[-1]
+assert effective(error_bar.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
+assert effective(error_bar.contentLabel) == (BODY_SIZE, QFont.Weight.Normal)
+assert error_bar.contentLabel.font().families() == app.font().families()
+
+opened = []
+MessageBox.exec = lambda self: opened.append(self) or False
+window.settings.ask_calibration()
+assert opened, 'the calibration dialog must be created through the shared typography'
+dialog = opened[0]
+assert effective(dialog.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
+assert effective(dialog.contentLabel) == (BODY_SIZE, QFont.Weight.Normal)
+assert dialog.contentLabel.font().families() == app.font().families()
 ''')
 
     def test_touch_drag_scrolls_without_changing_mode(self):

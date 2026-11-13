@@ -3,7 +3,7 @@ import math
 import time
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QButtonGroup
 from qfluentwidgets import (
     FluentIcon as Icon, SettingCardGroup, SettingCard,
@@ -21,6 +21,7 @@ from ..frontend.state import PostureModel, Detail
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     Illustration, Page, ModeRadio, SettingRow, SwitchRow, row_style,
+    apply_app_font, BODY_SIZE, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT,
 )
 from .update_check import UpdateChecker
 
@@ -390,7 +391,7 @@ class Settings(Page):
         group = SettingCardGroup(title)
         group.cardLayout.setSpacing(0)
         group.titleLabel.setContentsMargins(4, 0, 0, 0)
-        setFont(group.titleLabel, 13, QFont.Weight.Medium)
+        setFont(group.titleLabel, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
         setCustomStyleSheet(group, f'SettingCardGroup > QLabel {{color: {MUTED_LIGHT};}}',
                            f'SettingCardGroup > QLabel {{color: {MUTED_DARK};}}')
         self.groups.append(group)
@@ -565,6 +566,8 @@ class Settings(Page):
                             _('Place the device in laptop form on a flat, stable desk and wait about two seconds before confirming. Its current direction will become the level reference.'), self.window())
         dialog.yesButton.setText(_('Calibrate'))
         dialog.cancelButton.setText(_('Cancel'))
+        apply_app_font(dialog.titleLabel, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
+        apply_app_font(dialog.contentLabel, BODY_SIZE)
         if dialog.exec() and connection == self.model.connection:
             self.calibration.run('calibrate', self.client.calibrate)
 
