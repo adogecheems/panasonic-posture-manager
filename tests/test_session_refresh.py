@@ -324,6 +324,38 @@ class HardwareHandoffTests(unittest.TestCase):
         self.assertNotIn(('hold',), events)
         self.assertTrue(runtime.ready)
 
+    def test_prelocked_release_skips_the_wait_while_the_posture_is_still_pending(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=True,
+            hardware_status=HardwareStatus.OK,
+            target=Target(mode='hardware'),
+        )
+        events, runtime, current = self.make_runtime(
+            state,
+            release_target=lambda instance: 'tent' if instance == 'fixture' else None,
+        )
+        runtime.tick(0.)
+
+        current[0] = replace(
+            state,
+            generation=2,
+            hardware=False,
+            posture_pending=True,
+            target=Target(mode='tent'),
+        )
+        runtime.tick(.2)
+
+        self.assertEqual(
+            [event for event in events if event[0] == 'apply'],
+            [('apply', 'hardware'), ('apply', 'tent')],
+        )
+        self.assertNotIn(('hold',), events)
+        self.assertTrue(runtime.ready)
+
     def test_prelocked_release_does_not_bypass_the_wait_for_another_target(self):
         state = StateSnapshot(
             instance='fixture',

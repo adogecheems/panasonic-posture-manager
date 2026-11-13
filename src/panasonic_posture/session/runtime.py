@@ -656,7 +656,15 @@ class SessionRuntime:
         if not (self.apply_now or (self.retry_display and now >= self.retry_at)):
             return True
         if self._defer_hardware_handoff:
-            if state.posture_pending and self._hardware_release_until is None:
+            if (
+                state.posture_pending
+                and self._hardware_release_until is None
+                and self._prepared_release(state) is None
+            ):
+                # A pre-locked target that matches the current posture already
+                # owns the final direction. Repeating the read-only wait here
+                # gives Windows the whole handoff window to undo that pre-lock,
+                # after which this apply would rotate the panel a second time.
                 self._hardware_release_until = now + HARDWARE_SETTLE_SECONDS
                 self._hold_check_at = now
             if self._hardware_release_until is not None:
