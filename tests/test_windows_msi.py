@@ -322,12 +322,19 @@ class MsiPayloadTests(unittest.TestCase):
         )
 
     def test_startup_does_not_show_the_transient_prepare_dialog(self):
-        source = (ROOT / 'packaging/windows/msi/Package.wxs').read_text(
-            encoding='utf-8'
+        root = ET.fromstring(
+            (ROOT / 'packaging/windows/msi/Package.wxs').read_text(
+                encoding='utf-8'
+            )
         )
+        dialog_refs = {
+            element.get('Id')
+            for element in root.iter()
+            if element.tag.endswith('DialogRef')
+        }
         self.assertNotIn(
-            '<DialogRef Id="PrepareDlg" />',
-            source,
+            'PrepareDlg',
+            dialog_refs,
             'WixUI PrepareDlg flashes before WelcomeDlg when AppSearch is fast',
         )
 

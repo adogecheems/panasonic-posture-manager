@@ -365,6 +365,34 @@ class PackageAcceptance:
                         f"packaged module differs from source: {module}",
                     )
 
+            source_xml = {
+                path.relative_to(self.source_root / "src/panasonic_posture").as_posix()
+                for path in (self.source_root / "src/panasonic_posture").rglob("*.xml")
+            }
+            packaged_xml = {
+                path[len(module_prefix) :]
+                for path in self.files
+                if path.startswith(module_prefix) and path.endswith(".xml")
+            }
+            self.require(
+                packaged_xml == source_xml,
+                "packaged XML resource set differs from src/: "
+                f"missing={sorted(source_xml - packaged_xml)}, "
+                f"extra={sorted(packaged_xml - source_xml)}",
+            )
+            for resource in sorted(source_xml):
+                packaged = self.files.get(module_prefix + resource)
+                source = (
+                    self.source_root
+                    / "src/panasonic_posture"
+                    / resource
+                )
+                if packaged is not None:
+                    self.require(
+                        packaged.read_bytes() == source.read_bytes(),
+                        f"packaged XML resource differs from source: {resource}",
+                    )
+
             dist_info = (
                 f"{self.site_dir}/panasonic_posture_manager-{self.version}.dist-info"
             )

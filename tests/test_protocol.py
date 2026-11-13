@@ -1,6 +1,7 @@
 """Tests for wire protocol constants and error helpers (Lead integration scope)."""
 
 import unittest
+import xml.etree.ElementTree as ET
 
 from panasonic_posture import protocol
 
@@ -33,6 +34,22 @@ class ErrorCodeTests(unittest.TestCase):
 
 
 class ContractTests(unittest.TestCase):
+    def dbus_method(self, name):
+        root = ET.fromstring(protocol.DBUS_XML)
+        interface = root.find("interface")
+        self.assertIsNotNone(interface)
+        self.assertEqual(interface.get("name"), protocol.IFACE)
+        method = next(
+            (
+                element
+                for element in interface
+                if element.tag == "method" and element.get("name") == name
+            ),
+            None,
+        )
+        self.assertIsNotNone(method, name)
+        return method
+
     def test_identity_constants(self):
         self.assertEqual(protocol.NAME, "work.mmoe.panasonic.Posture")
         self.assertEqual(protocol.PATH, "/work/mmoe/panasonic/Posture")
@@ -46,36 +63,42 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(protocol.RELAY_PROTOCOL, 4)
 
     def test_dbus_xml_has_contact_backed_session_wake(self):
-        section = protocol.DBUS_XML.split('name="SessionWake"', 1)[1].split("</method>", 1)[0]
-        self.assertEqual(section.count('direction="in"'), 2)
-        for arg in ("u", "t"):
-            self.assertIn(f'type="{arg}" direction="in"', section)
+        arguments = self.dbus_method("SessionWake").findall("arg")
+        self.assertEqual(
+            [(argument.get("type"), argument.get("direction")) for argument in arguments],
+            [("u", "in"), ("t", "in")],
+        )
 
     def test_dbus_xml_has_retry(self):
-        self.assertIn('<method name="Retry"/>', protocol.DBUS_XML)
+        self.assertEqual(len(self.dbus_method("Retry")), 0)
 
     def test_dbus_xml_exposes_stand_prompt_methods(self):
-        self.assertNotIn('name="SetSuspendTouchWake"', protocol.DBUS_XML)
-        self.assertIn('<method name="SetStandPrompt">', protocol.DBUS_XML)
-        self.assertIn('<method name="ConfirmStand">', protocol.DBUS_XML)
+        root = ET.fromstring(protocol.DBUS_XML)
+        methods = {
+            element.get("name")
+            for element in root.find("interface")
+            if element.tag == "method"
+        }
+        self.assertNotIn("SetSuspendTouchWake", methods)
+        self.assertIn("SetStandPrompt", methods)
+        self.assertIn("ConfirmStand", methods)
 
     def test_dbus_xml_exposes_tent_mode_switch(self):
-        self.assertIn('<method name="SetTentEnabled">', protocol.DBUS_XML)
+        self.assertIsNotNone(self.dbus_method("SetTentEnabled"))
 
     def test_dbus_xml_exposes_sensor_calibration_methods(self):
-        self.assertIn('<method name="CalibrateSensor"/>', protocol.DBUS_XML)
-        self.assertIn('<method name="ResetSensorCalibration"/>', protocol.DBUS_XML)
+        self.assertEqual(len(self.dbus_method("CalibrateSensor")), 0)
+        self.assertEqual(len(self.dbus_method("ResetSensorCalibration")), 0)
 
     def test_access_denied_error_code(self):
         self.assertIn(protocol.ErrorCode.ACCESS_DENIED, protocol.ALL_ERROR_CODES)
 
     def test_dbus_xml_has_revised_session_update(self):
-        xml = protocol.DBUS_XML
-        self.assertIn('name="SessionUpdate"', xml)
-        section = xml.split('name="SessionUpdate"', 1)[1].split("</method>", 1)[0]
-        self.assertEqual(section.count('direction="in"'), 4)
-        for arg in ("u", "b", "s", "s"):
-            self.assertIn(f'type="{arg}" direction="in"', section)
+        arguments = self.dbus_method("SessionUpdate").findall("arg")
+        self.assertEqual(
+            [(argument.get("type"), argument.get("direction")) for argument in arguments],
+            [("u", "in"), ("b", "in"), ("s", "in"), ("s", "in")],
+        )
 
     def test_enum_validation_sets(self):
         self.assertEqual(set(protocol.MODES), {"auto", "laptop", "tent", "stand"})

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from importlib.resources import files
 
 NAME = "work.mmoe.panasonic.Posture"
 PATH = "/work/mmoe/panasonic/Posture"
@@ -38,37 +39,11 @@ RELAY_INSTALL_PATH = "/usr/lib/panasonic-posture-manager/relay"
 #: Discovery must exclude the relay output to avoid observing its own signal.
 RELAY_VIRTUAL_NAME = "Panasonic posture managed switch"
 RELAY_VIRTUAL_PHYS = "panasonic-posture-manager/relay"
-DBUS_XML = """<node>
-  <interface name="work.mmoe.panasonic.Posture">
-    <method name="GetState"><arg type="s" direction="out"/></method>
-    <method name="SetMode"><arg type="s" direction="in"/></method>
-    <method name="Retry"/>
-    <method name="SetTentEnabled"><arg type="b" direction="in"/></method>
-    <method name="SetTentPrompt"><arg type="b" direction="in"/></method>
-    <method name="SetStandPrompt"><arg type="b" direction="in"/></method>
-    <method name="CalibrateSensor"/>
-    <method name="ResetSensorCalibration"/>
-    <method name="ConfirmTent"><arg type="u" direction="in"/></method>
-    <method name="ConfirmStand"><arg type="u" direction="in"/></method>
-    <method name="SessionUpdate">
-      <arg type="u" direction="in"/>
-      <arg type="b" direction="in"/>
-      <arg type="s" direction="in"/>
-      <arg type="s" direction="in"/>
-    </method>
-    <method name="SessionUpdateUnattended">
-      <arg type="u" direction="in"/>
-      <arg type="b" direction="in"/>
-      <arg type="s" direction="in"/>
-      <arg type="s" direction="in"/>
-    </method>
-    <method name="SessionWake">
-      <arg type="u" direction="in"/>
-      <arg type="t" direction="in"/>
-    </method>
-    <signal name="StateChanged"><arg type="s"/></signal>
-  </interface>
-</node>"""
+DBUS_XML = (
+    files("panasonic_posture")
+    .joinpath("resources", "dbus.xml")
+    .read_text(encoding="utf-8")
+)
 
 
 class SensorSource(StrEnum):

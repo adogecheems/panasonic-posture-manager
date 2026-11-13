@@ -1,6 +1,7 @@
 """Installed Start menu shortcuts keep the notification shell identity."""
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 import shutil
@@ -8,12 +9,18 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 REPAIR_SCRIPT = ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
 APP_IDENTITY_SOURCE = ROOT / 'src/panasonic_posture/windows/app_identity.py'
-MSI_BUILDER_SOURCE = ROOT / 'packaging/windows/build_msi.py'
 APP_USER_MODEL_ID = 'work.mmoe.panasonic.PostureManager'
+MSI_BUILDER_SPEC = importlib.util.spec_from_file_location(
+    'windows_shortcut_msi_build',
+    ROOT / 'packaging/windows/build_msi.py',
+)
+MSI_BUILDER = importlib.util.module_from_spec(MSI_BUILDER_SPEC)
+MSI_BUILDER_SPEC.loader.exec_module(MSI_BUILDER)
 
 
 class ShortcutIdentityContractTests(unittest.TestCase):
@@ -22,9 +29,18 @@ class ShortcutIdentityContractTests(unittest.TestCase):
             f'APP_USER_MODEL_ID = "{APP_USER_MODEL_ID}"',
             APP_IDENTITY_SOURCE.read_text(encoding='utf-8'),
         )
-        self.assertIn(
-            f'Value="{APP_USER_MODEL_ID}"',
-            MSI_BUILDER_SOURCE.read_text(encoding='utf-8'),
+        generated = ET.fromstring(MSI_BUILDER.render_components({
+            'main': {},
+            'service': {'runtime/pythonw.exe': Path('fixture')},
+        }))
+        properties = {
+            element.get('Key'): element.get('Value')
+            for element in generated.iter()
+            if element.tag.endswith('ShortcutProperty')
+        }
+        self.assertEqual(
+            properties.get('System.AppUserModel.ID'),
+            APP_USER_MODEL_ID,
         )
         repair = REPAIR_SCRIPT.read_text(encoding='utf-8')
         self.assertIn(f"$appUserModelId = '{APP_USER_MODEL_ID}'", repair)

@@ -36,3 +36,6 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["panasonic_posture*"]
+
+[tool.setuptools.package-data]
+panasonic_posture = ["resources/*.xml"]

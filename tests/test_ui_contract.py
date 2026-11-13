@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+import xml.etree.ElementTree as ET
 
 from panasonic_posture.contracts import ALL_ERROR_CODES
 from panasonic_posture.model import StateSnapshot, Target
@@ -215,7 +216,15 @@ class WidgetTests(unittest.TestCase):
                        GIO_USE_VFS='local', GSETTINGS_BACKEND='memory',
                        PYTHONPATH=str(ROOT / 'src') + ':' + str(ROOT / 'tests'))
         config = Path(cls.temp.name) / 'bus.conf'
-        config.write_text('<busconfig><type>session</type><listen>unix:tmpdir=' + cls.temp.name + '</listen><auth>EXTERNAL</auth><policy context="default"><allow send_destination="*"/><allow own="*"/><allow eavesdrop="true"/></policy></busconfig>')
+        bus_config = ET.Element('busconfig')
+        ET.SubElement(bus_config, 'type').text = 'session'
+        ET.SubElement(bus_config, 'listen').text = f'unix:tmpdir={cls.temp.name}'
+        ET.SubElement(bus_config, 'auth').text = 'EXTERNAL'
+        policy = ET.SubElement(bus_config, 'policy', {'context': 'default'})
+        ET.SubElement(policy, 'allow', {'send_destination': '*'})
+        ET.SubElement(policy, 'allow', {'own': '*'})
+        ET.SubElement(policy, 'allow', {'eavesdrop': 'true'})
+        config.write_text(ET.tostring(bus_config, encoding='unicode') + '\n')
         cls.bus_config = config
         # Choose a private socket and port; never attach to an existing display.
         import socket

@@ -10,6 +10,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
+CODE_ROOTS = (ROOT / "src", ROOT / "packaging", ROOT / "tests")
+CODE_SUFFIXES = {".c", ".h", ".js", ".ps1", ".py", ".sh"}
+INLINE_XML = re.compile(
+    r"<\?xml\b|</?(?:arg|busconfig|Component(?:Group|Ref)?|Directory|"
+    r"DirectoryRef|File|Fragment|interface|method|node|RemoveFolder|"
+    r"ServiceControl|ServiceInstall|Shortcut(?:Property)?|signal|Wix)\b"
+)
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
@@ -82,10 +89,24 @@ class ReleaseMetadataTests(unittest.TestCase):
             "packaging/windows/msi/main-path-actions.js",
             "packaging/windows/msi/Setup.zh-CN.wxl",
             "packaging/windows/msi/Setup.en-US.wxl",
+            "src/panasonic_posture/resources/dbus.xml",
             "MAINTENANCE.md",
         ):
             with self.subTest(relative=relative):
                 self.assertTrue((ROOT / relative).is_file(), relative)
+
+    def test_xml_documents_are_not_embedded_in_code(self):
+        for root in CODE_ROOTS:
+            for path in root.rglob("*"):
+                if path.suffix.lower() not in CODE_SUFFIXES or not path.is_file():
+                    continue
+                with self.subTest(path=path.relative_to(ROOT)):
+                    match = INLINE_XML.search(path.read_text(encoding="utf-8"))
+                    self.assertIsNone(
+                        match,
+                        "XML documents belong in resource files or must be "
+                        "constructed through the XML API",
+                    )
 
     def test_release_placeholder_is_not_left_in_packaging(self) -> None:
         self.assertNotIn("TODO(RELEASE)", self.pkgbuild)

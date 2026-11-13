@@ -18,10 +18,11 @@ import sys
 import tempfile
 import tomllib
 import uuid
-from xml.sax.saxutils import quoteattr
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_WXS = ROOT / 'packaging/windows/msi/Package.wxs'
+WIX_NAMESPACE = 'http://wixtoolset.org/schemas/v4/wxs'
 COMPONENT_NAMESPACE = uuid.UUID('2D4F313E-76E4-4E38-A886-B14075283C26')
 DEFAULT_MSI_CULTURE = 'zh-CN'
 CULTURE_FILES = {
@@ -215,55 +216,58 @@ def stage_payload(
     return manifests
 
 
-def _attribute(value: object) -> str:
-    return quoteattr(str(value))
+def _append_service(component: ET.Element) -> None:
+    """Add the LocalSystem service registration to its executable component."""
+    ET.SubElement(component, 'ServiceInstall', {
+        'Id': 'HardwareServiceInstall',
+        'Name': 'PanasonicPostureManagerHardware',
+        'DisplayName': f'{APPLICATION_DISPLAY_NAME} Hardware Service',
+        'Description': (
+            'Provides the authenticated LocalSystem hardware endpoint for '
+            f'{APPLICATION_DISPLAY_NAME}.'
+        ),
+        'Type': 'ownProcess',
+        'Start': 'auto',
+        'ErrorControl': 'normal',
+        'Account': 'LocalSystem',
+        'Vital': 'yes',
+        'Arguments': '-B -I -m panasonic_posture.windows.hardware_service --serve',
+    })
+    ET.SubElement(component, 'ServiceControl', {
+        'Id': 'HardwareServiceControl',
+        'Name': 'PanasonicPostureManagerHardware',
+        'Start': 'install',
+        'Stop': 'uninstall',
+        'Remove': 'uninstall',
+        'Wait': 'yes',
+    })
 
 
-def _service_xml() -> str:
-    return f'''
-      <ServiceInstall
-          Id="HardwareServiceInstall"
-          Name="PanasonicPostureManagerHardware"
-          DisplayName="{APPLICATION_DISPLAY_NAME} Hardware Service"
-          Description="Provides the authenticated LocalSystem hardware endpoint for {APPLICATION_DISPLAY_NAME}."
-          Type="ownProcess"
-          Start="auto"
-          ErrorControl="normal"
-          Account="LocalSystem"
-          Vital="yes"
-          Arguments="-B -I -m panasonic_posture.windows.hardware_service --serve" />
-      <ServiceControl
-          Id="HardwareServiceControl"
-          Name="PanasonicPostureManagerHardware"
-          Start="install"
-          Stop="uninstall"
-          Remove="uninstall"
-          Wait="yes" />'''
+def _append_shortcut(file_element: ET.Element) -> None:
+    """Attach the advertised Start menu shortcut to the UI executable."""
+    shortcut = ET.SubElement(file_element, 'Shortcut', {
+        'Id': 'ApplicationStartMenuShortcut',
+        'Directory': 'ApplicationProgramsFolder',
+        'Name': APPLICATION_DISPLAY_NAME,
+        'Description': f'Open {APPLICATION_DISPLAY_NAME}',
+        'Advertise': 'yes',
+        'Icon': 'ProductIcon.ico',
+        'Arguments': '-I "[INSTALLFOLDER]launch.py"',
+        'WorkingDirectory': 'INSTALLFOLDER',
+    })
+    ET.SubElement(shortcut, 'ShortcutProperty', {
+        'Key': 'System.AppUserModel.ID',
+        'Value': 'work.mmoe.panasonic.PostureManager',
+    })
 
 
-def _shortcut_xml() -> str:
-    return f'''
-          <Shortcut
-              Id="ApplicationStartMenuShortcut"
-              Directory="ApplicationProgramsFolder"
-              Name="{APPLICATION_DISPLAY_NAME}"
-              Description="Open {APPLICATION_DISPLAY_NAME}"
-              Advertise="yes"
-              Icon="ProductIcon.ico"
-              Arguments="-I &quot;[INSTALLFOLDER]launch.py&quot;"
-              WorkingDirectory="INSTALLFOLDER">
-            <ShortcutProperty
-                Key="System.AppUserModel.ID"
-                Value="work.mmoe.panasonic.PostureManager" />
-          </Shortcut>'''
-
-
-def _shortcut_remove_xml() -> str:
-    return '''
-        <RemoveFolder
-            Id="RemoveApplicationProgramsFolder"
-            Directory="ApplicationProgramsFolder"
-            On="uninstall" />'''
+def _append_shortcut_cleanup(component: ET.Element) -> None:
+    """Remove the product-specific Start menu folder during uninstall."""
+    ET.SubElement(component, 'RemoveFolder', {
+        'Id': 'RemoveApplicationProgramsFolder',
+        'Directory': 'ApplicationProgramsFolder',
+        'On': 'uninstall',
+    })
 
 
 def render_components(
@@ -281,11 +285,8 @@ def render_components(
         )
     )
 
-    lines = [
-        '<?xml version="1.0" encoding="utf-8"?>',
-        '<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">',
-    ]
-    component_ids = []
+    root = ET.Element('Wix', {'xmlns': WIX_NAMESPACE})
+    component_ids: list[str] = []
     for role in ('main', 'service'):
         files = groups[role]
         children: dict[str, set[str]] = defaultdict(set)
@@ -297,55 +298,52 @@ def render_components(
                 children[parent].add(child)
                 parent = child
 
-        lines.extend((
-            '  <Fragment>',
-            f'    <DirectoryRef Id="{ROLE_FOLDERS[role]}">',
-        ))
+        fragment = ET.SubElement(root, 'Fragment')
+        directory_ref = ET.SubElement(fragment, 'DirectoryRef', {
+            'Id': ROLE_FOLDERS[role],
+        })
 
-        def write_directories(parent: str, indent: int) -> None:
+        def write_directories(parent: str, element: ET.Element) -> None:
             for relative in sorted(children[parent]):
-                padding = ' ' * indent
-                lines.append(
-                    f'{padding}'
-                    f'<Directory Id={_attribute(_directory_id(role, relative))} '
-                    f'Name={_attribute(PurePosixPath(relative).name)}>'
-                )
-                write_directories(relative, indent + 2)
-                lines.append(f'{padding}</Directory>')
+                directory = ET.SubElement(element, 'Directory', {
+                    'Id': _directory_id(role, relative),
+                    'Name': PurePosixPath(relative).name,
+                })
+                write_directories(relative, directory)
 
-        write_directories('', 6)
-        lines.append('    </DirectoryRef>')
+        write_directories('', directory_ref)
         for name in sorted(files):
             path = PurePosixPath(name)
             parent = str(path.parent) if str(path.parent) != '.' else ''
             component = _component_id(role, name)
             component_ids.append(component)
-            lines.append(
-                f'    <Component Id={_attribute(component)} '
-                f'Directory={_attribute(_directory_id(role, parent))} '
-                f'Guid={_attribute(_component_guid(role, name))} Bitness="always64">'
-            )
+            component_element = ET.SubElement(fragment, 'Component', {
+                'Id': component,
+                'Directory': _directory_id(role, parent),
+                'Guid': _component_guid(role, name),
+                'Bitness': 'always64',
+            })
             source = str(source_for(role, name))
-            file_xml = (
-                f'      <File Id={_attribute(_file_id(role, name))} '
-                f'Name={_attribute(path.name)} Source={_attribute(source)} KeyPath="yes"'
-            )
+            file_element = ET.SubElement(component_element, 'File', {
+                'Id': _file_id(role, name),
+                'Name': path.name,
+                'Source': source,
+                'KeyPath': 'yes',
+            })
             if role == 'service' and name == 'runtime/pythonw.exe':
-                lines.append(file_xml + '>')
-                lines.append(_shortcut_xml())
-                lines.append('      </File>')
-                lines.append(_shortcut_remove_xml())
-            else:
-                lines.append(file_xml + ' />')
+                _append_shortcut(file_element)
+                _append_shortcut_cleanup(component_element)
             if role == 'service' and name == 'runtime/python-hardware.exe':
-                lines.append(_service_xml())
-            lines.append('    </Component>')
-        lines.append('  </Fragment>')
-    lines.extend(('  <Fragment>', '    <ComponentGroup Id="PayloadComponents">'))
+                _append_service(component_element)
+
+    group_fragment = ET.SubElement(root, 'Fragment')
+    group = ET.SubElement(group_fragment, 'ComponentGroup', {
+        'Id': 'PayloadComponents',
+    })
     for component in component_ids:
-        lines.append(f'      <ComponentRef Id={_attribute(component)} />')
-    lines.extend(('    </ComponentGroup>', '  </Fragment>', '</Wix>', ''))
-    return '\n'.join(lines)
+        ET.SubElement(group, 'ComponentRef', {'Id': component})
+    ET.indent(root, space='  ')
+    return ET.tostring(root, encoding='unicode') + '\n'
 
 
 def generate_components(destination: Path, runtime: Path, dependencies: Path) -> Path:

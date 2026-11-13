@@ -196,6 +196,7 @@ python tests/check_i18n.py
 - Linux UI 使用 PyGObject、GTK 4/libadwaita；Windows UI 使用 PyQt6 和 Fluent Widgets。
 - 测试在进程、总线、文件系统、时钟和设备边界注入 fake；临时文件使用 `TemporaryDirectory`。
 - 翻译以英文源文案为 msgid，确保 `po/POTFILES.in` 覆盖源文件；`.mo` 由构建生成。
+- XML、D-Bus 接口和 WiX 描述只放在独立资源文件中；需要动态生成时使用标准 XML API，禁止在 Python、C、脚本或测试代码中内联 XML 文档。
 - 注释解释原因、不变量和失败路径；不复述代码。
 - 文档只保留当前有效信息。设计或行为变化时直接更新对应条款，并在提交正文记录动机和验证；不新建按日期的流水账。
 
