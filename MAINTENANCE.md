@@ -52,7 +52,7 @@ systemctl status panasonic-posture-manager.service
 journalctl -b -u panasonic-posture-manager.service
 ```
 
-Plasma 6 需要 `kscreenctl` 或 `kscreen-doctor`；两者都缺失时检查发行版的 KScreen 软件包。
+KDE Plasma 6 Wayland 为实验性支持，尚未完成真实 Plasma 会话或真机验收；自动化测试通过不代表兼容性验收通过。Plasma 6 需要 `kscreenctl` 或 `kscreen-doctor`；两者都缺失时检查发行版的 KScreen 软件包。
 
 只读硬件探测：
 

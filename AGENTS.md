@@ -12,7 +12,7 @@
 
 ## 1. 当前产品边界
 
-- Linux 支持 x86_64 GNOME Wayland 与 KDE Plasma 6 Wayland。仓库为 Panasonic CFQV8、CFQV9、CFQV1 提供已验证机型配置；其他 360° 翻转本只有在硬件探测明确匹配时才可使用。
+- Linux 支持 x86_64 GNOME Wayland；KDE Plasma 6 Wayland 为实验性支持，尚未经过实机验证。仓库为 Panasonic CFQV8、CFQV9、CFQV1 提供已验证机型配置；其他 360° 翻转本只有在硬件探测明确匹配时才可使用。
 - Windows 支持 Windows 10/11 x64。Panasonic CFQV8、CFQV9、CFQV1 全系使用明确机型配置；其他机型使用与 Linux 相同的通用能力探测，不得恢复整机白名单。正式安装使用每机器 MSI。
 - 两个平台的手动模式都只有自动、笔记本、帐篷、支架。平板是物理状态，不是手动模式。
 - Windows 保持内置键盘和触控板可用，不发布 shell 平板模式，不自动打开屏幕键盘，不加载自研输入过滤驱动。

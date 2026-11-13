@@ -12,9 +12,11 @@
 
 | 平台 | 支持情况 |
 | --- | --- |
-| Linux | x86_64；GNOME Wayland 或 KDE Plasma 6 Wayland |
+| Linux | x86_64；GNOME Wayland；KDE Plasma 6 Wayland（实验性，尚未实机验证） |
 | Windows | Windows 10/11 x64；明确支持 Panasonic CFQV8、CFQV9、CFQV1 全系 |
 | 明确机型配置 | Panasonic CFQV8、CFQV9、CFQV1，包括 `CF-QV*` 产品名变体 |
+
+**KDE Plasma 6 Wayland 目前为实验性支持。** 现有验证仅覆盖自动化测试，尚未在真实 Plasma 6 会话或实机上验收。屏幕方向、方向锁、多屏和异常恢复可能不符合预期；在这些项目完成真机验证前，请勿将其视为稳定兼容。
 
 其他 360° 翻转本使用能力探测：系统能识别其加速度计、物理平板事件源和显示能力时，对应功能才可用。
 

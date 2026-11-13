@@ -76,6 +76,16 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("panasonic-posture-manager", usage)
         self.assertIn("panasonic-posture-manager-bin", usage)
 
+    def test_plasma_support_is_declared_experimental(self) -> None:
+        self.assertIn(
+            "KDE Plasma 6 Wayland（实验性，尚未实机验证）",
+            self.readme,
+        )
+        self.assertIn("KDE Plasma 6 Wayland 目前为实验性支持", self.readme)
+        usage = read("MAINTENANCE.md")
+        self.assertIn("KDE Plasma 6 Wayland 为实验性支持", usage)
+        self.assertIn("尚未完成真实 Plasma 会话或真机验收", usage)
+
     def test_release_inputs_exist(self) -> None:
         for relative in (
             "README.md",
