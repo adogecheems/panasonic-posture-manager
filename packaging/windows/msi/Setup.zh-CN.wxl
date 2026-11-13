@@ -111,4 +111,9 @@
   <UI Dialog="ProgressDlg" Control="TitleRepairing" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
   <UI Dialog="ProgressDlg" Control="TitleRemoving" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
   <UI Dialog="ProgressDlg" Control="TitleUpdating" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
+  <!-- The default 10-DLU status controls clip the 9pt YaHei line. Reserve
+       15 DLU and keep a three-DLU gap before the progress bar. -->
+  <UI Dialog="ProgressDlg" Control="StatusLabel" Y="100" Height="15" />
+  <UI Dialog="ProgressDlg" Control="ActionText" Y="100" Height="15" />
+  <UI Dialog="ProgressDlg" Control="ProgressBar" Y="118" Height="10" />
 </WixLocalization>
