@@ -23,7 +23,14 @@ from .. import contracts
 from ..model import HardwareStatus, StateSnapshot
 from ..tasks import thread_executor
 from . import failures as errors
-from .failures import DisplayError, ErrorCode, FailureKind, ServiceError, describe_error
+from .failures import (
+    DisplayError,
+    ErrorCode,
+    FailureKind,
+    ServiceError,
+    TRANSIENT_CONTROL_DETAIL,
+    describe_error,
+)
 from .ports import DisplayBackend, DisplayRefresh, PostureNotifier, SessionClient
 
 log = logging.getLogger(__name__)
@@ -50,6 +57,7 @@ _ECHO_ERROR_CODES = frozenset(
 #: before the display is restored is ``contracts.AGENT_FAILURE_GRACE_SECONDS``).
 TRANSIENT_RETRY_SECONDS = 0.5
 HARDWARE_SETTLE_SECONDS = contracts.HARDWARE_HANDOFF_SECONDS
+LEASE_KEEPALIVE_SECONDS = 3.0
 
 
 @dataclass
@@ -78,6 +86,7 @@ class SessionRuntime:
         display_refresh: DisplayRefresh | None = None,
         defer_hardware_handoff: bool = False,
         hardware_release_target: Callable[[str], str | None] | None = None,
+        lease_keepalive: bool = False,
         finalize_display_on_executor: bool = False,
     ) -> None:
         self.client = client
@@ -86,6 +95,7 @@ class SessionRuntime:
         self._display_refresh = display_refresh
         self._defer_hardware_handoff = defer_hardware_handoff
         self._hardware_release_target = hardware_release_target
+        self._lease_keepalive = lease_keepalive
         self._finalize_display_on_executor = finalize_display_on_executor
         self._refresh_at = float('-inf')
         self._screen_locked = screen_locked
@@ -108,6 +118,8 @@ class SessionRuntime:
         self._lease_task: Future[Any] | None = None
         self._lease_wait_since: float | None = None
         self._lease_attempt_at = float("-inf")
+        self._keepalive_task: Future[Any] | None = None
+        self._keepalive_at = float("-inf")
         self._schedule_completion = schedule_completion
         self._tasks: deque[_Task] = deque()
         self._closing = False
@@ -159,6 +171,7 @@ class SessionRuntime:
         self.drain_completed_tasks(now)
         if self._tasks:
             self._maintain_display_lease(now)
+            self._maintain_keepalive(now)
             return
         self._lease_wait_since = None
         if self._restore_retry_at and now >= self._restore_retry_at:
@@ -179,6 +192,7 @@ class SessionRuntime:
         else:
             self._submit("state", self.client.get_state)
         self.drain_completed_tasks(now)
+        self._maintain_keepalive(now)
 
     def close(self) -> None:
         """Close the notification and restore the display, best effort."""
@@ -188,6 +202,10 @@ class SessionRuntime:
         if self._lease_task is not None:
             tasks += (_Task("lease", self._lease_task),)
             self._lease_task = None
+        if self._keepalive_task is not None:
+            # A keepalive result is disposable; a still-running one must not
+            # block shutdown. Its executor is shut down right below.
+            self._keepalive_task = None
         if self._wake_task is not None:
             tasks += (_Task("wake", self._wake_task),)
             self._wake_task = None
@@ -355,7 +373,11 @@ class SessionRuntime:
             else:
                 self._fail_display(ErrorCode.INTERNAL, describe_error(error), now)
             if task.kind == "hold":
-                self._restore_display_async(now)
+                if not (
+                    isinstance(error, DisplayError)
+                    and error.detail == TRANSIENT_CONTROL_DETAIL
+                ):
+                    self._restore_display_async(now)
             self._queue_feedback(state, generation, now, daemon_error)
             if task.kind == 'refresh':
                 # Withdraw the old success before restoring a failed ongoing
@@ -407,6 +429,43 @@ class SessionRuntime:
         self.last_feedback = (state.generation, False, "", "")
         self.last_feedback_at = now
         self._reset_transient()
+
+    def _maintain_keepalive(self, now: float) -> None:
+        """Keep the lease channel's pipe slot alive between display tasks.
+
+        The hardware server resets pipe instances that stay idle for five
+        seconds. The lease worker goes idle whenever no display task is
+        pending, so its next probe would otherwise hit a reset slot and cost
+        the runtime a transient-failure pause exactly when a posture
+        transition starts.
+        """
+
+        task = self._keepalive_task
+        if task is not None:
+            if not task.done():
+                return
+            self._keepalive_task = None
+            if task.exception() is not None:
+                log.debug(
+                    "lease keepalive failed: %s",
+                    describe_error(task.exception()),
+                )
+        if (
+            not self._lease_keepalive
+            or self._closing
+            or self.failure_active
+            or self._lease_task is not None
+            or self.instance is None
+            or now < self._keepalive_at
+        ):
+            return
+        self._keepalive_at = now + LEASE_KEEPALIVE_SECONDS
+        try:
+            self._keepalive_task = self._lease_executor.submit(
+                self.client.get_state
+            )
+        except Exception as error:  # noqa: BLE001 - executor shutdown race
+            log.debug("cannot schedule lease keepalive: %s", describe_error(error))
 
     def _probe_lease(self) -> StateSnapshot:
         state = self.client.get_state()

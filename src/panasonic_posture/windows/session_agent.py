@@ -200,6 +200,7 @@ class WindowsSessionAgent:
             lease_executor=self.lease_executor,
             defer_hardware_handoff=True,
             hardware_release_target=self.hardware_release.target_for,
+            lease_keepalive=True,
             finalize_display_on_executor=True,
         )
 

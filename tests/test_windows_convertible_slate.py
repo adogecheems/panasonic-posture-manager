@@ -6,7 +6,7 @@ from unittest import mock
 
 from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
 from panasonic_posture.contracts import ErrorCode
-from panasonic_posture.session.failures import DisplayError, ServiceError
+from panasonic_posture.session.failures import DisplayError, FailureKind, ServiceError
 from panasonic_posture.windows.convertible_slate import (
     NativeSlateDevice,
     SlateError,
@@ -14,6 +14,7 @@ from panasonic_posture.windows.convertible_slate import (
     slate_instance_matches,
 )
 from panasonic_posture.windows.session_display import QualifiedDisplay, SessionHardwareQuery
+from panasonic_posture.windows.session_qualification import QualifiedSessionClient
 from panasonic_posture.windows.slate_journal import SlateJournal, lease_path
 
 
@@ -653,6 +654,81 @@ class QualifiedDisplayTests(unittest.TestCase):
         with self.assertRaises(DisplayError):
             QualifiedDisplay(Display(), FakeContext(), slate).restore()
         slate.release.assert_called_once_with()
+
+    def test_transient_context_blip_fails_softly_without_restore_or_release(self):
+        display, context = FakeDisplay(), FakeContext()
+        context.available = False
+        context.snapshot = lambda: dict(
+            suspended=False,
+            presence=dict(active=True, locked=False),
+        )
+        slate = mock.Mock()
+        proxy = QualifiedDisplay(display, context, slate, settle=lambda delay: None)
+        with self.assertRaises(DisplayError) as caught:
+            proxy.apply(Target(mode='tent'))
+        self.assertEqual(caught.exception.detail, 'native-session-control-transient')
+        self.assertEqual(display.calls, [])
+        slate.release.assert_not_called()
+
+    def test_genuine_context_loss_still_restores_and_releases(self):
+        display, context = FakeDisplay(), FakeContext()
+        context.available = False
+        context.snapshot = lambda: dict(
+            suspended=False,
+            presence=dict(active=True, locked=True),
+        )
+        slate = mock.Mock()
+        proxy = QualifiedDisplay(display, context, slate, settle=lambda delay: None)
+        with self.assertRaises(DisplayError) as caught:
+            proxy.apply(Target(mode='tent'))
+        self.assertEqual(caught.exception.detail, 'native session control is unavailable')
+        # Entry qualification loss fails before any write; the runtime failure
+        # mode owns the subsequent restore and CSM release.
+        self.assertEqual(display.calls, [])
+        slate.release.assert_not_called()
+
+
+class QualifiedSessionClientTests(unittest.TestCase):
+    def make_client(self, snapshot):
+        context = FakeContext()
+        context.available = False
+        context.snapshot = snapshot
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+        )
+        inner = mock.Mock()
+        inner.get_state.return_value = state
+        return QualifiedSessionClient(inner, context), inner
+
+    def test_stale_presence_blip_is_transient_and_does_not_report_lost(self):
+        client, inner = self.make_client(
+            lambda: dict(suspended=False, presence=dict(active=True, locked=False)),
+        )
+        with self.assertRaises(ServiceError) as caught:
+            client.get_state()
+        self.assertEqual(caught.exception.kind, FailureKind.UNAVAILABLE)
+        inner.session_update.assert_not_called()
+
+        with self.assertRaises(ServiceError) as caught:
+            client.session_update(1, False)
+        self.assertEqual(caught.exception.kind, FailureKind.UNAVAILABLE)
+        inner.session_update.assert_not_called()
+
+    def test_locked_console_is_still_an_immediate_rejection(self):
+        client, inner = self.make_client(
+            lambda: dict(suspended=False, presence=dict(active=True, locked=True)),
+        )
+        with self.assertRaises(ServiceError) as caught:
+            client.get_state()
+        self.assertEqual(caught.exception.kind, FailureKind.REJECTED)
+        inner.session_update.assert_called_once_with(
+            1,
+            False,
+            ErrorCode.DISPLAY_UNAVAILABLE,
+            'native-session-unavailable',
+        )
 
 
 if __name__ == '__main__':

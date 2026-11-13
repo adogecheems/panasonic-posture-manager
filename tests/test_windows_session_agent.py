@@ -299,15 +299,22 @@ class SessionAgentTests(unittest.TestCase):
         self.context.absent = True
         with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
             self.agent.tick(10.6)
-        self.assertEqual(len(jobs), 1)
+        heartbeats = [
+            entry for entry in jobs
+            if entry[0] == self.agent._qualification_heartbeat
+        ]
+        self.assertEqual(len(heartbeats), 1)
         for _ in range(10):
             self.agent.tick(11.)
-        self.assertEqual(len(jobs), 1)
+        self.assertEqual(len([
+            entry for entry in jobs
+            if entry[0] == self.agent._qualification_heartbeat
+        ]), 1)
         self.context.absent = False
         self.agent.tick(13.)
         self.assertTrue(self.agent.runtime.failure_active)
         self.assertEqual(self.display.current, 0)
-        function, future = jobs[0]
+        function, future = heartbeats[0]
         function()
         future.set_result(None)
         last_false = len(self.client.feedback) - 1

@@ -75,6 +75,7 @@ class ScreenSession:
                 screen_locked=lambda: not context.control_available(),
                 display_refresh=refresh, defer_hardware_handoff=True,
                 hardware_release_target=self.hardware_release.target_for,
+                lease_keepalive=True,
                 finalize_display_on_executor=True)
             self._stack.callback(self.session.close)
             self._stack.callback(self.bridge.close)

@@ -7,7 +7,7 @@ from ..contracts import ErrorCode
 from ..model import StateSnapshot
 from ..session.failures import FailureKind, ServiceError
 from ..session.ports import SessionClient
-from .session_display import SessionContext
+from .session_display import SessionContext, transient_context_blip
 
 log = logging.getLogger(__name__)
 
@@ -38,8 +38,16 @@ class QualifiedSessionClient:
         self._last_unavailable_log = float('-inf')
 
     @staticmethod
-    def _rejected(detail: str = 'native session control is unavailable') -> ServiceError:
-        return ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, detail, kind=FailureKind.REJECTED)
+    def _context_blip(context: SessionContext) -> bool:
+        return transient_context_blip(context)
+
+    def _rejected(self, detail: str = 'native session control is unavailable') -> ServiceError:
+        kind = (
+            FailureKind.UNAVAILABLE
+            if self._context_blip(self.context)
+            else FailureKind.REJECTED
+        )
+        return ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, detail, kind=kind)
 
     def _require_available(self) -> None:
         if not self.context.control_available():
@@ -67,7 +75,8 @@ class QualifiedSessionClient:
         state = self.client.get_state()
         if not self.context.control_available():
             self._log_unavailable_once()
-            self._report_lost(state.generation)
+            if not self._context_blip(self.context):
+                self._report_lost(state.generation)
             raise self._rejected()
         return state
 
@@ -76,7 +85,8 @@ class QualifiedSessionClient:
                        error_detail: str | None = None) -> None:
         if not self.context.control_available():
             self._log_unavailable_once()
-            self._report_lost(generation)
+            if not self._context_blip(self.context):
+                self._report_lost(generation)
             raise self._rejected()
         self.client.session_update(generation, ready, error_code, error_detail)
         self._require_available()

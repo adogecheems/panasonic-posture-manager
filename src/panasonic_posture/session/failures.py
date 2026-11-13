@@ -39,6 +39,12 @@ class FailureKind(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+#: Diagnostic detail for a qualification loss caused only by a stale fast
+#: observation. The session is still attended, so the runtime treats it as a
+#: transient blip instead of revoking readiness or restoring the display.
+TRANSIENT_CONTROL_DETAIL = "native-session-control-transient"
+
+
 class ServiceError(SessionError):
     """A classified service failure; platform details are for diagnostics only."""
 

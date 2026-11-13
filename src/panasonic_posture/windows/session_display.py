@@ -6,7 +6,7 @@ from typing import Protocol
 
 from ..contracts import ErrorCode
 from ..model import HardwareStatus, StateSnapshot, Target
-from ..session.failures import DisplayError, ServiceError
+from ..session.failures import DisplayError, ServiceError, TRANSIENT_CONTROL_DETAIL
 from ..session.ports import DisplayBackend, DisplayRefresh
 
 
@@ -21,6 +21,30 @@ class SessionContext(Protocol):
     def unattended(self) -> bool: ...
     def poll(self) -> None: ...
     def close(self) -> None: ...
+
+
+def transient_context_blip(context: SessionContext) -> bool:
+    """True when qualification looks lost only through a stale observation.
+
+    The session is still the attended, unlocked console, so losing
+    ``control_available`` is a transient timing artifact (for example the WTS
+    presence query taking longer than its freshness window). Genuine loss
+    (lock, suspend, console switch or a failed observer) is never a blip.
+    """
+
+    snapshot = getattr(context, "snapshot", None)
+    if not callable(snapshot):
+        return False
+    try:
+        state = snapshot()
+    except Exception:  # noqa: BLE001 - snapshot failures stay conservative
+        return False
+    if not isinstance(state, dict) or state.get("suspended") is True:
+        return False
+    presence = state.get("presence")
+    if not isinstance(presence, dict):
+        return False
+    return presence.get("active") is True and presence.get("locked") is False
 
 
 class SlatePosture(Protocol):
@@ -106,6 +130,14 @@ class QualifiedDisplay:
                     'native session control is unavailable for display work: %s',
                     snapshot() if callable(snapshot) else 'no context snapshot',
                 )
+            if transient_context_blip(self.context):
+                # The session is still attended; the loss is a stale fast
+                # observation. Fail this request without tearing anything
+                # down so the next attempt succeeds with no visible change.
+                raise DisplayError(
+                    ErrorCode.DISPLAY_UNAVAILABLE,
+                    TRANSIENT_CONTROL_DETAIL,
+                )
             raise DisplayError(
                 ErrorCode.DISPLAY_UNAVAILABLE,
                 'native session control is unavailable',
@@ -136,6 +168,13 @@ class QualifiedDisplay:
         self._sync_slate_mode(target.mode)
 
     def _release_slate_after_failure(self, error: BaseException) -> None:
+        if (
+            isinstance(error, DisplayError)
+            and error.detail == TRANSIENT_CONTROL_DETAIL
+        ):
+            # Nothing was written before the transient blip; retrying must not
+            # drop the published CSM posture for a stale observation.
+            return
         if not self.context.control_available():
             # Losing session qualification ends software ownership even when
             # the display rollback itself cannot finish.
@@ -242,7 +281,11 @@ class QualifiedDisplay:
                     'session changed during display apply',
                 )
         except BaseException as error:
-            self._restore_after_failed_transaction()
+            if not (
+                isinstance(error, DisplayError)
+                and error.detail == TRANSIENT_CONTROL_DETAIL
+            ):
+                self._restore_after_failed_transaction()
             self._release_slate_after_failure(error)
             raise
 
@@ -256,7 +299,11 @@ class QualifiedDisplay:
                     'session changed during display hold',
                 )
         except BaseException as error:
-            self._restore_after_failed_transaction()
+            if not (
+                isinstance(error, DisplayError)
+                and error.detail == TRANSIENT_CONTROL_DETAIL
+            ):
+                self._restore_after_failed_transaction()
             self._release_slate_after_failure(error)
             raise
 

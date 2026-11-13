@@ -6,7 +6,12 @@ import unittest
 
 from panasonic_posture.contracts import ErrorCode
 from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
-from panasonic_posture.session.failures import DisplayError, FailureKind, ServiceError
+from panasonic_posture.session.failures import (
+    DisplayError,
+    FailureKind,
+    ServiceError,
+    TRANSIENT_CONTROL_DETAIL,
+)
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.windows.session_display import QualifiedRefresh
@@ -460,6 +465,64 @@ class HardwareHandoffTests(unittest.TestCase):
         )
         runtime.tick(0.)
         self.assertIn(('apply', 'tent'), events)
+
+    def test_transient_control_blip_does_not_restore_the_display(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=False,
+            hardware_status=HardwareStatus.OK,
+            posture_pending=True,
+            target=Target(mode='unavailable'),
+        )
+        events, runtime, current = self.make_runtime(state)
+
+        def hold():
+            events.append(('hold',))
+            raise DisplayError(
+                ErrorCode.DISPLAY_UNAVAILABLE,
+                TRANSIENT_CONTROL_DETAIL,
+            )
+
+        runtime.display.hold_orientation = hold
+        runtime.tick(0.)
+
+        self.assertIn(('hold',), events)
+        self.assertNotIn(('restore',), events)
+        self.assertTrue(runtime.retry_display)
+
+    def test_lease_keepalive_refreshes_the_idle_lease_channel(self):
+        state = StateSnapshot(
+            instance='fixture',
+            generation=1,
+            session_connected=True,
+            supported=True,
+            hardware=False,
+            hardware_status=HardwareStatus.OK,
+            target=Target(mode='laptop'),
+        )
+        events, runtime, current = self.make_runtime(state)
+        runtime._lease_keepalive = True
+        executor = Deferred()
+        runtime._lease_executor = executor
+
+        runtime.tick(0.)
+        self.assertEqual(len(executor.calls), 1)
+        self.assertIs(executor.calls[0][1], runtime.client.get_state)
+
+        runtime.tick(.2)
+        self.assertEqual(len(executor.calls), 1)
+
+        executor.run()
+        runtime.drain_completed_tasks(.2)
+        runtime.tick(3.1)
+        self.assertEqual(len(executor.calls), 1)
+        self.assertIs(executor.calls[0][1], runtime.client.get_state)
+        executor.run()
+
+        runtime._lease_executor = InlineExecutor()
 
 
 if __name__ == '__main__': unittest.main()
