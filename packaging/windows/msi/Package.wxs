@@ -234,7 +234,9 @@
       <DialogRef Id="InvalidMainPathDlg" />
       <DialogRef Id="PostureInstallDirDlg" />
       <DialogRef Id="MsiRMFilesInUse" />
-      <DialogRef Id="PrepareDlg" />
+      <!-- WixUI shows PrepareDlg while AppSearch runs. The action finishes too
+           quickly on these machines, producing a visible flash before the
+           welcome page, so the first interactive screen is WelcomeDlg. -->
       <DialogRef Id="ProgressDlg" />
       <DialogRef Id="ResumeDlg" />
       <DialogRef Id="UserExit" />
