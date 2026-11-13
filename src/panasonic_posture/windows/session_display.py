@@ -13,6 +13,7 @@ from ..session.ports import DisplayBackend, DisplayRefresh
 log = logging.getLogger(__name__)
 HARDWARE_QUERY_RETRY_SECONDS = 0.1
 HARDWARE_QUERY_ATTEMPTS = 6
+SLATE_SETTLE_SECONDS = 0.5
 
 
 class SessionContext(Protocol):
@@ -89,8 +90,11 @@ class QualifiedDisplay:
         display: DisplayBackend,
         context: SessionContext,
         slate: SlatePosture | None = None,
+        *,
+        settle: Callable[[float], None] = time.sleep,
     ) -> None:
         self.display, self.context, self.slate = display, context, slate
+        self.settle = settle
         self._last_unavailable_log = float('-inf')
 
     def _require_available(self) -> None:
@@ -200,6 +204,20 @@ class QualifiedDisplay:
                 self._sync_slate(target)
                 self._require_available()
                 self.display.apply(target)
+            elif self.slate is not None and target.mode in ('tent', 'stand'):
+                # Windows re-enables automatic rotation and moves the panel to
+                # its native direction right after the slate posture is
+                # published. Writing the fixed direction first provably caused
+                # two visible rotations per transition on the device: our
+                # write, Windows' response, then the bounded reassert.
+                # Publish first, let that response settle, then own the
+                # direction and lock with a single write.
+                self._sync_slate(target)
+                self._require_available()
+                self.settle(SLATE_SETTLE_SECONDS)
+                self._require_available()
+                self.display.apply(target)
+                self._verify_after_slate(target)
             else:
                 # Software modes must own the CCD rotation lock before CSM can
                 # make Windows start its own tablet-orientation response.

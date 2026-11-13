@@ -435,7 +435,7 @@ class NativeSlateDeviceTests(unittest.TestCase):
 
 
 class QualifiedDisplayTests(unittest.TestCase):
-    def test_software_display_apply_precedes_slate_notification(self):
+    def test_tent_publication_precedes_the_display_apply_and_settle(self):
         events = []
         slate = mock.Mock()
         slate.sync_mode.side_effect = lambda mode: events.append(('notify', mode))
@@ -447,12 +447,23 @@ class QualifiedDisplayTests(unittest.TestCase):
             original_apply(target)
 
         display.apply = apply
-        QualifiedDisplay(display, context, slate).apply(Target(mode='tent'))
-        self.assertEqual(events, [('apply', 'tent'), ('notify', 'tent')])
+        QualifiedDisplay(
+            display,
+            context,
+            slate,
+            settle=lambda delay: events.append(('settle', delay)),
+        ).apply(Target(mode='tent'))
+        self.assertEqual(events, [
+            ('notify', 'tent'),
+            ('settle', 0.5),
+            ('apply', 'tent'),
+        ])
 
-    def test_platform_change_after_slate_notification_reasserts_the_fixed_target(self):
+    def test_laptop_display_apply_precedes_slate_notification(self):
         events = []
-        display = StatefulDisplay()
+        slate = mock.Mock()
+        slate.sync_mode.side_effect = lambda mode: events.append(('notify', mode))
+        display, context = FakeDisplay(), FakeContext()
         original_apply = display.apply
 
         def apply(target):
@@ -460,19 +471,38 @@ class QualifiedDisplayTests(unittest.TestCase):
             original_apply(target)
 
         display.apply = apply
+        QualifiedDisplay(display, context, slate).apply(Target(mode='laptop'))
+        self.assertEqual(events, [('apply', 'laptop'), ('notify', 'laptop')])
+
+    def test_platform_change_after_slate_notification_reasserts_the_fixed_target(self):
+        events = []
+        display = StatefulDisplay()
+        original_apply = display.apply
+        applies = []
+
+        def apply(target):
+            events.append(('apply', target.mode))
+            original_apply(target)
+            applies.append(True)
+            if len(applies) == 1:
+                # Windows finishes its own tablet response after the final
+                # write, taking the lock back one last time.
+                display.corrupted = True
+
+        display.apply = apply
         slate = mock.Mock()
+        slate.sync_mode.side_effect = lambda mode: events.append(('notify', mode))
 
-        def notify(mode):
-            events.append(('notify', mode))
-            # Windows can finish its own tablet response even though the CCD
-            # transaction had already engaged the lock.
-            display.corrupted = True
-
-        slate.sync_mode.side_effect = notify
-        QualifiedDisplay(display, FakeContext(), slate).apply(Target(mode='tent'))
+        QualifiedDisplay(
+            display,
+            FakeContext(),
+            slate,
+            settle=lambda delay: events.append(('settle', delay)),
+        ).apply(Target(mode='tent'))
         self.assertEqual(events, [
-            ('apply', 'tent'),
             ('notify', 'tent'),
+            ('settle', 0.5),
+            ('apply', 'tent'),
             ('apply', 'tent'),
         ])
         self.assertEqual(display.mode, 'tent')
@@ -483,7 +513,12 @@ class QualifiedDisplayTests(unittest.TestCase):
         display.sticky_corruption = True
         slate = mock.Mock()
         slate.sync_mode.side_effect = lambda mode: setattr(display, 'corrupted', True)
-        proxy = QualifiedDisplay(display, FakeContext(), slate)
+        proxy = QualifiedDisplay(
+            display,
+            FakeContext(),
+            slate,
+            settle=lambda delay: None,
+        )
         with self.assertRaises(DisplayError):
             proxy.apply(Target(mode='tent'))
         self.assertEqual(display.calls, [
@@ -543,7 +578,12 @@ class QualifiedDisplayTests(unittest.TestCase):
                     )
 
             display = TakeoverDisplay()
-            QualifiedDisplay(display, FakeContext(), slate).apply(Target(mode='tent'))
+            QualifiedDisplay(
+                display,
+                FakeContext(),
+                slate,
+                settle=lambda delay: None,
+            ).apply(Target(mode='tent'))
             self.assertTrue(device.state)
             self.assertEqual(device.sets, [True, True, True])
             self.assertIsNotNone(journal.load())
@@ -553,13 +593,18 @@ class QualifiedDisplayTests(unittest.TestCase):
         slate = mock.Mock()
         slate.sync_mode.side_effect = SlateError('device unavailable')
         display, context = FakeDisplay(), FakeContext()
-        proxy = QualifiedDisplay(display, context, slate)
+        proxy = QualifiedDisplay(
+            display,
+            context,
+            slate,
+            settle=lambda delay: None,
+        )
         with self.assertRaises(DisplayError) as caught:
             proxy.apply(Target(mode='tent'))
         self.assertEqual(caught.exception.detail, 'convertible-slate-notification-failed')
         self.assertEqual(
             display.calls,
-            [('apply', 'tent'), ('restore', False)],
+            [('restore', False)],
         )
         slate.release.assert_called_once_with()
 
@@ -567,11 +612,16 @@ class QualifiedDisplayTests(unittest.TestCase):
         slate = mock.Mock()
         display, context = FakeDisplay(), FakeContext()
         display.fail = True
-        proxy = QualifiedDisplay(display, context, slate)
+        proxy = QualifiedDisplay(
+            display,
+            context,
+            slate,
+            settle=lambda delay: None,
+        )
         with self.assertRaises(DisplayError):
             proxy.apply(Target(mode='tent'))
         self.assertEqual(display.calls, [('apply', 'tent'), ('restore', False)])
-        slate.sync_mode.assert_not_called()
+        slate.sync_mode.assert_called_once_with('tent')
         slate.release.assert_not_called()
 
     def test_context_loss_still_releases_the_slate_lease(self):
@@ -585,7 +635,12 @@ class QualifiedDisplayTests(unittest.TestCase):
 
         display.apply = apply
         with self.assertRaises(DisplayError):
-            QualifiedDisplay(display, context, slate).apply(Target(mode='tent'))
+            QualifiedDisplay(
+                display,
+                context,
+                slate,
+                settle=lambda delay: None,
+            ).apply(Target(mode='tent'))
         slate.release.assert_called_once_with()
 
     def test_restore_releases_slate_even_if_display_restore_fails(self):

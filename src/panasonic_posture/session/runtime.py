@@ -669,14 +669,24 @@ class SessionRuntime:
                 self._hold_check_at = now
             if self._hardware_release_until is not None:
                 healthy = (
-                    state.hardware is False
+                    state.hardware is not True
                     and state.session_connected
                     and state.supported
-                    and not state.sensor_error
                     and not state.error_code
-                    and state.hardware_status == HardwareStatus.OK
                 )
                 if not healthy or now >= self._hardware_release_until:
+                    if not healthy and now < self._hardware_release_until:
+                        log.warning(
+                            'ending the hardware release wait early: '
+                            'hardware=%r status=%s connected=%r supported=%r '
+                            'sensor_error=%r error=%r',
+                            state.hardware,
+                            state.hardware_status,
+                            state.session_connected,
+                            state.supported,
+                            state.sensor_error,
+                            state.error_code,
+                        )
                     self._hardware_release_until = None
                 else:
                     if now >= self._hold_check_at:
