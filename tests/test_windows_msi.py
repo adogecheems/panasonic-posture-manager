@@ -218,6 +218,11 @@ class MsiPayloadTests(unittest.TestCase):
             '--language-id [UserLanguageID]',
             'Id="RemoveLocalizedStartMenu"',
             'panasonic_posture.windows.shortcut_locale --remove',
+            'Id="WIXUI_EXITDIALOGOPTIONALTEXT"',
+            'Before="ExecuteAction"',
+            'Sequence="ui"',
+            'Id="POSTURE_EXIT_TITLE"',
+            'Id="POSTURE_EXIT_DESCRIPTION"',
         ):
             with self.subTest(value=value):
                 self.assertIn(value, source)
@@ -334,6 +339,102 @@ class MsiPayloadTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, 'unsupported MSI culture'):
             msi.culture_files('fr-FR')
+
+    def test_uninstall_uses_branded_installer_flow_and_copy(self):
+        source = (ROOT / 'packaging/windows/msi/Package.wxs').read_text(
+            encoding='utf-8'
+        )
+        root = ET.fromstring(source)
+        exit_text = next(
+            element for element in root.iter()
+            if element.tag.endswith('SetProperty')
+            and element.get('Id') == 'WIXUI_EXITDIALOGOPTIONALTEXT'
+        )
+        self.assertEqual(exit_text.get('Before'), 'ExecuteAction')
+        self.assertEqual(exit_text.get('Sequence'), 'ui')
+        self.assertEqual(
+            exit_text.get('Value'),
+            '!(loc.ExitDialogRemoveOptionalText)',
+        )
+        self.assertIn('WixUI_InstallMode = "Remove"', exit_text.get('Condition'))
+        self.assertIn('REMOVE~="ALL"', exit_text.get('Condition'))
+        for property_id in ('POSTURE_EXIT_TITLE', 'POSTURE_EXIT_DESCRIPTION'):
+            action = next(
+                element for element in root.iter()
+                if element.tag.endswith('SetProperty')
+                and element.get('Id') == property_id
+            )
+            self.assertEqual(action.get('Before'), 'ExecuteAction')
+            self.assertEqual(action.get('Sequence'), 'ui')
+            self.assertIn('WixUI_InstallMode = "Remove"', action.get('Condition'))
+            self.assertIn('REMOVE~="ALL"', action.get('Condition'))
+
+        expected = {
+            'en-US': (
+                'Maintain or uninstall [ProductName]',
+                'Uninstall [ProductName]',
+                'Uninstalling [ProductName]',
+                'Select Uninstall',
+                'Uninstallation is complete',
+                'hardware service and restoring display',
+            ),
+            'zh-CN': (
+                '维护或卸载 [ProductName]',
+                '确认卸载 [ProductName]',
+                '正在卸载 [ProductName]',
+                '点击“卸载”',
+                '卸载完成',
+                '停止硬件服务并恢复显示',
+            ),
+        }
+        for culture, fragments in expected.items():
+            with self.subTest(culture=culture):
+                localization, _ = msi.culture_files(culture)
+                root = ET.parse(localization).getroot()
+                strings = {
+                    element.get('Id'): element.get('Value')
+                    for element in root
+                    if element.tag.endswith('String')
+                }
+                for string_id, fragment in zip(
+                    (
+                        'MaintenanceWelcomeDlgTitle',
+                        'VerifyReadyDlgRemoveTitle',
+                        'ProgressDlgTitleRemoving',
+                        'VerifyReadyDlgRemoveText',
+                        'ExitDialogRemoveOptionalText',
+                        'ProgressDlgTextRemoving',
+                    ),
+                    fragments,
+                ):
+                    with self.subTest(string=string_id):
+                        self.assertIn(fragment, strings[string_id])
+                self.assertNotEqual(
+                    strings['ExitDialogOptionalText'],
+                    strings['ExitDialogRemoveOptionalText'],
+                )
+                self.assertNotEqual(
+                    strings['ExitDialogInstallTitle'],
+                    strings['ExitDialogRemoveTitle'],
+                )
+                self.assertIn('[ProductName]', strings['MaintenanceTypeDlgDescription'])
+                self.assertIn(
+                    '卸载' if culture == 'zh-CN' else 'Uninstall',
+                    strings['MaintenanceTypeDlgRemoveButton'],
+                )
+                overrides = {
+                    (element.get('Dialog'), element.get('Control')): element
+                    for element in root
+                    if element.tag.endswith('}UI')
+                }
+                self.assertEqual(
+                    overrides[('ExitDialog', 'Title')].get('Text'),
+                    '[POSTURE_EXIT_TITLE]',
+                )
+                self.assertEqual(
+                    overrides[('ExitDialog', 'Description')].get('Text'),
+                    '[POSTURE_EXIT_DESCRIPTION]',
+                )
 
     def test_banner_page_copy_is_right_aligned_right_of_the_brand_panel(self):
         banner_controls = {

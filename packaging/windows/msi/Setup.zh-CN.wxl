@@ -43,8 +43,43 @@
   <String Id="VerifyReadyDlgInstallText"
       Value="点击“确认安装”开始安装。如需更改安装位置，请点击“上一步”。" />
   <String Id="VerifyReadyDlgInstall" Overridable="yes" Value="确认安装" />
+  <String Id="MaintenanceWelcomeDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Bigger}维护或卸载 [ProductName]" />
+  <String Id="MaintenanceWelcomeDlgDescription"
+      Value="你可以使用此安装向导修复当前安装，或从这台电脑中卸载 [ProductName]。点击“下一步”继续。" />
+  <String Id="MaintenanceTypeDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}选择操作" />
+  <String Id="MaintenanceTypeDlgDescription"
+      Value="修复已安装的应用与硬件服务，或卸载 [ProductName] 并恢复系统设置。" />
+  <String Id="MaintenanceTypeDlgRepairText"
+      Value="重新安装缺失或损坏的文件，并恢复硬件服务配置。" />
+  <String Id="MaintenanceTypeDlgRemoveButton" Overridable="yes"
+      Value="卸载(&amp;U)" />
+  <String Id="MaintenanceTypeDlgRemoveButtonTooltip"
+      Value="从这台电脑中卸载 [ProductName]。" />
+  <String Id="MaintenanceTypeDlgRemoveText"
+      Value="移除应用与硬件服务，并恢复安装前的系统设置。" />
+  <String Id="VerifyReadyDlgRemoveTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}确认卸载 [ProductName]" />
+  <String Id="VerifyReadyDlgRemoveText"
+      Value="点击“卸载”将移除应用与硬件服务，并恢复安装前的屏幕方向、旋转锁和平板指示器配置。完成后可能需要重启 Windows。" />
+  <String Id="VerifyReadyDlgRemove" Overridable="yes" Value="卸载" />
+  <String Id="ProgressDlgTitleRemoving" Overridable="yes"
+      Value="{\WixUI_Font_Title}正在卸载 [ProductName]" />
+  <String Id="ProgressDlgTextRemoving"
+      Value="正在停止硬件服务并恢复显示与平板指示器配置，请稍候。" />
+  <String Id="ExitDialogInstallTitle"
+      Value="{\WixUI_Font_Bigger}[ProductName] 设置完成" />
+  <String Id="ExitDialogInstallDescription"
+      Value="应用与硬件服务已准备就绪。" />
+  <String Id="ExitDialogRemoveTitle"
+      Value="{\WixUI_Font_Bigger}已卸载 [ProductName]" />
+  <String Id="ExitDialogRemoveDescription"
+      Value="应用与硬件服务已从这台电脑中移除。" />
   <String Id="ExitDialogOptionalText"
       Value="安装完成后可能需要重启 Windows，重启后设置才会生效。" />
+  <String Id="ExitDialogRemoveOptionalText"
+      Value="卸载完成。如果硬件服务或平板指示器配置未恢复，请重启 Windows。" />
   <!-- Keep all banner copy in the 220-DLU content column to the right of
        the brand panel. Ready and progress titles reserve two lines for the
        English product name while remaining inside the 44-DLU banner. -->
@@ -64,6 +99,8 @@
   <UI Dialog="OutOfRbDiskDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
   <UI Dialog="OutOfDiskDlg" Control="Title" X="135" Width="220" RightAligned="yes" />
   <UI Dialog="OutOfDiskDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="ExitDialog" Control="Title" Text="[POSTURE_EXIT_TITLE]" />
+  <UI Dialog="ExitDialog" Control="Description" Text="[POSTURE_EXIT_DESCRIPTION]" />
   <UI Dialog="VerifyReadyDlg" Control="InstallTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
   <UI Dialog="VerifyReadyDlg" Control="ChangeTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
   <UI Dialog="VerifyReadyDlg" Control="RepairTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />

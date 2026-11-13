@@ -32,6 +32,8 @@
     <Property Id="ARPPRODUCTICON" Value="ProductIcon.ico" />
     <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="!(loc.ExitDialogOptionalText)" />
+    <Property Id="POSTURE_EXIT_TITLE" Value="!(loc.ExitDialogInstallTitle)" />
+    <Property Id="POSTURE_EXIT_DESCRIPTION" Value="!(loc.ExitDialogInstallDescription)" />
     <Property Id="MainPathErrorFormat" Value="!(loc.MainPathErrorFormat)" />
     <Property Id="MainPathErrorNetwork" Value="!(loc.MainPathErrorNetwork)" />
     <Property Id="MainPathErrorProtected" Value="!(loc.MainPathErrorProtected)" />
@@ -150,6 +152,24 @@
         Execute="immediate"
         Impersonate="yes"
         Return="check" />
+    <SetProperty
+        Id="WIXUI_EXITDIALOGOPTIONALTEXT"
+        Value="!(loc.ExitDialogRemoveOptionalText)"
+        Before="ExecuteAction"
+        Condition="WixUI_InstallMode = &quot;Remove&quot; OR REMOVE~=&quot;ALL&quot;"
+        Sequence="ui" />
+    <SetProperty
+        Id="POSTURE_EXIT_TITLE"
+        Value="!(loc.ExitDialogRemoveTitle)"
+        Before="ExecuteAction"
+        Condition="WixUI_InstallMode = &quot;Remove&quot; OR REMOVE~=&quot;ALL&quot;"
+        Sequence="ui" />
+    <SetProperty
+        Id="POSTURE_EXIT_DESCRIPTION"
+        Value="!(loc.ExitDialogRemoveDescription)"
+        Before="ExecuteAction"
+        Condition="WixUI_InstallMode = &quot;Remove&quot; OR REMOVE~=&quot;ALL&quot;"
+        Sequence="ui" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager" />

@@ -43,8 +43,43 @@
   <String Id="VerifyReadyDlgInstallText"
       Value="Select Confirm install to begin. To choose a different install location, select Back." />
   <String Id="VerifyReadyDlgInstall" Overridable="yes" Value="&amp;Confirm install" />
+  <String Id="MaintenanceWelcomeDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Bigger}Maintain or uninstall [ProductName]" />
+  <String Id="MaintenanceWelcomeDlgDescription"
+      Value="Use this Setup Wizard to repair the current installation or remove [ProductName] from this computer. Select Next to continue." />
+  <String Id="MaintenanceTypeDlgTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}Choose how to continue" />
+  <String Id="MaintenanceTypeDlgDescription"
+      Value="Repair the installed application and hardware service, or remove [ProductName] and restore its system settings." />
+  <String Id="MaintenanceTypeDlgRepairText"
+      Value="Reinstall missing or damaged files and restore the hardware service configuration." />
+  <String Id="MaintenanceTypeDlgRemoveButton" Overridable="yes"
+      Value="&amp;Uninstall" />
+  <String Id="MaintenanceTypeDlgRemoveButtonTooltip"
+      Value="Remove [ProductName] from this computer." />
+  <String Id="MaintenanceTypeDlgRemoveText"
+      Value="Remove the application and hardware service, then restore the pre-install system settings." />
+  <String Id="VerifyReadyDlgRemoveTitle" Overridable="yes"
+      Value="{\WixUI_Font_Title}Uninstall [ProductName]" />
+  <String Id="VerifyReadyDlgRemoveText"
+      Value="Select Uninstall to remove the application and hardware service. Screen direction, rotation lock and tablet indicator settings will be restored. Windows may need to restart." />
+  <String Id="VerifyReadyDlgRemove" Overridable="yes" Value="&amp;Uninstall" />
+  <String Id="ProgressDlgTitleRemoving" Overridable="yes"
+      Value="{\WixUI_Font_Title}Uninstalling [ProductName]" />
+  <String Id="ProgressDlgTextRemoving"
+      Value="Stopping the hardware service and restoring display and tablet indicator settings. This may take a moment." />
+  <String Id="ExitDialogInstallTitle"
+      Value="{\WixUI_Font_Bigger}[ProductName] setup complete" />
+  <String Id="ExitDialogInstallDescription"
+      Value="The application and hardware service are ready to use." />
+  <String Id="ExitDialogRemoveTitle"
+      Value="{\WixUI_Font_Bigger}[ProductName] uninstalled" />
+  <String Id="ExitDialogRemoveDescription"
+      Value="The application and hardware service have been removed from this computer." />
   <String Id="ExitDialogOptionalText"
       Value="You may need to restart Windows after installation for the new settings to take effect." />
+  <String Id="ExitDialogRemoveOptionalText"
+      Value="Uninstallation is complete. Restart Windows if the hardware service or tablet indicator changes do not take effect." />
   <!-- Keep all banner copy in the 220-DLU content column to the right of
        the brand panel. Ready and progress titles reserve two lines for the
        English product name while remaining inside the 44-DLU banner. -->
@@ -64,6 +99,8 @@
   <UI Dialog="OutOfRbDiskDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
   <UI Dialog="OutOfDiskDlg" Control="Title" X="135" Width="220" RightAligned="yes" />
   <UI Dialog="OutOfDiskDlg" Control="Description" X="135" Width="220" RightAligned="yes" />
+  <UI Dialog="ExitDialog" Control="Title" Text="[POSTURE_EXIT_TITLE]" />
+  <UI Dialog="ExitDialog" Control="Description" Text="[POSTURE_EXIT_DESCRIPTION]" />
   <UI Dialog="VerifyReadyDlg" Control="InstallTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
   <UI Dialog="VerifyReadyDlg" Control="ChangeTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
   <UI Dialog="VerifyReadyDlg" Control="RepairTitle" X="135" Y="6" Width="220" Height="32" RightAligned="yes" />
