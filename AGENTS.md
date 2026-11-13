@@ -18,6 +18,7 @@
 - 两个平台的手动模式都只有自动、笔记本、帐篷、支架。平板是物理状态，不是手动模式。
 - Windows 保持内置键盘和触控板可用，不发布 shell 平板模式，不自动打开屏幕键盘，不加载自研输入过滤驱动。
 - Windows 正式用户界面只连接已安装的 LocalSystem 硬件服务。服务不可用时显示断线；不得回退到模拟状态、测试客户端或 CSM 推断。
+- Windows 正式构建、发布和兼容契约只覆盖每机器 MSI；便携 ZIP 不属于发布产物或支持边界。
 - 已删除的 `--native`、`--native-backend`、`--hardware-backend`、`--simulate-backend`、`--demo`、`--backend`、`--scenario` 和 `--settings` 入口不得恢复。
 
 ## 2. 工作流程
