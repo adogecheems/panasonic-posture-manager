@@ -7,6 +7,7 @@ from panasonic_posture.windows.display import (
     NativeDisplay, DevMode, PathInfo, ModeInfo,
 )
 from panasonic_posture.session.failures import DisplayError
+from panasonic_posture.session.ports import DisplayRefresh
 try:
     from tests.windows_fixture import MemoryJournal
 except ModuleNotFoundError:
@@ -335,7 +336,11 @@ class WindowsDisplayTests(unittest.TestCase):
                 hardware_status=HardwareStatus.OK,
             )
 
-        display = self.make(api, journal, SessionHardwareQuery(load_state))
+        display = self.make(
+            api,
+            journal,
+            SessionHardwareQuery(load_state, sleep=lambda _delay: None),
+        )
         display.apply(dict(mode='hardware', tablet=True, rotation=None,
                            disable_internal_input=False))
         api.writes.clear()
@@ -350,6 +355,57 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(api.writes, [2])
         self.assertEqual(api.lock_writes, [True])
+
+    def test_refresh_reclaims_auto_rotation_without_rewriting_the_direction(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
+        target = Target(mode='tent', tablet=True, rotation=180,
+                        disable_internal_input=False)
+        self.assertIsInstance(display, DisplayRefresh)
+        display.apply(target)
+        api.writes.clear()
+        api.lock_writes.clear()
+        api.events.clear()
+
+        # Exiting or notifying the Windows shell can re-enable automatic
+        # rotation after the direction transaction completed.
+        api.current = replace(api.current, auto_rotation=0)
+        state = SimpleNamespace(
+            hardware=False,
+            hardware_status=HardwareStatus.OK,
+            target=target,
+        )
+        self.assertTrue(display.needs_refresh(target))
+        display.refresh(state)
+
+        self.assertEqual(api.writes, [])
+        self.assertEqual(api.lock_writes, [True])
+        self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertEqual(api.current.transform, 2)
+
+    def test_refresh_restores_direction_after_a_late_platform_change(self):
+        api, journal = Api(), MemoryJournal()
+        api.current = panel(auto_rotation=0)
+        display = self.make(api, journal)
+        target = Target(mode='tent', tablet=True, rotation=180,
+                        disable_internal_input=False)
+        display.apply(target)
+        api.writes.clear()
+        api.lock_writes.clear()
+        api.events.clear()
+
+        api.current = replace(api.current, transform=0, auto_rotation=0)
+        display.refresh(SimpleNamespace(
+            hardware=False,
+            hardware_status=HardwareStatus.OK,
+            target=target,
+        ))
+
+        self.assertEqual(api.current.transform, 2)
+        self.assertEqual(api.writes, [2])
+        self.assertEqual(api.lock_writes, [True])
+        self.assertTrue(bool(api.current.auto_rotation & 1))
 
     def test_tent_transition_reclaims_a_lock_windows_restored_before_apply(self):
         api, journal = Api(), MemoryJournal()

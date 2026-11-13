@@ -1,6 +1,7 @@
 """Nonprivileged display qualification shared by both Windows compositions."""
 from collections.abc import Callable
 import logging
+import time
 from typing import Protocol, runtime_checkable
 
 from ..contracts import ErrorCode
@@ -10,6 +11,8 @@ from ..session.ports import DisplayBackend, DisplayRefresh
 
 
 log = logging.getLogger(__name__)
+HARDWARE_QUERY_RETRY_SECONDS = 0.1
+HARDWARE_QUERY_ATTEMPTS = 6
 
 
 class SessionContext(Protocol):
@@ -40,11 +43,17 @@ class SessionHardwareQuery:
     instead of falling back to the indicator this process may have written.
     """
 
-    def __init__(self, state_loader: Callable[[], StateSnapshot]) -> None:
+    def __init__(
+        self,
+        state_loader: Callable[[], StateSnapshot],
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self.state_loader = state_loader
+        self.sleep = sleep
 
     def __call__(self) -> tuple[bool | None, HardwareStatus]:
-        for attempt in range(2):
+        for attempt in range(HARDWARE_QUERY_ATTEMPTS):
             try:
                 state = self.state_loader()
                 hardware = state.hardware
@@ -54,13 +63,22 @@ class SessionHardwareQuery:
                 # The service returned an authoritative failure. Retrying a
                 # rejected session or failed operation cannot renew ownership.
                 return None, HardwareStatus.READ_ERROR
+            except TimeoutError:
+                # A full request timeout already consumed the display worker's
+                # useful handoff budget; more retries would only amplify it.
+                return None, HardwareStatus.READ_ERROR
             except (OSError, RuntimeError) as error:
-                if attempt:
+                if attempt + 1 >= HARDWARE_QUERY_ATTEMPTS:
                     return None, HardwareStatus.READ_ERROR
-                # The service closes idle pipe instances. The session client
-                # drops a broken channel, so one immediate retry reconnects
-                # instead of making display ownership look physically invalid.
-                log.debug('retrying transient hardware-state read: %s', error)
+                # The service resets disconnected pipe instances on its owner
+                # loop. Give that loop time to make the instance connectable
+                # again instead of treating a transport race as lost hardware.
+                log.debug(
+                    'retrying transient hardware-state read after %s: %s',
+                    HARDWARE_QUERY_RETRY_SECONDS,
+                    error,
+                )
+                self.sleep(HARDWARE_QUERY_RETRY_SECONDS)
             except (ValueError, TypeError):
                 return None, HardwareStatus.READ_ERROR
         if hardware is None:

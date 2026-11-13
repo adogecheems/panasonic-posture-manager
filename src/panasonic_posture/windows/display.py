@@ -13,7 +13,7 @@ import sys
 import time
 
 from ..contracts import ErrorCode
-from ..model import HardwareStatus, Target
+from ..model import HardwareStatus, StateSnapshot, Target
 from ..session.failures import DisplayError
 from ..session.transaction import DisplayState, SoftwareDisplay, desired_transform
 
@@ -290,7 +290,7 @@ class ExternalOnlyDisplay:
     def needs_refresh(target: Target) -> bool:
         return target.mode in {'laptop', 'tent', 'stand'}
 
-    def refresh(self, state) -> None:
+    def refresh(self, state: StateSnapshot) -> None:
         del state
         self._verify()
 
@@ -401,6 +401,55 @@ class WindowsDisplay(SoftwareDisplay):
             raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
         if current.transform != (2 if mode == 'tent' else 0):
             raise DisplayError(ErrorCode.DISPLAY_TRANSFORM, 'fixed-rotation-changed-before-receipt')
+
+    @staticmethod
+    def needs_refresh(target: Target) -> bool:
+        return target.mode in ('laptop', 'tent', 'stand')
+
+    def refresh(self, state) -> None:
+        """Reclaim a fixed target after a delayed Windows shell response.
+
+        The session runtime passes a current, generation-fenced snapshot and
+        checks it again after this operation. Windows can re-enable automatic
+        rotation several seconds after CSM notification without changing the
+        requested mode, so ongoing display work must verify the lock while the
+        service still reports a healthy non-tablet state.
+        """
+
+        target = state.target
+        mode = target.mode
+        if mode not in ('laptop', 'tent', 'stand'):
+            return
+        if state.hardware is not False or state.hardware_status != HardwareStatus.OK:
+            raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'physical-state-unavailable')
+        transform = desired_transform(mode)
+        state_now = self._read_transaction_state()
+        if not state_now.lock_supported:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'rotation-lock-port-unavailable')
+        self._adopt_native_handoff = False
+        self._held_orientation = None
+        try:
+            if not self.owned:
+                self.owned = self._journal_document(state_now)
+                self._persist()
+            self._write_owned_lock(state_now, True)
+            state_now = self._read_state()
+            if not self.owned or tuple(self.owned['spec']) != state_now.identity:
+                raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
+            self._write_owned_rotation(state_now, transform)
+            state_now = self._read_state()
+            if not self.owned or tuple(self.owned['spec']) != state_now.identity:
+                raise DisplayError(ErrorCode.DISPLAY_IDENTITY)
+            if not state_now.lock:
+                raise DisplayError(ErrorCode.DISPLAY_LOCK, 'rotation-lock-took-over')
+            if state_now.transform != transform:
+                raise DisplayError(
+                    ErrorCode.DISPLAY_TRANSFORM,
+                    'fixed-rotation-changed-during-refresh',
+                )
+        except (DisplayError, OSError, ValueError):
+            self._rollback()
+            raise
 
     def hold_orientation(self) -> None:
         """Observe, but do not interrupt, Windows' post-tablet direction handoff."""

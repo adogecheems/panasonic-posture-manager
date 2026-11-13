@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from panasonic_posture.model import HardwareStatus, Target
+from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
 from panasonic_posture.contracts import ErrorCode
 from panasonic_posture.session.failures import DisplayError, ServiceError
 from panasonic_posture.windows.convertible_slate import (
@@ -290,7 +290,6 @@ class SlateNotifierTests(unittest.TestCase):
             self.assertIsNone(journal.load())
 
     def test_session_query_accepts_only_a_known_healthy_boolean(self):
-        from panasonic_posture.model import StateSnapshot
         query = SessionHardwareQuery(lambda: StateSnapshot(hardware=True, hardware_status=HardwareStatus.OK))
         self.assertEqual(query(), (True, HardwareStatus.OK))
         for state in (StateSnapshot(hardware=None, hardware_status=HardwareStatus.ABSENT),
@@ -304,15 +303,35 @@ class SlateNotifierTests(unittest.TestCase):
         def broken():
             broken_calls.append(True)
             raise OSError('service unavailable')
-        self.assertEqual(SessionHardwareQuery(broken)(), (None, HardwareStatus.READ_ERROR))
-        self.assertEqual(len(broken_calls), 2)
+        sleeps = []
+        self.assertEqual(
+            SessionHardwareQuery(broken, sleep=sleeps.append)(),
+            (None, HardwareStatus.READ_ERROR),
+        )
+        self.assertEqual(len(broken_calls), 6)
+        self.assertEqual(sleeps, [0.1] * 5)
+
         def rejected():
             raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'session context unavailable')
         self.assertEqual(SessionHardwareQuery(rejected)(), (None, HardwareStatus.READ_ERROR))
 
+        timeout_calls = []
+        timeout_sleeps = []
+
+        def timed_out():
+            timeout_calls.append(True)
+            raise TimeoutError('hardware request timed out')
+
+        self.assertEqual(
+            SessionHardwareQuery(timed_out, sleep=timeout_sleeps.append)(),
+            (None, HardwareStatus.READ_ERROR),
+        )
+        self.assertEqual(len(timeout_calls), 1)
+        self.assertEqual(timeout_sleeps, [])
+
     def test_session_query_reconnects_after_a_transport_failure(self):
-        from panasonic_posture.model import StateSnapshot
         calls = []
+        sleeps = []
         released = StateSnapshot(hardware=False, hardware_status=HardwareStatus.OK)
 
         def load():
@@ -322,10 +341,11 @@ class SlateNotifierTests(unittest.TestCase):
             return released
 
         self.assertEqual(
-            SessionHardwareQuery(load)(),
+            SessionHardwareQuery(load, sleep=sleeps.append)(),
             (False, HardwareStatus.OK),
         )
         self.assertEqual(len(calls), 2)
+        self.assertEqual(sleeps, [0.1])
 
         rejected_calls = []
 
@@ -334,7 +354,7 @@ class SlateNotifierTests(unittest.TestCase):
             raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'session context unavailable')
 
         self.assertEqual(
-            SessionHardwareQuery(rejected)(),
+            SessionHardwareQuery(rejected, sleep=lambda _delay: None)(),
             (None, HardwareStatus.READ_ERROR),
         )
         self.assertEqual(len(rejected_calls), 1)
