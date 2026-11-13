@@ -287,25 +287,36 @@ class WindowsDisplayTests(unittest.TestCase):
         self.assertTrue(bool(api.current.auto_rotation & 1))
         self.assertEqual(api.writes, [])
 
-    def test_physical_release_preparation_locks_the_settled_tablet_direction(self):
+    def test_physical_release_preparation_rotates_to_the_pending_target(self):
         api, journal = Api(), MemoryJournal()
         api.current = panel(auto_rotation=0)
-        display = self.make(api, journal)
+        physical = [True]
+        display = self.make(
+            api,
+            journal,
+            lambda: (physical[0], HardwareStatus.OK),
+        )
         display.apply(dict(mode='hardware', tablet=True, rotation=None,
                            disable_internal_input=False))
-        api.current = replace(api.current, transform=2)
+        self.assertEqual(api.current.transform, 0)
 
-        display.prepare_hardware_release()
+        api.writes.clear()
+        display.prepare_hardware_release('tent')
         self.assertEqual(api.current.transform, 2)
         self.assertTrue(bool(api.current.auto_rotation & 1))
-        self.assertEqual(journal.document['original_transform'], 2)
-        self.assertIsNone(journal.document['written_transform'])
+        self.assertEqual(journal.document['original_transform'], 0)
+        self.assertEqual(journal.document['written_transform'], 2)
+        self.assertEqual(api.writes, [2])
 
-        # The physical switch can now release without Windows first rotating
-        # through desktop orientation.
+        # The release transaction now starts from the final direction, so the
+        # platform cannot produce a second visible orientation after CSM.
+        physical[0] = False
         display.hold_orientation()
+        display.apply(dict(mode='tent', tablet=True, rotation=180,
+                           disable_internal_input=False))
         self.assertEqual(api.current.transform, 2)
         self.assertTrue(bool(api.current.auto_rotation & 1))
+        self.assertEqual(api.writes, [2])
 
     def test_tent_transition_reclaims_a_lock_windows_restored_before_apply(self):
         api, journal = Api(), MemoryJournal()
@@ -346,9 +357,9 @@ class WindowsDisplayTests(unittest.TestCase):
 
         api, journal = ReadbackFailure(), MemoryJournal()
         api.current = panel(auto_rotation=0)
-        display = self.make(api, journal)
+        display = self.make(api, journal, lambda: (True, HardwareStatus.OK))
         with self.assertRaisesRegex(OSError, 'readback failed'):
-            display.prepare_hardware_release()
+            display.prepare_hardware_release('tent')
         self.assertFalse(bool(api.current.auto_rotation & 1))
         self.assertEqual(api.lock_writes, [True, False])
         self.assertIsNone(journal.document)

@@ -74,7 +74,8 @@ class ScreenSession:
             self.session = SessionRuntime(self.bridge, qualified, None,
                 screen_locked=lambda: not context.control_available(),
                 display_refresh=refresh, defer_hardware_handoff=True,
-                hardware_release_target=self.hardware_release.target_for)
+                hardware_release_target=self.hardware_release.target_for,
+                finalize_display_on_executor=True)
             self._stack.callback(self.session.close)
             self._stack.callback(self.bridge.close)
             self.engine.start()
@@ -98,7 +99,11 @@ class ScreenSession:
         self.session.tick(now)
 
     def _prepare_hardware_release(self) -> None:
-        self.hardware_release.prepare(self.engine.state, self.engine.hardware_release_pose)
+        self.session.call_display(
+            self.hardware_release.prepare,
+            self.engine.state,
+            self.engine.hardware_release_pose,
+        )
 
     def call(self, method: str, params: dict) -> None:
         dispatch_engine_operation(self.engine, method, params)

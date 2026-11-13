@@ -159,6 +159,20 @@ class SlateNotifierTests(unittest.TestCase):
                 self.assertFalse(device.state)
                 self.assertIsNone(journal.load())
 
+    def test_new_lease_is_retained_in_memory_for_the_next_same_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = SlateJournal(Path(directory) / 'slate.json')
+            device = FakeSlateDevice(False)
+            notifier = SlateNotifier(device, journal, hardware_query=healthy(True))
+            self.assertTrue(notifier.sync_mode('tent'))
+            self.assertIsNotNone(notifier.pending)
+            self.assertFalse(notifier.sync_mode('hardware'))
+            self.assertEqual(device.sets, [True, True])
+            self.assertIsNotNone(journal.load())
+            notifier.close()
+            self.assertFalse(device.state)
+            self.assertIsNone(journal.load())
+
     def test_physical_tablet_ignores_a_stale_laptop_notification(self):
         with tempfile.TemporaryDirectory() as directory:
             journal = SlateJournal(Path(directory) / 'slate.json')
@@ -241,6 +255,23 @@ class SlateNotifierTests(unittest.TestCase):
         self.assertFalse(device.closed)
         notifier.close()
         self.assertTrue(device.closed)
+
+    def test_repeated_release_is_idempotent_without_another_hardware_query(self):
+        queries = []
+
+        def hardware():
+            queries.append(True)
+            return True, HardwareStatus.OK
+
+        device = FakeSlateDevice(False)
+        notifier = SlateNotifier(device, hardware_query=hardware)
+        notifier.sync_mode('tent')
+        notifier.release()
+        notifier.release()
+        self.assertEqual(device.sets, [True, False])
+        self.assertEqual(len(queries), 2)
+        notifier.close()
+        self.assertEqual(len(queries), 2)
 
     def test_failed_release_keeps_the_journal_for_the_next_startup(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -394,7 +425,7 @@ class QualifiedDisplayTests(unittest.TestCase):
         self.assertEqual(display.mode, 'tent')
         self.assertTrue(display.locked)
 
-    def test_failed_post_slate_reassertion_restores_without_a_ready_receipt(self):
+    def test_failed_post_slate_reassertion_keeps_the_csm_lease(self):
         display = StatefulDisplay()
         display.sticky_corruption = True
         slate = mock.Mock()
@@ -407,7 +438,7 @@ class QualifiedDisplayTests(unittest.TestCase):
             ('apply', 'tent'),
             ('restore', False),
         ])
-        slate.release.assert_called_once_with()
+        slate.release.assert_not_called()
 
     def test_hardware_handoff_keeps_slate_notification_first(self):
         events = []
@@ -479,7 +510,7 @@ class QualifiedDisplayTests(unittest.TestCase):
         )
         slate.release.assert_called_once_with()
 
-    def test_display_failure_releases_slate_without_faking_a_receipt(self):
+    def test_display_failure_keeps_the_existing_slate_lease(self):
         slate = mock.Mock()
         display, context = FakeDisplay(), FakeContext()
         display.fail = True
@@ -488,6 +519,20 @@ class QualifiedDisplayTests(unittest.TestCase):
             proxy.apply(Target(mode='tent'))
         self.assertEqual(display.calls, [('apply', 'tent'), ('restore', False)])
         slate.sync_mode.assert_not_called()
+        slate.release.assert_not_called()
+
+    def test_context_loss_still_releases_the_slate_lease(self):
+        slate = mock.Mock()
+        display, context = FakeDisplay(), FakeContext()
+        original_apply = display.apply
+
+        def apply(target):
+            original_apply(target)
+            context.available = False
+
+        display.apply = apply
+        with self.assertRaises(DisplayError):
+            QualifiedDisplay(display, context, slate).apply(Target(mode='tent'))
         slate.release.assert_called_once_with()
 
     def test_restore_releases_slate_even_if_display_restore_fails(self):

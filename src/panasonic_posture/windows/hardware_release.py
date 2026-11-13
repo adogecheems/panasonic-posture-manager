@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 
 
 class ReleaseDisplay(Protocol):
-    def prepare_hardware_release(self) -> None: ...
+    def prepare_hardware_release(self, mode: str) -> None: ...
 
 
 class HardwareReleaseCoordinator:
@@ -32,7 +32,7 @@ class HardwareReleaseCoordinator:
         if state.hardware is True and pose in ('tent', 'stand'):
             key = (state.instance, state.generation, pose)
             try:
-                self.display.prepare_hardware_release()
+                self.display.prepare_hardware_release(pose)
             except (DisplayError, OSError, ValueError) as error:
                 self._key = None
                 self._prepared = None

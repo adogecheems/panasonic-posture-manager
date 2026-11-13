@@ -78,6 +78,7 @@ class SessionRuntime:
         display_refresh: DisplayRefresh | None = None,
         defer_hardware_handoff: bool = False,
         hardware_release_target: Callable[[str], str | None] | None = None,
+        finalize_display_on_executor: bool = False,
     ) -> None:
         self.client = client
         self.display = display
@@ -85,6 +86,7 @@ class SessionRuntime:
         self._display_refresh = display_refresh
         self._defer_hardware_handoff = defer_hardware_handoff
         self._hardware_release_target = hardware_release_target
+        self._finalize_display_on_executor = finalize_display_on_executor
         self._refresh_at = float('-inf')
         self._screen_locked = screen_locked
         self._adapter_errors = (OSError, ValueError, *adapter_errors)
@@ -194,14 +196,31 @@ class SessionRuntime:
                 task.future.result()
             except Exception:  # noqa: BLE001 - close must always finish
                 log.debug("background task failed during shutdown", exc_info=True)
+        if self._finalize_display_on_executor:
+            # Windows display RPC and hardware qualification are thread-local.
+            # Keep final restore on that worker instead of opening another
+            # bounded transport channel from the session main thread.
+            self._close_notifier()
+            try:
+                restore = self._executor.submit(self._restore_display)
+            except Exception as error:  # noqa: BLE001 - shutdown must always finish
+                log.debug("cannot schedule final display restore: %s", error)
+                self._restore_display()
+            else:
+                try:
+                    restore.result()
+                except Exception as error:  # noqa: BLE001 - finalizer boundary
+                    log.debug("final display restore worker failed: %s", error)
+                    self._restore_display()
         if self._owns_executor:
             self._executor.shutdown(wait=True, cancel_futures=True)
         if self._owns_lease_executor:
             self._lease_executor.shutdown(wait=True, cancel_futures=True)
         if self._owns_wake_executor:
             self._wake_executor.shutdown(wait=True, cancel_futures=True)
-        self._close_notifier()
-        self._restore_display()
+        if not self._finalize_display_on_executor:
+            self._close_notifier()
+            self._restore_display()
 
     # -- background task plumbing ----------------------------------------
 
@@ -248,6 +267,13 @@ class SessionRuntime:
                 self._task_failed(task, now, error)
             else:
                 self._task_finished(task, now, result)
+
+    def call_display(self, function: Callable[..., Any], /, *args: Any) -> Any:
+        """Run a bounded synchronous display operation on the serialized lane."""
+
+        if self._closing:
+            raise RuntimeError("session runtime is closing")
+        return self._executor.submit(function, *args).result()
 
     def _task_finished(self, task: _Task, now: float, result: Any) -> None:
         if task.kind == "state":

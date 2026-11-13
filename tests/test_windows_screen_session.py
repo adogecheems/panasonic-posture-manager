@@ -171,7 +171,7 @@ class HardwareReleasePreparationTests(unittest.TestCase):
             def __init__(self):
                 self.restore_calls = 0
 
-            def prepare_hardware_release(self):
+            def prepare_hardware_release(self, mode):
                 raise OSError('readback failed')
 
             def restore(self):
@@ -185,19 +185,23 @@ class HardwareReleasePreparationTests(unittest.TestCase):
             SimpleNamespace(release=lambda: releases.append(True)),
         )
         with self.assertRaisesRegex(OSError, 'readback failed'):
-            qualified.prepare_hardware_release()
+            qualified.prepare_hardware_release('tent')
         self.assertEqual(display.restore_calls, 1)
         self.assertEqual(releases, [])
 
     def test_tent_pose_while_still_physically_folded_prepares_once(self):
         class Prepared:
             calls = 0
-            def prepare_hardware_release(self):
+            def prepare_hardware_release(self, mode):
                 self.calls += 1
+                self.last_mode = mode
 
         session = object.__new__(ScreenSession)
         session.qualified = Prepared()
         session.hardware_release = HardwareReleaseCoordinator(session.qualified)
+        session.session = SimpleNamespace(
+            call_display=lambda function, *args: function(*args)
+        )
         session.engine = SimpleNamespace(state=StateSnapshot(
             instance='one', generation=3, hardware=True, pose='tablet',
             target=Target(mode='hardware'),
@@ -205,6 +209,7 @@ class HardwareReleasePreparationTests(unittest.TestCase):
         session._prepare_hardware_release()
         session._prepare_hardware_release()
         self.assertEqual(session.qualified.calls, 2)
+        self.assertEqual(session.qualified.last_mode, 'tent')
 
         session.engine.state.hardware = False
         session.engine.hardware_release_pose = None
@@ -217,7 +222,8 @@ class HardwareReleasePreparationTests(unittest.TestCase):
     def test_release_target_requires_success_and_is_scoped_to_the_instance(self):
         class Prepared:
             fail = False
-            def prepare_hardware_release(self):
+            def prepare_hardware_release(self, mode):
+                self.last_mode = mode
                 if self.fail:
                     raise OSError('preparation failed')
 

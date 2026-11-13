@@ -425,9 +425,11 @@ class SlateNotifier:
         temporary = desired != self.original
         if temporary and self.journal is not None:
             self.journal.save(self.original, desired)
+            self.pending = SlateLease(self.original, desired)
         changed = bool(self.device.set(desired))
         if not temporary and self.journal is not None:
             self.journal.clear()
+            self.pending = None
         self.last = desired
         return changed
 
@@ -437,6 +439,10 @@ class SlateNotifier:
         if self.closed:
             return
         if self.original is None and self.pending is None:
+            return
+        if (self.pending is None and self.original is not None
+                and self.last == self.original
+                and (self.journal is None or self.journal.load() is None)):
             return
         self._require_hardware()
         if self.pending is not None:

@@ -1,10 +1,11 @@
 """Native session assembly must prove receipt authority before desktop work."""
 from dataclasses import replace
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 import ctypes as C
 from types import SimpleNamespace
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -60,6 +61,7 @@ class Display:
     def __init__(self):
         self.current = 0
         self.writes = []
+        self.prepare_threads = []
         self.during_apply = lambda: None
     def apply(self, target):
         self.current = 2
@@ -70,8 +72,9 @@ class Display:
         self.writes.append(0)
     def hold_orientation(self):
         self.writes.append('hold')
-    def prepare_hardware_release(self):
-        self.writes.append('prepare')
+    def prepare_hardware_release(self, mode):
+        self.prepare_threads.append(threading.get_ident())
+        self.writes.append(('prepare', mode))
 
 
 class SessionAgentTests(unittest.TestCase):
@@ -125,6 +128,64 @@ class SessionAgentTests(unittest.TestCase):
         self.assertFalse(available())
         self.assertTrue(unattended())
 
+    def test_receipt_proof_and_display_recovery_share_the_display_worker(self):
+        workers = []
+
+        class RecordingClient(Client):
+            def get_state(self):
+                workers.append(threading.get_ident())
+                return super().get_state()
+
+        self.client = RecordingClient()
+        main_thread = threading.get_ident()
+        restore_workers = []
+        slate_workers = []
+        restore = self.display.restore
+
+        class Slate:
+            def sync_mode(self, mode):
+                return True
+
+            def release(self):
+                slate_workers.append(threading.get_ident())
+
+            def close(self):
+                slate_workers.append(threading.get_ident())
+
+        def recording_restore(normal=False):
+            restore_workers.append(threading.get_ident())
+            restore(normal)
+
+        self.display.restore = recording_restore
+
+        def display(client):
+            workers.append(threading.get_ident())
+            client.get_state()  # Display recovery performs the first RPC.
+            return self.display
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        self.addCleanup(executor.shutdown, wait=True, cancel_futures=True)
+        agent = WindowsSessionAgent(
+            context_factory=lambda: self.context,
+            client_factory=lambda available, unattended: self.client,
+            display_factory=display,
+            slate_factory=lambda client: Slate(),
+            executor=executor,
+            lease_executor=InlineExecutor(),
+        )
+        self.addCleanup(agent.close)
+        agent.start()
+        self.client.state = replace(self.client.state, hardware=True)
+        self.client.release_pose = 'tent'
+        agent.tick(10.)
+        agent.close()
+
+        self.assertNotIn(main_thread, workers)
+        self.assertEqual(len(set(workers)), 1)
+        self.assertEqual(set(restore_workers), set(workers))
+        self.assertEqual(set(slate_workers), set(workers))
+        self.assertEqual(set(self.display.prepare_threads), set(workers))
+
     def test_unavailable_target_renews_the_lease_without_reporting_ready(self):
         self.client.state = replace(
             self.client.state,
@@ -145,7 +206,7 @@ class SessionAgentTests(unittest.TestCase):
         self.client.state = replace(self.client.state, hardware=True)
         self.client.release_pose = 'tent'
         self.agent.tick(10.)
-        self.assertEqual(self.display.writes[0], 'prepare')
+        self.assertEqual(self.display.writes[0], ('prepare', 'tent'))
 
     def test_screen_off_is_context_and_does_not_reject_valid_display_control(self):
         self.context.screen_off = True

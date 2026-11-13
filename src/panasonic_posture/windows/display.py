@@ -15,7 +15,7 @@ import time
 from ..contracts import ErrorCode
 from ..model import HardwareStatus, Target
 from ..session.failures import DisplayError
-from ..session.transaction import DisplayState, SoftwareDisplay
+from ..session.transaction import DisplayState, SoftwareDisplay, desired_transform
 
 U16, U32, I32 = C.c_uint16, C.c_uint32, C.c_int32
 INTERNAL_TECHNOLOGIES = frozenset((6, 11, 13, 0x80000000))
@@ -422,9 +422,13 @@ class WindowsDisplay(SoftwareDisplay):
             self.owned['original_transform'] = state.transform
             self._persist()
 
-    def prepare_hardware_release(self) -> None:
-        """Lock the settled tablet direction before the physical switch opens."""
+    def prepare_hardware_release(self, mode: str) -> None:
+        """Pre-lock the pending software direction before the switch opens."""
 
+        if mode not in ('tent', 'stand'):
+            raise ValueError('physical release mode must be tent or stand')
+        if self._hardware() is not True:
+            raise DisplayError(ErrorCode.DISPLAY_LOCK, 'physical-tablet-release-changed')
         state = self._read_state()
         if not self.owned:
             self.owned = self._journal_document(state)
@@ -437,10 +441,31 @@ class WindowsDisplay(SoftwareDisplay):
                     ErrorCode.DISPLAY_IDENTITY,
                     'display-changed-while-preparing-hardware-release',
                 )
-            self._held_orientation = current
             if self.owned.get('written_transform') is None:
                 self.owned['original_transform'] = current.transform
                 self._persist()
+            target = desired_transform(mode)
+            if current.transform != target:
+                if self._hardware() is not True:
+                    raise DisplayError(
+                        ErrorCode.DISPLAY_LOCK,
+                        'physical-tablet-took-over',
+                    )
+                self.owned['pending_transform'] = target
+                self._persist()
+                self.api.rotate(current.identity[0], current.transform, target)
+                self.owned.pop('pending_transform', None)
+                current = self._read_state()
+                if (current.identity != state.identity
+                        or current.transform != target):
+                    raise DisplayError(
+                        ErrorCode.DISPLAY_TRANSFORM,
+                        'physical-release-target-not-applied',
+                    )
+            if self.owned.get('written_transform') != target:
+                self.owned['written_transform'] = target
+                self._persist()
+            self._held_orientation = current
         except (DisplayError, OSError, ValueError):
             self._rollback()
             raise

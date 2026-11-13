@@ -29,7 +29,7 @@ class SlatePosture(Protocol):
 
 @runtime_checkable
 class HardwareReleasableDisplay(Protocol):
-    def prepare_hardware_release(self) -> None: ...
+    def prepare_hardware_release(self, mode: str) -> None: ...
 
 
 class SessionHardwareQuery:
@@ -101,6 +101,19 @@ class QualifiedDisplay:
 
     def _sync_slate(self, target: Target) -> None:
         self._sync_slate_mode(target.mode)
+
+    def _release_slate_after_failure(self, error: BaseException) -> None:
+        if not self.context.control_available():
+            # Losing session qualification ends software ownership even when
+            # the display rollback itself cannot finish.
+            self._release_slate()
+            return
+        if (isinstance(error, DisplayError)
+                and error.detail == 'convertible-slate-notification-failed'):
+            # A partially attempted CSM write still needs the journaled
+            # startup value restored. A display failure after a successful
+            # notification keeps the current lease for the bounded retry.
+            self._release_slate()
 
     def _native_handoff_active(self) -> bool:
         active = getattr(self.display, 'native_handoff_active', False)
@@ -181,9 +194,9 @@ class QualifiedDisplay:
                     ErrorCode.DISPLAY_UNAVAILABLE,
                     'session changed during display apply',
                 )
-        except BaseException:
+        except BaseException as error:
             self._restore_after_failed_transaction()
-            self._release_slate()
+            self._release_slate_after_failure(error)
             raise
 
     def hold_orientation(self) -> None:
@@ -195,17 +208,17 @@ class QualifiedDisplay:
                     ErrorCode.DISPLAY_UNAVAILABLE,
                     'session changed during display hold',
                 )
-        except BaseException:
+        except BaseException as error:
             self._restore_after_failed_transaction()
-            self._release_slate()
+            self._release_slate_after_failure(error)
             raise
 
-    def prepare_hardware_release(self) -> None:
+    def prepare_hardware_release(self, mode: str) -> None:
         if self.prepare_release is None:
             return
         self._require_available()
         try:
-            self.prepare_release()
+            self.prepare_release(mode)
         except BaseException:
             self._restore_after_failed_transaction()
             raise

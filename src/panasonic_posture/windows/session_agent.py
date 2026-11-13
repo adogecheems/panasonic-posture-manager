@@ -101,6 +101,14 @@ class WindowsSessionAgent:
                 not current.session_connected):
             raise ServiceError(ErrorCode.INTERNAL, 'session authority changed during startup', kind=FailureKind.REJECTED)
 
+    def _start_runtime(self) -> None:
+        # Display recovery queries the same physical gate as normal apply.
+        # Run it on the receipt worker so startup occupies the same RPC
+        # channel instead of creating a third channel that the lease worker
+        # cannot use later.
+        self._prove_receipt_authority()
+        self._create_runtime()
+
     def start(self) -> None:
         if self._started or self._closed:
             raise RuntimeError('session agent already started or closed')
@@ -110,8 +118,7 @@ class WindowsSessionAgent:
             # Prove authority on the exact display worker that will later send
             # receipts, rather than consuming an extra RPC channel on the main
             # thread.
-            self.executor.submit(self._prove_receipt_authority).result(timeout=20)
-            self._create_runtime()
+            self.executor.submit(self._start_runtime).result(timeout=20)
         except BaseException:
             self.close()
             raise
@@ -141,15 +148,27 @@ class WindowsSessionAgent:
             display.restore()
             raise
         if slate is not None:
-            self._stack.callback(slate.close)
+            def close_slate() -> None:
+                try:
+                    closing = self.executor.submit(slate.close)
+                except Exception:
+                    slate.close()
+                else:
+                    closing.result()
+
+            self._stack.callback(close_slate)
         qualified = _QualifiedDisplay(display, self.context, slate)
-        self._stack.callback(qualified.restore)
-        # Register the runtime cleanup after the display fence, so LIFO close
-        # first drains runtime workers and then performs final restore/slate
-        # release. A failed runtime construction still restores the display.
-        self._stack.callback(
-            lambda: self.runtime.close() if self.runtime is not None else display.restore()
-        )
+
+        def close_runtime() -> None:
+            if self.runtime is not None:
+                self.runtime.close()
+            else:
+                qualified.restore()
+
+        # LIFO close first drains runtime workers, which performs the final
+        # display restore and CSM release on the display worker. A failed
+        # runtime construction still restores through the qualified display.
+        self._stack.callback(close_runtime)
         self.hardware_release = HardwareReleaseCoordinator(qualified)
         self.runtime = SessionRuntime(
             qualified_client,
@@ -160,11 +179,15 @@ class WindowsSessionAgent:
             lease_executor=self.lease_executor,
             defer_hardware_handoff=True,
             hardware_release_target=self.hardware_release.target_for,
+            finalize_display_on_executor=True,
         )
 
     def _qualification_heartbeat(self) -> None:
         state = self.client.get_state()
         self.client.session_update(state.generation, False, ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-unavailable')
+
+    def _prepare_hardware_release(self) -> None:
+        self.hardware_release.prepare(*self.client.hardware_release())
 
     def tick(self, now: float) -> None:
         if not self._started or self._closed:
@@ -186,7 +209,7 @@ class WindowsSessionAgent:
             self._heartbeat_at = now + AGENT_HEARTBEAT_SECONDS
             self._qualification_task = self.lease_executor.submit(self._qualification_heartbeat)
         if self.hardware_release is not None:
-            self.hardware_release.prepare(*self.client.hardware_release())
+            self.runtime.call_display(self._prepare_hardware_release)
         self.runtime.tick(now)
 
     def close(self) -> None:
