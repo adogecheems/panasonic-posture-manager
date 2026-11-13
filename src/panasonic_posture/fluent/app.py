@@ -1,16 +1,13 @@
 """Assemble the Windows Fluent UI around the authenticated hardware client."""
-import os
 import sys
-from pathlib import Path
 
-from PyQt6 import sip
-from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtSignal, QCoreApplication, QEvent
+from PyQt6.QtCore import Qt, QTimer, QEasingCurve, QPropertyAnimation, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QFont
 from PyQt6.QtWidgets import QApplication, QVBoxLayout, QHBoxLayout, QStackedWidget, QGraphicsOpacityEffect, QMessageBox
 from qfluentwidgets import (
     FluentWidget, FluentIcon as Icon, TitleLabel, BodyLabel, CaptionLabel,
-    PrimaryPushButton, ComboBox, InfoBar, InfoBarPosition, Theme, setTheme,
-    setThemeColor, isDarkTheme, qconfig, setCustomStyleSheet, setFont,
+    PrimaryPushButton, ComboBox, InfoBar, InfoBarPosition, isDarkTheme, qconfig,
+    setCustomStyleSheet, setFont,
     setFontFamilies,
 )
 
@@ -67,7 +64,9 @@ class Window(FluentWidget):
     connection_lost = pyqtSignal()
 
     def __init__(self, *, language=None, client: UIClient | None = None,
-                 startup=None, update_checker=None):
+                 startup=None, update_checker=None, start_client: bool = True):
+        if type(start_client) is not bool:
+            raise ValueError('client startup ownership must be explicit')
         configure_application_font()
         super().__init__()
         _ = translator(language)
@@ -149,7 +148,8 @@ class Window(FluentWidget):
                                    style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
         setFont(self.titleBar.titleLabel, BODY_SIZE)
         self._last_state = None
-        self.client.start(self.update_state, self.unavailable)
+        if start_client:
+            self.client.start(self.update_state, self.unavailable)
         self._backend_poll_count = 0
         self.backend_timer = QTimer(self)
         if isinstance(self.client, HardwareUIClient):
@@ -248,75 +248,9 @@ class Window(FluentWidget):
         super().closeEvent(event)
 
 
-def local_state_directory() -> Path:
-    """Return the per-user application state directory without side effects."""
-    root = os.environ.get('LOCALAPPDATA')
-    if not root or not Path(root).is_absolute():
-        raise OSError('LOCALAPPDATA is not an absolute directory')
-    return Path(root) / 'PanasonicPostureManager'
-
-
 def run(*, language=None, background=False) -> int:
-    activation = None
-    startup = None
-    hardware_ui = sys.platform == 'win32'
-    if sys.platform == 'win32':
-        from ..windows.app_identity import configure_process_identity
-        configure_process_identity()
-    if hardware_ui:
-        from ..windows.native_preflight import require_native_user
-        try:
-            require_native_user()  # UI activation/startup never runs with an elevated token.
-        except (PermissionError, OSError):
-            return hardware_start_failure(language, 'session')
-        from ..windows.activation import WindowActivation
-        from ..windows.startup import (
-            initialize_default_startup, LoginStartup, startup_command, UnavailableStartup,
-        )
-        try:
-            activation = WindowActivation(local_state_directory())
-        except OSError:
-            return hardware_start_failure(language, 'session')
-        if not activation.acquire(background=background):
-            activation.close()
-            activation = None
-            return 0
-        try:
-            startup = LoginStartup(startup_command())
-        except (OSError, ValueError):
-            startup = UnavailableStartup()
-        else:
-            initialize_default_startup(startup)
-    try:
-        app = QApplication([sys.argv[0]])
-        app.setStyle('Fusion')
-        configure_application(language)
-        app.setWindowIcon(QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png')))
-        if sys.platform == 'win32':
-            from ..windows.app_identity import APP_USER_MODEL_ID
-            app.setDesktopFileName(APP_USER_MODEL_ID)
-        setTheme(Theme.AUTO)
-        setThemeColor('#0051f2')
-        window = Window(language=language, startup=startup)
-        resident = None
-        try:
-            if hardware_ui:
-                from .resident import ResidentTray
-                resident = ResidentTray(window, activation=activation)
-            if not background or resident is None or not resident.enabled:
-                window.show()
-            return app.exec()
-        finally:
-            if resident is not None:
-                resident.shutdown()
-            else:
-                window.shutdown()
-            if not sip.isdeleted(window):
-                window.close()
-            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    finally:
-        if activation is not None:
-            activation.close()
+    from .launcher import run as run_application
+    return run_application(language=language, background=background)
 
 
 def hardware_start_failure(language, reason: str) -> int:

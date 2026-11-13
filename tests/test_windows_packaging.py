@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -121,7 +122,22 @@ class WindowsPackagingTests(unittest.TestCase):
                 self.assertLess(max(map(len, names)), 240)
                 native = bundle.read(prefix + 'Hardware.cmd').decode('utf-8')
                 self.assertIn('runtime\\pythonw.exe', native)
+                self.assertIn('-B -I', native)
                 self.assertNotIn('--hardware-backend', native)
+                project_bytecode = (
+                    'app/panasonic_posture/fluent/__pycache__/'
+                    f'launcher.{sys.implementation.cache_tag}.pyc'
+                )
+                ui_bytecode = (
+                    'runtime/Lib/site-packages/qfluentwidgets/'
+                    f'__pycache__/__init__.{sys.implementation.cache_tag}.pyc'
+                )
+                self.assertIn(prefix + project_bytecode, names)
+                self.assertIn(prefix + ui_bytecode, names)
+                self.assertEqual(
+                    int.from_bytes(bundle.read(prefix + project_bytecode)[4:8], 'little'),
+                    1,  # Unchecked hash flag: never consult source mtime at runtime.
+                )
                 launcher = bundle.read(prefix + 'launch.py').decode('utf-8')
                 self.assertIn(
                     'Path(__file__).resolve().parent / "app"',

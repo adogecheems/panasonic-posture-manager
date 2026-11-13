@@ -24,24 +24,11 @@ from .widgets import (
     apply_app_font, BODY_SIZE, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT,
 )
 from .update_check import UpdateChecker
+from .labels import mode_label
 
 
 GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
 APP_VERSION = display_version()
-
-
-def mode_label(mode, _):
-    if mode == 'auto':
-        return _('Automatic')
-    if mode == 'laptop':
-        return _('Laptop')
-    if mode == 'tent':
-        return _('Tent')
-    if mode == 'stand':
-        return _('Stand')
-    if mode == 'tablet':
-        return _('Tablet')
-    return _('Waiting for the desktop to get ready…')
 
 
 def mode_labels(_):

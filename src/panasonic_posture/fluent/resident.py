@@ -1,15 +1,20 @@
-"""Native screen UI lifetime, tray entry and guarded posture notices."""
+"""Native tray lifetime and guarded posture notices.
+
+The tray must not import the Fluent Widgets page tree.  At login it starts with
+only PyQt and the hardware client, then constructs the full window on first use.
+"""
+from collections.abc import Callable
 import logging
 import time
 
-from PyQt6.QtCore import QObject, QEvent, QTimer, Qt
+from PyQt6.QtCore import QObject, QEvent, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
-from qfluentwidgets import CaptionLabel
+from PyQt6.QtWidgets import QApplication, QLabel, QMenu, QMessageBox, QSystemTrayIcon
 
+from ..contracts import TICK_SECONDS
 from ..frontend.state import notice_confirmable, notice_token
-from .pages import mode_label
-from .resources import data_root
+from .labels import mode_label
+from .resources import application_name, data_root, translator
 
 log = logging.getLogger(__name__)
 
@@ -22,15 +27,28 @@ def resident_icon():
 
 
 class ResidentTray(QObject):
-    def __init__(self, window, *, activation=None, tray_factory=QSystemTrayIcon):
+    confirmation_failed = pyqtSignal()
+
+    def __init__(self, window=None, *,
+                 window_factory: Callable[[], object] | None = None,
+                 client=None, activation=None, tray_factory=QSystemTrayIcon,
+                 language=None):
         super().__init__(window)
-        self.window, self.activation = window, activation
-        self.client = window.client
+        if window is None and (window_factory is None or client is None):
+            raise ValueError('a lazy resident needs a window factory and client')
+        self.window = window
+        self.window_factory = window_factory
+        self.activation = activation
+        self.client = window.client if window is not None else client
+        self._lazy = window is None
+        self._latest_state = None
+        self._loading_window = False
         self.app = QApplication.instance()
         self.enabled = tray_factory.isSystemTrayAvailable()
         self.quitting = False
         self.sent = set()
         self.notice = None
+        self._pending_notice = None
         self._notice_click_until = 0.0
         self.instance = None
         self._tooltip = None
@@ -39,7 +57,9 @@ class ResidentTray(QObject):
         self._tray_activation = QTimer(self)
         self._tray_activation.setSingleShot(True)
         self._tray_activation.timeout.connect(self._finish_tray_activation)
-        self._ = window._
+        self._ = window._ if window is not None else translator(language)
+        self._title = (window.windowTitle() if window is not None
+                       else application_name(language))
         _ = self._
         self.menu = QMenu(window)
         self.open_action = self.menu.addAction(_('Open app'))
@@ -48,25 +68,82 @@ class ResidentTray(QObject):
         self.quit_action.triggered.connect(self.quit)
         self.tray = tray_factory(self.icon, self)
         self.tray.setContextMenu(self.menu)
-        self.tray.setToolTip(window.windowTitle())
+        self.tray.setToolTip(self._title)
         self.tray.activated.connect(self.activated)
         self.tray.messageClicked.connect(self.open_notice)
-        window.state_changed.connect(self.update_state)
-        window.connection_lost.connect(self.unavailable)
+        if window is not None:
+            window.state_changed.connect(self.update_state)
+            window.connection_lost.connect(self.unavailable)
+            window.destroyed.connect(self.window_destroyed)
+        else:
+            self.confirmation_failed.connect(self._show_confirmation_failure)
+            self.timer.timeout.connect(self._poll_client)
+            self.client.start(self.update_state, self.unavailable)
         self.app.aboutToQuit.connect(self.shutdown)
-        window.destroyed.connect(self.window_destroyed)
         if self.enabled:
-            window.installEventFilter(self)
+            if window is not None:
+                window.installEventFilter(self)
             self.app.setQuitOnLastWindowClosed(False)
             self.tray.show()
-        else:
-            note = CaptionLabel(_('The system tray is unavailable. Closing this window will stop the app.'), window)
-            note.setWordWrap(True)
-            note.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            window.layout().addWidget(note)
+        elif window is not None:
+            self._add_fallback_note(window)
         if activation is not None:
             self.timer.timeout.connect(self.check_activation)
             self.timer.start(250)
+        elif self._lazy:
+            self.timer.start(max(1, round(TICK_SECONDS * 1000)))
+
+    def _add_fallback_note(self, window):
+        note = QLabel(
+            self._('The system tray is unavailable. Closing this window will stop the app.'),
+            window,
+        )
+        note.setWordWrap(True)
+        note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        window.layout().addWidget(note)
+
+    def _poll_client(self):
+        if self.quitting or self.window is not None:
+            return
+        try:
+            self.client.poll()
+        except (OSError, ValueError, RuntimeError):
+            log.exception('cannot poll the hardware client from the startup tray')
+            self.timer.stop()
+            self.unavailable()
+
+    def _ensure_window(self):
+        if self.window is not None:
+            return True
+        if self._loading_window or self.window_factory is None:
+            return False
+        self._loading_window = True
+        self.timer.stop()
+        try:
+            window = self.window_factory()
+        except Exception:
+            log.exception('cannot construct the native window')
+            if not self.quitting:
+                self.timer.start(max(1, round(TICK_SECONDS * 1000)))
+                title = self._('Unable to complete the operation')
+                detail = self._('Something went wrong. Please try again.')
+                if self.enabled:
+                    self.tray.showMessage(title, detail, self.icon, 5000)
+                else:
+                    QMessageBox.critical(None, title, detail)
+            return False
+        finally:
+            self._loading_window = False
+        self.window = window
+        window.installEventFilter(self)
+        window.destroyed.connect(self.window_destroyed)
+        if not self.enabled:
+            self._add_fallback_note(window)
+        if self._latest_state is not None:
+            window.update_state(self._latest_state)
+        else:
+            window.unavailable()
+        return True
 
     def eventFilter(self, watched, event):
         if watched is self.window and event.type() == QEvent.Type.Close and self.enabled and not self.quitting:
@@ -91,7 +168,7 @@ class ResidentTray(QObject):
             self.show_window()
 
     def show_window(self):
-        if self.quitting:
+        if self.quitting or not self._ensure_window():
             return
         self._tray_activation.stop()
         self.window.showNormal()
@@ -108,12 +185,40 @@ class ResidentTray(QObject):
         if self.quitting or not self._notice_confirmable():
             self.show_window()
             return
+        notice = self.notice
         self.notice = None
+        if self._lazy and self.window is None:
+            self._pending_notice = notice
+            future = self.client.confirm_prompt(notice[2], notice[1])
+            future.add_done_callback(self._notice_finished)
+            return
         # The page owns busy/error handling and rechecks the same snapshot before
         # sending the epoch-bound confirmation.
         self.window.home.confirm()
 
+    def _notice_finished(self, future):
+        try:
+            future.result()
+        except BaseException:
+            notice = getattr(self, '_pending_notice', None)
+            if notice_confirmable(self._latest_state, notice):
+                self.notice = notice
+            self.confirmation_failed.emit()
+        finally:
+            self._pending_notice = None
+
+    def _show_confirmation_failure(self):
+        if not self.quitting:
+            self.tray.showMessage(
+                self._('Unable to complete the operation'),
+                self._('Something went wrong. Please try again.'),
+                self.icon,
+                5000,
+            )
+
     def _notice_confirmable(self) -> bool:
+        if self._lazy and self.window is None:
+            return notice_confirmable(self._latest_state, self.notice)
         # A local action already in flight cannot submit another confirmation.
         # Treat that like any other temporarily unconfirmable notice so the
         # click opens the window and leaves the prompt available for retry.
@@ -134,9 +239,10 @@ class ResidentTray(QObject):
 
     def update_state(self, state):
         _ = self._
+        self._latest_state = state
         mode = (state.get('applied') or {}).get('mode')
         text = mode_label('tablet' if mode == 'hardware' else mode, _)
-        tooltip = self.window.windowTitle() + ' · ' + text
+        tooltip = self._title + ' · ' + text
         if tooltip != self._tooltip:
             self._tooltip = tooltip
             self.tray.setToolTip(tooltip)
@@ -152,24 +258,30 @@ class ResidentTray(QObject):
             # Center after the prompt briefly disappears and returns with the
             # same epoch. _notice_confirmable() still validates the current
             # snapshot before sending anything.
+            if self._lazy and self.window is not None:
+                self.window.update_state(state)
             return
         key = epoch, prompt
-        if key in self.sent:
-            return
-        # Policy epochs only advance. Keep one latest notice per prompt type;
-        # temporarily hidden/unconfirmable prompts must not pop up again.
-        self.sent = {old for old in self.sent if old[1] != prompt}
-        self.sent.add(key)
-        title = _('Tent mode is available') if prompt == 'tent' else _('Stand mode is available')
-        self._notice_click_until = 0.0
-        self.notice = notice_token(state)
-        self.tray.showMessage(title, _('Tap to enable the current posture.'),
-                              self.icon, 15000)
+        if key not in self.sent:
+            # Policy epochs only advance. Keep one latest notice per prompt type;
+            # temporarily hidden/unconfirmable prompts must not pop up again.
+            self.sent = {old for old in self.sent if old[1] != prompt}
+            self.sent.add(key)
+            title = _('Tent mode is available') if prompt == 'tent' else _('Stand mode is available')
+            self._notice_click_until = 0.0
+            self.notice = notice_token(state)
+            self.tray.showMessage(title, _('Tap to enable the current posture.'),
+                                  self.icon, 15000)
+        if self._lazy and self.window is not None:
+            self.window.update_state(state)
 
     def unavailable(self):
+        self._latest_state = None
         self.notice = None
         self._notice_click_until = 0.0
-        self.tray.setToolTip(self.window.windowTitle() + ' · ' + self._('Connecting to background service…'))
+        self.tray.setToolTip(self._title + ' · ' + self._('Connecting to background service…'))
+        if self._lazy and self.window is not None:
+            self.window.unavailable()
 
     def shutdown(self):
         if self.quitting:
@@ -178,11 +290,15 @@ class ResidentTray(QObject):
         self.timer.stop()
         self._tray_activation.stop()
         self.tray.hide()
-        self.window.shutdown()
+        if self.window is not None:
+            self.window.shutdown()
+        else:
+            self.client.stop()
 
     def quit(self):
         self.shutdown()
-        self.window.close()
+        if self.window is not None:
+            self.window.close()
         self.app.quit()
 
     def window_destroyed(self):
@@ -193,3 +309,6 @@ class ResidentTray(QObject):
             self.tray.hide()
             self.client.stop()
         self.app.quit()
+
+
+__all__ = ['ResidentTray', 'resident_icon']

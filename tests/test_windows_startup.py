@@ -112,7 +112,7 @@ class LoginStartupTests(unittest.TestCase):
             (runtime / 'pythonw.exe').touch()
             (root / 'launch.py').touch()
             self.assertEqual(startup_command(executable=runtime / 'python.exe', root=root),
-                (str(runtime / 'pythonw.exe'), '-I', str(root / 'launch.py'), '--background'))
+                (str(runtime / 'pythonw.exe'), '-B', '-I', str(root / 'launch.py'), '--background'))
             main = root / 'selected main'
             main.mkdir()
             (main / 'launch.py').touch()
@@ -126,6 +126,7 @@ class LoginStartupTests(unittest.TestCase):
                 ),
                 (
                     str(service_runtime / 'pythonw.exe'),
+                    '-B',
                     '-I',
                     str(main / 'launch.py'),
                     '--background',

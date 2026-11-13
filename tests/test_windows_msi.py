@@ -129,7 +129,7 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIsNone(shortcut.get('Target'))
         self.assertEqual(
             shortcut.get('Arguments'),
-            '-I "[INSTALLFOLDER]launch.py"',
+            '-B -I "[INSTALLFOLDER]launch.py"',
         )
         self.assertIn('Name="a&amp;b.py"', first)
         self.assertIn('Id="ServicePythonHardwareExe"', first)

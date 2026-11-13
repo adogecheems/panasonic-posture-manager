@@ -137,7 +137,7 @@ class ShortcutRepairTests(unittest.TestCase):
         self.assertTrue(
             os.path.samefile(target, self.runtime / 'pythonw.exe')
         )
-        self.assertTrue(arguments.startswith('-I "'))
+        self.assertTrue(arguments.startswith('-B -I "'))
         self.assertTrue(arguments.endswith('\\launch.py"'))
         self.assertEqual(
             description,

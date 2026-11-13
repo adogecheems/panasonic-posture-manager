@@ -122,6 +122,18 @@ assert SessionSupervisor
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_startup_launcher_does_not_load_fluent_pages_or_dependencies(self):
+        result = run_isolated(BLOCKER + '''
+blocked = {
+    'panasonic_posture.fluent.app',
+    'qfluentwidgets',
+    'qframelesswindow',
+}
+from panasonic_posture.fluent.launcher import run
+assert run
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

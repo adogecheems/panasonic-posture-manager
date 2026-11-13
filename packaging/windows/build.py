@@ -6,11 +6,13 @@ the host Python or publishes a release.
 """
 import argparse
 import fnmatch
+from functools import lru_cache
 import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import py_compile
 import shutil
 import sys
 import tempfile
@@ -31,6 +33,43 @@ def _application_display_name() -> str:
 
 
 APPLICATION_DISPLAY_NAME = _application_display_name()
+
+
+@lru_cache(maxsize=None)
+def _compiled_bytecode(source: Path, installed_name: str) -> bytes:
+    """Return deterministic hash-based bytecode for one shipped source file."""
+    with tempfile.NamedTemporaryFile(suffix='.pyc', delete=False) as temporary:
+        target = Path(temporary.name)
+    try:
+        py_compile.compile(
+            str(source),
+            cfile=str(target),
+            dfile=installed_name,
+            doraise=True,
+            optimize=0,
+            invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+        )
+        with target.open('rb') as compiled:
+            return compiled.read()
+    except py_compile.PyCompileError as error:
+        raise ValueError(f'cannot compile packaged source {source}') from error
+    finally:
+        target.unlink(missing_ok=True)
+
+
+def _bytecode_name(source_name: str) -> str:
+    path = PurePosixPath(source_name)
+    filename = f'{path.stem}.{sys.implementation.cache_tag}.pyc'
+    return str(path.parent / '__pycache__' / filename)
+
+
+def _add_bytecode_tree(files: dict[str, Path | bytes], source: Path, prefix: str) -> None:
+    """Precompile selected pure-Python trees for read-only installations."""
+    for path in sorted(source.rglob('*.py')):
+        if '__pycache__' in path.parts:
+            continue
+        installed = f'{prefix}/{path.relative_to(source).as_posix()}'
+        files[_bytecode_name(installed)] = _compiled_bytecode(path, installed)
 
 
 def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | bytes]:
@@ -78,6 +117,11 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
     for directory in missing_licenses:
         files[f'runtime/Lib/site-packages/{directory.name}/LICENSE'] = PYQT6_LICENSE
     add_tree(ROOT / 'src/panasonic_posture', 'app/panasonic_posture', ('__pycache__', '*.pyc'))
+    _add_bytecode_tree(files, ROOT / 'src/panasonic_posture', 'app/panasonic_posture')
+    for package in ('darkdetect', 'qfluentwidgets', 'qframelesswindow'):
+        source = dependencies / package
+        if source.is_dir():
+            _add_bytecode_tree(files, source, f'runtime/Lib/site-packages/{package}')
     add_tree(ROOT / 'data/assets', 'data/assets')
     add_tree(ROOT / 'data/profiles', 'data/profiles')
     files['po/zh_CN.po'] = ROOT / 'po/zh_CN.po'
@@ -102,7 +146,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
                              ('Hardware.cmd', '')):
         files[name] = (
             '@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\n'
-            f'"%~dp0runtime\\pythonw.exe" -I "%~dp0launch.py" {arguments} %*\r\n').encode('utf-8')
+            f'"%~dp0runtime\\pythonw.exe" -B -I "%~dp0launch.py" {arguments} %*\r\n').encode('utf-8')
     return files
 
 

@@ -60,7 +60,7 @@ if (Test-Path -LiteralPath $destinationLink -PathType Leaf) {
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($destinationLink)
 $shortcut.TargetPath = $target
-$shortcut.Arguments = "-I `"$launcher`""
+$shortcut.Arguments = "-B -I `"$launcher`""
 $shortcut.WorkingDirectory = $InstallFolder
 $shortcut.IconLocation = "$icon,0"
 $shortcut.Description = $shortcutDescription

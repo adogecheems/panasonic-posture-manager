@@ -324,7 +324,7 @@ def _append_shortcut(file_element: ET.Element) -> None:
         'Description': '!(loc.ShortcutDescription)',
         'Advertise': 'yes',
         'Icon': 'ProductIcon.ico',
-        'Arguments': '-I "[INSTALLFOLDER]launch.py"',
+        'Arguments': '-B -I "[INSTALLFOLDER]launch.py"',
         'WorkingDirectory': 'INSTALLFOLDER',
     })
     ET.SubElement(shortcut, 'ShortcutProperty', {

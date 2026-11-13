@@ -608,6 +608,79 @@ resident.quit()
 QTest.qWait(50)
 ''')
 
+    def test_lazy_resident_confirms_a_notice_before_loading_the_window(self):
+        self.run_resident('''
+from concurrent.futures import Future
+from copy import deepcopy
+from panasonic_posture.fluent.app import Window
+
+class LazyClient:
+    def __init__(self):
+        self.started = self.stopped = self.polls = 0
+        self.confirmations = []
+        self.fail_confirmation = False
+        self.on_state = self.on_unavailable = None
+    def start(self, on_state, on_unavailable):
+        self.started += 1
+        self.on_state, self.on_unavailable = on_state, on_unavailable
+    def poll(self):
+        self.polls += 1
+    def refresh(self):
+        self.polls += 1
+    def stop(self):
+        self.stopped += 1
+    def confirm_prompt(self, prompt, epoch):
+        self.confirmations.append((prompt, epoch))
+        future = Future()
+        if self.fail_confirmation:
+            future.set_exception(RuntimeError('confirmation failed'))
+        else:
+            future.set_result(None)
+        return future
+
+state = deepcopy(client.state)
+state.update(
+    instance='lazy-instance',
+    pending_notification=7,
+    pending_prompt='tent',
+    pose='tent',
+    supported=True,
+    session_connected=True,
+    error_code=None,
+    hardware=False,
+    applied={'mode': 'laptop'},
+)
+client = LazyClient()
+made = []
+def factory():
+    made.append(Window(client=client, language='en', start_client=False))
+    return made[-1]
+
+resident = ResidentTray(None, window_factory=factory, client=client,
+                       tray_factory=FakeTray, language='en')
+assert resident.enabled and resident.tray.visible
+assert client.started == 1 and made == []
+client.on_state(state)
+assert len(resident.tray.messages) == 1
+resident.open_notice()
+assert client.confirmations == [('tent', 7)]
+assert resident.notice is None and made == []
+state['pending_notification'] = 8
+client.fail_confirmation = True
+client.on_state(state)
+resident._notice_click_until = 0
+resident.open_notice()
+assert resident.notice is not None
+assert resident.tray.messages[-1][0] == 'Unable to complete the operation'
+assert made == []
+resident.show_window()
+assert len(made) == 1 and resident.window._last_state == state
+assert client.started == 1 and not resident.timer.isActive()
+resident.quit()
+QTest.qWait(50)
+assert client.stopped >= 1
+''')
+
     def test_startup_ui_reads_back_and_reverts_failures_without_requiring_backend(self):
         self.run_ui('''
 from panasonic_posture.windows.startup import LoginStartup
@@ -733,9 +806,18 @@ with TemporaryDirectory() as directory:
             # Use the same installed fonts as the native Windows renderer.
             env.setdefault('QT_QPA_FONTDIR', str(Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'Fonts'))
         root = Path(__file__).resolve().parents[1]
-        env['PYTHONPATH'] = str(root / 'src')
+        python_path = [str(root / 'src')]
+        ui_dependencies = os.environ.get('PANASONIC_POSTURE_UI_DEPENDENCIES')
+        if ui_dependencies:
+            python_path.extend(
+                path for path in ui_dependencies.split(os.pathsep) if path
+            )
+        env['PYTHONPATH'] = os.pathsep.join(python_path)
         prelude = f'''
-import sys
+import os, sys
+for directory in os.environ.get('PANASONIC_POSTURE_DLL_DIRECTORIES', '').split(os.pathsep):
+    if directory:
+        os.add_dll_directory(directory)
 sys.path[:0] = [{str(root / "src")!r}, {str(root / "tests")!r}]
 class Block:
     def find_spec(self, name, path=None, target=None):
