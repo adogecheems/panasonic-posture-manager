@@ -32,6 +32,9 @@ from .session_qualification import (
 
 log = logging.getLogger(__name__)
 
+AUTHORITY_PROOF_ATTEMPTS = 12
+AUTHORITY_PROOF_RETRY_SECONDS = .25
+
 
 def build_optional_slate(client, journal: Path) -> SlatePosture | None:
     """Open CSM output when available without making display control depend on it."""
@@ -95,11 +98,29 @@ class WindowsSessionAgent:
 
     def _prove_receipt_authority(self) -> None:
         state = self.client.get_state()
-        self.client.session_update(state.generation, False)
-        current = self.client.get_state()
-        if (current.instance != state.instance or current.generation != state.generation or
-                not current.session_connected):
-            raise ServiceError(ErrorCode.INTERNAL, 'session authority changed during startup', kind=FailureKind.REJECTED)
+        for attempt in range(AUTHORITY_PROOF_ATTEMPTS):
+            self.client.session_update(state.generation, False)
+            current = self.client.get_state()
+            if current.instance != state.instance:
+                raise ServiceError(
+                    ErrorCode.INTERNAL,
+                    'session authority changed during startup',
+                    kind=FailureKind.REJECTED,
+                )
+            if current.generation == state.generation and current.session_connected:
+                return
+            state = current
+            if attempt + 1 < AUTHORITY_PROOF_ATTEMPTS:
+                # Policy startup can publish laptop, unavailable and the final
+                # stable pose in quick succession. Retry against the current
+                # generation instead of forcing the supervisor to replace an
+                # otherwise authenticated session process.
+                time.sleep(AUTHORITY_PROOF_RETRY_SECONDS)
+        raise ServiceError(
+            ErrorCode.INTERNAL,
+            'session authority changed during startup',
+            kind=FailureKind.REJECTED,
+        )
 
     def _start_runtime(self) -> None:
         # Display recovery queries the same physical gate as normal apply.
@@ -189,6 +210,13 @@ class WindowsSessionAgent:
     def _prepare_hardware_release(self) -> None:
         self.hardware_release.prepare(*self.client.hardware_release())
 
+    def _release_preparation_needed(self) -> bool:
+        try:
+            state, pose = self.client.hardware_release()
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return False
+        return state.hardware is True and pose in ('tent', 'stand')
+
     def tick(self, now: float) -> None:
         if not self._started or self._closed:
             return
@@ -208,7 +236,7 @@ class WindowsSessionAgent:
         if unavailable and self._qualification_task is None and now >= self._heartbeat_at:
             self._heartbeat_at = now + AGENT_HEARTBEAT_SECONDS
             self._qualification_task = self.lease_executor.submit(self._qualification_heartbeat)
-        if self.hardware_release is not None:
+        if self.hardware_release is not None and self._release_preparation_needed():
             self.runtime.call_display(self._prepare_hardware_release)
         self.runtime.tick(now)
 

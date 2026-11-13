@@ -257,6 +257,37 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(caught.exception.kind, FailureKind.REJECTED)
         self.assertFalse(self.created)
 
+    def test_authority_proof_retries_a_startup_generation_change(self):
+        original_update = self.client.session_update
+        changed = False
+
+        def startup_tick(generation, ready, error_code=None, error_detail=None):
+            nonlocal changed
+            original_update(generation, ready, error_code, error_detail)
+            if not changed:
+                changed = True
+                self.client.state = replace(
+                    self.client.state,
+                    generation=self.client.state.generation + 1,
+                    session_connected=True,
+                )
+
+        self.client.session_update = startup_tick
+        with patch('panasonic_posture.windows.session_agent.time.sleep'):
+            self.agent.start()
+            self.agent.tick(10.)
+        self.assertEqual(self.created, [True])
+        self.assertEqual(
+            [generation for generation, ready, _, _ in self.client.feedback if not ready],
+            [self.client.state.generation - 1, self.client.state.generation],
+        )
+
+    def test_laptop_tick_does_not_wait_on_the_display_lane_for_release_preparation(self):
+        self.agent.start()
+        with patch.object(self.agent.runtime, 'call_display') as call_display:
+            self.agent.tick(10.)
+        call_display.assert_not_called()
+
     def test_late_unavailable_heartbeat_finishes_before_resumed_ready_feedback(self):
         jobs = []
         class Worker:
