@@ -364,6 +364,11 @@ class MsiPayloadTests(unittest.TestCase):
             if element.tag.endswith('Dialog')
             and element.get('Id') == 'PostureInstallDirDlg'
         )
+        self.assertLessEqual(
+            int(styles['WixUI_Font_Title'].get('Size')),
+            9,
+            'The title style must fit standard 15-DLU WiX page controls',
+        )
         controls = {
             element.get('Id'): element
             for element in install_dir

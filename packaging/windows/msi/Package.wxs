@@ -216,10 +216,12 @@
     <UI Id="WixUI_PostureInstallDir">
       <!-- Microsoft YaHei UI has native CJK metrics on supported Windows
            versions. Tahoma falls back to mismatched glyph metrics and can
-           overlap wrapped Chinese copy at high DPI. -->
+           overlap wrapped Chinese copy at high DPI. Keep the title at 9pt:
+           WiX's standard title and page-description controls are adjacent
+           15-DLU fields, and YaHei's larger line height overflows them. -->
       <TextStyle Id="WixUI_Font_Normal" FaceName="Microsoft YaHei UI" Size="9" />
       <TextStyle Id="WixUI_Font_Bigger" FaceName="Microsoft YaHei UI" Size="14" />
-      <TextStyle Id="WixUI_Font_Title" FaceName="Microsoft YaHei UI" Size="11" Bold="yes" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Microsoft YaHei UI" Size="9" Bold="yes" />
 
       <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
       <Property Id="ARPNOMODIFY" Value="1" />
