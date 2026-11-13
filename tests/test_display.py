@@ -7,6 +7,10 @@ D-Bus/GSettings/journal objects so no real GNOME session is required.
 import unittest
 from unittest.mock import patch
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from gi.repository import Gio, GLib
 
 from panasonic_posture.model import Target

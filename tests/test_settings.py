@@ -9,7 +9,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from panasonic_posture.service import settings as settings_module
+from tests._test_support import require_linux
+
+require_linux()
+
+from panasonic_posture.linux.service import settings as settings_module
 from panasonic_posture.linux.service.settings import Settings, SettingsStore
 
 CORRUPT_GLOB = "settings.json.corrupt-*"

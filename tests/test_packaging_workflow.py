@@ -52,6 +52,8 @@ class ReleaseVersionTests(unittest.TestCase):
 
 class DistributionPackagingTests(unittest.TestCase):
     def test_package_scripts_are_executable_and_parse(self) -> None:
+        if sys.platform == "win32":
+            self.skipTest("POSIX package scripts require a Linux build host")
         for relative in PACKAGE_SCRIPTS:
             with self.subTest(relative=relative):
                 path = ROOT / relative
@@ -103,11 +105,14 @@ class DistributionPackagingTests(unittest.TestCase):
             self.assertIn(placeholder, control)
 
     def test_deb_maintainer_scripts_parse(self) -> None:
+        shell = shutil.which("sh")
+        if shell is None:
+            self.skipTest("POSIX sh is unavailable")
         for name in ("postinst", "prerm", "postrm"):
             with self.subTest(name=name):
                 path = ROOT / "packaging/deb" / name
                 result = subprocess.run(
-                    ["sh", "-n", str(path)],
+                    [shell, "-n", str(path)],
                     check=False,
                     capture_output=True,
                     text=True,
@@ -166,6 +171,7 @@ class DistributionPackagingTests(unittest.TestCase):
                         self.assertIn(f"  '{line.removeprefix(prefix)}'", template)
 
 
+@unittest.skipUnless(sys.platform == "linux", "AUR packaging requires Linux")
 class AurBinGeneratorTests(unittest.TestCase):
     def test_generator_writes_versioned_pkgbuild_and_checksum(self) -> None:
         version = read("pyproject.toml").split('version = "', 1)[1].split('"', 1)[0]

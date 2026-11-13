@@ -11,9 +11,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from panasonic_posture.model import SensorSource
-from panasonic_posture.service import sensor as sensor_module
-from panasonic_posture.service import sensor_sources
+from panasonic_posture.linux.service import sensor as sensor_module
+from panasonic_posture.linux.service import sensor_sources
 from panasonic_posture.linux.service.sensor import (
     IioSampleSource,
     SensorManager,
@@ -373,7 +377,14 @@ class SensorExportTests(unittest.TestCase):
 
 class NoClaimTests(unittest.TestCase):
     def test_sensor_module_never_claims_the_proxy(self) -> None:
-        source = Path(__file__).resolve().parents[1] / "src" / "panasonic_posture" / "service" / "sensor.py"
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "panasonic_posture"
+            / "linux"
+            / "service"
+            / "sensor.py"
+        )
         text = source.read_text(encoding="utf-8")
         # The module may *document* the trade-off, but must never call the
         # iio-sensor-proxy claim API or talk to its bus name.

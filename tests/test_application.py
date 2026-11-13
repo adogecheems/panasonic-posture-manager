@@ -9,6 +9,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from panasonic_posture.controller import Controller
 from panasonic_posture.model import HardwareStatus, SensorReading, SensorInfo
 from panasonic_posture.service.ports import SessionOwner

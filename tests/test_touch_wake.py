@@ -6,6 +6,10 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from gi.repository import GLib
 
 import test_agent as session_fixtures

@@ -9,6 +9,10 @@ import unittest
 from concurrent.futures import Executor, Future
 from unittest import mock
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from gi.repository import Gio, GLib
 
 from panasonic_posture.linux import protocol

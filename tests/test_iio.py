@@ -8,6 +8,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from panasonic_posture.linux.hardware import iio
 
 

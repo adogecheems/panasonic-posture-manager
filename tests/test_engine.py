@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import unittest
 from concurrent.futures import Executor, Future
 from types import SimpleNamespace
@@ -18,20 +18,49 @@ from panasonic_posture.model import (
     SensorSource,
     Target,
 )
-from panasonic_posture.linux.protocol import ErrorCode
-from panasonic_posture.linux.service.access import AccessDenied
-from panasonic_posture.linux.service.actuator import ActuatorError, RelayState
+from panasonic_posture.contracts import ErrorCode
 from panasonic_posture.service.engine import Engine, ServiceError, guard
 from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.model import SensorInfo, DeviceInfo
-from panasonic_posture.service.ports import SessionOwner
-from panasonic_posture.linux.service.settings import Settings
+from panasonic_posture.service.ports import (
+    ActuatorError,
+    SessionOwner,
+    Settings,
+)
 from panasonic_posture.session.runtime import SessionRuntime
 
 LAPTOP = Target(mode="laptop", tablet=False, rotation=0, disable_internal_input=False)
 TENT = Target(mode="tent", tablet=True, rotation=180, disable_internal_input=True)
 STAND = Target(mode="stand", tablet=True, rotation=0, disable_internal_input=True)
 HARDWARE = Target(mode="hardware", tablet=True, rotation=None, disable_internal_input=False)
+
+
+@dataclass(frozen=True)
+class RelayState:
+    """Test implementation of the platform actuator receipt."""
+
+    tablet: bool
+    input_disabled: bool
+    hardware: bool
+    physical: bool
+    error: str | None = None
+
+    def satisfies(self, target: Target) -> bool:
+        if target.mode == "hardware":
+            return (
+                self.error is None
+                and self.physical
+                and self.hardware
+                and self.tablet
+                and self.input_disabled
+            )
+        return (
+            self.error is None
+            and target.disable_internal_input
+            and target.tablet is True
+            and self.tablet
+            and self.input_disabled
+        )
 
 
 class FakeClock:
@@ -253,7 +282,7 @@ class FakeAccess:
     def active_session(self, uid):
         self.checks.append(uid)
         if self.deny:
-            raise AccessDenied("no active session")
+            raise RuntimeError("no active session")
         return SimpleNamespace(uid=uid)
 
 
@@ -1423,20 +1452,20 @@ class RetryTests(EngineTestCase):
 class SleepEventTests(EngineTestCase):
     def test_session_context_loss_forgets_the_old_tent_transaction(self) -> None:
         engine = self.make()
-        engine.controller.manual = Mode.TENT
-        engine.controller.target = TENT
-        engine.controller.applied = TENT
+        engine._controller.manual = Mode.TENT
+        engine._controller.target = TENT
+        engine._controller.applied = TENT
         engine.session_owner = SessionOwner("windows", "session")
-        engine.agent_ready = engine.controller.generation
-        generation = engine.controller.generation
+        engine.agent_ready = engine._controller.generation
+        generation = engine._controller.generation
 
         engine.reset_after_session_context_loss()
 
-        self.assertEqual(engine.controller.reset_calls, 1)
-        self.assertEqual(engine.controller.manual, Mode.AUTO)
-        self.assertEqual(engine.controller.target, Target())
-        self.assertEqual(engine.controller.generation, generation + 1)
-        self.assertIsNone(engine.controller.applied)
+        self.assertEqual(engine._controller.reset_calls, 1)
+        self.assertEqual(engine._controller.manual, Mode.AUTO)
+        self.assertEqual(engine._controller.target, Target())
+        self.assertEqual(engine._controller.generation, generation + 1)
+        self.assertIsNone(engine._controller.applied)
         self.assertIsNone(engine.session_owner)
         self.assertIsNone(engine.agent_ready)
         self.assertIsNone(engine._hardware_monitor.last_valid)

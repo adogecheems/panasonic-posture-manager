@@ -11,6 +11,10 @@ import time
 import unittest
 import xml.etree.ElementTree as ET
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from panasonic_posture.contracts import ALL_ERROR_CODES
 from panasonic_posture.model import StateSnapshot, Target
 from panasonic_posture.linux.ui.errors import describe_error, ServiceUnavailable

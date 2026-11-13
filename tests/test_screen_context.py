@@ -3,6 +3,10 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from gi.repository import GLib
 
 from panasonic_posture.linux.session.screen_context import ScreenContext, desktop_context

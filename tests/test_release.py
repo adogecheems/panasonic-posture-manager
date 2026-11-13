@@ -79,8 +79,14 @@ class ReleaseMetadataTests(unittest.TestCase):
         )
 
     def test_ui_about_version_matches_release(self) -> None:
-        from panasonic_posture.linux.ui.settings import APP_VERSION
-        self.assertEqual(APP_VERSION, self.project_version)
+        settings_source = read(
+            "src/panasonic_posture/linux/ui/settings.py"
+        )
+        self.assertIn("APP_VERSION = display_version()", settings_source)
+        self.assertEqual(
+            display_version(self.project_version),
+            self.project_version,
+        )
 
     def test_packaging_metadata_matches_the_release(self) -> None:
         self.assertIn(f"当前版本：{self.project_version}", self.readme)

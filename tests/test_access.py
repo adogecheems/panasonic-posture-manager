@@ -13,6 +13,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from gi.repository import Gio, GLib
 
 from panasonic_posture.linux.protocol import IFACE, NAME, PATH, session_name
@@ -549,7 +553,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         self.assertIsNone(invocation.error)
 
     def test_follow_up_tick_is_coalesced_before_queued_bus_reads(self) -> None:
-        from panasonic_posture.service import daemon as daemon_module
+        from panasonic_posture.linux.service import daemon as daemon_module
 
         daemon = daemon_module.Daemon.__new__(daemon_module.Daemon)
         daemon._tick_idle_id = None

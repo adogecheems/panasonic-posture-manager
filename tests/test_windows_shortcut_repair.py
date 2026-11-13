@@ -54,6 +54,10 @@ class ShortcutRepairTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.program_data = self.root / 'ProgramData'
+        self.programs = (
+            self.program_data / 'Microsoft/Windows/Start Menu/Programs'
+        )
+        self.programs.mkdir(parents=True)
         self.install = self.root / 'install'
         self.service = self.root / 'service'
         self.runtime = self.service / 'runtime'
@@ -100,29 +104,28 @@ class ShortcutRepairTests(unittest.TestCase):
             timeout=30,
         )
 
-    def test_repair_writes_a_launchable_localized_shortcut(self):
-        result = self.run_repair()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        shortcut = (
-            self.program_data
-            / 'Microsoft/Windows/Start Menu/Programs'
-            / '松下二合一平板电脑姿态管理工具'
-            / '松下二合一平板电脑姿态管理工具.lnk'
-        )
-        self.assertTrue(shortcut.is_file())
-
-        inspect = subprocess.run(
+    def inspect_shortcut(self, shortcut: Path) -> tuple[str, str, str]:
+        powershell = shutil.which('powershell.exe')
+        if powershell is None:
+            self.skipTest('Windows PowerShell is unavailable')
+        output = self.root / 'shortcut-inspection.txt'
+        environment = os.environ.copy()
+        environment['SHORTCUT_PATH'] = str(shortcut)
+        environment['SHORTCUT_INSPECTION'] = str(output)
+        result = subprocess.run(
             [
-                shutil.which('powershell.exe'),
+                powershell,
                 '-NoLogo',
                 '-NoProfile',
                 '-NonInteractive',
                 '-Command',
                 (
-                    '$s=(New-Object -ComObject WScript.Shell).CreateShortcut('
-                    f"'{shortcut}'); "
-                    'Write-Output $s.TargetPath; Write-Output $s.Arguments; '
-                    'Write-Output $s.Description'
+                    '$s=(New-Object -ComObject WScript.Shell).'
+                    'CreateShortcut($env:SHORTCUT_PATH); '
+                    '[IO.File]::WriteAllLines('
+                    '$env:SHORTCUT_INSPECTION, '
+                    '@($s.TargetPath, $s.Arguments, $s.Description), '
+                    '[Text.UTF8Encoding]::new($false))'
                 ),
             ],
             check=False,
@@ -131,9 +134,21 @@ class ShortcutRepairTests(unittest.TestCase):
             encoding='utf-8',
             errors='replace',
             timeout=30,
+            env=environment,
         )
-        self.assertEqual(inspect.returncode, 0, inspect.stderr)
-        target, arguments, description = inspect.stdout.splitlines()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        target, arguments, description = output.read_text(
+            encoding='utf-8'
+        ).splitlines()
+        return target, arguments, description
+
+    def test_repair_writes_a_launchable_localized_shortcut(self):
+        result = self.run_repair()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        shortcut = self.programs / '松下二合一平板电脑姿态管理工具.lnk'
+        self.assertTrue(shortcut.is_file())
+
+        target, arguments, description = self.inspect_shortcut(shortcut)
         self.assertTrue(
             os.path.samefile(target, self.runtime / 'pythonw.exe')
         )
@@ -148,34 +163,12 @@ class ShortcutRepairTests(unittest.TestCase):
         result = self.run_repair(0x0404)
         self.assertEqual(result.returncode, 0, result.stderr)
         shortcut = (
-            self.program_data
-            / 'Microsoft/Windows/Start Menu/Programs'
-            / 'Panasonic 2-in-1 Tablet Posture Management Tool'
+            self.programs
             / 'Panasonic 2-in-1 Tablet Posture Management Tool.lnk'
         )
         self.assertTrue(shortcut.is_file())
-        inspect = subprocess.run(
-            [
-                shutil.which('powershell.exe'),
-                '-NoLogo',
-                '-NoProfile',
-                '-NonInteractive',
-                '-Command',
-                (
-                    '$s=(New-Object -ComObject WScript.Shell).CreateShortcut('
-                    f"'{shortcut}'); Write-Output $s.Description"
-                ),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            timeout=30,
-        )
-        self.assertEqual(inspect.returncode, 0, inspect.stderr)
         self.assertEqual(
-            inspect.stdout.strip(),
+            self.inspect_shortcut(shortcut)[2],
             'Open Panasonic 2-in-1 Tablet Posture Management Tool',
         )
 
@@ -183,11 +176,7 @@ class ShortcutRepairTests(unittest.TestCase):
         result = self.run_repair(0x10000)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('LanguageId', result.stderr)
-        programs = (
-            self.program_data
-            / 'Microsoft/Windows/Start Menu/Programs'
-        )
-        self.assertFalse(programs.exists())
+        self.assertEqual(list(self.programs.iterdir()), [])
 
 
 if __name__ == '__main__':

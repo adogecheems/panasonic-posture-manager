@@ -4,6 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests._test_support import require_linux
+
+require_linux()
+
 from panasonic_posture.linux.protocol import ErrorCode
 from panasonic_posture.linux.session.desktop import (
     UnsupportedDisplay,
