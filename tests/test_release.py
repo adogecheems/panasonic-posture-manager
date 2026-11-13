@@ -38,6 +38,7 @@ def match(pattern: str, text: str, label: str) -> str:
 class ReleaseMetadataTests(unittest.TestCase):
     def setUp(self) -> None:
         project = tomllib.loads(read("pyproject.toml"))
+        self.project = project
         self.project_version = str(project["project"]["version"])
         self.pkgbuild = read("packaging/aur/PKGBUILD")
         self.srcinfo = read("packaging/aur/.SRCINFO")
@@ -45,6 +46,14 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_python_package_and_project_versions_match(self) -> None:
         self.assertEqual(self.project_version, __version__)
+
+    def test_project_metadata_declares_both_supported_platforms(self) -> None:
+        metadata = self.project["project"]
+        classifiers = set(metadata["classifiers"])
+        self.assertIn("Operating System :: Microsoft :: Windows", classifiers)
+        self.assertIn("Operating System :: POSIX :: Linux", classifiers)
+        self.assertIn("Windows 10/11", metadata["description"])
+        self.assertIn("GNOME/KDE Plasma 6 Wayland", metadata["description"])
 
     def test_packaged_test_build_version_is_validated_and_display_only(self) -> None:
         self.assertEqual(

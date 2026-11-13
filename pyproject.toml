@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "panasonic-posture-manager"
-version = "2.4.0"
-description = "Posture management and screen orientation for convertible 2-in-1 laptops on GNOME and KDE Plasma 6 Wayland"
+version = "2.5.0"
+description = "Posture management and screen orientation for convertible 2-in-1 laptops on Windows 10/11 and GNOME/KDE Plasma 6 Wayland"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
@@ -13,8 +13,13 @@ license-files = ["LICENSE"]
 authors = [{ name = "adogecheems" }]
 classifiers = [
   "Intended Audience :: End Users/Desktop",
+  "Operating System :: Microsoft :: Windows",
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Desktop Environment :: Gnome",
   "Topic :: Desktop Environment :: KDE",
 ]

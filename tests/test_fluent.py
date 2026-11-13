@@ -282,9 +282,12 @@ else:
 from PyQt6.QtCore import QObject, QByteArray, QUrl, Qt, QTimer, pyqtSignal
 from qfluentwidgets import PrimaryPushButton, SettingCard
 from panasonic_posture.fluent.app import Window
+from panasonic_posture.fluent.pages import APP_VERSION
 from panasonic_posture.fluent.update_check import UpdateChecker
 from panasonic_posture.windows.update_check import UpdateInfo
 from fluent_fixture import SyntheticClient
+
+latest_version = '99.0.0'
 
 class FakeChecker(QObject):
     completed = pyqtSignal(object)
@@ -295,7 +298,7 @@ class FakeChecker(QObject):
         self.closed = False
     def check(self):
         self.calls += 1
-        self.completed.emit(UpdateInfo('2.4.0', '2.5.0', True))
+        self.completed.emit(UpdateInfo(APP_VERSION, latest_version, True))
         return True
     def shutdown(self):
         self.closed = True
@@ -317,17 +320,17 @@ assert isinstance(window.settings.calibrate_button, PrimaryPushButton)
 window.settings.update_button.click()
 assert checker.calls == 1
 assert window.settings.version_card.contentLabel.text() == (
-    '2.4.0 · New version available: 2.5.0'
+    f'{APP_VERSION} · New version available: {latest_version}'
 )
 checker.failed.emit()
 assert window.settings.version_card.contentLabel.text() == (
-    '2.4.0 · Unable to check for updates. Try again later.'
+    f'{APP_VERSION} · Unable to check for updates. Try again later.'
 )
 checker.check = lambda: False
 window.settings.update_button.click()
 assert window.settings.update_button.isEnabled()
 assert window.settings.version_card.contentLabel.text() == (
-    '2.4.0 · Unable to check for updates. Try again later.'
+    f'{APP_VERSION} · Unable to check for updates. Try again later.'
 )
 window.close()
 assert checker.closed
@@ -1014,11 +1017,9 @@ deadline = time.monotonic() + 2
 while not render_instances and time.monotonic() < deadline:
     QTest.qWait(10)
 assert render_instances, 'The changed pose must request an SVG paint'
-window.home.illustration.update()
-deadline = time.monotonic() + 2
-while (sum(instance.render_calls for instance in render_instances) < 2 and
-       time.monotonic() < deadline):
-    QTest.qWait(10)
+# Repaint synchronously so renderer reuse is independent of Qt's update
+# coalescing in the offscreen platform plugin.
+window.home.illustration.repaint()
 assert len(renderers) == 1, 'The same pose and theme must reuse one SVG renderer'
 assert sum(instance.render_calls for instance in render_instances) >= 2
 ''')

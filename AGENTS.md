@@ -148,7 +148,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 
 运行期只支持英文和简体中文；`zh_CN`、`zh_Hans`、`zh_SG` 使用同一份目录，繁体中文及其他语言回退英文。Windows 正式发布同时提供 `zh-CN` 和 `en-US` MSI，二者同一版本共享 ProductCode，产物文件名必须包含 culture。测试安装的同一 build 跨 culture 共享 ProductCode，不同 build 使用不同 ProductCode；所有安装包始终共享 UpgradeCode，以便通过 major upgrade 替换新负载。
 
-每次安装测试必须使用独立的 `build<N>` 编号，用户可见版本为 `<版本>-build<N>`，例如 `2.4.0-build1`；MSI 内部四段版本为 `2.4.0.1`。测试构建通过 `packaging/windows/build_msi.py --test-build` 自动取下一个编号或显式指定编号，不得伪装成正式版本；正式发布包不得带 `build` 后缀。
+每次安装测试必须使用独立的 `build<N>` 编号，用户可见版本为 `<版本>-build<N>`，例如 `2.5.0-build1`；MSI 内部四段版本为 `2.5.0.1`。测试构建通过 `packaging/windows/build_msi.py --test-build` 自动取下一个编号或显式指定编号，不得伪装成正式版本；正式发布包不得带 `build` 后缀。
 
 ## 8. 系统不变量
 
