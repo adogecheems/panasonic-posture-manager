@@ -91,6 +91,10 @@ def restyle_notice_bar(bar):
     bar.closeButton.setFixedSize(28, 28)
     bar.closeButton.setIconSize(QSize(12, 12))
     bar.hBoxLayout.setContentsMargins(10, 4, 10, 4)
+    # The stock banner glues the copy to the glyph and stretches the title
+    # label across the bar, leaving a lopsided empty area before the close
+    # button. A small fixed gap and natural-size labels keep both sides even.
+    bar.hBoxLayout.insertSpacing(1, 8)
     bar.hBoxLayout.setAlignment(
         icon, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
     bar.hBoxLayout.setAlignment(bar.closeButton, Qt.AlignmentFlag.AlignVCenter)
@@ -98,6 +102,15 @@ def restyle_notice_bar(bar):
     bar.textLayout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
     bar.textLayout.setAlignment(bar.titleLabel, Qt.AlignmentFlag.AlignVCenter)
     bar.textLayout.setAlignment(bar.contentLabel, Qt.AlignmentFlag.AlignVCenter)
+    bar.textLayout.setStretchFactor(bar.titleLabel, 0)
+    bar.textLayout.setStretchFactor(bar.contentLabel, 0)
+    if bar.contentLabel.isHidden():
+        # The stock separator keeps reserving its 7 px even when the detail
+        # is empty; without it the success copy sits level with the buttons.
+        separator = bar.textLayout.itemAt(1)
+        if (separator is not None and separator.widget() is None and
+                separator.layout() is None):
+            bar.textLayout.removeItem(separator)
     # showEvent() already measured the bar around the stock 36 px tiles;
     # re-measure so the frame tracks the compact geometry.
     bar.adjustSize()
@@ -137,7 +150,7 @@ def style_message_box(dialog):
     # the stock 14 px rule from the fluent dialog sheet.
     addStyleSheet(dialog.contentLabel, _FixedRule(
         f'QLabel#contentLabel {{ {fontStyleSheet(getFont(DIALOG_BODY_SIZE))}; }}'))
-    dialog.textLayout.setContentsMargins(24, 24, 24, 8)
+    dialog.textLayout.setContentsMargins(24, 24, 24, 16)
     dialog.buttonGroup.setFixedHeight(68)
     dialog.buttonLayout.setContentsMargins(24, 16, 24, 16)
     dialog.widget.setMinimumSize(0, 0)

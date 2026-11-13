@@ -1158,6 +1158,14 @@ assert bar.iconWidget.width() == 24
 assert bar.closeButton.width() == 28
 for item in (bar.titleLabel, bar.iconWidget, bar.closeButton):
     assert abs(center_y(item, bar) - bar.height() / 2) <= 2
+title = bar.titleLabel.mapTo(bar, bar.titleLabel.rect().topLeft())
+icon = bar.iconWidget.mapTo(bar, bar.iconWidget.rect().topLeft())
+close = bar.closeButton.mapTo(bar, bar.closeButton.rect().topLeft())
+left_gap = title.x() - (icon.x() + bar.iconWidget.width())
+right_gap = close.x() - (title.x() + bar.titleLabel.width())
+assert 6 <= left_gap <= 10, 'the copy keeps a small gap from the glyph'
+assert right_gap <= 14, 'the copy must hug the close button'
+assert abs(left_gap - right_gap) <= 6, 'the copy sits between even gaps'
 window.notify(False, 'Please try again.')
 error_bar = window.findChildren(InfoBar)[-1]
 assert effective(error_bar.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
@@ -1167,6 +1175,12 @@ assert error_bar.height() < 40
 for item in (error_bar.titleLabel, error_bar.contentLabel,
              error_bar.iconWidget, error_bar.closeButton):
     assert abs(center_y(item, error_bar) - error_bar.height() / 2) <= 2
+error_title = error_bar.titleLabel.mapTo(error_bar, error_bar.titleLabel.rect().topLeft())
+error_content = error_bar.contentLabel.mapTo(error_bar, error_bar.contentLabel.rect().topLeft())
+error_icon = error_bar.iconWidget.mapTo(error_bar, error_bar.iconWidget.rect().topLeft())
+error_close = error_bar.closeButton.mapTo(error_bar, error_bar.closeButton.rect().topLeft())
+assert error_title.x() - (error_icon.x() + error_bar.iconWidget.width()) == 8
+assert error_close.x() - (error_content.x() + error_bar.contentLabel.width()) <= 14
 
 opened = []
 MessageBox.exec = lambda self: opened.append(self) or False
@@ -1180,9 +1194,9 @@ assert dialog.contentLabel.font().families() == app.font().families()
 assert TEXT_LIGHT[1:] in dialog.titleLabel.styleSheet()
 assert MUTED_LIGHT[1:] in dialog.contentLabel.styleSheet()
 assert dialog.buttonGroup.height() == 68
-assert dialog.textLayout.contentsMargins().bottom() == 8
+assert dialog.textLayout.contentsMargins().bottom() == 16
 bottom = dialog.contentLabel.geometry().bottom() + 1
-assert dialog.widget.height() <= bottom + 8 + 68 + 2, 'the frame tracks the compact insets'
+assert dialog.widget.height() <= bottom + 16 + 68 + 2, 'the frame tracks the compact insets'
 assert dialog.widget.height() < bottom + 105, 'the stock bottom allowance must be removed'
 setTheme(Theme.DARK)
 QTest.qWait(50)
