@@ -185,6 +185,7 @@ Windows 构建前准备依赖和 WiX：
 python -m pip install --target build\windows-dependencies -r packaging\windows\requirements-ui.txt
 dotnet tool install --global wix --version 5.0.2
 wix extension add -g WixToolset.UI.wixext/5.0.2
+wix extension add -g WixToolset.Util.wixext/5.0.2
 ```
 
 便携 ZIP 只用于开发和诊断，不包含服务安装入口。正式用户只安装 MSI。

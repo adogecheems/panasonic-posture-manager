@@ -277,6 +277,23 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("files=(*.deb *.rpm *.pkg.tar.zst *.msi)", self.workflow)
         self.assertIn("expected four package files", self.workflow)
 
+    def test_windows_workflows_install_required_wix_extensions(self) -> None:
+        extensions = (
+            "WixToolset.UI.wixext/5.0.2",
+            "WixToolset.Util.wixext/5.0.2",
+        )
+        for workflow in (
+            ".github/workflows/windows.yml",
+            ".github/workflows/release.yml",
+        ):
+            source = read(workflow)
+            for extension in extensions:
+                with self.subTest(workflow=workflow, extension=extension):
+                    self.assertIn(
+                        f"wix extension add -g {extension}",
+                        source,
+                    )
+
     def test_windows_workflow_runs_the_complete_current_windows_suite(self) -> None:
         windows = read(".github/workflows/windows.yml")
         self.assertIn(

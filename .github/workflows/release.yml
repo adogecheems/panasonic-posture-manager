@@ -270,6 +270,7 @@ jobs:
           $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $env:PATH = "$tools;$env:PATH"
           wix extension add -g WixToolset.UI.wixext/5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
 
       - name: Run Windows checks
         run: |
