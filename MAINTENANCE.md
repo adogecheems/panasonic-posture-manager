@@ -189,7 +189,7 @@ python tests/check_i18n.py
 
 Windows 的正式构建、发布和兼容契约只覆盖两个本地化 MSI。`panasonic-posture-windows-portable.zip` 不属于发布产物；开发时若通过 `packaging/windows/build.py` 生成，只用于诊断，其文件名、目录布局、校验文件和兼容性均不受支持。
 
-每次安装测试必须使用新的 build 编号。`--test-build` 会根据 `dist/windows/` 中同版本产物自动选择下一个编号，也可用 `--test-build 7` 显式指定。用户可见版本为 `2.4.0-build7`，MSI 内部四段版本为 `2.4.0.7`；ProductCode 仍由正式版本 `2.4.0` 决定。安装包的 `BUILD-VERSION` 和关于页显示该测试版本，正式发布构建不带此后缀。
+每次安装测试必须使用新的 build 编号。`--test-build` 会根据 `dist/windows/` 中同版本产物自动选择下一个编号，也可用 `--test-build 7` 显式指定。用户可见版本为 `2.4.0-build7`，MSI 内部四段版本为 `2.4.0.7`；ProductCode 由正式版本和 build 编号共同确定，同一 build 的中英文安装包共享 ProductCode，不同 build 使用不同 ProductCode，UpgradeCode 始终不变。这样后续测试构建会执行 major upgrade 并替换缺少文件版本资源的新负载。安装包的 `BUILD-VERSION` 和关于页显示该测试版本，正式发布构建不带此后缀。
 
 安装测试的 MSI 版本高于同一基础版本的正式包。在测试机上安装同基础版本的正式包前，应先卸载测试构建，或先提升正式版本号。
 

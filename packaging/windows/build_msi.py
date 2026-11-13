@@ -120,12 +120,18 @@ def installer_version(version: str, test_build: int | None) -> str:
     return f'{version}.{test_build}'
 
 
-def product_code(version: str) -> str:
-    """Return one ProductCode shared by every culture of *version*."""
+def product_code(version: str, test_build: int | None = None) -> str:
+    """Return one ProductCode for a formal release or installation-test build."""
 
+    test_build = _validate_test_build(test_build)
+    identity = (
+        version
+        if test_build is None
+        else f'{version}/build{test_build}'
+    )
     return str(uuid.uuid5(
         PRODUCT_CODE_NAMESPACE,
-        f'panasonic-posture-manager/{version}',
+        f'panasonic-posture-manager/{identity}',
     )).upper()
 
 
@@ -507,7 +513,7 @@ def build(
             '-ext', 'WixToolset.Util.wixext',
             '-loc', str(localization),
             '-d', f'ProductVersion={installer_version(version, test_build)}',
-            '-d', f'ProductCode={product_code(version)}',
+            '-d', f'ProductCode={product_code(version, test_build)}',
             '-d', f'ProjectRoot={ROOT}',
             '-d', f'LicenseRtf={license_rtf}',
             '-o', str(temporary_msi),

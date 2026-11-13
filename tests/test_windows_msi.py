@@ -167,6 +167,8 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertNotIn('Panasonic Posture Manager', license_text)
         for value in (
             'ProductCode="$(var.ProductCode)"',
+            'UpgradeCode="7C0319E4-768D-4C48-A41C-25F0D677EA89"',
+            '<MajorUpgrade',
             'Name="!(loc.ProductName)"',
             'Id="ApplicationProgramsFolder" Name="Panasonic 2-in-1 Tablet Posture Management Tool"',
             'Id="Complete" Title="!(loc.FeatureTitle)"',
@@ -737,9 +739,24 @@ class MsiPayloadTests(unittest.TestCase):
             msi.product_code('2.4.0'),
             msi.product_code('2.4.0'),
         )
+        self.assertEqual(
+            msi.product_code('2.4.0', test_build=7),
+            msi.product_code('2.4.0', test_build=7),
+        )
+        self.assertNotEqual(
+            msi.product_code('2.4.0'),
+            msi.product_code('2.4.0', test_build=7),
+        )
+        self.assertNotEqual(
+            msi.product_code('2.4.0', test_build=7),
+            msi.product_code('2.4.0', test_build=8),
+        )
         for invalid in (0, -1, 65536, True, '7'):
-            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                msi.test_build_label('2.4.0', invalid)
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    msi.test_build_label('2.4.0', invalid)
+                with self.assertRaises(ValueError):
+                    msi.product_code('2.4.0', test_build=invalid)
 
     def test_next_installation_test_build_ignores_other_releases(self):
         output = self.root / 'numbered-output'
@@ -791,7 +808,10 @@ class MsiPayloadTests(unittest.TestCase):
                          'panasonic-posture-manager-2.4.0-build7-zh-CN-windows-x64.msi')
         compile_command = commands[0]
         self.assertIn('ProductVersion=2.4.0.7', compile_command)
-        self.assertIn(f'ProductCode={msi.product_code("2.4.0")}', compile_command)
+        self.assertIn(
+            f'ProductCode={msi.product_code("2.4.0", test_build=7)}',
+            compile_command,
+        )
 
     def test_both_cultures_build_with_distinct_names_and_one_product_identity(self):
         output = self.root / 'localized-output'
@@ -811,6 +831,7 @@ class MsiPayloadTests(unittest.TestCase):
                 self.dependencies,
                 version='2.4.0',
                 culture=culture,
+                test_build=7,
                 wix='wix-fixture',
                 runner=build_with_fixture,
             )
@@ -819,18 +840,18 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertEqual(
             [package.name for package in packages],
             [
-                'panasonic-posture-manager-2.4.0-zh-CN-windows-x64.msi',
-                'panasonic-posture-manager-2.4.0-en-US-windows-x64.msi',
+                'panasonic-posture-manager-2.4.0-build7-zh-CN-windows-x64.msi',
+                'panasonic-posture-manager-2.4.0-build7-en-US-windows-x64.msi',
             ],
         )
         build_commands = [command for command in commands if 'build' in command]
         self.assertEqual(len(build_commands), 2)
         for command in build_commands:
             self.assertIn(
-                f'ProductCode={msi.product_code("2.4.0")}',
+                f'ProductCode={msi.product_code("2.4.0", test_build=7)}',
                 command,
             )
-            self.assertIn('ProductVersion=2.4.0', command)
+            self.assertIn('ProductVersion=2.4.0.7', command)
         self.assertNotEqual(
             build_commands[0][build_commands[0].index('-culture') + 1],
             build_commands[1][build_commands[1].index('-culture') + 1],
