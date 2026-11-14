@@ -348,4 +348,7 @@ class WindowsSessionContext:
             self._presence = None
         try:
             if self._power is not None:
-                s
+                self._power.close()
+        finally:
+            if self._owned_executor:
+                self._executor.shutdown(wait=False, cancel_futures=True)
