@@ -302,6 +302,19 @@ class ReleaseWorkflowTests(unittest.TestCase):
                         source,
                     )
 
+    def test_windows_workflows_verify_the_current_service_module(self) -> None:
+        for workflow in (
+            ".github/workflows/windows.yml",
+            ".github/workflows/release.yml",
+        ):
+            source = read(workflow)
+            with self.subTest(workflow=workflow):
+                self.assertIn(
+                    "Get-ChildItem $target -Recurse -File -Filter daemon.py",
+                    source,
+                )
+                self.assertNotIn("-Filter hardware_service.py", source)
+
     def test_windows_workflow_runs_the_complete_current_windows_suite(self) -> None:
         windows = read(".github/workflows/windows.yml")
         self.assertIn(

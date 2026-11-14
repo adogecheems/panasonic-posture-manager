@@ -29,7 +29,7 @@ if (-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
 $Root = [IO.Path]::GetFullPath((Split-Path -Parent $PSCommandPath))
 $Python = Join-Path $Root 'runtime\python-hardware.exe'
 $HardwarePth = Join-Path $Root 'runtime\python-hardware._pth'
-$ServiceModule = Join-Path $Root 'app\panasonic_posture\windows\hardware_service.py'
+$ServiceModule = Join-Path $Root 'app\panasonic_posture\windows\service\daemon.py'
 
 function Get-ServiceRecord {
     Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue

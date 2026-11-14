@@ -91,7 +91,7 @@ jobs:
               '/a', "`"$($package.FullName)`"", '/qn', "TARGETDIR=`"$target`""
             )
             if ($process.ExitCode -notin 0, 3010) { exit $process.ExitCode }
-            $service = Get-ChildItem $target -Recurse -File -Filter hardware_service.py |
+            $service = Get-ChildItem $target -Recurse -File -Filter daemon.py |
               Select-Object -First 1
             $runtime = Get-ChildItem $target -Recurse -File -Filter python-hardware.exe |
               Select-Object -First 1
