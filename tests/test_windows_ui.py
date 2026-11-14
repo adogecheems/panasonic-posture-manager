@@ -1307,6 +1307,16 @@ from PyQt6.QtCore import QPoint
 window.switchTo(window.settings)
 QTest.qWait(200)
 first, middle, last = window.settings.switch_cards.values()
+title_x = first.titleLabel.mapTo(window.settings, QPoint()).x()
+for card, controls in window.settings.cards:
+    assert card.titleLabel.mapTo(window.settings, QPoint()).x() == title_x
+    if controls:
+        control = controls[-1]
+        inset = card.contentsRect().right() - control.geometry().right()
+        assert inset == 16, (card.titleLabel.text(), inset)
+for group in window.settings.groups:
+    label = group.titleLabel
+    assert label.mapTo(window.settings, label.contentsRect().topLeft()).x() == title_x
 assert first.geometry().bottom() + 1 == middle.y()
 assert middle.geometry().bottom() + 1 == last.y()
 for card in (first, middle, last):

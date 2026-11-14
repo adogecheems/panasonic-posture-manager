@@ -29,6 +29,7 @@ from .labels import mode_label
 
 GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
 APP_VERSION = display_version()
+CARD_INSET = 16
 APPEARANCE_MODES = (Theme.AUTO, Theme.LIGHT, Theme.DARK)
 
 
@@ -292,7 +293,7 @@ class Settings(Page):
         self.sensor_card.hBoxLayout.addWidget(
             self.calibrate_button, 0, Qt.AlignmentFlag.AlignVCenter
         )
-        self.sensor_card.hBoxLayout.addSpacing(16)
+        self.sensor_card.hBoxLayout.addSpacing(CARD_INSET)
         self.add_card(group, self.sensor_card, (self.reset_button, self.calibrate_button))
         group = self.add_group(_('Mode selection'))
         self.group = QButtonGroup(self)
@@ -314,8 +315,8 @@ class Settings(Page):
             self.group.addButton(radio)
             radio.clicked.connect(lambda checked, mode=key: self.model.queue('manual', mode))
             self.radios[key] = radio
-            card.hBoxLayout.insertWidget(0, radio)
-            card.hBoxLayout.setContentsMargins(16, 0, 0, 0)
+            card.hBoxLayout.addWidget(radio, 0, Qt.AlignmentFlag.AlignVCenter)
+            card.hBoxLayout.addSpacing(CARD_INSET)
             self.add_card(group, card, (radio,))
         if startup is not None:
             group = self.add_group(_('Background'))
@@ -335,7 +336,7 @@ class Settings(Page):
         self.version_card.hBoxLayout.addWidget(
             self.update_button, 0, Qt.AlignmentFlag.AlignVCenter
         )
-        self.version_card.hBoxLayout.addSpacing(16)
+        self.version_card.hBoxLayout.addSpacing(CARD_INSET)
         self.add_card(group, self.version_card, (self.update_button,))
         self.add_card(group, SettingRow(QIcon(), _('Author'), 'adogecheems'))
         self.github_button = HyperlinkButton(GITHUB_URL, _('Visit repository'))
@@ -346,7 +347,7 @@ class Settings(Page):
         github.hBoxLayout.addWidget(
             self.github_button, 0, Qt.AlignmentFlag.AlignVCenter
         )
-        github.hBoxLayout.addSpacing(16)
+        github.hBoxLayout.addSpacing(CARD_INSET)
         self.github_card = github
         self.add_card(group, github, (self.github_button,))
         appearance = self.appearance = ComboBox()
@@ -358,10 +359,12 @@ class Settings(Page):
         appearance.activated.connect(lambda index: setTheme(APPEARANCE_MODES[index]))
         card = SettingRow(QIcon(), _('Appearance'))
         card.hBoxLayout.addWidget(appearance, 0, Qt.AlignmentFlag.AlignVCenter)
-        card.hBoxLayout.addSpacing(16)
+        card.hBoxLayout.addSpacing(CARD_INSET)
         self.add_card(group, card, (appearance,))
         notice = CaptionLabel(_("Let's note is a trademark of Panasonic Corporation. The author does not claim any rights to the trademark and is not associated with it."))
         notice.setWordWrap(True)
+        # Standalone labels also span the one-pixel card border.
+        notice.setContentsMargins(CARD_INSET + 1, 0, CARD_INSET + 1, 0)
         for group in self.groups:
             rows = group.findChildren(SettingCard, options=Qt.FindChildOption.FindDirectChildrenOnly)
             rows[0].setProperty('first', True)
@@ -383,7 +386,7 @@ class Settings(Page):
     def add_group(self, title):
         group = SettingCardGroup(title)
         group.cardLayout.setSpacing(0)
-        group.titleLabel.setContentsMargins(4, 0, 0, 0)
+        group.titleLabel.setContentsMargins(CARD_INSET + 1, 0, 0, 0)
         setFont(group.titleLabel, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
         setCustomStyleSheet(group, f'SettingCardGroup > QLabel {{color: {MUTED_LIGHT};}}',
                            f'SettingCardGroup > QLabel {{color: {MUTED_DARK};}}')
