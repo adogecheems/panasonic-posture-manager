@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from panasonic_posture.machine_profile import load_profile
+from panasonic_posture.windows.common.layout import distribution_root
 from panasonic_posture.windows.hardware.machine_identity import read_machine_identity
 from panasonic_posture.windows.hardware.sensor import IDENTITY
 
@@ -12,7 +13,7 @@ log = logging.getLogger(__name__)
 
 # Profiles are packaged beside the application. They select explicit device
 # and orientation knowledge; they do not grant access to hardware.
-WINDOWS_PROFILE_DIR = Path(__file__).resolve().parents[3] / 'data' / 'profiles'
+WINDOWS_PROFILE_DIR = distribution_root(__file__) / 'data' / 'profiles'
 
 
 @dataclass(frozen=True)

@@ -1,11 +1,15 @@
 """SCM lifecycle adapter for the installed LocalSystem hardware host."""
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 
+from panasonic_posture.windows.common.layout import distribution_root
+from panasonic_posture.windows.service import daemon
 from panasonic_posture.windows.service.daemon import (
     ERROR_SERVICE_SPECIFIC_ERROR,
     HardwareServiceRunner,
@@ -40,6 +44,13 @@ class Runtime:
 
 
 class HardwareServiceRunnerTests(unittest.TestCase):
+    def test_image_path_command_uses_the_install_root_after_the_service_move(self):
+        with patch('sys.stdout', new_callable=io.StringIO) as output:
+            self.assertEqual(daemon.main(['--image-path']), 0)
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(distribution_root(daemon.__file__), root)
+        self.assertEqual(output.getvalue().strip(), service_image_path(root))
+
     def test_service_labels_use_the_application_display_name(self):
         self.assertEqual(
             SERVICE_DISPLAY_NAME, f'{APPLICATION_DISPLAY_NAME} Hardware Service'
@@ -80,6 +91,21 @@ class HardwareServiceRunnerTests(unittest.TestCase):
             2,
         )
         self.assertNotIn('delayed-auto', source)
+
+    def test_service_start_is_bounded_so_a_failure_cannot_hang_install(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / 'packaging/windows/hardware-service.ps1'
+        ).read_text(encoding='utf-8')
+        self.assertIn('function Start-InstalledService', source)
+        self.assertIn('$service.Start()', source)
+        self.assertIn("Wait-ServiceState 'Running' 30", source)
+        self.assertNotIn('Start-Service -Name $ServiceName', source)
+        configure = source[
+            source.index("if ($Action -eq 'Configure')"):
+            source.index("if ($Action -eq 'Remove')")
+        ]
+        self.assertIn('Start-InstalledService', configure)
 
     def test_service_reports_startup_polling_and_clean_stop(self):
         events, reports = [], []

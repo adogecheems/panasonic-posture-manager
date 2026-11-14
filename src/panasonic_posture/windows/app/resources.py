@@ -5,6 +5,7 @@ import gettext
 import os
 from pathlib import Path
 
+from ..common.layout import distribution_root
 from ...localization import (
     SIMPLIFIED_CHINESE_CATALOG,
     catalog_language,
@@ -16,7 +17,7 @@ from ..app.localization import windows_catalog_language
 
 def data_root() -> Path:
     override = os.environ.get('PANASONIC_POSTURE_DATA_DIR')
-    return Path(override) if override else Path(__file__).resolve().parents[4] / 'data'
+    return Path(override) if override else distribution_root(__file__) / 'data'
 
 
 def asset_root() -> Path:

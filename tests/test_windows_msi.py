@@ -156,7 +156,11 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertIn('Name="PanasonicPostureManagerHardware"', first)
         self.assertIn('Account="LocalSystem"', first)
         self.assertIn('panasonic_posture.windows.service.daemon --serve', first)
-        self.assertIn('Start="install"', first)
+        control = next(
+            element for element in root.iter()
+            if element.tag.endswith('ServiceControl')
+        )
+        self.assertIsNone(control.get('Start'))
         self.assertIn('Remove="uninstall"', first)
 
     def test_package_template_installs_full_runtime_and_reversible_csm_setup(self):

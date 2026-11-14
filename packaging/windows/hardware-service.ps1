@@ -52,6 +52,18 @@ function Stop-InstalledService {
     Wait-ServiceState 'Stopped' 30 | Out-Null
 }
 
+function Start-InstalledService {
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($null -eq $service) { throw 'Hardware service is not installed.' }
+    if ($service.Status -eq 'Running') { return $service }
+    try {
+        $service.Start()
+    } catch {
+        throw "Cannot request hardware service start: $($_.Exception.Message)"
+    }
+    return (Wait-ServiceState 'Running' 30)
+}
+
 function Configure-ServiceRecovery {
     & sc.exe config $ServiceName start= auto obj= LocalSystem | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Cannot configure the hardware service startup.' }
@@ -103,6 +115,7 @@ if ($Action -eq 'Configure') {
         actions= restart/5000/restart/15000/restart/60000 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Cannot configure hardware service recovery.' }
     Protect-ServiceLogs
+    Start-InstalledService | Out-Null
     Write-Output 'Hardware service configuration updated.'
     exit 0
 }
@@ -166,8 +179,7 @@ if ($Action -eq 'Install' -and -not (Test-ProtectedRuntime)) {
             $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
             if ($null -ne $service) {
                 try {
-                    Start-Service -Name $ServiceName
-                    Wait-ServiceState 'Running' 30 | Out-Null
+                    Start-InstalledService | Out-Null
                 } catch {
                     Write-Warning "Could not restart the previous hardware service: $($_.Exception.Message)"
                 }
@@ -178,8 +190,7 @@ if ($Action -eq 'Install' -and -not (Test-ProtectedRuntime)) {
 }
 
 if ($Action -eq 'Start') {
-    Start-Service -Name $ServiceName
-    $service = Wait-ServiceState 'Running' 30
+    $service = Start-InstalledService
     Write-Output "Hardware service is $($service.Status)."
     exit 0
 }
@@ -211,8 +222,7 @@ if ($null -ne $existing) {
         Protect-ServiceLogs
         Configure-ServiceRecovery
         Stop-InstalledService
-        Start-Service -Name $ServiceName
-        $service = Wait-ServiceState 'Running' 30
+        $service = Start-InstalledService
         Write-Output "Hardware service updated in place and is $($service.Status)."
         exit 0
     }
@@ -224,6 +234,5 @@ New-Service -Name $ServiceName -BinaryPathName $imagePath -DisplayName $DisplayN
 & sc.exe description $ServiceName $Description | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Cannot describe the hardware service.' }
 Configure-ServiceRecovery
-Start-Service -Name $ServiceName
-$service = Wait-ServiceState 'Running' 30
+$service = Start-InstalledService
 Write-Output "Hardware service installed and $($service.Status)."

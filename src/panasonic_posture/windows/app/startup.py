@@ -7,6 +7,8 @@ import subprocess
 import sys
 from typing import Protocol
 
+from panasonic_posture.windows.common.layout import distribution_root
+
 RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 RUN_NAME = 'PanasonicPostureManager'
 PREFERENCE_KEY = r'Software\PanasonicPostureManager'
@@ -180,7 +182,7 @@ def initialize_default_startup(startup: DefaultStartupInitializer) -> None:
 def startup_command(*, executable: Path | None = None, root: Path | None = None) -> tuple[str, ...]:
     """Use only fixed project entry points; login has no source PYTHONPATH/cwd."""
     executable = Path(sys.executable) if executable is None else executable
-    root = Path(__file__).resolve().parents[3] if root is None else root
+    root = distribution_root(__file__) if root is None else root
     if not executable.is_absolute() or not root.is_absolute():
         raise StartupError('startup-location-unavailable')
     pythonw = executable.with_name('pythonw.exe')

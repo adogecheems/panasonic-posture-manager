@@ -4,12 +4,19 @@ import unittest
 from unittest.mock import Mock, patch
 
 from panasonic_posture.windows.service.application import create_hardware_runtime
-from panasonic_posture.windows.hardware.machine_profile import WindowsProfile, resolve_windows_profile
+from panasonic_posture.windows.hardware.machine_profile import (
+    WINDOWS_PROFILE_DIR,
+    WindowsProfile,
+    resolve_windows_profile,
+)
 
 PROFILES = Path(__file__).resolve().parents[1] / 'data' / 'profiles'
 
 
 class WindowsMachineProfileTests(unittest.TestCase):
+    def test_default_profile_directory_is_packaged_beside_the_application(self):
+        self.assertEqual(WINDOWS_PROFILE_DIR, PROFILES)
+
     def test_all_qv_families_have_explicit_windows_profiles(self):
         expected = (
             ('CFQV8', 'cfqv8'),

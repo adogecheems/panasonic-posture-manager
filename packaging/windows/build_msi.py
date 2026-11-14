@@ -314,7 +314,6 @@ def _append_service(component: ET.Element) -> None:
     ET.SubElement(component, 'ServiceControl', {
         'Id': 'HardwareServiceControl',
         'Name': 'PanasonicPostureManagerHardware',
-        'Start': 'install',
         'Stop': 'uninstall',
         'Remove': 'uninstall',
         'Wait': 'yes',

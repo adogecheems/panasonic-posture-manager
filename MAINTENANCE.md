@@ -80,6 +80,7 @@ Get-Content "$env:ProgramData\PanasonicPostureManager\Logs\hardware-service.log"
 
 服务未安装或未运行时，界面只显示断线。重新运行 MSI 修复安装并重启；不要从源码或便携目录手工注册服务。
 硬件服务使用普通自动启动，不使用 Windows 的延迟自动启动，以便登录后的桌面会话能尽早发现 RPC 端点。
+MSI 注册服务后由配置动作请求启动并最多等待 30 秒；`ServiceControl` 只负责升级或卸载时的停止和删除，避免服务持续失败时安装器无限等待。
 
 ## 卸载
 

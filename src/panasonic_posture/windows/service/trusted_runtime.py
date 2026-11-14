@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 from typing import Protocol
 
+from panasonic_posture.windows.common.layout import distribution_root
 from panasonic_posture.windows.common.security import WindowsSecurity, U32, I32, HANDLE
 
 SYSTEM = 'S-1-5-18'
@@ -196,7 +197,7 @@ class TrustedRuntime:
 
     @classmethod
     def current(cls) -> 'TrustedRuntime':
-        root = Path(__file__).absolute().parents[3]
+        root = distribution_root(__file__)
         if (Path(sys.executable).absolute() != root / HARDWARE_EXECUTABLE or
                 not sys.flags.isolated or not sys.dont_write_bytecode):
             raise PermissionError('hardware host requires its installed isolated interpreter')

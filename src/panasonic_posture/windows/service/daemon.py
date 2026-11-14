@@ -18,6 +18,7 @@ import threading
 
 from panasonic_posture.contracts import TICK_SECONDS
 from panasonic_posture.product import APPLICATION_DISPLAY_NAME
+from panasonic_posture.windows.common.layout import distribution_root
 from panasonic_posture.windows.service.runtime import HardwareRuntime
 from panasonic_posture.windows.service.trusted_runtime import TrustedRuntime
 
@@ -320,7 +321,7 @@ def main(argv=None) -> int:
         verify_installed_runtime()
         return 0
     if options.image_path:
-        print(service_image_path(Path(__file__).absolute().parents[3]))
+        print(service_image_path(distribution_root(__file__)))
         return 0
     return dispatch_service()
 
