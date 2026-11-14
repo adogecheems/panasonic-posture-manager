@@ -47,6 +47,14 @@ class WindowsPackagingTests(unittest.TestCase):
                 path.write_text('synthetic runtime', encoding='utf-8')
             for name in ('PyQt6', 'qfluentwidgets', 'qframelesswindow', 'Qt-1.dist-info/licenses'):
                 (dependencies / name).mkdir(parents=True)
+            for relative in builder.PYWIN32_REQUIRED_FILES:
+                path = dependencies / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'pywin32')
+            for name in ('pywintypes312.dll', 'pythoncom312.dll'):
+                path = dependencies / 'pywin32_system32' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'pywin32')
             (dependencies / 'Qt-1.dist-info/licenses/LICENSE').write_text('license', encoding='utf-8')
             pyqt_metadata = dependencies / 'PyQt6-6.8.1.dist-info'
             pyqt_metadata.mkdir()
@@ -82,6 +90,9 @@ class WindowsPackagingTests(unittest.TestCase):
                          'po/zh_CN.po', 'LICENSE',
                          'runtime/Lib/site-packages/Qt-1.dist-info/licenses/LICENSE',
                          'runtime/Lib/site-packages/PyQt6-6.8.1.dist-info/LICENSE',
+                         'runtime/Lib/site-packages/win32/win32api.pyd',
+                         'runtime/Lib/site-packages/win32comext/shell/shell.pyd',
+                         'runtime/Lib/site-packages/pywin32_system32/pywintypes312.dll',
                          f'{builder.APPLICATION_DISPLAY_NAME}.cmd', 'Hardware.cmd'):
                 self.assertIn(name, files)
             self.assertNotIn('data/assets/notification-badge.svg', files)
@@ -155,6 +166,22 @@ class WindowsPackagingTests(unittest.TestCase):
             self.assertEqual(files['runtime/python-hardware._pth'],
                              b'Lib\nDLLs\n../app\n')
 
+    def test_missing_windows_frameless_window_transitives_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dependencies = Path(directory)
+            missing = builder._missing_pywin32_files(dependencies)
+            self.assertIn('win32/win32api.pyd', missing)
+            self.assertIn('pywin32_system32/pywintypes*.dll', missing)
+            for relative in builder.PYWIN32_REQUIRED_FILES:
+                path = dependencies / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'pywin32')
+            for name in ('pywintypes312.dll', 'pythoncom312.dll'):
+                path = dependencies / 'pywin32_system32' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'pywin32')
+            self.assertEqual(builder._missing_pywin32_files(dependencies), [])
+
     def test_missing_runtime_and_missing_licenses_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -167,6 +194,14 @@ class WindowsPackagingTests(unittest.TestCase):
                 path.write_text('synthetic runtime', encoding='utf-8')
             for name in ('PyQt6', 'qfluentwidgets', 'qframelesswindow', 'Qt-1.dist-info'):
                 (dependencies / name).mkdir(parents=True)
+            for relative in builder.PYWIN32_REQUIRED_FILES:
+                path = dependencies / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'pywin32')
+            for name in ('pywintypes312.dll', 'pythoncom312.dll'):
+                path = dependencies / 'pywin32_system32' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'pywin32')
             with self.assertRaisesRegex(ValueError, 'license metadata is missing'):
                 builder.application_files(runtime, dependencies)
 

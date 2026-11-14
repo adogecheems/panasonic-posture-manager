@@ -22,6 +22,16 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PYQT6_LICENSE = ROOT / 'packaging/windows/PyQt6-LICENSE'
+PYWIN32_REQUIRED_FILES = (
+    'win32/win32api.pyd',
+    'win32/win32gui.pyd',
+    'win32/win32print.pyd',
+    'win32/lib/win32con.py',
+    'win32/lib/pywin32_bootstrap.py',
+    'win32comext/shell/__init__.py',
+    'win32comext/shell/shell.pyd',
+    'pywin32.pth',
+)
 
 
 def _application_display_name() -> str:
@@ -65,6 +75,19 @@ def _bytecode_name(source_name: str) -> str:
     return str(path.parent / '__pycache__' / filename)
 
 
+def _missing_pywin32_files(dependencies: Path) -> list[str]:
+    """Return files required by the Windows frameless-window implementation."""
+    missing = [
+        name for name in PYWIN32_REQUIRED_FILES
+        if not (dependencies / name).is_file()
+    ]
+    dlls = dependencies / 'pywin32_system32'
+    for pattern in ('pywintypes*.dll', 'pythoncom*.dll'):
+        if not any(path.is_file() for path in dlls.glob(pattern)):
+            missing.append(f'pywin32_system32/{pattern}')
+    return missing
+
+
 def _add_bytecode_tree(
     files: dict[str, Path | bytes],
     source: Path,
@@ -87,6 +110,13 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
     for name in ('PyQt6', 'qfluentwidgets', 'qframelesswindow'):
         if not (dependencies / name).is_dir():
             raise ValueError(f'UI dependency is missing {name}')
+    if sys.platform == 'win32':
+        missing_pywin32 = _missing_pywin32_files(dependencies)
+        if missing_pywin32:
+            raise ValueError(
+                'Windows UI dependency is missing pywin32 files: '
+                + ', '.join(missing_pywin32)
+            )
     metadata = list(dependencies.glob('*.dist-info'))
     has_license = lambda directory: any(
         'license' in path.name.lower() or 'copying' in path.name.lower()

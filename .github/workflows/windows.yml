@@ -92,6 +92,11 @@ jobs:
             if ($null -eq $service -or $null -eq $runtime -or $null -eq $catalog) {
               throw "MSI administrative payload is incomplete: $($package.Name)"
             }
+            $uiPython = Join-Path $runtime.Directory.FullName 'python.exe'
+            $uiProbe = & $uiPython -B -I -c "import qfluentwidgets, qframelesswindow, panasonic_posture.windows.ui.launcher" 2>&1
+            if ($LASTEXITCODE) {
+              throw "Windows UI dependency probe failed for $($package.Name): $uiProbe"
+            }
           }
       - uses: actions/upload-artifact@v4
         if: matrix.python == '3.13'

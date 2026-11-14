@@ -47,6 +47,21 @@ class MsiPayloadTests(unittest.TestCase):
         for name in ('PyQt6', 'qfluentwidgets', 'qframelesswindow',
                      'Qt-1.dist-info/licenses'):
             (self.dependencies / name).mkdir(parents=True)
+        for name in (
+            'win32/win32api.pyd',
+            'win32/win32gui.pyd',
+            'win32/win32print.pyd',
+            'win32/lib/win32con.py',
+            'win32/lib/pywin32_bootstrap.py',
+            'win32comext/shell/__init__.py',
+            'win32comext/shell/shell.pyd',
+            'pywin32.pth',
+            'pywin32_system32/pywintypes312.dll',
+            'pywin32_system32/pythoncom312.dll',
+        ):
+            path = self.dependencies / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'pywin32')
         (self.dependencies / 'Qt-1.dist-info/licenses/LICENSE').write_text(
             'license', encoding='utf-8'
         )

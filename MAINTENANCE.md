@@ -140,6 +140,7 @@ PYTHONPATH=src /usr/bin/python3 -m panasonic_posture.linux.app.cli
 ```
 
 Windows 源码运行使用 64 位 Python 3.11+。Windows UI 固定使用 PyQt6 6.8.1 和 Qt 6.8.2；如需升级 Qt，必须先重新核对 Windows 支持范围和完成 UI 回归测试：
+`PyQt6-Frameless-Window` 在 Windows 上还依赖 `pywin32`；MSI 构建会验证 `win32api`、`win32gui`、`win32comext` 和配套 DLL，CI 解包后会实际导入 UI 组件。
 
 ```bat
 py -3 -m venv .venv-windows
