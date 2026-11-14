@@ -1,5 +1,5 @@
 """Framework-free UI rules, including stale callbacks and failed writes."""
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 import subprocess
 import sys
 import unittest
@@ -215,19 +215,61 @@ from panasonic_posture.frontend import ports, state, actions
         self.assertFalse(model.active)
         self.assertEqual(len(errors), 1)
 
-    def test_action_dedup_and_old_connection(self):
-        changes, errors = [], []
-        runner = ActionRunner(lambda: changes.append(True), errors.append)
-        old, new = Future(), Future()
-        self.assertTrue(runner.run('confirm', lambda: old))
-        self.assertFalse(runner.run('retry', lambda: new))
-        runner.disconnect()
-        runner.run('retry', lambda: new)
-        old.set_exception(RuntimeError('old'))
-        self.assertEqual(runner.busy, 'retry')
-        self.assertFalse(errors)
-        new.set_result(None)
-        self.assertIsNone(runner.busy)
+    def test_action_results_release_busy_state_and_report_the_correct_outcome(self):
+        for outcome in ('success', 'failure', 'cancelled', 'synchronous_failure'):
+            with self.subTest(outcome=outcome):
+                changes, errors, successes = [], [], []
+                runner = ActionRunner(lambda: changes.append(runner.busy), errors.append,
+                                      lambda: successes.append(True))
+                future, failure = Future(), OSError('transport failed')
+
+                def action():
+                    if outcome == 'synchronous_failure':
+                        raise failure
+                    return future
+
+                self.assertTrue(runner.run('confirm', action))
+                if outcome != 'synchronous_failure':
+                    self.assertEqual(runner.busy, 'confirm')
+                    self.assertFalse(runner.run('retry', lambda: self.fail('duplicate action ran')))
+                    if outcome == 'success':
+                        future.set_result(None)
+                    elif outcome == 'failure':
+                        future.set_exception(failure)
+                    else:
+                        future.cancel()
+                self.assertIsNone(runner.busy)
+                self.assertEqual(changes, ['confirm', None])
+                self.assertEqual(successes, [True] if outcome == 'success' else [])
+                if outcome == 'cancelled':
+                    self.assertEqual(len(errors), 1)
+                    self.assertIsInstance(errors[0], CancelledError)
+                else:
+                    self.assertEqual(errors, [] if outcome == 'success' else [failure])
+
+    def test_old_action_results_cannot_affect_a_new_connection(self):
+        for outcome in ('success', 'failure', 'cancelled'):
+            with self.subTest(outcome=outcome):
+                events = []
+                runner = ActionRunner(lambda: events.append('changed'),
+                                      lambda error: events.append('failed'),
+                                      lambda: events.append('succeeded'))
+                old, new = Future(), Future()
+                runner.run('confirm', lambda: old)
+                runner.disconnect()
+                runner.run('retry', lambda: new)
+                before = events.copy()
+                if outcome == 'success':
+                    old.set_result(None)
+                elif outcome == 'failure':
+                    old.set_exception(RuntimeError('stale'))
+                else:
+                    old.cancel()
+                self.assertEqual(events, before)
+                self.assertEqual(runner.busy, 'retry')
+                new.set_result(None)
+                self.assertEqual(events[len(before):], ['succeeded', 'changed'])
+                self.assertIsNone(runner.busy)
 
     def test_independent_settings_and_cancelled_request(self):
         client, errors = Client(), []

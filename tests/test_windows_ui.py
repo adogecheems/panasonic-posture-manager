@@ -1,76 +1,41 @@
 """Windows UI behavior with synthetic clients and optional isolated Qt widgets."""
 import importlib.util
+from contextlib import redirect_stderr
+import io
 import os
 from pathlib import Path
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
-from panasonic_posture.windows.ui.unavailable import UnavailableClient
-try:
-    from tests.windows_ui_fixture import SyntheticClient
-except ModuleNotFoundError:
-    from windows_ui_fixture import SyntheticClient
+from panasonic_posture.windows.ui.unavailable import UnavailableClient, UnavailableError
 
 
-class UiClientTests(unittest.TestCase):
-    def setUp(self):
-        self.jobs, self.states = [], []
-        self.client = SyntheticClient(lambda delay, callback: self.jobs.append(callback))
-        self.client.start(self.states.append, lambda: None)
+class UnavailableClientTests(unittest.TestCase):
+    def test_start_and_refresh_only_report_disconnection(self):
+        client, unavailable = UnavailableClient(), []
+        unexpected = lambda *args: self.fail('disconnected client published a connection or state')
+        client.start(unexpected, lambda: unavailable.append(True), unexpected)
+        client.refresh()
+        client.stop()
+        self.assertEqual(unavailable, [True, True])
 
-    def drain(self):
-        while self.jobs:
-            self.jobs.pop(0)()
-
-    def test_mode_request_and_completion_are_distinct(self):
-        future = self.client.set_mode('tent')
-        self.assertTrue(future.done())
-        self.assertIsNone(self.states[-1]['applied'])
-        self.assertEqual(self.states[-1]['target']['mode'], 'tent')
-        self.drain()
-        self.assertEqual(self.states[-1]['applied']['mode'], 'tent')
-
-    def test_hardware_rejects_and_manual_tent_ignores_automatic_preference(self):
-        self.client.scenario('hardware')
-        self.assertIsNotNone(self.client.set_mode('laptop').exception())
-        self.client.scenario('laptop')
-        self.client.set_preference('tent_enabled', False)
-        self.assertIsNone(self.client.set_mode('tent').exception())
-        self.client.set_preference('tent_enabled', False)
-        self.assertEqual(self.states[-1]['manual'], 'tent')
-
-    def test_stale_completion_and_stop_do_not_publish(self):
-        self.client.set_mode('tent')
-        self.client.scenario('hardware')
-        self.drain()
-        self.assertEqual(self.states[-1]['applied']['mode'], 'hardware')
-        self.client.scenario('laptop')
-        self.client.set_mode('stand')
-        self.client.stop()
-        count = len(self.states)
-        self.drain()
-        self.assertEqual(len(self.states), count)
-
-    def test_prompt_epoch_and_calibration(self):
-        self.client.scenario('prompt')
-        self.assertIsNotNone(self.client.confirm_prompt('tent', 0).exception())
-        epoch = self.states[-1]['pending_notification']
-        self.client.confirm_prompt('tent', epoch)
-        self.drain()
-        self.assertEqual(self.states[-1]['applied']['mode'], 'tent')
-        self.client.calibrate()
-        self.assertTrue(self.states[-1]['sensor_calibrated'])
-        self.client.reset_calibration()
-        self.assertFalse(self.states[-1]['sensor_calibrated'])
-
-    def test_unavailable_client_never_reports_success(self):
+    def test_all_operations_fail_without_synthesizing_success(self):
         client = UnavailableClient()
-        unavailable = []
-        client.start(lambda value: self.fail('unexpected state'), lambda: unavailable.append(True))
-        self.assertEqual(unavailable, [True])
-        self.assertIsNotNone(client.set_mode('tent').exception())
+        for method, args in (
+            ('set_mode', ('tent',)), ('set_preference', ('tent_enabled', False)),
+            ('confirm_prompt', ('tent', 7)), ('calibrate', ()),
+            ('reset_calibration', ()), ('retry', ('tent',)),
+        ):
+            with self.subTest(method=method):
+                future = getattr(client, method)(*args)
+                self.assertTrue(future.done())
+                with self.assertRaises(UnavailableError):
+                    future.result()
 
+
+class CommandLineTests(unittest.TestCase):
     def test_cli_help_does_not_load_qt_or_gi(self):
         result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.windows.ui', '--help'],
                                 text=True, capture_output=True, timeout=10)
@@ -80,78 +45,26 @@ class UiClientTests(unittest.TestCase):
             self.assertNotIn(retired, result.stdout)
 
     def test_retired_development_options_are_not_accepted(self):
+        from panasonic_posture.windows.ui.__main__ import main
+
         for option in ('--demo', '--backend', '--scenario', '--settings',
-                       '--native-backend', '--hardware-backend', '--simulate-backend'):
-            with self.subTest(option=option):
-                result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.windows.ui',
-                    option], text=True, capture_output=True, timeout=10)
-                self.assertEqual(result.returncode, 2)
-                self.assertIn('unrecognized arguments', result.stderr)
+                       '--native', '--native-backend', '--hardware-backend', '--simulate-backend'):
+            error = io.StringIO()
+            with self.subTest(option=option), redirect_stderr(error):
+                with self.assertRaises(SystemExit) as caught:
+                    main([option])
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn('unrecognized arguments', error.getvalue())
 
     def test_background_is_windows_only(self):
-        if sys.platform == 'win32':
-            self.skipTest('platform check is exercised on non-Windows hosts')
-        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.windows.ui',
-                                 '--background'],
-                                text=True, capture_output=True, timeout=10)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('--background requires Windows', result.stderr)
+        from panasonic_posture.windows.ui.__main__ import main
 
-    def test_source_catalog_fallback(self):
-        from tempfile import TemporaryDirectory
-        from unittest.mock import patch
-        from panasonic_posture.windows.app.resources import translator
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / 'po').mkdir()
-            (root / 'po/zh_CN.po').write_text('msgid "Laptop"\nmsgstr "笔记本"\n', encoding='utf-8')
-            with patch.dict(os.environ, PANASONIC_POSTURE_DATA_DIR=str(root / 'data')):
-                self.assertEqual(translator('zh_CN')('Laptop'), '笔记本')
-                self.assertEqual(translator('zh-Hans')('Laptop'), '笔记本')
-                self.assertEqual(translator('zh_TW')('Laptop'), 'Laptop')
-                self.assertEqual(translator('en')('Laptop'), 'Laptop')
-
-    def test_application_display_name_matches_the_window_title_source(self):
-        from panasonic_posture.windows.app.resources import application_name
-        from panasonic_posture.product import APPLICATION_DISPLAY_NAME
-        self.assertEqual(application_name('en'), APPLICATION_DISPLAY_NAME)
-        self.assertEqual(
-            application_name('zh_CN'), '松下二合一平板电脑姿态管理工具'
-        )
-
-    def test_windows_ui_language_wins_over_process_lang(self):
-        from unittest.mock import patch
-        from panasonic_posture.windows.app.resources import default_language
-        environment = {'LANGUAGE': '', 'LC_ALL': '', 'LC_MESSAGES': '', 'LANG': 'C.UTF-8'}
-        with patch.dict(os.environ, environment), \
-                patch('panasonic_posture.windows.app.resources._windows_language',
-                      return_value='zh_CN'):
-            self.assertEqual(default_language(), 'zh_CN')
-        with patch.dict(os.environ, environment), \
-                patch('panasonic_posture.windows.app.resources._windows_language',
-                      return_value=None):
-            self.assertEqual(default_language(), 'C.UTF-8')
-        with patch.dict(os.environ, dict(environment, LC_ALL='zh_CN.UTF-8')), \
-                patch('panasonic_posture.windows.app.resources._windows_language',
-                      return_value=None):
-            self.assertEqual(default_language(), 'zh_CN.UTF-8')
-
-    def test_new_source_strings_survive_an_older_compiled_catalog(self):
-        import gettext
-        from tempfile import TemporaryDirectory
-        from unittest.mock import patch
-        from panasonic_posture.windows.app.resources import translator
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / 'po').mkdir()
-            (root / 'po/zh_CN.po').write_text('msgid "Stand"\nmsgstr "支架"\n', encoding='utf-8')
-            compiled = gettext.GNUTranslations()
-            compiled._catalog = {'Laptop': '笔记本'}
-            compiled.plural = lambda n: int(n != 1)
-            with patch.dict(os.environ, PANASONIC_POSTURE_DATA_DIR=str(root / 'data')):
-                with patch('gettext.translation', return_value=compiled):
-                    self.assertEqual(translator('zh_CN')('Laptop'), '笔记本')
-                    self.assertEqual(translator('zh_CN')('Stand'), '支架')
+        error = io.StringIO()
+        with patch('sys.platform', 'linux'), redirect_stderr(error):
+            with self.assertRaises(SystemExit) as caught:
+                main(['--background'])
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn('--background requires Windows', error.getvalue())
 
 
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),

@@ -265,6 +265,9 @@ python tests/check_i18n.py
 - C 使用 C11，并通过 `-Wall -Wextra -Werror`；保留字符设备打开与输入权限检查。
 - Linux UI 使用 PyGObject、GTK 4/libadwaita；Windows UI 使用 PyQt6 和 Fluent Widgets。
 - 测试在进程、总线、文件系统、时钟和设备边界注入 fake；临时文件使用 `TemporaryDirectory`。
+- 产品行为测试必须调用生产对象；fixture 自测不能替代或计作产品行为覆盖。共享规则集中在共享层测试，平台测试保留适配和集成差异。
+- 相同流程、仅输入或结果不同的案例优先使用带名称的 `subTest`；独立状态场景必须重新建立对象，避免前一个案例掩盖后一个。
+- 纯逻辑和资源测试不依赖 GUI。命令行参数矩阵直接调用入口，保留必要的独立进程冒烟检查；真实控件、导入隔离和进程生命周期仍在隔离进程验证。
 - 翻译以英文源文案为 msgid，确保 `po/POTFILES.in` 覆盖源文件；`.mo` 由构建生成。
 - XML、D-Bus 接口和 WiX 描述只放在独立资源文件中；需要动态生成时使用标准 XML API，禁止在 Python、C、脚本或测试代码中内联 XML 文档。
 - 注释解释原因、不变量和失败路径；不复述代码。

@@ -186,6 +186,10 @@ make check-i18n
 
 Windows CI 与本地检查：
 
+共享界面交互逻辑在 `test_frontend.py` 验证；Windows 资源与语言选择在
+`test_windows_resources.py` 验证，两者都不需要 Qt。`test_windows_ui.py`
+保留入口、断线客户端和隔离控件测试；参数矩阵直接调用入口，帮助命令保留独立进程检查。
+
 ```powershell
 $env:PYTHONPATH = "src"
 python -m compileall -q src/panasonic_posture/windows
