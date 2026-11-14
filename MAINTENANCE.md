@@ -179,6 +179,11 @@ make check-dbus
 make check-i18n
 ```
 
+只检查两平台的静态导入边界时，运行
+`python -m unittest discover -s tests -p "test_platform_imports.py" -v`
+（同样需要 `PYTHONPATH=src`）。该检查每轮只解析一次源码，并覆盖绝对导入、
+相对导入和 `from 包 import 子模块`，不加载平台适配器或访问硬件。
+
 Windows CI 与本地检查：
 
 ```powershell

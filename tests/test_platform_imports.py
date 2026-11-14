@@ -6,6 +6,7 @@ import ast
 from pathlib import Path
 import tomllib
 import unittest
+from unittest.mock import patch
 
 
 SOURCE = Path(__file__).resolve().parents[1] / "src"
@@ -68,14 +69,11 @@ def _imported_modules(path: Path) -> set[str]:
             if not base:
                 continue
             imported.add(base)
-            if node.module is None:
-                imported.update(
-                    candidate
-                    for alias in node.names
-                    if _package_module_exists(
-                        candidate := f"{base}.{alias.name}"
-                    )
-                )
+            imported.update(
+                candidate
+                for alias in node.names
+                if _package_module_exists(candidate := f"{base}.{alias.name}")
+            )
     return imported
 
 
@@ -100,11 +98,64 @@ def _package_module_exists(module: str) -> bool:
     return base.with_suffix(".py").is_file() or (base / "__init__.py").is_file()
 
 
+class ImportScannerTests(unittest.TestCase):
+    def test_from_imports_include_existing_child_modules(self):
+        for source in (
+            "from panasonic_posture.windows import service as backend",
+            "from .. import service as backend",
+        ):
+            with self.subTest(source=source), patch.object(Path, "read_text", return_value=source):
+                modules = _imported_modules(PACKAGE_ROOT / "windows" / "ui" / "probe.py")
+                self.assertEqual(modules, {
+                    "panasonic_posture.windows", "panasonic_posture.windows.service",
+                })
+
+    def test_package_relative_imports_use_the_package_directory(self):
+        with patch.object(Path, "read_text", return_value="from . import ui"):
+            self.assertEqual(
+                _imported_modules(PACKAGE_ROOT / "windows" / "__init__.py"),
+                {"panasonic_posture.windows", "panasonic_posture.windows.ui"},
+            )
+
+    def test_multiple_relative_imports_keep_the_original_package(self):
+        with patch.object(Path, "read_text", return_value=(
+            "from .ui import app\nfrom . import hardware\n"
+        )):
+            self.assertEqual(
+                _imported_modules(PACKAGE_ROOT / "windows" / "__init__.py"),
+                {"panasonic_posture.windows.ui", "panasonic_posture.windows.ui.app",
+                 "panasonic_posture.windows", "panasonic_posture.windows.hardware"},
+            )
+
+    def test_attributes_and_star_imports_are_not_invented_as_modules(self):
+        with patch.object(Path, "read_text", return_value=(
+            "from panasonic_posture.model import Target as Goal\n"
+            "from panasonic_posture.model import *\n"
+            "import panasonic_posture.windows.service as backend\n"
+        )):
+            self.assertEqual(
+                _imported_modules(PACKAGE_ROOT / "probe.py"),
+                {"panasonic_posture.model", "panasonic_posture.windows.service"},
+            )
+
+    def test_invalid_source_fails_the_scan(self):
+        with patch.object(Path, "read_text", return_value="from . import"), self.assertRaises(SyntaxError):
+            _imported_modules(PACKAGE_ROOT / "probe.py")
+
+
 class PlatformImportTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Share a fresh scan within this suite, without retaining stale results
+        # when the suite is run again in the same interpreter.
+        cls.imports = {
+            path: _imported_modules(path) for path in _python_files(PACKAGE_ROOT)
+        }
+
     def test_windows_code_does_not_import_linux_adapters(self):
         violations: list[str] = []
         for path in _python_files(PACKAGE_ROOT / "windows"):
-            for module in _imported_modules(path):
+            for module in self.imports[path]:
                 if module == "gi" or module.startswith("gi."):
                     violations.append(f"{path.relative_to(SOURCE)} imports {module}")
                 elif _matches(module, frozenset(), LINUX_PREFIXES):
@@ -114,7 +165,7 @@ class PlatformImportTests(unittest.TestCase):
     def test_linux_adapters_do_not_import_windows_code(self):
         violations: list[str] = []
         for path in _python_files(PACKAGE_ROOT / "linux"):
-            for module in _imported_modules(path):
+            for module in self.imports[path]:
                 if _matches(module, frozenset(), WINDOWS_PREFIXES):
                     violations.append(f"{path.relative_to(SOURCE)} imports {module}")
         self.assertEqual(violations, [])
@@ -125,7 +176,7 @@ class PlatformImportTests(unittest.TestCase):
             parts = path.relative_to(PACKAGE_ROOT).parts
             if parts[0] in {"linux", "windows"}:
                 continue
-            for module in _imported_modules(path):
+            for module in self.imports[path]:
                 if _matches(module, frozenset(), WINDOWS_PREFIXES + LINUX_PREFIXES):
                     violations.append(f"{path.relative_to(SOURCE)} imports {module}")
         self.assertEqual(violations, [])
@@ -139,7 +190,7 @@ class PlatformImportTests(unittest.TestCase):
                 continue
             source = parts[0]
             allowed = WINDOWS_DOMAIN_DEPENDENCIES[source]
-            for module in _imported_modules(path):
+            for module in self.imports[path]:
                 if not module.startswith("panasonic_posture.windows."):
                     continue
                 target = module.split(".")[2]
@@ -158,7 +209,7 @@ class PlatformImportTests(unittest.TestCase):
                 continue
             source = parts[0]
             allowed = LINUX_DOMAIN_DEPENDENCIES[source]
-            for module in _imported_modules(path):
+            for module in self.imports[path]:
                 if not module.startswith("panasonic_posture.linux."):
                     continue
                 target = module.split(".")[2]
@@ -171,7 +222,7 @@ class PlatformImportTests(unittest.TestCase):
     def test_all_package_imports_resolve_to_source_modules(self):
         violations: list[str] = []
         for path in _python_files(PACKAGE_ROOT):
-            for module in _imported_modules(path):
+            for module in self.imports[path]:
                 if module.startswith(PACKAGE) and not _package_module_exists(module):
                     violations.append(f"{path.relative_to(SOURCE)} imports missing {module}")
         self.assertEqual(violations, [])
