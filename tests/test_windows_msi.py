@@ -230,9 +230,6 @@ class MsiPayloadTests(unittest.TestCase):
             'installer-banner.png',
             'Id="WixUIDialogBmp"',
             'installer-dialog.png',
-            'Id="WixUIInfoIco"',
-            'Id="WixUIExclamationIco"',
-            'installer-info.png',
             'Id="WixUILicenseRtf" Value="$(var.LicenseRtf)"',
             'Id="LocalizeStartMenu"',
             'Id="RepairStartMenuShortcut"',
@@ -676,11 +673,22 @@ class MsiPayloadTests(unittest.TestCase):
                     self.assertEqual(control.get('Width'), '220')
                     self.assertEqual(control.get('RightAligned'), 'yes')
 
+    def test_installer_preserves_builtin_message_icons(self):
+        root = ET.parse(ROOT / 'packaging/windows/msi/Package.wxs').getroot()
+        variables = {
+            element.get('Id') for element in root.iter()
+            if element.tag.endswith('WixVariable')
+        }
+        # Branding must not replace the distinct information and warning
+        # symbols supplied by WixToolset.UI.wixext.
+        for name in ('WixUIInfoIco', 'WixUIExclamationIco'):
+            with self.subTest(name=name):
+                self.assertNotIn(name, variables)
+
     def test_installer_branding_uses_wix_bitmap_dimensions(self):
         dimensions = {
             'installer-banner.png': (493, 58),
             'installer-dialog.png': (493, 312),
-            'installer-info.png': (32, 32),
         }
         for name, expected in dimensions.items():
             with self.subTest(name=name):

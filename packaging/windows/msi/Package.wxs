@@ -193,12 +193,6 @@
     <WixVariable
         Id="WixUIDialogBmp"
         Value="$(var.ProjectRoot)/data/assets/windows/installer/installer-dialog.png" />
-    <WixVariable
-        Id="WixUIInfoIco"
-        Value="$(var.ProjectRoot)/data/assets/windows/installer/installer-info.png" />
-    <WixVariable
-        Id="WixUIExclamationIco"
-        Value="$(var.ProjectRoot)/data/assets/windows/installer/installer-info.png" />
 
     <InstallExecuteSequence>
       <Custom Action="EnforceMainPath" After="CostFinalize" Condition="NOT REMOVE" />
