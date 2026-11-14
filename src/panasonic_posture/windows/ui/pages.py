@@ -29,6 +29,7 @@ from .labels import mode_label
 
 GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
 APP_VERSION = display_version()
+APPEARANCE_MODES = (Theme.AUTO, Theme.LIGHT, Theme.DARK)
 
 
 def mode_labels(_):
@@ -348,11 +349,13 @@ class Settings(Page):
         github.hBoxLayout.addSpacing(16)
         self.github_card = github
         self.add_card(group, github, (self.github_button,))
-        appearance = ComboBox()
+        appearance = self.appearance = ComboBox()
         for text in (_('System'), _('Light'), _('Dark')):
             appearance.addItem(text)
         appearance.setAccessibleName(_('Appearance'))
-        appearance.currentIndexChanged.connect(lambda index: setTheme((Theme.AUTO, Theme.LIGHT, Theme.DARK)[index]))
+        self.sync_appearance(qconfig.get(qconfig.themeMode))
+        qconfig.themeChanged.connect(self.sync_appearance)
+        appearance.activated.connect(lambda index: setTheme(APPEARANCE_MODES[index]))
         card = SettingRow(QIcon(), _('Appearance'))
         card.hBoxLayout.addWidget(appearance, 0, Qt.AlignmentFlag.AlignVCenter)
         card.hBoxLayout.addSpacing(16)
@@ -373,6 +376,9 @@ class Settings(Page):
         bar.valueChanged.connect(self.update_scroll_edge)
         bar.rangeChanged.connect(self.update_scroll_edge)
         self.unavailable()
+
+    def sync_appearance(self, theme):
+        self.appearance.setCurrentIndex(APPEARANCE_MODES.index(theme))
 
     def add_group(self, title):
         group = SettingCardGroup(title)

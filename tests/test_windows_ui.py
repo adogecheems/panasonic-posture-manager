@@ -1074,6 +1074,23 @@ window.client.scenario('disconnected')
 assert not window.home.timer.isActive()
 ''')
 
+    def test_appearance_selector_tracks_configured_theme(self):
+        self.run_ui('''
+from qfluentwidgets import ComboBox, Theme, qconfig, setTheme
+setTheme(Theme.DARK)
+second = Window(client=SyntheticClient(QTimer.singleShot), language='en')
+first_selector = window.settings.findChild(ComboBox)
+second_selector = second.settings.findChild(ComboBox)
+assert second_selector.currentText() == 'Dark'
+assert first_selector.currentText() == 'Dark'
+second_selector.activated.emit(1)
+assert qconfig.get(qconfig.themeMode) == Theme.LIGHT
+assert first_selector.currentText() == 'Light'
+setTheme(Theme.AUTO)
+assert second_selector.currentText() == 'System'
+second.close()
+''')
+
     def test_chinese_dark_and_minimum_layout(self):
         self.run_ui('''
 from qfluentwidgets import setTheme, Theme
