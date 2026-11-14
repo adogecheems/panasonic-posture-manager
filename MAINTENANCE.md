@@ -10,7 +10,11 @@
 sha256sum --ignore-missing --check SHA256SUMS
 ```
 
-输出中应包含目标安装包，结果为 `OK`。
+Linux 校验输出中应包含目标安装包，结果为 `OK`。Windows 可在下载目录打开 PowerShell，运行以下命令，将所选文件的 Hash 与 `SHA256SUMS` 中同名文件的摘要逐位核对。
+
+```powershell
+Get-FileHash -Algorithm SHA256 -Path .\*.msi | Format-List Path, Hash
+```
 
 | 平台 | 安装命令 |
 | --- | --- |
@@ -22,7 +26,7 @@ sha256sum --ignore-missing --check SHA256SUMS
 
 文件名以实际发布版本为准。Ubuntu/Debian 需要 GTK 4.12+ 和 libadwaita 1.4+，依赖由包管理器安装。
 
-AUR 提供源码包和预构建包：
+Arch 用户也可通过 AUR 安装。以下两条命令任选一条，第一条从源码构建，第二条安装预构建包。
 
 ```sh
 yay -S panasonic-posture-manager
@@ -111,22 +115,28 @@ Windows MSI 会停止并移除服务，同时恢复安装前的平板指示器�
 
 正式安装支持 Windows 10/11 x64。Panasonic CFQV8、CFQV9、CFQV1 全系使用明确的已验证产品族配置；其他机型回退到与 Linux 相同的 `generic/compatible` 路径，由 WinRT 传感器、ETW 物理源、唯一 `ACPI\INT33D3` 输出和显示会话实际探测能力。MSI 包含受保护运行时、桌面界面、LocalSystem 硬件服务和可逆的 `ACPI\INT33D3` 非独占配置。
 
-运行期边界：
+### 硬件识别与服务连接
 
 - 物理姿态变化只接受 Intel HID Event Filter Event 115：`0xCC` 为平板，`0xCD` 为笔记本。
 - 明确 QV8/QV9/QV1 配置在启动时只读取一次平板指示器和恢复记录，建立初始状态；无法明确时最多等待五秒，然后使用非平板安全基线。其他机型必须通过能力探测收到一次合法 ETW Event 115 后才开放物理准入。
 - `ACPI\INT33D3` 按硬件 ID 唯一发现，不绑定某个固件实例后缀；它只用于发布软件帐篷/支架姿态，不用于反推运行期物理状态，也不会发布 shell 平板模式或自动打开屏幕键盘。
 - 界面通过经过身份校验的本地命名管道连接硬件服务；服务不可用时显示断线，不回退到模拟数据。
 - 界面和会话进程以普通用户运行；显示操作与硬件写入都必须匹配服务登记、会话资格、姿态代次和租约。
+
+### 登录、界面与安装资源
+
 - 硬件服务在已发布状态签名变化时置位一个仅信号用途的全局命名事件，界面观察器醒来后立即通过鉴权 RPC 刷新快照；事件不可用或丢失时界面按 0.1 秒空闲刷新兜底。窗口只在首次进入设置页时构建设置页面，首开窗口只加载主页。
 - 登录启动先创建仅依赖 PyQt、硬件客户端和托盘资源的启动壳；完整 Fluent 窗口首次打开时才加载。窗口尚未创建时，托盘通知仍按当前实例、提示代次和可确认条件直接确认。
 - 升级时只把能够确认属于本应用的已知旧 Run 命令迁移到当前固定命令并回读；初始化标记仍保留。用户已关闭的空值不得自动重开，未知内容不得覆盖或删除。
 - MSI 同时携带应用源码与纯 Python UI 依赖的确定性 `unchecked-hash` 字节码；`pythonw` 入口和开始菜单快捷方式使用 `-B -I`，安装目录不需要在运行期写入 `__pycache__`。字节码必须由与受保护运行时相同版本的 Python 生成。
 - MSI 开始菜单快捷方式与界面进程使用同一个固定 AUMID；快捷方式重建后必须回读校验，避免通知来源回退为 `Python`。
 - 开始菜单快捷方式直接位于 `Programs` 根级，不创建同名应用文件夹；升级时只迁移已知的旧应用文件夹内链接，并仅在旧文件夹为空时清理该文件夹。
+
+### 显示恢复与姿态交接
+
 - 所有显示写入使用恢复日志。锁屏、用户切换、硬件源失效或写入失败时，程序撤销确认并恢复原方向。
 - 平板退出前不再预锁方向：Windows 在释放 convertible-slate 指示器时会覆盖旋转锁并转向桌面原生方向，预锁只会带来额外的回滚转动。退出后只读等待最多两秒并持续补锁，等待不因硬件状态短暂不可读而提前结束，目标稳定后一次写入方向。软件帐篷和支架先发布 CSM 并等待 Windows 响应落地，再一次写入方向和锁；笔记本仍先写方向再发布 CSM。显示回滚或平台改写期间保留已成功发布的 CSM 租约，只有资格丢失、CSM 通知失败或真正释放才恢复启动值。物理接管时不得把旧软件目标或启动值重新写入 CSM。
-- 会话启动时授权证明、显示恢复、预锁、后续显示写入和最终恢复/CSM 释放共用显示工作线程；lease worker 使用独立 RPC 通道，主线程不再构造、预锁或恢复显示，也不会占用第三个有界通道。重复释放 CSM 保持幂等，不再重复查询硬件或重写启动值。
+- 会话启动时授权证明、显示恢复、后续显示写入和最终恢复/CSM 释放共用显示工作线程；lease worker 使用独立 RPC 通道，主线程不构造或恢复显示，也不会占用第三个有界通道。重复释放 CSM 保持幂等，不再重复查询硬件或重写启动值。
 - 锁屏、睡眠或休眠会结束旧姿态事务。服务在恢复会话请求前检查主循环时钟跳变；资格或物理源恢复后，自动模式必须等新的稳定姿态，不能先发布临时笔记本目标再跳向帐篷。
 
 Windows 产品保持内置键盘和触控板可用，不加载自研输入过滤驱动，不要求测试签名。源码目录不能作为特权运行时；正式服务只由 MSI 安装。
@@ -151,6 +161,8 @@ packaging\windows\run.cmd --language zh_CN
 支持的参数只有 `--language en|zh_CN` 和 Windows 专用的 `--background`。源码界面同样只连接已安装的硬件服务。
 
 ## 构建与验证
+
+### 测试
 
 Linux 完整检查：
 
@@ -179,7 +191,9 @@ python -m unittest tests.test_localization tests.test_i18n_check -v
 python tests/check_i18n.py
 ```
 
-发行版打包：
+### 打包
+
+Windows 首次构建前先按下方“Windows 构建依赖”准备 Python 依赖和 WiX。
 
 | 平台 | 命令 | 输出 |
 | --- | --- | --- |
@@ -199,7 +213,7 @@ Windows MSI 默认构建简体中文界面；正式发布同时生成简体中�
 
 含非 ASCII 文本的 PowerShell 脚本必须保存为带 BOM 的 UTF-8；Windows PowerShell 5.1 会按系统 ANSI 代码页解释无 BOM 的 UTF-8，可能破坏安装自定义动作的字符串边界。打包测试会检查 `packaging/windows/` 下的脚本。
 
-Windows 构建前准备依赖和 WiX：
+#### Windows 构建依赖
 
 ```bat
 python -m pip install --target build\windows-dependencies -r packaging\windows\requirements-ui.txt
@@ -208,9 +222,9 @@ wix extension add -g WixToolset.UI.wixext/5.0.2
 wix extension add -g WixToolset.Util.wixext/5.0.2
 ```
 
-正式用户只安装 MSI，不要分发或依赖便携 ZIP。
+#### Arch 包验证
 
-Arch 产物可在隔离环境中继续检查：
+在隔离环境中检查已构建的包：
 
 ```sh
 make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
