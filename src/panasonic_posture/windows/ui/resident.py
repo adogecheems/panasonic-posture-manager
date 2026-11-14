@@ -15,6 +15,7 @@ from ...contracts import TICK_SECONDS
 from ...frontend.state import notice_confirmable, notice_token
 from .labels import mode_label
 from ..app.resources import application_name, data_root, translator
+from .wake import WakeWatch
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class ResidentTray(QObject):
         self._tooltip = None
         self.icon = resident_icon()
         self.timer = QTimer(self)
+        self._wake = None
         self._tray_activation = QTimer(self)
         self._tray_activation.setSingleShot(True)
         self._tray_activation.timeout.connect(self._finish_tray_activation)
@@ -79,6 +81,9 @@ class ResidentTray(QObject):
             self.confirmation_failed.connect(self._show_confirmation_failure)
             self.timer.timeout.connect(self._poll_client)
             self.client.start(self.update_state, self.unavailable)
+            # The tray owns this client until a window exists, so it also owns
+            # the wake watch; the window shares the client without another one.
+            self._wake = WakeWatch(self.client)
         self.app.aboutToQuit.connect(self.shutdown)
         if self.enabled:
             if window is not None:
@@ -174,7 +179,7 @@ class ResidentTray(QObject):
         self.window.showNormal()
         self.window.raise_()
         self.window.activateWindow()
-        self.window.settings.refresh_startup()
+        self.window.refresh_startup()
 
     def open_notice(self):
         """Confirm only when the clicked notice still describes the current state."""
@@ -223,7 +228,7 @@ class ResidentTray(QObject):
         # Treat that like any other temporarily unconfirmable notice so the
         # click opens the window and leaves the prompt available for retry.
         return (self.window.home.actions.busy is None
-                and notice_confirmable(self.window.settings.model.state, self.notice))
+                and notice_confirmable(self.window.latest_state, self.notice))
 
     def _notice_click_consumed(self) -> bool:
         return time.monotonic() < self._notice_click_until
@@ -289,11 +294,17 @@ class ResidentTray(QObject):
         self.quitting = True
         self.timer.stop()
         self._tray_activation.stop()
+        self._close_wake()
         self.tray.hide()
         if self.window is not None:
             self.window.shutdown()
         else:
             self.client.stop()
+
+    def _close_wake(self):
+        if self._wake is not None:
+            self._wake.close()
+            self._wake = None
 
     def quit(self):
         self.shutdown()
@@ -306,6 +317,7 @@ class ResidentTray(QObject):
             self.quitting = True
             self.timer.stop()
             self._tray_activation.stop()
+            self._close_wake()
             self.tray.hide()
             self.client.stop()
         self.app.quit()

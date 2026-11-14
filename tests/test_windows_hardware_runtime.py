@@ -269,6 +269,7 @@ class HardwareRuntimeTests(unittest.TestCase):
             server_factory=None,
             launcher_factory=None,
             supervisor_factory=None,
+            wake=None,
             clock=clock,
             sleep=sleep,
             stop_timeout=3,

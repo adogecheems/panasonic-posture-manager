@@ -17,6 +17,7 @@ from .unavailable import UnavailableClient
 from ..ipc.client import HardwareUIClient
 from .pages import Home, Settings
 from ..app.resources import application_name, data_root, translator
+from .wake import WakeWatch
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     PageSwitcher, apply_app_font, BODY_SIZE, CAPTION_SIZE, HEADING_SIZE,
@@ -103,13 +104,11 @@ class Window(FluentWidget):
         else:
             self.client = UnavailableClient()
         self.home = Home(self.client, _, self.notify, self)
-        self.settings = Settings(
-            self.client, _, self.notify, self, startup=startup,
-            update_checker=update_checker,
-        )
+        self._startup = startup
+        self._update_checker = update_checker
+        self._settings = None
         self.stackedWidget = QStackedWidget(self)
         self.stackedWidget.addWidget(self.home)
-        self.stackedWidget.addWidget(self.settings)
         self.page_opacity = QGraphicsOpacityEffect(self.stackedWidget)
         self.stackedWidget.setGraphicsEffect(self.page_opacity)
         self.page_opacity.setEnabled(False)
@@ -134,25 +133,12 @@ class Window(FluentWidget):
         footer.addWidget(self.navigation)
         footer.addStretch()
         layout.addLayout(footer)
-        for label in self.findChildren((BodyLabel, CaptionLabel, TitleLabel)):
-            caption = isinstance(label, CaptionLabel)
-            label.setTextColor(MUTED_LIGHT if caption else TEXT_LIGHT,
-                               MUTED_DARK if caption else TEXT_DARK)
-            setFont(label,
-                    CAPTION_SIZE if caption else HEADING_SIZE if isinstance(label, TitleLabel) else BODY_SIZE,
-                    EMPHASIS_WEIGHT if isinstance(label, TitleLabel) else QFont.Weight.Normal)
-        for button in (self.home.confirm_button, self.home.retry_button, self.home.auto_button, self.settings.calibrate_button,
-                       self.settings.reset_button, self.settings.update_button,
-                       self.settings.findChild(ComboBox)):
-            selector = type(button).__name__
-            style = f'{selector} {{ border-radius: 10px; }}'
-            if isinstance(button, PrimaryPushButton):
-                setCustomStyleSheet(button, style, style)
-            else:
-                setCustomStyleSheet(button, style + f'{selector}:enabled {{color: {TEXT_LIGHT};}}',
-                                   style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
+        self._style_labels()
+        for button in (self.home.confirm_button, self.home.retry_button, self.home.auto_button):
+            self._style_button(button)
         setFont(self.titleBar.titleLabel, BODY_SIZE)
         self._last_state = None
+        self._wake = None
         if start_client:
             self.client.start(self.update_state, self.unavailable)
         self._backend_poll_count = 0
@@ -161,6 +147,63 @@ class Window(FluentWidget):
             self.backend_timer.timeout.connect(self.poll_backend)
             # Match the shared service cadence instead of waking twice as often.
             self.backend_timer.start(max(1, round(TICK_SECONDS * 1000)))
+            if start_client:
+                # Only the owner of the client watches the wake event.  The
+                # resident tray owns it when the window shares its client.
+                self._wake = WakeWatch(self.client, parent=self)
+
+    def _style_labels(self):
+        for label in self.findChildren((BodyLabel, CaptionLabel, TitleLabel)):
+            caption = isinstance(label, CaptionLabel)
+            label.setTextColor(MUTED_LIGHT if caption else TEXT_LIGHT,
+                               MUTED_DARK if caption else TEXT_DARK)
+            setFont(label,
+                    CAPTION_SIZE if caption else HEADING_SIZE if isinstance(label, TitleLabel) else BODY_SIZE,
+                    EMPHASIS_WEIGHT if isinstance(label, TitleLabel) else QFont.Weight.Normal)
+
+    @staticmethod
+    def _style_button(button):
+        selector = type(button).__name__
+        style = f'{selector} {{ border-radius: 10px; }}'
+        if isinstance(button, PrimaryPushButton):
+            setCustomStyleSheet(button, style, style)
+        else:
+            setCustomStyleSheet(button, style + f'{selector}:enabled {{color: {TEXT_LIGHT};}}',
+                               style + f'{selector}:enabled {{color: {TEXT_DARK};}}')
+
+    @property
+    def settings(self):
+        """Build the settings page on first use.
+
+        The resident shell opens the window without paying the settings page
+        construction cost; the page is created only when navigation or a
+        caller actually needs it.
+        """
+        if self._settings is None:
+            settings = Settings(
+                self.client, self._, self.notify, self,
+                startup=self._startup, update_checker=self._update_checker,
+            )
+            self.stackedWidget.addWidget(settings)
+            self._settings = settings
+            self._style_labels()
+            for button in (settings.calibrate_button, settings.reset_button,
+                           settings.update_button, settings.findChild(ComboBox)):
+                self._style_button(button)
+            if self._last_state is not None:
+                settings.update_state(self._last_state)
+            else:
+                settings.unavailable()
+        return self._settings
+
+    @property
+    def latest_state(self):
+        """The newest validated snapshot without forcing the settings page."""
+        return self._last_state
+
+    def refresh_startup(self):
+        if self._settings is not None:
+            self._settings.refresh_startup()
 
     def poll_backend(self):
         self.client.poll()
@@ -168,9 +211,9 @@ class Window(FluentWidget):
         interval = max(1, round(TICK_SECONDS * 1000))
         if self._backend_poll_count * interval >= 1000:
             self._backend_poll_count = 0
-            # Push delivery normally publishes changes immediately. A bounded
-            # read-only refresh repairs a single dropped state notification and
-            # keeps the visible result convergent with the backend.
+            # The service wake event publishes changes immediately; this
+            # bounded read-only refresh repairs a single dropped publication
+            # and keeps the visible result convergent with the backend.
             self.client.refresh()
 
     def update_mark(self):
@@ -219,13 +262,15 @@ class Window(FluentWidget):
             return
         self._last_state = state
         self.home.update_state(state)
-        self.settings.update_state(state)
+        if self._settings is not None:
+            self._settings.update_state(state)
         self.state_changed.emit(state)
 
     def unavailable(self):
         self._last_state = None
         self.home.unavailable()
-        self.settings.unavailable()
+        if self._settings is not None:
+            self._settings.unavailable()
         self.connection_lost.emit()
 
     def notify(self, success, detail: str | None = None):
@@ -249,7 +294,10 @@ class Window(FluentWidget):
         self._stopped = True
         self.backend_timer.stop()
         self.unavailable()
-        self.settings.shutdown()
+        if self._settings is not None:
+            self._settings.shutdown()
+        if self._wake is not None:
+            self._wake.close()
         self.client.stop()
 
     def closeEvent(self, event):
