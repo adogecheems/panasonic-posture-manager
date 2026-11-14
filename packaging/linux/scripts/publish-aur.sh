@@ -19,7 +19,7 @@ set -euo pipefail
 export LC_ALL=C
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-metadata_dir=${1:-"$repo_root/packaging/aur"}
+metadata_dir=${1:-"$repo_root/packaging/linux/aur"}
 metadata_dir=$(CDPATH='' cd -- "$metadata_dir" && pwd)
 package=${AUR_PACKAGE:-panasonic-posture-manager}
 remote=${AUR_REMOTE:-ssh://aur@aur.archlinux.org/${package}.git}
@@ -33,7 +33,7 @@ if [[ -z ${RELEASE_TAG:-} ]]; then
   exit 1
 fi
 
-version=$(python3 "$repo_root/packaging/scripts/release_version.py" --tag "$RELEASE_TAG")
+version=$(python3 "$repo_root/packaging/common/release_version.py" --tag "$RELEASE_TAG")
 
 if [[ -f $metadata_dir/.SRCINFO ]]; then
   srcinfo=$metadata_dir/.SRCINFO
@@ -72,7 +72,7 @@ if ! ssh-keygen -y -f "$key" >/dev/null 2>&1; then
   exit 1
 fi
 
-known_hosts=$repo_root/packaging/ci/aur_known_hosts
+known_hosts=$repo_root/packaging/common/ci/aur_known_hosts
 if [[ ! -f $known_hosts ]]; then
   echo "error: pinned AUR SSH host key not found: $known_hosts" >&2
   exit 1

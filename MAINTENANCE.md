@@ -117,6 +117,7 @@ Windows MSI 会停止并移除服务，同时恢复安装前的平板指示器�
 - `ACPI\INT33D3` 按硬件 ID 唯一发现，不绑定某个固件实例后缀；它只用于发布软件帐篷/支架姿态，不用于反推运行期物理状态，也不会发布 shell 平板模式或自动打开屏幕键盘。
 - 界面通过经过身份校验的本地命名管道连接硬件服务；服务不可用时显示断线，不回退到模拟数据。
 - 界面和会话进程以普通用户运行；显示操作与硬件写入都必须匹配服务登记、会话资格、姿态代次和租约。
+- 硬件服务在已发布状态签名变化时置位一个仅信号用途的全局命名事件，界面观察器醒来后立即通过鉴权 RPC 刷新快照；事件不可用或丢失时界面按 0.1 秒空闲刷新兜底。窗口只在首次进入设置页时构建设置页面，首开窗口只加载主页。
 - 登录启动先创建仅依赖 PyQt、硬件客户端和托盘资源的启动壳；完整 Fluent 窗口首次打开时才加载。窗口尚未创建时，托盘通知仍按当前实例、提示代次和可确认条件直接确认。
 - 升级时只把能够确认属于本应用的已知旧 Run 命令迁移到当前固定命令并回读；初始化标记仍保留。用户已关闭的空值不得自动重开，未知内容不得覆盖或删除。
 - MSI 同时携带应用源码与纯 Python UI 依赖的确定性 `unchecked-hash` 字节码；`pythonw` 入口和开始菜单快捷方式使用 `-B -I`，安装目录不需要在运行期写入 `__pycache__`。字节码必须由与受保护运行时相同版本的 Python 生成。
@@ -182,7 +183,7 @@ python tests/check_i18n.py
 
 | 平台 | 命令 | 输出 |
 | --- | --- | --- |
-| Arch | `(cd packaging/aur && makepkg --cleanbuild)` | 当前目录 |
+| Arch | `(cd packaging/linux/aur && makepkg --cleanbuild)` | 当前目录 |
 | Debian / Ubuntu | `make package-deb` | `dist/packages/` |
 | Fedora | `make package-rpm` | `dist/packages/` |
 | Windows MSI（正式） | 分别使用 `--culture zh-CN` 和 `--culture en-US` 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | `dist/windows/` 下两个带 culture 的文件名 |
@@ -223,7 +224,7 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 2. 运行版本一致性检查：
 
 ```sh
-python packaging/scripts/release_version.py --tag v2.5.0
+python packaging/common/release_version.py --tag v2.5.0
 ```
 
 3. 通过完整测试后推送版本标签。发布工作流会构建 Arch、Deb、RPM 和简体中文/英文 Windows MSI，生成 `SHA256SUMS`，上传 GitHub Release，并更新两个 AUR 包。

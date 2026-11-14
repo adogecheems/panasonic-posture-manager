@@ -8,7 +8,7 @@ PYTHON ?= /usr/bin/python3
 CC ?= cc
 MSG_FMT ?= msgfmt
 PACKAGE ?= $(firstword \
-	$(wildcard packaging/aur/panasonic-posture-manager-[0-9]*.pkg.tar.zst) \
+	$(wildcard packaging/linux/aur/panasonic-posture-manager-[0-9]*.pkg.tar.zst) \
 	$(wildcard panasonic-posture-manager-[0-9]*.pkg.tar.zst))
 PREVIOUS_PACKAGE ?=
 PACKAGE_NO_INSTALL ?= 0
@@ -26,16 +26,16 @@ ifeq ($(WERROR),1)
 override CFLAGS += -Werror
 endif
 
-RELAY_SOURCES := $(wildcard backend/*.c)
-RELAY_HEADERS := $(wildcard backend/*.h)
+RELAY_SOURCES := $(wildcard backend/linux/*.c)
+RELAY_HEADERS := $(wildcard backend/linux/*.h)
 MO := locale/zh_CN/LC_MESSAGES/panasonic-posture-manager.mo
 
 .PHONY: all check check-c check-compile check-unit check-dbus check-i18n check-package \
 	package-deb package-rpm clean
 
-all: backend/relay $(MO)
+all: backend/linux/relay $(MO)
 
-backend/relay: $(RELAY_SOURCES) $(RELAY_HEADERS)
+backend/linux/relay: $(RELAY_SOURCES) $(RELAY_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(RELAY_SOURCES) $(LDFLAGS) -o $@
 
 $(MO): po/zh_CN.po
@@ -49,12 +49,12 @@ check: all check-c check-compile check-unit check-dbus check-i18n
 # covered by tests/manual on the target machine.
 check-c:
 	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror backend/tests/relay_test.c \
-		backend/input.c backend/switch.c backend/uinput.c $(LDFLAGS) \
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror backend/linux/tests/relay_test.c \
+		backend/linux/input.c backend/linux/switch.c backend/linux/uinput.c $(LDFLAGS) \
 		-o build/relay-test
 	./build/relay-test
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror backend/tests/input_test.c \
-		backend/uinput.c $(LDFLAGS) -o build/input-test
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror backend/linux/tests/input_test.c \
+		backend/linux/uinput.c $(LDFLAGS) -o build/input-test
 	./build/input-test
 	$(CC) $(CPPFLAGS) $(CFLAGS) -Werror backend/windows/control.c \
 		backend/windows/tests/control_test.c -o build/windows-control-test
@@ -87,13 +87,13 @@ check-package:
 # These targets require the matching distribution toolchain (dpkg-deb or
 # rpmbuild).  The release workflow runs them in Ubuntu and Fedora containers.
 package-deb:
-	bash packaging/scripts/build-deb.sh
+	bash packaging/linux/scripts/build-deb.sh
 
 package-rpm:
-	bash packaging/scripts/build-rpm.sh
+	bash packaging/linux/scripts/build-rpm.sh
 
 clean:
-	rm -f backend/relay
-	rm -f backend/*.gch
+	rm -f backend/linux/relay
+	rm -f backend/linux/*.gch
 	rm -rf locale dist build src/*.egg-info
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

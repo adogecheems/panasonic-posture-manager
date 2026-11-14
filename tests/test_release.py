@@ -40,8 +40,8 @@ class ReleaseMetadataTests(unittest.TestCase):
         project = tomllib.loads(read("pyproject.toml"))
         self.project = project
         self.project_version = str(project["project"]["version"])
-        self.pkgbuild = read("packaging/aur/PKGBUILD")
-        self.srcinfo = read("packaging/aur/.SRCINFO")
+        self.pkgbuild = read("packaging/linux/aur/PKGBUILD")
+        self.srcinfo = read("packaging/linux/aur/.SRCINFO")
         self.readme = read("README.md")
 
     def test_python_package_and_project_versions_match(self) -> None:
@@ -142,9 +142,9 @@ class ReleaseMetadataTests(unittest.TestCase):
         for relative in (
             "README.md",
             "LICENSE",
-            "packaging/aur/PKGBUILD",
-            "packaging/aur/.SRCINFO",
-            "packaging/aur/panasonic-posture-manager.install",
+            "packaging/linux/aur/PKGBUILD",
+            "packaging/linux/aur/.SRCINFO",
+            "packaging/linux/aur/panasonic-posture-manager.install",
             "packaging/windows/build_msi.py",
             "packaging/windows/msi/Package.wxs",
             "packaging/windows/msi/LICENSE.rtf",

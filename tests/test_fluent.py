@@ -1102,7 +1102,7 @@ from qfluentwidgets import fontFamilies, setTheme, Theme
 from PyQt6.QtGui import QFont, QIcon
 from panasonic_posture.windows.app.resources import data_root
 assert (window.width(), window.height()) == (500, 660)
-assert window.stackedWidget.count() == 2
+assert window.stackedWidget.count() == 1  # Settings page builds on first use
 assert not hasattr(window, 'navigationInterface')
 assert window.stackedWidget.currentWidget() is window.home
 assert app.font().hintingPreference() == QFont.HintingPreference.PreferDefaultHinting
@@ -1114,6 +1114,7 @@ assert window.titleBar.hBoxLayout.itemAt(1).spacerItem().sizeHint().width() == 6
 margins = window.titleBar.titleLabel.contentsMargins()
 assert (margins.top(), margins.bottom()) == (1, 4)
 window.navigation.items['settings'].click()
+assert window.stackedWidget.count() == 2
 assert window.stackedWidget.currentWidget() is window.settings
 assert window.navigation.currentRouteKey() == 'settings'
 app_icon = QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png'))

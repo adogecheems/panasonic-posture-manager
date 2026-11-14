@@ -287,7 +287,7 @@ def _switch_candidate(event_dir: Path, switch_name: str | None) -> dict[str, Any
         raise _CandidateError(
             "tablet switch capabilities are incomplete (ev/key missing)"
         )
-    # Mirror backend/switch.c exactly: a device that declares EV_KEY events is
+    # Mirror backend/linux/switch.c exactly: a device that declares EV_KEY events is
     # not a switch-only aggregation source, even when its key bitmap is empty.
     if event_types & (1 << EV_KEY):
         return None

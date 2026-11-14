@@ -68,6 +68,7 @@
 - 服务端和客户端使用 overlapped I/O。鉴权和写回复不得阻塞唯一 owner loop。
 - 会话启动的授权证明、显示恢复、后续显示写入和最终恢复/CSM 释放必须复用同一显示工作线程及其 RPC 通道；lease worker 使用另一通道，不得因主线程构造或恢复显示而耗尽有界通道。
 - 会话的 lease 通道空闲时每约 3 秒发送一次轻量 `get_state` 保活，避免服务端空闲超时重置管道实例后在姿态切换瞬间产生瞬时断连。
+- 硬件服务在已发布状态签名（代次、目标、`applied`、提示和物理状态等）变化时置位一个仅信号用途的全局命名事件（`windows/ipc/wake.py`，无数据、无权限放大）；界面观察器由此唤醒并立即经鉴权 RPC 取回经过校验的快照。事件不可用或丢失时，界面按 0.1 秒空闲刷新兜底，绝不以事件本身承载或确认状态。
 - 会话资格只在快照瞬时过旧时失效（会话仍在前台且未锁屏）按瞬时故障处理：宽限期内不撤销就绪、不恢复显示、不释放 CSM 租约，也不向服务上报资格丢失。锁屏、挂起、控制台切换或观察器故障仍立即撤销。
 - ETW 健康状态失效时立即撤销物理准入和当前会话租约，保留可恢复的显示日志。
 
@@ -113,12 +114,19 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | Windows 服务 | `windows/service/` | LocalSystem 组合根、SCM 入口、鉴权、可信运行时和会话监管 |
 | Windows 会话 | `windows/session/` | 非提权会话进程、显示、资格校验和 CSM 通知；不得导入服务入口 |
 | Windows 界面 | `windows/ui/` | PyQt6/Fluent Widgets、托盘、页面和本地资源 |
+| Linux 原生后端 | `backend/linux/` | C relay、evdev、switch 和 uinput |
+| Windows 原生后端 | `backend/windows/` | 原生输入控制和驱动辅助代码 |
+| 公共打包 | `packaging/common/` | 跨平台版本更新和 CI 辅助资源 |
+| Linux 打包 | `packaging/linux/` | AUR、Deb、RPM、systemd、D-Bus、polkit、desktop、模块加载和 Linux 发布脚本 |
+| Windows 打包 | `packaging/windows/` | 便携组装、MSI、WiX、硬件服务和 Windows 发布脚本 |
 
 禁止在共享模块内用 `sys.platform` 选择服务职责；平台组合应由入口和适配器完成。
 新增平台依赖必须同步更新 `test_platform_imports.py` 的双向边界断言。
 `windows/` 根目录只保留 `__init__.py`；新增 Windows 模块必须归入上表职责域。
 `linux/` 根目录只保留 `__init__.py`；新增 Linux 模块必须归入 `app/`、
 `contracts/`、`hardware/`、`service/`、`session/` 或 `ui/`。
+`backend/` 根目录只允许 `linux/` 和 `windows/`；`packaging/` 根目录只允许
+`common/`、`linux/` 和 `windows/`。
 Windows 域依赖由 `test_platform_imports.py` 强制：`app -> common`、
 `hardware -> common/ipc`、`ipc -> common`、`service/session -> common/hardware/ipc`、
 `ui -> app/common/ipc`；不得形成反向或跨层环。
@@ -133,7 +141,8 @@ Linux 域依赖同样由测试强制：`app -> ui`、`hardware/service -> contra
 | Linux 鉴权、会话和租约 | `linux/service/access.py`、`linux/service/daemon.py`、`linux/session/agent.py` | `test_access`、`test_agent`、`make check-dbus` |
 | 设置、校准、持久化 | `linux/service/settings*.py`、`service/settings*.py`、`calibration.py`、`linux/ui/settings.py` | `test_settings`、`test_calibration`、`test_ui_contract` |
 | 传感器、机型配置和设备发现 | `linux/service/sensor*.py`、`linux/hardware/`、`machine_profile.py`、`data/profiles/` | `test_sensor`、`test_iio`、`test_sysfs`、`test_profile` |
-| C relay 与内置输入 | `backend/`、`linux/service/actuator.py` | `make check-c`、`test_actuator` |
+| Linux C relay 与内置输入 | `backend/linux/`、`linux/service/actuator.py` | `make check-c`、`test_actuator` |
+| Windows 原生输入 | `backend/windows/`、`windows/hardware/actuator.py` | `test_windows_actuator` |
 | Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_desktop`、`test_display*`、`test_journal`、`test_agent` |
 | 平台界面 | `linux/ui/`、`windows/ui/`、共享 `frontend/` | `test_ui_contract`、`test_fluent`、`test_frontend`、`make check-i18n` |
 | Windows 硬件组合与 RPC | `windows/service/{application,runtime,host,server}.py`、`windows/ipc/` | `test_windows_architecture`、`test_windows_hardware*` |
@@ -142,7 +151,8 @@ Linux 域依赖同样由测试强制：`app -> ui`、`hardware/service -> contra
 | Windows 服务与可信启动 | `windows/service/{daemon,trusted_runtime,supervisor,launch}.py`、`windows/common/{identity,security,stop_event}.py` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_*` |
 | Windows 界面、托盘和自启动 | `windows/app/{activation,identity,startup,update_check}.py`、`windows/common/instance.py`、`windows/ui/` | `test_windows_startup`、`test_fluent` |
 | Windows 打包与发布 | `packaging/windows/`、`.github/workflows/` | `test_windows_msi`、`test_windows_packaging`、`test_packaging_workflow`、`test_release` |
-| Linux 打包 | `Makefile`、`packaging/`、`pyproject.toml` | `test_packaging_workflow`、`test_release`、`make check-package` |
+| 仓库/打包布局 | `backend/`、`packaging/`、`Makefile` | `test_repository_layout` |
+| Linux 打包 | `Makefile`、`packaging/linux/`、`packaging/common/`、`pyproject.toml` | `test_packaging_workflow`、`test_release`、`make check-package` |
 
 ## 7. 兼容契约
 
@@ -202,7 +212,7 @@ Linux 域依赖同样由测试强制：`app -> ui`、`hardware/service -> contra
 禁止：
 
 - 覆盖、回滚或清理用户改动；擅自暂存/取消暂存用户改动。
-- 手工编辑 `backend/relay`、`locale/**/*.mo`、`build/`、`dist/`、`__pycache__` 等生成物。
+- 手工编辑 `backend/linux/relay`、`locale/**/*.mo`、`build/`、`dist/`、`__pycache__` 等生成物。
 - 为验证在开发宿主安装测试包（用户本轮明确要求快速测试安装时除外）、运行 `tests/manual/`，或用自动化测试冒充真机验收。
 - 为测试放宽生产鉴权、把设备写入移入用户进程，或把 `--session-bus` 当作生产边界。
 - 恢复 X11/xrandr/xinput 路径或增加隐式桌面回退。

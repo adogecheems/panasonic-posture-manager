@@ -2,7 +2,7 @@
 #
 # Generated from the already-validated Arch package in the matching GitHub
 # release. Do not edit the generated PKGBUILD; update the source package and
-# rerun packaging/scripts/generate-aur-bin.sh instead.
+# rerun packaging/linux/scripts/generate-aur-bin.sh instead.
 
 pkgname=panasonic-posture-manager-bin
 pkgver=@VERSION@

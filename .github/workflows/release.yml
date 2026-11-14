@@ -58,51 +58,51 @@ jobs:
               cp -a /work /tmp/ppm-arch
               chown -R builder:builder /tmp/ppm-arch
               su - builder -c \
-                "cd /tmp/ppm-arch && python3 packaging/scripts/release_version.py --tag $RELEASE_TAG"
+                "cd /tmp/ppm-arch && python3 packaging/common/release_version.py --tag $RELEASE_TAG"
               su - builder -c "cd /tmp/ppm-arch && make WERROR=1 check"
               # Build from the checked-out commit and export the tag-pinned
               # recipe separately for the source AUR package.
               su - builder -c \
                 "cd /tmp/ppm-arch &&
                 git archive --format=tar.gz --prefix=panasonic-posture-manager/ \
-                  -o packaging/aur/ppm-release-source.tar.gz HEAD &&
-                cd packaging/aur &&
+                  -o packaging/linux/aur/ppm-release-source.tar.gz HEAD &&
+                cd packaging/linux/aur &&
                 cp PKGBUILD PKGBUILD.ci &&
                 printf \"\\nsource[0]=ppm-release-source.tar.gz\\n\" >> PKGBUILD.ci &&
                 makepkg --cleanbuild --noconfirm --nodeps -p PKGBUILD.ci"
 
               install -d /work/dist/release /work/dist/aur /work/dist/aur-bin
-              package=$(find /tmp/ppm-arch/packaging/aur -maxdepth 1 \
+              package=$(find /tmp/ppm-arch/packaging/linux/aur -maxdepth 1 \
                 -name "panasonic-posture-manager-[0-9]*.pkg.tar.zst" \
                 ! -name "*-debug-*" -print -quit)
               test -n "$package"
               install -m644 "$package" /work/dist/release/
-              su - builder -c "cd /tmp/ppm-arch/packaging/aur && makepkg --printsrcinfo" \
+              su - builder -c "cd /tmp/ppm-arch/packaging/linux/aur && makepkg --printsrcinfo" \
                 >/work/dist/aur/SRCINFO
-              install -m644 /tmp/ppm-arch/packaging/aur/PKGBUILD /work/dist/aur/PKGBUILD
-              install -m644 /tmp/ppm-arch/packaging/aur/panasonic-posture-manager.install \
+              install -m644 /tmp/ppm-arch/packaging/linux/aur/PKGBUILD /work/dist/aur/PKGBUILD
+              install -m644 /tmp/ppm-arch/packaging/linux/aur/panasonic-posture-manager.install \
                 /work/dist/aur/panasonic-posture-manager.install
 
               make check-package PACKAGE="/work/dist/release/$(basename "$package")"
 
               su - builder -c \
-                "cd /tmp/ppm-arch && bash packaging/scripts/generate-aur-bin.sh $RELEASE_TAG $package /tmp/ppm-arch/packaging/aur-bin"
+                "cd /tmp/ppm-arch && bash packaging/linux/scripts/generate-aur-bin.sh $RELEASE_TAG $package /tmp/ppm-arch/packaging/linux/aur-bin"
               su - builder -c \
-                "mkdir -p /tmp/ppm-arch/packaging/aur-bin/srcdest && cp $package /tmp/ppm-arch/packaging/aur-bin/srcdest/"
+                "mkdir -p /tmp/ppm-arch/packaging/linux/aur-bin/srcdest && cp $package /tmp/ppm-arch/packaging/linux/aur-bin/srcdest/"
               su - builder -c \
-                "cd /tmp/ppm-arch/packaging/aur-bin && SRCDEST=/tmp/ppm-arch/packaging/aur-bin/srcdest makepkg --cleanbuild --noconfirm --nodeps"
-              bin_package=$(find /tmp/ppm-arch/packaging/aur-bin -maxdepth 1 \
+                "cd /tmp/ppm-arch/packaging/linux/aur-bin && SRCDEST=/tmp/ppm-arch/packaging/linux/aur-bin/srcdest makepkg --cleanbuild --noconfirm --nodeps"
+              bin_package=$(find /tmp/ppm-arch/packaging/linux/aur-bin -maxdepth 1 \
                 -name "panasonic-posture-manager-bin-[0-9]*.pkg.tar.zst" \
                 ! -name "*-debug-*" -print -quit)
               test -n "$bin_package"
               su - builder -c \
-                "cd /tmp/ppm-arch/packaging/aur-bin && makepkg --printsrcinfo > SRCINFO"
+                "cd /tmp/ppm-arch/packaging/linux/aur-bin && makepkg --printsrcinfo > SRCINFO"
               su - builder -c \
-                "cd /tmp/ppm-arch && python3 tests/package/check_aur_bin.py --source $package --binary $bin_package --metadata /tmp/ppm-arch/packaging/aur-bin"
-              install -m644 /tmp/ppm-arch/packaging/aur-bin/SRCINFO \
+                "cd /tmp/ppm-arch && python3 tests/package/check_aur_bin.py --source $package --binary $bin_package --metadata /tmp/ppm-arch/packaging/linux/aur-bin"
+              install -m644 /tmp/ppm-arch/packaging/linux/aur-bin/SRCINFO \
                 /work/dist/aur-bin/SRCINFO
-              install -m644 /tmp/ppm-arch/packaging/aur-bin/PKGBUILD \
-                /tmp/ppm-arch/packaging/aur-bin/panasonic-posture-manager-bin.install \
+              install -m644 /tmp/ppm-arch/packaging/linux/aur-bin/PKGBUILD \
+                /tmp/ppm-arch/packaging/linux/aur-bin/panasonic-posture-manager-bin.install \
                 /work/dist/aur-bin/
             '
 
@@ -159,8 +159,8 @@ jobs:
               apt-get install -y --no-install-recommends \
                 dpkg-dev gcc gettext gzip libc6-dev make python3 python3-build \
                 python3-installer python3-setuptools python3-venv python3-wheel
-              python3 packaging/scripts/release_version.py --tag "$RELEASE_TAG"
-              bash packaging/scripts/build-deb.sh /work/dist/release
+              python3 packaging/common/release_version.py --tag "$RELEASE_TAG"
+              bash packaging/linux/scripts/build-deb.sh /work/dist/release
               package=$(find /work/dist/release -name "*.deb" -print -quit)
               dpkg-deb --info "$package"
               dpkg-deb --contents "$package"
@@ -214,8 +214,8 @@ jobs:
                 gcc gettext git gzip make python3-build python3-devel \
                 python3-installer python3-setuptools python3-wheel rpm-build tar
               git config --global --add safe.directory /work
-              python3 packaging/scripts/release_version.py --tag "$RELEASE_TAG"
-              bash packaging/scripts/build-rpm.sh /work/dist/release
+              python3 packaging/common/release_version.py --tag "$RELEASE_TAG"
+              bash packaging/linux/scripts/build-rpm.sh /work/dist/release
               package=$(find /work/dist/release -name "*.rpm" -print -quit)
               rpm -qip "$package"
               rpm -qlp "$package"
@@ -293,7 +293,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
-          $version = python packaging/scripts/release_version.py --tag $env:RELEASE_TAG
+          $version = python packaging/common/release_version.py --tag $env:RELEASE_TAG
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           foreach ($culture in @('zh-CN', 'en-US')) {
             python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture $culture
@@ -410,7 +410,7 @@ jobs:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
-          bash packaging/scripts/publish-aur.sh aur-metadata
+          bash packaging/linux/scripts/publish-aur.sh aur-metadata
 
       - name: Push prebuilt AUR package
         env:
@@ -419,4 +419,4 @@ jobs:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
-          bash packaging/scripts/publish-aur.sh aur-bin-metadata
+          bash packaging/linux/scripts/publish-aur.sh aur-bin-metadata

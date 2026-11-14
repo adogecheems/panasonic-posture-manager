@@ -440,7 +440,7 @@ class QuerySwitchTests(unittest.TestCase):
         self.assertIs(status, HardwareStatus.READ_ERROR)
 
     def test_ev_declaring_key_type_is_rejected(self):
-        # backend/switch.c rejects devices that declare EV_KEY events even
+        # backend/linux/switch.c rejects devices that declare EV_KEY events even
         # when the key code bitmap is empty; Python must agree.
         with tempfile.TemporaryDirectory() as tmp:
             make_input(tmp, "event0", "Intel HID switches",

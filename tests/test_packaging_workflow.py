@@ -12,15 +12,15 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = ROOT / "packaging/scripts/release_version.py"
+RELEASE_VERSION = ROOT / "packaging/common/release_version.py"
 PACKAGE_SCRIPTS = (
-    "packaging/scripts/stage-install-tree.sh",
-    "packaging/scripts/build-deb.sh",
-    "packaging/scripts/build-rpm.sh",
-    "packaging/scripts/generate-aur-bin.sh",
-    "packaging/scripts/publish-aur.sh",
+    "packaging/linux/scripts/stage-install-tree.sh",
+    "packaging/linux/scripts/build-deb.sh",
+    "packaging/linux/scripts/build-rpm.sh",
+    "packaging/linux/scripts/generate-aur-bin.sh",
+    "packaging/linux/scripts/publish-aur.sh",
 )
-AUR_BIN_GENERATOR = ROOT / "packaging/scripts/generate-aur-bin.sh"
+AUR_BIN_GENERATOR = ROOT / "packaging/linux/scripts/generate-aur-bin.sh"
 AUR_BIN_CHECK = ROOT / "tests/package/check_aur_bin.py"
 
 
@@ -85,7 +85,7 @@ class DistributionPackagingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_deb_control_declares_wayland_runtime(self) -> None:
-        control = read("packaging/deb/control.in")
+        control = read("packaging/linux/deb/control.in")
         for dependency in (
             "dbus",
             "gir1.2-adw-1",
@@ -110,7 +110,7 @@ class DistributionPackagingTests(unittest.TestCase):
             self.skipTest("POSIX sh is unavailable")
         for name in ("postinst", "prerm", "postrm"):
             with self.subTest(name=name):
-                path = ROOT / "packaging/deb" / name
+                path = ROOT / "packaging/linux/deb" / name
                 result = subprocess.run(
                     [shell, "-n", str(path)],
                     check=False,
@@ -120,7 +120,7 @@ class DistributionPackagingTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_rpm_spec_and_scriptlets_match_install_layout(self) -> None:
-        spec = read("packaging/rpm/panasonic-posture-manager.spec.in")
+        spec = read("packaging/linux/rpm/panasonic-posture-manager.spec.in")
         for content in (
             "Requires:       python3-cairo",
             "Requires:       gtk4",
@@ -143,15 +143,15 @@ class DistributionPackagingTests(unittest.TestCase):
         self.assertIn("systemctl try-restart panasonic-posture-manager.service", spec)
 
     def test_shared_tree_uses_python3_and_the_expected_paths(self) -> None:
-        stage = read("packaging/scripts/stage-install-tree.sh")
+        stage = read("packaging/linux/scripts/stage-install-tree.sh")
         self.assertIn("--prefix /usr", stage)
         self.assertIn("#!/usr/bin/python3", stage)
         self.assertIn("DEB_PYTHON_INSTALL_LAYOUT=deb_system", stage)
         self.assertIn("usr/lib/panasonic-posture-manager/relay", stage)
         self.assertIn("usr/share/licenses/panasonic-posture-manager/LICENSE", stage)
         for unit in (
-            "packaging/systemd/panasonic-posture-manager.service",
-            "packaging/systemd/user/panasonic-posture-manager-session.service",
+            "packaging/linux/systemd/panasonic-posture-manager.service",
+            "packaging/linux/systemd/user/panasonic-posture-manager-session.service",
         ):
             content = read(unit)
             self.assertIn("ExecStart=/usr/bin/python3", content)
@@ -161,8 +161,8 @@ class DistributionPackagingTests(unittest.TestCase):
             )
 
     def test_aur_bin_template_matches_source_dependencies(self) -> None:
-        source = read("packaging/aur/.SRCINFO")
-        template = read("packaging/aur-bin/PKGBUILD.in")
+        source = read("packaging/linux/aur/.SRCINFO")
+        template = read("packaging/linux/aur-bin/PKGBUILD.in")
         for field in ("depends", "optdepends"):
             for line in source.splitlines():
                 prefix = f"\t{field} = "
@@ -245,14 +245,14 @@ class ReleaseWorkflowTests(unittest.TestCase):
         override = "source[0]=ppm-release-source.tar.gz"
         build = "makepkg --cleanbuild --noconfirm --nodeps -p PKGBUILD.ci"
         self.assertIn(archive, arch)
-        self.assertIn("-o packaging/aur/ppm-release-source.tar.gz HEAD", arch)
+        self.assertIn("-o packaging/linux/aur/ppm-release-source.tar.gz HEAD", arch)
         self.assertIn(override, arch)
         self.assertIn(build, arch)
         self.assertLess(arch.index(archive), arch.index(override))
         self.assertLess(arch.index(override), arch.index(build))
         self.assertIn("makepkg --printsrcinfo", arch)
-        self.assertIn("/tmp/ppm-arch/packaging/aur/PKGBUILD /work/dist/aur/PKGBUILD", arch)
-        self.assertIn("#tag=v${pkgver}", read("packaging/aur/PKGBUILD"))
+        self.assertIn("/tmp/ppm-arch/packaging/linux/aur/PKGBUILD /work/dist/aur/PKGBUILD", arch)
+        self.assertIn("#tag=v${pkgver}", read("packaging/linux/aur/PKGBUILD"))
 
     def test_all_three_package_builders_are_present(self) -> None:
         for job in ("package-arch:", "package-deb:", "package-rpm:"):
@@ -347,10 +347,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("needs: release", aur)
         self.assertIn("name: aur-metadata", aur)
         self.assertIn("secrets.AUR_SSH_PRIVATE_KEY", aur)
-        self.assertIn("packaging/scripts/publish-aur.sh aur-metadata", aur)
+        self.assertIn("packaging/linux/scripts/publish-aur.sh aur-metadata", aur)
         self.assertIn("name: aur-bin-metadata", aur)
         self.assertIn("AUR_PACKAGE: panasonic-posture-manager-bin", aur)
-        self.assertIn("packaging/scripts/publish-aur.sh aur-bin-metadata", aur)
+        self.assertIn("packaging/linux/scripts/publish-aur.sh aur-bin-metadata", aur)
         self.assertNotIn("BEGIN OPENSSH PRIVATE KEY", self.workflow)
 
     def test_arch_job_builds_and_checks_the_aur_bin_package(self) -> None:
@@ -358,7 +358,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("name: aur-bin-metadata", self.workflow)
         self.assertIn("generate-aur-bin.sh", arch)
         self.assertIn("check_aur_bin.py", arch)
-        self.assertIn("SRCDEST=/tmp/ppm-arch/packaging/aur-bin/srcdest", arch)
+        self.assertIn("SRCDEST=/tmp/ppm-arch/packaging/linux/aur-bin/srcdest", arch)
         self.assertIn("panasonic-posture-manager-bin-[0-9]*.pkg.tar.zst", arch)
         self.assertIn("makepkg --printsrcinfo > SRCINFO", arch)
         self.assertLess(
@@ -368,7 +368,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(arch.count("'"), 2)
 
     def test_aur_host_key_is_pinned(self) -> None:
-        known_hosts = read("packaging/ci/aur_known_hosts")
+        known_hosts = read("packaging/common/ci/aur_known_hosts")
         self.assertEqual(len(known_hosts.strip().splitlines()), 1)
         self.assertRegex(
             known_hosts,

@@ -15,7 +15,7 @@ tag=$1
 package=$2
 output_dir=$3
 
-version=$(python3 "$repo_root/packaging/scripts/release_version.py" --tag "$tag")
+version=$(python3 "$repo_root/packaging/common/release_version.py" --tag "$tag")
 expected="panasonic-posture-manager-${version}-1-x86_64.pkg.tar.zst"
 archive=$(basename -- "$package")
 
@@ -38,9 +38,9 @@ mkdir -p "$output_dir"
 sed \
   -e "s/@VERSION@/${version}/g" \
   -e "s/@SHA256@/${sha256}/g" \
-  "$repo_root/packaging/aur-bin/PKGBUILD.in" >"$output_dir/PKGBUILD"
+  "$repo_root/packaging/linux/aur-bin/PKGBUILD.in" >"$output_dir/PKGBUILD"
 install -m644 \
-  "$repo_root/packaging/aur/panasonic-posture-manager.install" \
+  "$repo_root/packaging/linux/aur/panasonic-posture-manager.install" \
   "$output_dir/panasonic-posture-manager-bin.install"
 
 if grep -q '@[A-Z][A-Z0-9_]*@' "$output_dir/PKGBUILD"; then

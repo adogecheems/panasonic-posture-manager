@@ -43,14 +43,14 @@ def release_version() -> str:
             read("src/panasonic_posture/__init__.py"),
             "runtime __version__",
         ),
-        "packaging/aur/PKGBUILD": match(
+        "packaging/linux/aur/PKGBUILD": match(
             r"^pkgver=(\S+)$",
-            read("packaging/aur/PKGBUILD"),
+            read("packaging/linux/aur/PKGBUILD"),
             "PKGBUILD pkgver",
         ),
-        "packaging/aur/.SRCINFO": match(
+        "packaging/linux/aur/.SRCINFO": match(
             r"^\s+pkgver = (\S+)$",
-            read("packaging/aur/.SRCINFO"),
+            read("packaging/linux/aur/.SRCINFO"),
             ".SRCINFO pkgver",
         ),
     }

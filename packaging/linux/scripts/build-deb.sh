@@ -10,7 +10,7 @@ export LC_ALL=C
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 output_dir=${1:-"$repo_root/dist/packages"}
 
-version=$(python3 "$repo_root/packaging/scripts/release_version.py")
+version=$(python3 "$repo_root/packaging/common/release_version.py")
 arch=$(dpkg --print-architecture)
 if [[ $arch != amd64 ]]; then
   echo "error: this project currently publishes only amd64 packages, not $arch" >&2
@@ -41,11 +41,11 @@ if [[ ${#wheels[@]} -ne 1 || ! -f ${wheels[0]} ]]; then
 fi
 
 stage=$build_root/root
-bash "$repo_root/packaging/scripts/stage-install-tree.sh" "$stage" "${wheels[0]}"
+bash "$repo_root/packaging/linux/scripts/stage-install-tree.sh" "$stage" "${wheels[0]}"
 
 docdir=$stage/usr/share/doc/panasonic-posture-manager
 install -d "$docdir"
-install -Dm644 "$repo_root/packaging/deb/copyright" "$docdir/copyright"
+install -Dm644 "$repo_root/packaging/linux/deb/copyright" "$docdir/copyright"
 
 cat >"$build_root/changelog.Debian" <<EOF
 panasonic-posture-manager (${version}-1) unstable; urgency=medium
@@ -62,10 +62,10 @@ sed \
   -e "s/@VERSION@/${version}/g" \
   -e "s/@ARCH@/${arch}/g" \
   -e "s/@INSTALLED_SIZE@/${installed_size}/g" \
-  "$repo_root/packaging/deb/control.in" >"$stage/DEBIAN/control"
+  "$repo_root/packaging/linux/deb/control.in" >"$stage/DEBIAN/control"
 
 for script in postinst prerm postrm; do
-  install -Dm755 "$repo_root/packaging/deb/$script" "$stage/DEBIAN/$script"
+  install -Dm755 "$repo_root/packaging/linux/deb/$script" "$stage/DEBIAN/$script"
 done
 
 (

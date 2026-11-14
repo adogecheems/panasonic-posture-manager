@@ -3,7 +3,7 @@
 #
 # Usage: stage-install-tree.sh DESTDIR WHEEL
 #
-# The caller is responsible for building backend/relay, the gettext catalog
+# The caller is responsible for building backend/linux/relay, the gettext catalog
 # and the wheel first.  The wheel installer owns the Python site-packages
 # path, so Debian's dist-packages and Fedora's site-packages layouts are both
 # handled without hard-coding a Python version.
@@ -30,8 +30,8 @@ if [[ ! -f $wheel ]]; then
   echo "error: wheel not found: $wheel" >&2
   exit 1
 fi
-if [[ ! -x $repo_root/backend/relay ]]; then
-  echo "error: backend/relay has not been built" >&2
+if [[ ! -x $repo_root/backend/linux/relay ]]; then
+  echo "error: backend/linux/relay has not been built" >&2
   exit 1
 fi
 if [[ ! -f $repo_root/locale/zh_CN/LC_MESSAGES/panasonic-posture-manager.mo ]]; then
@@ -74,7 +74,7 @@ install -Dm644 \
   "$repo_root/data/assets/work.mmoe.panasonic.PostureManager.png" \
   "$destdir/usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png"
 
-install -Dm755 "$repo_root/backend/relay" \
+install -Dm755 "$repo_root/backend/linux/relay" \
   "$destdir/usr/lib/panasonic-posture-manager/relay"
 
 while IFS= read -r -d '' file; do
@@ -82,21 +82,21 @@ while IFS= read -r -d '' file; do
     "$destdir/usr/share/locale/${file#"$repo_root/locale/"}"
 done < <(find "$repo_root/locale" -type f -name '*.mo' -print0)
 
-install -Dm644 "$repo_root/packaging/systemd/panasonic-posture-manager.service" \
+install -Dm644 "$repo_root/packaging/linux/systemd/panasonic-posture-manager.service" \
   "$destdir/usr/lib/systemd/system/panasonic-posture-manager.service"
 install -Dm644 \
-  "$repo_root/packaging/systemd/user/panasonic-posture-manager-session.service" \
+  "$repo_root/packaging/linux/systemd/user/panasonic-posture-manager-session.service" \
   "$destdir/usr/lib/systemd/user/panasonic-posture-manager-session.service"
-install -Dm644 "$repo_root/packaging/modules-load.d/uinput.conf" \
+install -Dm644 "$repo_root/packaging/linux/modules-load.d/uinput.conf" \
   "$destdir/usr/lib/modules-load.d/panasonic-posture-manager.conf"
-install -Dm644 "$repo_root/packaging/dbus/work.mmoe.panasonic.Posture.conf" \
+install -Dm644 "$repo_root/packaging/linux/dbus/work.mmoe.panasonic.Posture.conf" \
   "$destdir/usr/share/dbus-1/system.d/work.mmoe.panasonic.Posture.conf"
-install -Dm644 "$repo_root/packaging/dbus/work.mmoe.panasonic.Posture.service" \
+install -Dm644 "$repo_root/packaging/linux/dbus/work.mmoe.panasonic.Posture.service" \
   "$destdir/usr/share/dbus-1/system-services/work.mmoe.panasonic.Posture.service"
-install -Dm644 "$repo_root/packaging/polkit/work.mmoe.panasonic.Posture.policy" \
+install -Dm644 "$repo_root/packaging/linux/polkit/work.mmoe.panasonic.Posture.policy" \
   "$destdir/usr/share/polkit-1/actions/work.mmoe.panasonic.Posture.policy"
 install -Dm644 \
-  "$repo_root/packaging/desktop/work.mmoe.panasonic.PostureManager.desktop" \
+  "$repo_root/packaging/linux/desktop/work.mmoe.panasonic.PostureManager.desktop" \
   "$destdir/usr/share/applications/work.mmoe.panasonic.PostureManager.desktop"
 install -Dm644 "$repo_root/LICENSE" \
   "$destdir/usr/share/licenses/panasonic-posture-manager/LICENSE"

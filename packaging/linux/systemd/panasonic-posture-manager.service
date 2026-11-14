@@ -3,7 +3,7 @@
 # The daemon runs as root because it owns the D-Bus system name and starts the
 # privileged relay, which creates a uinput switch and grabs the internal
 # keyboard/touchpad.  The capability bounding set is empty; the uinput module
-# is requested at boot via packaging/modules-load.d instead of an
+# is requested at boot via packaging/linux/modules-load.d instead of an
 # ExecStartPre=+/usr/bin/modprobe line.
 [Unit]
 Description=Panasonic 2-in-1 Tablet Posture Management Tool hardware service

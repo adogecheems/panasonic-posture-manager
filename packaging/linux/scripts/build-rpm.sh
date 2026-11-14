@@ -10,7 +10,7 @@ export LC_ALL=C
 repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 output_dir=${1:-"$repo_root/dist/packages"}
 
-version=$(python3 "$repo_root/packaging/scripts/release_version.py")
+version=$(python3 "$repo_root/packaging/common/release_version.py")
 arch=$(uname -m)
 if [[ $arch != x86_64 ]]; then
   echo "error: this project currently publishes only x86_64 RPMs, not $arch" >&2
@@ -53,7 +53,7 @@ git -C "$repo_root" -c safe.directory="$repo_root" archive \
 sed \
   -e "s/@VERSION@/$version/g" \
   -e "s/@DATE@/$changelog_date/g" \
-  "$repo_root/packaging/rpm/panasonic-posture-manager.spec.in" \
+  "$repo_root/packaging/linux/rpm/panasonic-posture-manager.spec.in" \
   >"$build_root/SPECS/panasonic-posture-manager.spec"
 
 rpmbuild -bb \

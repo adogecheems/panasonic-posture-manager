@@ -200,9 +200,9 @@ class ProtocolTests(unittest.TestCase):
         import inspect
         from panasonic_posture.linux.app.cli import launch_ui
         self.assertNotIn('execv', inspect.getsource(launch_ui))
-        for name in ('packaging/aur/PKGBUILD', 'packaging/aur/.SRCINFO',
-                     'packaging/aur-bin/PKGBUILD.in', 'packaging/deb/control.in',
-                     'packaging/rpm/panasonic-posture-manager.spec.in'):
+        for name in ('packaging/linux/aur/PKGBUILD', 'packaging/linux/aur/.SRCINFO',
+                     'packaging/linux/aur-bin/PKGBUILD.in', 'packaging/linux/deb/control.in',
+                     'packaging/linux/rpm/panasonic-posture-manager.spec.in'):
             self.assertNotIn('gjs', (ROOT / name).read_text())
         self.assertFalse(list((ROOT / 'data/ui').glob('*.js')))
 

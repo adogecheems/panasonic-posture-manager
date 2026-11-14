@@ -199,8 +199,8 @@ class PackageAcceptance:
 
     def load_source_metadata(self) -> None:
         pyproject_path = self.source_root / "pyproject.toml"
-        srcinfo_path = self.source_root / "packaging/aur/.SRCINFO"
-        package_dir = self.source_root / "packaging/aur"
+        srcinfo_path = self.source_root / "packaging/linux/aur/.SRCINFO"
+        package_dir = self.source_root / "packaging/linux/aur"
         if not pyproject_path.is_file() or not srcinfo_path.is_file() or not package_dir.is_dir():
             self.fail(f"source metadata is incomplete under {self.source_root}")
             return
@@ -274,14 +274,14 @@ class PackageAcceptance:
                 "PKGBUILD source does not pin the pyproject version tag",
             )
             install_name = one_value(base_section, "install", self)
-            install_source = self.source_root / "packaging/aur" / install_name
+            install_source = self.source_root / "packaging/linux/aur" / install_name
             self.require(install_source.is_file(), f"install script not found: {install_source}")
             if install_source.is_file():
                 self.require(
                     self.archive_file(self.package, ".INSTALL") == install_source.read_text(
                         encoding="utf-8"
                     ),
-                    "packaged .INSTALL differs from packaging/aur install script",
+                    "packaged .INSTALL differs from packaging/linux/aur install script",
                 )
 
             scripts = self.project.get("scripts")
@@ -485,19 +485,19 @@ class PackageAcceptance:
         copies.update(
             {
                 "usr/lib/modules-load.d/panasonic-posture-manager.conf": self.source_root
-                / "packaging/modules-load.d/uinput.conf",
+                / "packaging/linux/modules-load.d/uinput.conf",
                 "usr/lib/systemd/system/panasonic-posture-manager.service": self.source_root
-                / "packaging/systemd/panasonic-posture-manager.service",
+                / "packaging/linux/systemd/panasonic-posture-manager.service",
                 "usr/lib/systemd/user/panasonic-posture-manager-session.service": self.source_root
-                / "packaging/systemd/user/panasonic-posture-manager-session.service",
+                / "packaging/linux/systemd/user/panasonic-posture-manager-session.service",
                 "usr/share/dbus-1/system-services/work.mmoe.panasonic.Posture.service": self.source_root
-                / "packaging/dbus/work.mmoe.panasonic.Posture.service",
+                / "packaging/linux/dbus/work.mmoe.panasonic.Posture.service",
                 "usr/share/dbus-1/system.d/work.mmoe.panasonic.Posture.conf": self.source_root
-                / "packaging/dbus/work.mmoe.panasonic.Posture.conf",
+                / "packaging/linux/dbus/work.mmoe.panasonic.Posture.conf",
                 "usr/share/polkit-1/actions/work.mmoe.panasonic.Posture.policy": self.source_root
-                / "packaging/polkit/work.mmoe.panasonic.Posture.policy",
+                / "packaging/linux/polkit/work.mmoe.panasonic.Posture.policy",
                 "usr/share/applications/work.mmoe.panasonic.PostureManager.desktop": self.source_root
-                / "packaging/desktop/work.mmoe.panasonic.PostureManager.desktop",
+                / "packaging/linux/desktop/work.mmoe.panasonic.PostureManager.desktop",
                 "usr/share/licenses/panasonic-posture-manager/LICENSE": self.source_root / "LICENSE",
             }
         )

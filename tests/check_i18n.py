@@ -44,10 +44,10 @@ PROTOCOL = Path("src/panasonic_posture/contracts.py")
 PY_ERRORS = Path("src/panasonic_posture/linux/session/errors.py")
 WINDOWS_UI_ERRORS = Path("src/panasonic_posture/windows/ui/pages.py")
 DESKTOP_ENTRY = Path(
-    "packaging/desktop/work.mmoe.panasonic.PostureManager.desktop"
+    "packaging/linux/desktop/work.mmoe.panasonic.PostureManager.desktop"
 )
 MSI_LOCALIZATION_DIR = Path("packaging/windows/msi")
-POLKIT_POLICY = Path("packaging/polkit/work.mmoe.panasonic.Posture.policy")
+POLKIT_POLICY = Path("packaging/linux/polkit/work.mmoe.panasonic.Posture.policy")
 REQUIRED_INSTALLER_STRINGS = frozenset({
     "FeatureTitle",
     "ProductName",

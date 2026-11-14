@@ -67,7 +67,7 @@ jobs:
       - name: Build MSI
         if: matrix.python == '3.13'
         run: |
-          $version = python packaging/scripts/release_version.py
+          $version = python packaging/common/release_version.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           foreach ($culture in @('zh-CN', 'en-US')) {
             python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture $culture
