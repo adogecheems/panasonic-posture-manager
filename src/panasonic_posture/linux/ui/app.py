@@ -42,7 +42,7 @@ class Application(Adw.Application):
             return
         self.service = self._service_factory()
         display = Gdk.Display.get_default()
-        Gtk.IconTheme.get_for_display(display).add_search_path(str(DATA_ROOT / 'assets'))
+        Gtk.IconTheme.get_for_display(display).add_search_path(str(DATA_ROOT))
         Gtk.Window.set_default_icon_name(APPLICATION_ID)
         self.window = Adw.ApplicationWindow(application=self, title=_(APPLICATION_DISPLAY_NAME), default_width=500, default_height=660)
         toolbar = Adw.ToolbarView()
@@ -82,7 +82,7 @@ class Application(Adw.Application):
     def _update_mark(self, *args):
         name = 'lets-note-window-icon-dark' if self._style.get_dark() else 'lets-note-window-icon'
         self.window.set_icon_name(name)
-        path = DATA_ROOT / 'assets' / f'{name}.png'
+        path = DATA_ROOT / f'{name}.png'
         try:
             self._mark_pixbuf = GdkPixbuf.Pixbuf.new_from_file(str(path))
         except Exception:

@@ -116,8 +116,11 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | Windows 界面 | `windows/ui/` | PyQt6/Fluent Widgets、托盘、页面和本地资源 |
 | Linux 原生后端 | `backend/linux/` | C relay、evdev、switch 和 uinput |
 | Windows 原生后端 | `backend/windows/` | 原生输入控制和驱动辅助代码 |
-| 公共打包 | `packaging/common/` | 跨平台版本更新和 CI 辅助资源 |
-| Linux 打包 | `packaging/linux/` | AUR、Deb、RPM、systemd、D-Bus、polkit、desktop、模块加载和 Linux 发布脚本 |
+| 数据与资源 | `data/profiles/` | 两平台共用的机型 profile |
+| Linux 数据与资源 | `data/assets/linux/` | 姿态 SVG 和 Linux 图标 |
+| Windows 数据与资源 | `data/assets/windows/` | Windows 图标、方形标志和深色图标 |
+| 公共打包 | `packaging/common/` | 跨平台版本更新脚本 |
+| Linux 打包 | `packaging/linux/` | AUR、Deb、RPM、systemd、D-Bus、polkit、desktop、模块加载、AUR CI 和 Linux 发布脚本 |
 | Windows 打包 | `packaging/windows/` | 便携组装、MSI、WiX、硬件服务和 Windows 发布脚本 |
 
 禁止在共享模块内用 `sys.platform` 选择服务职责；平台组合应由入口和适配器完成。
@@ -137,19 +140,19 @@ Linux 域依赖同样由测试强制：`app -> ui`、`hardware/service -> contra
 | 改动 | 先读 | 目标测试 |
 | --- | --- | --- |
 | 姿态、阈值、迟滞、提示代次 | `policy.py`、`controller.py`、`presentation.py` | `test_policy`、`test_controller`、`test_presentation` |
-| 目标、状态和服务事务 | `linux/contracts/protocol.py`、`model.py`、`controller.py`、`service/engine.py` | `test_protocol`、`test_model`、`test_engine`、`test_application` |
-| Linux 鉴权、会话和租约 | `linux/service/access.py`、`linux/service/daemon.py`、`linux/session/agent.py` | `test_access`、`test_agent`、`make check-dbus` |
-| 设置、校准、持久化 | `linux/service/settings*.py`、`service/settings*.py`、`calibration.py`、`linux/ui/settings.py` | `test_settings`、`test_calibration`、`test_ui_contract` |
-| 传感器、机型配置和设备发现 | `linux/service/sensor*.py`、`linux/hardware/`、`machine_profile.py`、`data/profiles/` | `test_sensor`、`test_iio`、`test_sysfs`、`test_profile` |
-| Linux C relay 与内置输入 | `backend/linux/`、`linux/service/actuator.py` | `make check-c`、`test_actuator` |
+| 目标、状态和服务事务 | `linux/contracts/protocol.py`、`model.py`、`controller.py`、`service/engine.py` | `test_linux_protocol`、`test_model`、`test_engine`、`test_linux_application` |
+| Linux 鉴权、会话和租约 | `linux/service/access.py`、`linux/service/daemon.py`、`linux/session/agent.py` | `test_linux_access`、`test_linux_agent`、`make check-dbus` |
+| 设置、校准、持久化 | `linux/service/settings*.py`、`service/settings*.py`、`calibration.py`、`linux/ui/settings.py` | `test_linux_settings`、`test_calibration`、`test_linux_ui_contract` |
+| 传感器、机型配置和设备发现 | `linux/service/sensor*.py`、`linux/hardware/`、`machine_profile.py`、`data/profiles/` | `test_linux_sensor`、`test_linux_iio`、`test_linux_sysfs`、`test_linux_profile` |
+| Linux C relay 与内置输入 | `backend/linux/`、`linux/service/actuator.py` | `make check-c`、`test_linux_actuator` |
 | Windows 原生输入 | `backend/windows/`、`windows/hardware/actuator.py` | `test_windows_actuator` |
-| Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_desktop`、`test_display*`、`test_journal`、`test_agent` |
-| 平台界面 | `linux/ui/`、`windows/ui/`、共享 `frontend/` | `test_ui_contract`、`test_fluent`、`test_frontend`、`make check-i18n` |
+| Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_linux_desktop`、`test_linux_display*`、`test_journal`、`test_linux_agent` |
+| 平台界面 | `linux/ui/`、`windows/ui/`、共享 `frontend/` | `test_linux_ui_contract`、`test_windows_ui`、`test_frontend`、`make check-i18n` |
 | Windows 硬件组合与 RPC | `windows/service/{application,runtime,host,server}.py`、`windows/ipc/` | `test_windows_architecture`、`test_windows_hardware*` |
 | Windows ETW 与启动基线 | `windows/hardware/{etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_etw_switch`、`test_windows_slate_bootstrap` |
 | Windows 显示、CSM 和会话 | `windows/hardware/{convertible_slate,slate_journal}.py`、`windows/session/` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
 | Windows 服务与可信启动 | `windows/service/{daemon,trusted_runtime,supervisor,launch}.py`、`windows/common/{identity,security,stop_event}.py` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_*` |
-| Windows 界面、托盘和自启动 | `windows/app/{activation,identity,startup,update_check}.py`、`windows/common/instance.py`、`windows/ui/` | `test_windows_startup`、`test_fluent` |
+| Windows 界面、托盘和自启动 | `windows/app/{activation,identity,startup,update_check}.py`、`windows/common/instance.py`、`windows/ui/` | `test_windows_startup`、`test_windows_ui` |
 | Windows 打包与发布 | `packaging/windows/`、`.github/workflows/` | `test_windows_msi`、`test_windows_packaging`、`test_packaging_workflow`、`test_release` |
 | 仓库/打包布局 | `backend/`、`packaging/`、`Makefile` | `test_repository_layout` |
 | Linux 打包 | `Makefile`、`packaging/linux/`、`packaging/common/`、`pyproject.toml` | `test_packaging_workflow`、`test_release`、`make check-package` |
@@ -245,9 +248,7 @@ $env:PYTHONPATH = "src"
 python -m compileall -q src/panasonic_posture/windows
 python -m unittest discover -s tests -p "test_windows*.py" -v
 python -m unittest discover -s tests -p "test_session_refresh.py" -v
-python -m unittest discover -s tests -p "test_optional_input.py" -v
 python -m unittest discover -s tests -p "test_frontend.py" -v
-python -m unittest discover -s tests -p "test_fluent.py" -v
 python -m unittest tests.test_localization tests.test_i18n_check -v
 python tests/check_i18n.py
 ```

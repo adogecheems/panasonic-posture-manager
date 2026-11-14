@@ -19,6 +19,14 @@ def data_root() -> Path:
     return Path(override) if override else Path(__file__).resolve().parents[4] / 'data'
 
 
+def asset_root() -> Path:
+    """Return the Windows asset directory for source or installed layouts."""
+
+    base = data_root()
+    source = base / 'assets' / 'windows'
+    return source if source.is_dir() else base / 'assets'
+
+
 def _windows_language() -> str | None:
     if os.name != 'nt':
         return None

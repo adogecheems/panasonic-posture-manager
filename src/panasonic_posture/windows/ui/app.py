@@ -16,7 +16,7 @@ from ...frontend.ports import UIClient
 from .unavailable import UnavailableClient
 from ..ipc.client import HardwareUIClient
 from .pages import Home, Settings
-from ..app.resources import application_name, data_root, translator
+from ..app.resources import application_name, asset_root, data_root, translator
 from .wake import WakeWatch
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
@@ -218,8 +218,8 @@ class Window(FluentWidget):
 
     def update_mark(self):
         name = 'lets-note-window-icon-dark.png' if isDarkTheme() else 'lets-note-window-icon.png'
-        path = data_root() / 'assets' / name
-        self.setWindowIcon(QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png')))
+        path = asset_root() / name
+        self.setWindowIcon(QIcon(str(asset_root() / 'work.mmoe.panasonic.PostureManager.png')))
         mark = QPixmap(str(path))
         # Qt 6.12 scales QPixmap while loading, but Qt 6.8 leaves the source at
         # 1x. Normalize both paths to the current screen's physical pixels.

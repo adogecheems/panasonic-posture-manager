@@ -481,7 +481,7 @@ class PackageAcceptance:
                 ] = source
         copies[
             "usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png"
-        ] = data_root / "assets/work.mmoe.panasonic.PostureManager.png"
+        ] = data_root / "assets/linux/work.mmoe.panasonic.PostureManager.png"
         copies.update(
             {
                 "usr/lib/modules-load.d/panasonic-posture-manager.conf": self.source_root
@@ -725,7 +725,7 @@ class PackageAcceptance:
                 "from panasonic_posture.linux.ui.common import DATA_ROOT\n"
                 f"assert panasonic_posture.__version__ == {self.version!r}\n"
                 f"assert protocol.NAME == {INTERFACE!r}\n"
-                "assert (DATA_ROOT / 'assets/laptop.svg').is_file()\n"
+                "assert (DATA_ROOT / 'laptop.svg').is_file()\n"
             )
             result = self.run_checked([sys.executable, "-c", code], env=env)
             if result is not None:

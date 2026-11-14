@@ -1024,7 +1024,7 @@ class HardwareHandoffTests(unittest.TestCase):
         return state
 
     def test_native_reset_is_corrected_during_wait_before_ready(self):
-        from test_display import Harness as DisplayHarness
+        from test_linux_display import Harness as DisplayHarness
 
         desktop = DisplayHarness(transform=2, locked=False)
         h = Harness(self.waiting(), display=desktop.display)

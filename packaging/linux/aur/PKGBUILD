@@ -85,7 +85,7 @@ package() {
   # The desktop entry and notifications resolve the application icon by ID
   # from the standard hicolor theme, separately from the data-directory copy
   # used by the Python window when running from a source checkout.
-  install -Dm644 data/assets/work.mmoe.panasonic.PostureManager.png \
+  install -Dm644 data/assets/linux/work.mmoe.panasonic.PostureManager.png \
     "${pkgdir}/usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png"
 
   # Privileged actuator built from backend/linux/*.c by make.

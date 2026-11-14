@@ -137,7 +137,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
         source = dependencies / package
         if source.is_dir():
             _add_bytecode_tree(files, source, f'runtime/Lib/site-packages/{package}')
-    add_tree(ROOT / 'data/assets', 'data/assets')
+    add_tree(ROOT / 'data/assets/windows', 'data/assets')
     add_tree(ROOT / 'data/profiles', 'data/profiles')
     files['po/zh_CN.po'] = ROOT / 'po/zh_CN.po'
     for name in ('LICENSE', 'README.md', 'MAINTENANCE.md'):

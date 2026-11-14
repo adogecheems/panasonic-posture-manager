@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" role="img" aria-label="折叠平板姿态示意图"
+     fill="var(--app-bg, white)" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M50 178.1 L50 187.1 Q50 190.3 56.8 189.2 L196.2 165.8 Q207 164 213.3 155 L261.7 85 Q264 81.7 264 79.9 L264 70.9 Z"/>
+  <path d="M100.7 103 Q107 94 117.8 92.2 L257.2 68.8 Q268 67 261.7 76 L213.3 146 Q207 155 196.2 156.8 L56.8 180.2 Q46 182 52.3 173 Z"/>
+  <path d="M105.8 105 Q109.2 100.1 115.1 99.1 L249.8 76.5 Q255.7 75.5 252.3 80.5 L209.3 142.5 Q205.9 147.4 199.9 148.4 L65.3 171 Q59.3 172 62.8 167.1 Z" fill="currentColor" fill-opacity="0.88" stroke="none"/>
+  <path d="M183.2 84.6 L186.4 84.1" stroke-width="1.8"/>
+  <path d="M62 183.8 l8 -1.3" stroke="#37a766" stroke-width="2.2"/>
+  <path d="M229 127.8 l5.7 -8.2" stroke="#0068cc" stroke-width="2.4"/>
+</svg>

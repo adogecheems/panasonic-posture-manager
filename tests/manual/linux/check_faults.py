@@ -3,7 +3,7 @@
 
 The package must already be installed and the session adapter running::
 
-    /usr/bin/python tests/manual/check_faults.py
+    /usr/bin/python tests/manual/linux/check_faults.py
 
 The test kills the privileged relay and then the daemon itself, and verifies
 that the service reports a stable error code and returns to automatic laptop

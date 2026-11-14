@@ -45,6 +45,10 @@ class RepositoryLayoutTests(unittest.TestCase):
         self.assertTrue((packaging / "common" / "release_version.py").is_file())
         self.assertTrue((packaging / "linux" / "aur" / "PKGBUILD").is_file())
         self.assertTrue(
+            (packaging / "linux" / "ci" / "aur_known_hosts").is_file()
+        )
+        self.assertFalse((packaging / "common" / "ci").exists())
+        self.assertTrue(
             (
                 packaging
                 / "linux"
@@ -53,6 +57,43 @@ class RepositoryLayoutTests(unittest.TestCase):
             ).is_file()
         )
         self.assertTrue((packaging / "windows" / "build_msi.py").is_file())
+
+    def test_runtime_assets_are_split_by_platform(self):
+        assets = ROOT / "data" / "assets"
+        self.assertEqual(payload_directories(assets), {"linux", "windows"})
+        self.assertTrue((assets / "linux" / "laptop.svg").is_file())
+        self.assertTrue(
+            (assets / "windows" / "work.mmoe.panasonic.PostureManager.ico").is_file()
+        )
+
+    def test_platform_tests_have_explicit_names_and_homes(self):
+        tests = ROOT / "tests"
+        for name in (
+            "test_linux_access.py",
+            "test_linux_agent.py",
+            "test_linux_display.py",
+            "test_linux_protocol.py",
+            "test_linux_ui_contract.py",
+            "test_windows_optional_input.py",
+            "test_windows_ui.py",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue((tests / name).is_file())
+        for name in (
+            "test_access.py",
+            "test_agent.py",
+            "test_display.py",
+            "test_protocol.py",
+            "test_ui_contract.py",
+            "test_fluent.py",
+            "test_optional_input.py",
+        ):
+            with self.subTest(removed=name):
+                self.assertFalse((tests / name).exists())
+        self.assertEqual(
+            payload_directories(tests / "manual"),
+            {"linux", "windows"},
+        )
 
     def test_build_entrypoints_use_the_split_paths(self):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -67,6 +108,13 @@ class RepositoryLayoutTests(unittest.TestCase):
         self.assertIn("packaging/linux/aur/PKGBUILD", workflow)
         self.assertIn("packaging/common/release_version.py", workflow)
         self.assertIn("packaging/windows/build_msi.py", workflow)
+        windows = (
+            ROOT / ".github" / "workflows" / "windows.yml"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("panasonic_posture/fluent", windows)
+        self.assertTrue(
+            (ROOT / ".github" / "workflows" / "linux.yml").is_file()
+        )
 
 
 if __name__ == "__main__":

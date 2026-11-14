@@ -257,7 +257,7 @@ class WidgetTests(unittest.TestCase):
 
     def run_ui(self, body):
         prelude = '''
-from test_ui_contract import FakeService, state
+from test_linux_ui_contract import FakeService, state
 from panasonic_posture.linux.ui import app
 from panasonic_posture.linux.ui.posture import PosturePage
 from panasonic_posture.linux.ui.settings import SettingsPage
@@ -561,7 +561,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 assert POSES == {'laptop', 'stand', 'tent', 'tablet'}
-assert not (DATA_ROOT / 'assets/unknown.svg').exists()
+assert not (DATA_ROOT / 'unknown.svg').exists()
 for pose in POSES:
     for dark in (False, True):
         for hc in (False, True):

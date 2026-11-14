@@ -72,7 +72,7 @@ if ! ssh-keygen -y -f "$key" >/dev/null 2>&1; then
   exit 1
 fi
 
-known_hosts=$repo_root/packaging/common/ci/aur_known_hosts
+known_hosts=$repo_root/packaging/linux/ci/aur_known_hosts
 if [[ ! -f $known_hosts ]]; then
   echo "error: pinned AUR SSH host key not found: $known_hosts" >&2
   exit 1

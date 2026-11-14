@@ -5,7 +5,7 @@ Temporarily switches the real modes and restores automatic mode in a guard
 process if this script dies.  Run as the active desktop user on a stationary
 normal laptop with the package installed::
 
-    /usr/bin/python tests/manual/check_live.py
+    /usr/bin/python tests/manual/linux/check_live.py
 """
 
 import json

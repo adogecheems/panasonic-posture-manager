@@ -1,0 +1,65 @@
+name: Linux
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'backend/linux/**'
+      - 'packaging/linux/**'
+      - 'packaging/common/**'
+      - 'data/**'
+      - 'po/**'
+      - 'Makefile'
+      - '.github/workflows/linux.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native and translation tooling
+        run: sudo apt-get update && sudo apt-get install -y build-essential gettext
+      - name: Build and check C relay
+        run: make check-c
+      - name: Compile Python sources
+        run: make check-compile
+      - name: Check translations and localized metadata
+        run: make check-i18n
+      - name: Run platform-neutral and Linux-only unit tests
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m unittest \
+            tests.test_repository_layout \
+            tests.test_platform_imports \
+            tests.test_platform_boundaries \
+            tests.test_platform_separation \
+            tests.test_model \
+            tests.test_policy \
+            tests.test_controller \
+            tests.test_presentation \
+            tests.test_frontend \
+            tests.test_localization \
+            tests.test_i18n_check \
+            tests.test_journal \
+            tests.test_session_refresh \
+            tests.test_display_plasma \
+            tests.test_linux_protocol \
+            tests.test_linux_profile \
+            tests.test_linux_settings \
+            tests.test_linux_iio \
+            tests.test_linux_sysfs \
+            tests.test_linux_sensor -v

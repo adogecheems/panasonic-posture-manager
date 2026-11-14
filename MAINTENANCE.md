@@ -172,9 +172,7 @@ $env:PYTHONPATH = "src"
 python -m compileall -q src/panasonic_posture/windows
 python -m unittest discover -s tests -p "test_windows*.py" -v
 python -m unittest discover -s tests -p "test_session_refresh.py" -v
-python -m unittest discover -s tests -p "test_optional_input.py" -v
 python -m unittest discover -s tests -p "test_frontend.py" -v
-python -m unittest discover -s tests -p "test_fluent.py" -v
 python -m unittest tests.test_localization tests.test_i18n_check -v
 python tests/check_i18n.py
 ```

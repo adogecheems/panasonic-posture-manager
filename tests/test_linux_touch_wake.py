@@ -12,9 +12,9 @@ require_linux()
 
 from gi.repository import GLib
 
-import test_agent as session_fixtures
+import test_linux_agent as session_fixtures
 import test_engine as engine_fixtures
-import test_access as access_fixtures
+import test_linux_access as access_fixtures
 from panasonic_posture.model import StateSnapshot, dumps_state
 from panasonic_posture.linux.contracts.state_codec import parse_state_snapshot
 from panasonic_posture.linux.service.actuator import Actuator

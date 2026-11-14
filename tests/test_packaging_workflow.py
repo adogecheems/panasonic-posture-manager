@@ -368,7 +368,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(arch.count("'"), 2)
 
     def test_aur_host_key_is_pinned(self) -> None:
-        known_hosts = read("packaging/common/ci/aur_known_hosts")
+        known_hosts = read("packaging/linux/ci/aur_known_hosts")
         self.assertEqual(len(known_hosts.strip().splitlines()), 1)
         self.assertRegex(
             known_hosts,

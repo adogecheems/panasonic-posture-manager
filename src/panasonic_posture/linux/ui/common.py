@@ -10,9 +10,10 @@ _ = get_translator()
 def data_root() -> Path:
     override = os.environ.get('PANASONIC_POSTURE_UI_DIR')
     if override:
-        return Path(override).parent
+        return Path(override).parent / 'assets'
     source = Path(__file__).resolve().parents[3] / 'data'
-    return source if (source / 'assets').is_dir() else Path(DATA_DIR)
+    source_assets = source / 'assets' / 'linux'
+    return source_assets if source_assets.is_dir() else Path(DATA_DIR) / 'assets'
 
 
 DATA_ROOT = data_root()

@@ -18,7 +18,7 @@ def posture_pixbuf(root: Path, pose: str, dark: bool = False,
         _CACHE.move_to_end(key)
         return _CACHE[key]
     foreground, background = (('#ffffff', '#000000') if dark else ('#000000', '#ffffff')) if high_contrast else (('#deddda', '#242424') if dark else ('#3d3846', '#fafafa'))
-    svg = (root / 'assets' / f'{pose}.svg').read_text(encoding='utf-8')
+    svg = (root / f'{pose}.svg').read_text(encoding='utf-8')
     svg = svg.replace('currentColor', foreground).replace('var(--app-bg, white)', background)
     stream = Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(svg.encode()))
     try:

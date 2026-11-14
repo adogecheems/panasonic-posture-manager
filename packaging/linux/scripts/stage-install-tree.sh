@@ -67,11 +67,15 @@ done < <(find "$destdir/usr/bin" -maxdepth 1 -type f -print0 2>/dev/null)
 
 datadir=$destdir/usr/share/panasonic-posture-manager
 while IFS= read -r -d '' file; do
-  install -Dm644 "$file" "$datadir/${file#"$repo_root/data/"}"
-done < <(find "$repo_root/data" -type f -print0)
+  install -Dm644 "$file" "$datadir/profiles/${file#"$repo_root/data/profiles/"}"
+done < <(find "$repo_root/data/profiles" -type f -print0)
+
+while IFS= read -r -d '' file; do
+  install -Dm644 "$file" "$datadir/assets/${file#"$repo_root/data/assets/linux/"}"
+done < <(find "$repo_root/data/assets/linux" -type f -print0)
 
 install -Dm644 \
-  "$repo_root/data/assets/work.mmoe.panasonic.PostureManager.png" \
+  "$repo_root/data/assets/linux/work.mmoe.panasonic.PostureManager.png" \
   "$destdir/usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png"
 
 install -Dm755 "$repo_root/backend/linux/relay" \

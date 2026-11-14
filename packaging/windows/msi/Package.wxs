@@ -179,7 +179,7 @@
 
     <Icon
         Id="ProductIcon.ico"
-        SourceFile="$(var.ProjectRoot)/data/assets/work.mmoe.panasonic.PostureManager.ico" />
+        SourceFile="$(var.ProjectRoot)/data/assets/windows/work.mmoe.panasonic.PostureManager.ico" />
 
     <Feature Id="Complete" Title="!(loc.FeatureTitle)" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="PayloadComponents" />

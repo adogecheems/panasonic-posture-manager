@@ -8,9 +8,9 @@ import unittest
 
 from panasonic_posture.windows.ui.unavailable import UnavailableClient
 try:
-    from tests.fluent_fixture import SyntheticClient
+    from tests.windows_ui_fixture import SyntheticClient
 except ModuleNotFoundError:
-    from fluent_fixture import SyntheticClient
+    from windows_ui_fixture import SyntheticClient
 
 
 class UiClientTests(unittest.TestCase):
@@ -285,7 +285,7 @@ from panasonic_posture.windows.ui.app import Window
 from panasonic_posture.windows.ui.pages import APP_VERSION
 from panasonic_posture.windows.ui.update_check import UpdateChecker
 from panasonic_posture.windows.app.update_check import UpdateInfo
-from fluent_fixture import SyntheticClient
+from windows_ui_fixture import SyntheticClient
 
 latest_version = '99.0.0'
 
@@ -833,7 +833,7 @@ from PyQt6.QtTest import QTest
 from PyQt6.QtCore import QTimer
 from panasonic_posture.windows.ui.app import Window
 from panasonic_posture.windows.ui.unavailable import UnavailableClient
-from fluent_fixture import SyntheticClient
+from windows_ui_fixture import SyntheticClient
 app = QApplication([])
 assert QFontDatabase.families(), 'GUI verification requires installed system fonts'
 window = Window(client=SyntheticClient(QTimer.singleShot), language='en')
@@ -1100,7 +1100,7 @@ translated.close()
         self.run_ui('''
 from qfluentwidgets import fontFamilies, setTheme, Theme
 from PyQt6.QtGui import QFont, QIcon
-from panasonic_posture.windows.app.resources import data_root
+from panasonic_posture.windows.app.resources import asset_root
 assert (window.width(), window.height()) == (500, 660)
 assert window.stackedWidget.count() == 1  # Settings page builds on first use
 assert not hasattr(window, 'navigationInterface')
@@ -1117,7 +1117,7 @@ window.navigation.items['settings'].click()
 assert window.stackedWidget.count() == 2
 assert window.stackedWidget.currentWidget() is window.settings
 assert window.navigation.currentRouteKey() == 'settings'
-app_icon = QIcon(str(data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png'))
+app_icon = QIcon(str(asset_root() / 'work.mmoe.panasonic.PostureManager.png'))
 for theme, filename in ((Theme.LIGHT, 'lets-note-window-icon.png'),
                         (Theme.DARK, 'lets-note-window-icon-dark.png')):
     setTheme(theme)
