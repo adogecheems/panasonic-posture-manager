@@ -5,8 +5,8 @@ src/panasonic_posture/linux/ui/app.py
 src/panasonic_posture/linux/ui/errors.py
 src/panasonic_posture/linux/ui/posture.py
 src/panasonic_posture/linux/ui/settings.py
-src/panasonic_posture/fluent/app.py
-src/panasonic_posture/fluent/labels.py
-src/panasonic_posture/fluent/pages.py
-src/panasonic_posture/fluent/resident.py
-src/panasonic_posture/fluent/resources.py
+src/panasonic_posture/windows/ui/app.py
+src/panasonic_posture/windows/ui/labels.py
+src/panasonic_posture/windows/ui/pages.py
+src/panasonic_posture/windows/ui/resident.py
+src/panasonic_posture/windows/ui/resources.py

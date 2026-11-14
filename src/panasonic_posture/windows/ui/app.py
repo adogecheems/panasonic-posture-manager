@@ -11,10 +11,10 @@ from qfluentwidgets import (
     setFontFamilies,
 )
 
-from ..contracts import TICK_SECONDS
-from ..frontend.ports import UIClient
+from ...contracts import TICK_SECONDS
+from ...frontend.ports import UIClient
 from .unavailable import UnavailableClient
-from ..windows.hardware_client import HardwareUIClient
+from ..hardware_client import HardwareUIClient
 from .pages import Home, Settings
 from .resources import application_name, data_root, translator
 from .widgets import (

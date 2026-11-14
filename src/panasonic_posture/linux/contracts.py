@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from importlib.resources import files
 
 from ..machine_profile import PROFILE_VERSION as PROFILE_VERSION
-from ..contracts import (
-    SENSOR_SOURCES as SENSOR_SOURCES,
-    SensorSource as SensorSource,
-)
 
 NAME = "work.mmoe.panasonic.Posture"
 PATH = "/work/mmoe/panasonic/Posture"
@@ -25,6 +22,7 @@ def session_name(uid: int) -> str:
 POLKIT_ACTION = NAME + ".configure"
 DBUS_ERROR = NAME + ".Error"
 RELAY_PROTOCOL = 4
+SENSOR_SOURCES = ("starting", "iio", "sysfs")
 
 AUTH_CACHE_SECONDS = 2.0
 RELAY_HEARTBEAT_SECONDS = 0.5
@@ -47,3 +45,9 @@ DBUS_XML = (
     .joinpath("dbus.xml")
     .read_text(encoding="utf-8")
 )
+
+
+class SensorSource(StrEnum):
+    STARTING = "starting"
+    IIO = "iio"
+    SYSFS = "sysfs"

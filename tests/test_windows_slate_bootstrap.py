@@ -10,7 +10,7 @@ from panasonic_posture.windows.slate_bootstrap import (
     pending_slate_leases,
     read_bootstrap_slate_state,
 )
-from panasonic_posture.model import SensorReading, SensorSource
+from panasonic_posture.model import SensorReading
 
 
 class SlateBootstrapTests(unittest.TestCase):
@@ -79,7 +79,7 @@ class SlateBootstrapTests(unittest.TestCase):
         class Sensor:
             def reading(self):
                 return SensorReading(
-                    (0., 0., -9.81), now[0], SensorSource.IIO
+                    (0., 0., -9.81), now[0], "iio"
                 )
 
         baseline = StartupPhysicalBaseline(
@@ -99,7 +99,7 @@ class SlateBootstrapTests(unittest.TestCase):
         class Sensor:
             def reading(self):
                 return SensorReading(
-                    (0., 0., 9.81), now[0], SensorSource.IIO
+                    (0., 0., 9.81), now[0], "iio"
                 )
 
         baseline = StartupPhysicalBaseline(
@@ -117,7 +117,7 @@ class SlateBootstrapTests(unittest.TestCase):
         class Sensor:
             def reading(self):
                 return SensorReading(
-                    (0., -9.5, -2.), now[0], SensorSource.IIO
+                    (0., -9.5, -2.), now[0], "iio"
                 )
 
         baseline = StartupPhysicalBaseline(

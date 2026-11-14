@@ -15,7 +15,6 @@ from panasonic_posture.model import (
     Mode,
     Pose,
     SensorReading,
-    SensorSource,
     Target,
 )
 from panasonic_posture.contracts import ErrorCode
@@ -202,7 +201,7 @@ class FakeController:
 class FakeSensor:
     def __init__(self) -> None:
         self._reading = SensorReading()
-        self.source = SensorSource.STARTING
+        self.source = "starting"
         self.sensor_error: str | None = None
         self.reading_error: Exception | None = None
         self.prefer_shared_calls: list[bool] = []
@@ -426,7 +425,7 @@ class StateSnapshotTests(EngineTestCase):
     def test_posture_wait_is_not_published_without_healthy_service_evidence(self):
         engine = self.make()
         self.controller.policy.posture_pending = True
-        self.sensor._reading = SensorReading((0.0, 0.0, -9.81), self.boot.value, SensorSource.SYSFS)
+        self.sensor._reading = SensorReading((0.0, 0.0, -9.81), self.boot.value, "sysfs")
         self.lease(engine)
         self.tick(engine)
         self.assertTrue(engine.state.posture_pending)
@@ -459,8 +458,8 @@ class StateSnapshotTests(EngineTestCase):
         self.assertEqual(parsed["version"], 2)
 
     def test_tick_builds_documented_state(self) -> None:
-        self.sensor._reading = SensorReading((0.0, 0.0, -9.81), 1000.0, SensorSource.IIO)
-        self.sensor.source = SensorSource.IIO
+        self.sensor._reading = SensorReading((0.0, 0.0, -9.81), 1000.0, "iio")
+        self.sensor.source = "iio"
         self.sensor.sensor_error = None
         engine = self.make()
         self.tick(engine)
@@ -644,7 +643,7 @@ class HardwareDebounceTests(EngineTestCase):
                 engine = self.make()
                 self.hardware = True
                 self.sensor._reading = SensorReading(
-                    (0.0, 0.0, 9.81), self.boot.value, SensorSource.SYSFS
+                    (0.0, 0.0, 9.81), self.boot.value, "sysfs"
                 )
                 self.tick(engine)
                 self.lease(engine)
@@ -663,7 +662,7 @@ class HardwareDebounceTests(EngineTestCase):
                     for _ in range(10):
                         self.boot.value += 0.1
                         self.sensor._reading = SensorReading(
-                            (0.0, 0.0, -9.81), self.boot.value, SensorSource.SYSFS
+                            (0.0, 0.0, -9.81), self.boot.value, "sysfs"
                         )
                         self.tick(engine)
                     self.assertEqual(engine.state.target, LAPTOP)
@@ -1551,7 +1550,7 @@ class SensorCalibrationTests(EngineTestCase):
         for index in range(count):
             stamp = start + index * 0.1
             self.boot.value = stamp
-            self.sensor._reading = SensorReading(vector, stamp, SensorSource.IIO)
+            self.sensor._reading = SensorReading(vector, stamp, "iio")
             self.tick(engine)
 
     def test_calibration_persists_and_corrects_following_samples(self):
@@ -1648,7 +1647,7 @@ class SensorCalibrationTests(EngineTestCase):
 
 class PresentationTests(EngineTestCase):
     def _valid_reading(self, stamp: float | None = None) -> SensorReading:
-        return SensorReading((0.0, 0.0, -9.81), self.boot.value if stamp is None else stamp, SensorSource.IIO)
+        return SensorReading((0.0, 0.0, -9.81), self.boot.value if stamp is None else stamp, "iio")
 
     def test_candidate_maps_policy_mode(self) -> None:
         engine = self.make()
@@ -1684,7 +1683,7 @@ class PresentationTests(EngineTestCase):
         engine = self.make()
         self.hardware = True
         self.sensor._reading = SensorReading(
-            (0.0, 0.0, 9.81), self.boot.value, SensorSource.IIO
+            (0.0, 0.0, 9.81), self.boot.value, "iio"
         )
         self.tick(engine)
         self.lease(engine)
@@ -1696,7 +1695,7 @@ class PresentationTests(EngineTestCase):
             self.boot.value += 0.1
             self.mono.value += 0.1
             self.sensor._reading = SensorReading(
-                (0.0, -0.85, 9.77), self.boot.value, SensorSource.IIO
+                (0.0, -0.85, 9.77), self.boot.value, "iio"
             )
             self.tick(engine)
             self.assertIs(engine.state.hardware, False)
@@ -1719,7 +1718,7 @@ class PresentationTests(EngineTestCase):
         engine = self.make()
         self.controller.policy.mode = "T"
         self.controller.policy.stable = True
-        self.sensor._reading = SensorReading((0.0, 0.0, -9.81), 900.0, SensorSource.IIO)
+        self.sensor._reading = SensorReading((0.0, 0.0, -9.81), 900.0, "iio")
         self.tick(engine)
         self.assertIsNone(self.presentation.calls[-1][3])
         self.assertEqual(self.presentation.calls[-1][1], Pose.UNKNOWN)
@@ -1746,7 +1745,7 @@ class PresentationTests(EngineTestCase):
             self.boot.value += 0.001
             stamp = self.boot.value
             self.sensor._reading = SensorReading(
-                (0.0, 0.0, -9.81), stamp, SensorSource.IIO
+                (0.0, 0.0, -9.81), stamp, "iio"
             )
             return self.sensor._reading
 
@@ -1773,7 +1772,7 @@ class SoftwarePostureIntegrationTests(EngineTestCase):
             angle = math.radians(pitch)
             self.sensor._reading = SensorReading(
                 (0.0, -9.81 * math.sin(angle), -9.81 * math.cos(angle)),
-                self.boot.value, SensorSource.SYSFS,
+                self.boot.value, "sysfs",
             )
             self.lease(engine)
             self.tick(engine)
@@ -1823,8 +1822,8 @@ class RealDomainIntegrationTests(unittest.TestCase):
         controller = Controller(Policy())
         controller.generation = 5
         sensor = FakeSensor()
-        sensor._reading = SensorReading((0.0, 0.0, -9.81), 1000.0, SensorSource.IIO)
-        sensor.source = SensorSource.IIO
+        sensor._reading = SensorReading((0.0, 0.0, -9.81), 1000.0, "iio")
+        sensor.source = "iio"
         boot = FakeClock(1000.0)
         mono = FakeClock(100.0)
         hardware = [True]

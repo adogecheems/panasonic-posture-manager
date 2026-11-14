@@ -7,7 +7,6 @@ import os
 from collections.abc import Mapping, Sequence
 
 SIMPLIFIED_CHINESE_CATALOG = "zh_CN"
-_SIMPLIFIED_CHINESE_LANGUAGE_IDS = frozenset({0x0004, 0x0804, 0x1004})
 _TRADITIONAL_CHINESE_REGIONS = frozenset({"hk", "mo", "tw"})
 
 
@@ -42,16 +41,6 @@ def catalog_language(tag: str | None) -> str | None:
     if region in {None, "cn", "sg"}:
         return SIMPLIFIED_CHINESE_CATALOG
     return None
-
-
-def windows_catalog_language(language_id: int) -> str:
-    """Map a Windows LANGID to the project language used by the UI."""
-
-    return (
-        SIMPLIFIED_CHINESE_CATALOG
-        if language_id in _SIMPLIFIED_CHINESE_LANGUAGE_IDS
-        else "en"
-    )
 
 
 def environment_languages(
@@ -106,5 +95,4 @@ __all__ = [
     "catalog_language",
     "catalog_languages",
     "environment_languages",
-    "windows_catalog_language",
 ]

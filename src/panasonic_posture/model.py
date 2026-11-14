@@ -13,7 +13,6 @@ from enum import StrEnum
 from typing import Any
 
 from .contracts import (
-    SensorSource,
     STATE_VERSION,
     SUPPORT_TIERS,
     TARGET_MODES,

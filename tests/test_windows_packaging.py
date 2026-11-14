@@ -85,7 +85,7 @@ class WindowsPackagingTests(unittest.TestCase):
                              'runtime/python-hardware._pth',
                              'app/panasonic_posture/windows/hardware_client.py',
                              'app/panasonic_posture/windows/update_check.py',
-                             'app/panasonic_posture/fluent/update_check.py',
+                             'app/panasonic_posture/windows/ui/update_check.py',
                              'data/assets/lets-note-window-icon.png',
                              'data/assets/work.mmoe.panasonic.PostureManager.ico',
                              'data/assets/work.mmoe.panasonic.PostureManager-square.png',
@@ -111,7 +111,7 @@ class WindowsPackagingTests(unittest.TestCase):
                 self.assertFalse(any('Hardware Service' in name for name in names))
                 self.assertFalse(any('/app/panasonic_posture/linux/' in name for name in names))
                 for retired in (
-                    'app/panasonic_posture/fluent/demo.py',
+                    'app/panasonic_posture/windows/ui/demo.py',
                     'app/panasonic_posture/windows/backend.py',
                     'app/panasonic_posture/windows/client.py',
                     'app/panasonic_posture/windows/private_backend.py',
@@ -126,7 +126,7 @@ class WindowsPackagingTests(unittest.TestCase):
                 self.assertIn('-B -I', native)
                 self.assertNotIn('--hardware-backend', native)
                 project_bytecode = (
-                    'app/panasonic_posture/fluent/__pycache__/'
+                    'app/panasonic_posture/windows/ui/__pycache__/'
                     f'launcher.{sys.implementation.cache_tag}.pyc'
                 )
                 ui_bytecode = (

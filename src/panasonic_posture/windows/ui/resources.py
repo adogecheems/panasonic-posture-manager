@@ -5,18 +5,18 @@ import gettext
 import os
 from pathlib import Path
 
-from ..localization import (
+from ...localization import (
     SIMPLIFIED_CHINESE_CATALOG,
     catalog_language,
     catalog_languages,
     environment_languages,
-    windows_catalog_language,
 )
+from ..localization import windows_catalog_language
 
 
 def data_root() -> Path:
     override = os.environ.get('PANASONIC_POSTURE_DATA_DIR')
-    return Path(override) if override else Path(__file__).resolve().parents[3] / 'data'
+    return Path(override) if override else Path(__file__).resolve().parents[4] / 'data'
 
 
 def _windows_language() -> str | None:

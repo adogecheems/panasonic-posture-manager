@@ -6,8 +6,8 @@ from panasonic_posture.localization import (
     catalog_language,
     catalog_languages,
     environment_languages,
-    windows_catalog_language,
 )
+from panasonic_posture.windows.localization import windows_catalog_language
 
 
 class LocalizationTests(unittest.TestCase):

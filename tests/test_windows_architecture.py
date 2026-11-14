@@ -35,7 +35,7 @@ class WindowsArchitectureTests(unittest.TestCase):
             'windows/hardware_application.py',
             'windows/machine_profile.py',
             'windows/screen_session.py',
-            'fluent/app.py',
+            'windows/ui/app.py',
         ):
             with self.subTest(relative=relative):
                 source = (root / relative).read_text(encoding='utf-8')
@@ -47,7 +47,7 @@ class WindowsArchitectureTests(unittest.TestCase):
         for name in ('backend.py', 'client.py', 'private_backend.py', 'simulation.py'):
             with self.subTest(name=name):
                 self.assertFalse((windows / name).exists())
-        self.assertFalse((SOURCE / 'panasonic_posture/fluent/demo.py').exists())
+        self.assertFalse((SOURCE / 'panasonic_posture/windows/ui/demo.py').exists())
 
     def test_hardware_composition_does_not_load_ui_or_screen_session_core(self):
         result = run_isolated(BLOCKER + '''
@@ -59,7 +59,7 @@ blocked = {
     'panasonic_posture.windows.session_launch',
     'panasonic_posture.windows.session_supervisor',
     'panasonic_posture.windows.trusted_runtime',
-    'panasonic_posture.fluent.app',
+    'panasonic_posture.windows.ui.app',
 }
 from panasonic_posture.windows.hardware_runtime import HardwareRuntime
 assert HardwareRuntime
@@ -125,11 +125,11 @@ assert SessionSupervisor
     def test_startup_launcher_does_not_load_fluent_pages_or_dependencies(self):
         result = run_isolated(BLOCKER + '''
 blocked = {
-    'panasonic_posture.fluent.app',
+    'panasonic_posture.windows.ui.app',
     'qfluentwidgets',
     'qframelesswindow',
 }
-from panasonic_posture.fluent.launcher import run
+from panasonic_posture.windows.ui.launcher import run
 assert run
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)

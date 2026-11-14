@@ -309,7 +309,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             windows,
         )
         self.assertIn(
-            "python -m compileall -q src/panasonic_posture/windows src/panasonic_posture/fluent",
+            "python -m compileall -q src/panasonic_posture/windows",
             windows,
         )
         self.assertIn(

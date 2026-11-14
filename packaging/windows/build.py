@@ -154,7 +154,7 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
         b'import sys\n'
         b'from pathlib import Path\n'
         b'sys.path.insert(0, str(Path(__file__).resolve().parent / "app"))\n'
-        b'from panasonic_posture.fluent.__main__ import main\n'
+        b'from panasonic_posture.windows.ui.__main__ import main\n'
         b'raise SystemExit(main())\n'
     )
     for name, arguments in ((f'{APPLICATION_DISPLAY_NAME}.cmd', ''),

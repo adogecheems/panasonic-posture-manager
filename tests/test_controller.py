@@ -4,7 +4,7 @@ import math
 import unittest
 
 from panasonic_posture.controller import Controller
-from panasonic_posture.model import Mode, SensorReading, SensorSource, Target
+from panasonic_posture.model import Mode, SensorReading, Target
 from panasonic_posture.policy import (
     MODE_DISABLED,
     MODE_LAPTOP,
@@ -34,7 +34,7 @@ def sample(pitch=0.0, magnitude=GRAVITY, roll=0.0, stamp=0.0):
     return SensorReading(
         vector=accel_vector(pitch, magnitude, roll),
         stamp=stamp,
-        source=SensorSource.IIO,
+        source="iio",
     )
 
 

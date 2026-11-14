@@ -9,7 +9,6 @@ from panasonic_posture.model import (
     Mode,
     Pose,
     SensorReading,
-    SensorSource,
     StateSnapshot,
     Target,
     dumps_state,
@@ -60,7 +59,7 @@ class TargetTests(unittest.TestCase):
 
 class SensorReadingTests(unittest.TestCase):
     def test_valid_reading(self):
-        reading = SensorReading((0.0, 0.0, -9.80665), 1.0, SensorSource.IIO)
+        reading = SensorReading((0.0, 0.0, -9.80665), 1.0, "iio")
         self.assertTrue(reading.valid)
         self.assertAlmostEqual(reading.magnitude, 9.80665, places=3)
 
@@ -85,7 +84,7 @@ class StateSnapshotTests(unittest.TestCase):
             applied=Target("laptop", False, 0, False),
             backend=BackendState.READY,
             session_connected=True,
-            sensor_source=SensorSource.IIO,
+            sensor_source="iio",
         )
         data = state.to_dict()
         self.assertEqual(data["version"], STATE_VERSION)

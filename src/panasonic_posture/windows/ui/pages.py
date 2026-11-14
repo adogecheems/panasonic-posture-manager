@@ -12,12 +12,12 @@ from qfluentwidgets import (
     Theme, setTheme, isDarkTheme, qconfig, setCustomStyleSheet, setFont,
 )
 
-from .. import __version__
-from ..build_info import display_version
-from ..contracts import ALL_ERROR_CODES, MODES, ErrorCode
-from ..frontend.actions import ActionRunner, SettingsModel
-from ..frontend.ports import UIClient
-from ..frontend.state import PostureModel, Detail
+from ... import __version__
+from ...build_info import display_version
+from ...contracts import ALL_ERROR_CODES, MODES, ErrorCode
+from ...frontend.actions import ActionRunner, SettingsModel
+from ...frontend.ports import UIClient
+from ...frontend.state import PostureModel, Detail
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     Illustration, Page, ModeRadio, SettingRow, SwitchRow, row_style,

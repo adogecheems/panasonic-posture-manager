@@ -13,7 +13,7 @@ from panasonic_posture.calibration import (
     parse_calibration_matrix,
     stable_gravity_vector,
 )
-from panasonic_posture.model import SensorReading, SensorSource
+from panasonic_posture.model import SensorReading
 
 
 def unit(vector):
@@ -22,7 +22,7 @@ def unit(vector):
 
 
 def reading(vector, stamp):
-    return SensorReading(vector=vector, stamp=stamp, source=SensorSource.IIO)
+    return SensorReading(vector=vector, stamp=stamp, source="iio")
 
 
 class CalibrationMatrixTests(unittest.TestCase):

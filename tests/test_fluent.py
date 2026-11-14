@@ -6,7 +6,7 @@ import subprocess
 import sys
 import unittest
 
-from panasonic_posture.fluent.unavailable import UnavailableClient
+from panasonic_posture.windows.ui.unavailable import UnavailableClient
 try:
     from tests.fluent_fixture import SyntheticClient
 except ModuleNotFoundError:
@@ -72,7 +72,7 @@ class UiClientTests(unittest.TestCase):
         self.assertIsNotNone(client.set_mode('tent').exception())
 
     def test_cli_help_does_not_load_qt_or_gi(self):
-        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent', '--help'],
+        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.windows.ui', '--help'],
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('--background', result.stdout)
@@ -83,7 +83,7 @@ class UiClientTests(unittest.TestCase):
         for option in ('--demo', '--backend', '--scenario', '--settings',
                        '--native-backend', '--hardware-backend', '--simulate-backend'):
             with self.subTest(option=option):
-                result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
+                result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.windows.ui',
                     option], text=True, capture_output=True, timeout=10)
                 self.assertEqual(result.returncode, 2)
                 self.assertIn('unrecognized arguments', result.stderr)
@@ -91,7 +91,7 @@ class UiClientTests(unittest.TestCase):
     def test_background_is_windows_only(self):
         if sys.platform == 'win32':
             self.skipTest('platform check is exercised on non-Windows hosts')
-        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.fluent',
+        result = subprocess.run([sys.executable, '-S', '-m', 'panasonic_posture.windows.ui',
                                  '--background'],
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 2)
@@ -100,7 +100,7 @@ class UiClientTests(unittest.TestCase):
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
-        from panasonic_posture.fluent.resources import translator
+        from panasonic_posture.windows.ui.resources import translator
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'po').mkdir()
@@ -112,7 +112,7 @@ class UiClientTests(unittest.TestCase):
                 self.assertEqual(translator('en')('Laptop'), 'Laptop')
 
     def test_application_display_name_matches_the_window_title_source(self):
-        from panasonic_posture.fluent.resources import application_name
+        from panasonic_posture.windows.ui.resources import application_name
         from panasonic_posture.product import APPLICATION_DISPLAY_NAME
         self.assertEqual(application_name('en'), APPLICATION_DISPLAY_NAME)
         self.assertEqual(
@@ -121,18 +121,18 @@ class UiClientTests(unittest.TestCase):
 
     def test_windows_ui_language_wins_over_process_lang(self):
         from unittest.mock import patch
-        from panasonic_posture.fluent.resources import default_language
+        from panasonic_posture.windows.ui.resources import default_language
         environment = {'LANGUAGE': '', 'LC_ALL': '', 'LC_MESSAGES': '', 'LANG': 'C.UTF-8'}
         with patch.dict(os.environ, environment), \
-                patch('panasonic_posture.fluent.resources._windows_language',
+                patch('panasonic_posture.windows.ui.resources._windows_language',
                       return_value='zh_CN'):
             self.assertEqual(default_language(), 'zh_CN')
         with patch.dict(os.environ, environment), \
-                patch('panasonic_posture.fluent.resources._windows_language',
+                patch('panasonic_posture.windows.ui.resources._windows_language',
                       return_value=None):
             self.assertEqual(default_language(), 'C.UTF-8')
         with patch.dict(os.environ, dict(environment, LC_ALL='zh_CN.UTF-8')), \
-                patch('panasonic_posture.fluent.resources._windows_language',
+                patch('panasonic_posture.windows.ui.resources._windows_language',
                       return_value=None):
             self.assertEqual(default_language(), 'zh_CN.UTF-8')
 
@@ -140,7 +140,7 @@ class UiClientTests(unittest.TestCase):
         import gettext
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
-        from panasonic_posture.fluent.resources import translator
+        from panasonic_posture.windows.ui.resources import translator
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'po').mkdir()
@@ -159,7 +159,7 @@ class UiClientTests(unittest.TestCase):
 class FluentWidgetTests(unittest.TestCase):
     def test_reduced_motion_falls_back_before_qt_accessibility_api(self):
         self.run_ui('''
-from panasonic_posture.fluent.app import _prefers_reduced_motion
+from panasonic_posture.windows.ui.app import _prefers_reduced_motion
 class LegacyStyleHints:
     pass
 assert not _prefers_reduced_motion(LegacyStyleHints())
@@ -167,9 +167,9 @@ assert not _prefers_reduced_motion(LegacyStyleHints())
 
     def test_application_name_follows_the_windows_ui_language(self):
         self.run_ui('''
-from panasonic_posture.fluent.app import configure_application
-from panasonic_posture.fluent.app import Window
-from panasonic_posture.fluent.unavailable import UnavailableClient
+from panasonic_posture.windows.ui.app import configure_application
+from panasonic_posture.windows.ui.app import Window
+from panasonic_posture.windows.ui.unavailable import UnavailableClient
 from panasonic_posture.product import APPLICATION_DISPLAY_NAME
 assert configure_application('zh_CN') == '松下二合一平板电脑姿态管理工具'
 assert app.applicationName() == '松下二合一平板电脑姿态管理工具'
@@ -260,7 +260,7 @@ assert all('PRIVATE' not in content for _, content in errors)
 
     def test_hardware_preflight_explains_local_session_rejection(self):
         self.run_ui('''
-from panasonic_posture.fluent.app import hardware_start_failure
+from panasonic_posture.windows.ui.app import hardware_start_failure
 from PyQt6.QtWidgets import QMessageBox
 messages = []
 QMessageBox.critical = lambda parent, title, text: messages.append((title, text))
@@ -281,9 +281,9 @@ else:
         self.run_ui('''
 from PyQt6.QtCore import QObject, QByteArray, QUrl, Qt, QTimer, pyqtSignal
 from qfluentwidgets import PrimaryPushButton, SettingCard
-from panasonic_posture.fluent.app import Window
-from panasonic_posture.fluent.pages import APP_VERSION
-from panasonic_posture.fluent.update_check import UpdateChecker
+from panasonic_posture.windows.ui.app import Window
+from panasonic_posture.windows.ui.pages import APP_VERSION
+from panasonic_posture.windows.ui.update_check import UpdateChecker
 from panasonic_posture.windows.update_check import UpdateInfo
 from fluent_fixture import SyntheticClient
 
@@ -411,7 +411,7 @@ network_checker.shutdown()
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QLabel, QSystemTrayIcon
-from panasonic_posture.fluent.resident import ResidentTray
+from panasonic_posture.windows.ui.resident import ResidentTray
 class FakeTray(QObject):
     available = True
     activated = pyqtSignal(object)
@@ -615,7 +615,7 @@ QTest.qWait(50)
         self.run_resident('''
 from concurrent.futures import Future
 from copy import deepcopy
-from panasonic_posture.fluent.app import Window
+from panasonic_posture.windows.ui.app import Window
 
 class LazyClient:
     def __init__(self):
@@ -831,8 +831,8 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtTest import QTest
 from PyQt6.QtCore import QTimer
-from panasonic_posture.fluent.app import Window
-from panasonic_posture.fluent.unavailable import UnavailableClient
+from panasonic_posture.windows.ui.app import Window
+from panasonic_posture.windows.ui.unavailable import UnavailableClient
 from fluent_fixture import SyntheticClient
 app = QApplication([])
 assert QFontDatabase.families(), 'GUI verification requires installed system fonts'
@@ -968,7 +968,7 @@ window.close()
     def test_unchanged_presentation_skips_widget_work_and_reuses_svg(self):
         self.run_ui('''
 import time
-import panasonic_posture.fluent.widgets as widget_module
+import panasonic_posture.windows.ui.widgets as widget_module
 client = window.client
 home_calls = []
 settings_fits = []
@@ -1042,7 +1042,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from panasonic_posture.contracts import TICK_SECONDS
 from panasonic_posture.windows.hardware_client import HardwareUIClient
-from panasonic_posture.fluent.unavailable import UnavailableClient
+from panasonic_posture.windows.ui.unavailable import UnavailableClient
 import os, time
 with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=directory):
     normal = Window(language='en')
@@ -1100,7 +1100,7 @@ translated.close()
         self.run_ui('''
 from qfluentwidgets import fontFamilies, setTheme, Theme
 from PyQt6.QtGui import QFont, QIcon
-from panasonic_posture.fluent.resources import data_root
+from panasonic_posture.windows.ui.resources import data_root
 assert (window.width(), window.height()) == (500, 660)
 assert window.stackedWidget.count() == 2
 assert not hasattr(window, 'navigationInterface')
@@ -1135,7 +1135,7 @@ assert window.home.verticalScrollBar().maximum() == 0
         self.run_ui('''
 from PyQt6.QtGui import QFont
 from qfluentwidgets import InfoBar, MessageBox, Theme, setTheme
-from panasonic_posture.fluent.widgets import (
+from panasonic_posture.windows.ui.widgets import (
     BODY_SIZE, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT,
     DIALOG_TITLE_SIZE, DIALOG_BODY_SIZE,
     TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,

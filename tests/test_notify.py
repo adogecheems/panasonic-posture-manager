@@ -10,7 +10,7 @@ require_linux()
 from gi.repository import Gio, GLib
 
 from panasonic_posture.controller import Controller
-from panasonic_posture.model import SensorReading, SensorSource
+from panasonic_posture.model import SensorReading
 from panasonic_posture.linux.session.notify import RETRY_DELAYS, Notifier
 
 
@@ -139,7 +139,7 @@ class NotifierTests(unittest.TestCase):
             reading = SensorReading(
                 vector=(0.0, -9.8 * math.sin(angle), -9.8 * math.cos(angle)),
                 stamp=now,
-                source=SensorSource.IIO,
+                source="iio",
             )
             controller.update(now, reading, hardware=False)
             self.notifier.sync(controller.pending_notification, now=now)
@@ -224,7 +224,7 @@ class NotifierTests(unittest.TestCase):
             angle = math.radians(pitch)
             controller.update(now, SensorReading(
                 vector=(0.0, -9.8 * math.sin(angle), -9.8 * math.cos(angle)),
-                stamp=stamp, source=SensorSource.IIO,
+                stamp=stamp, source="iio",
             ), hardware=False)
             self.notifier.sync(controller.pending_notification, now=now)
 

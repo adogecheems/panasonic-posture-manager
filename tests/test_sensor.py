@@ -15,7 +15,6 @@ from tests._test_support import require_linux
 
 require_linux()
 
-from panasonic_posture.model import SensorSource
 from panasonic_posture.linux.service import sensor as sensor_module
 from panasonic_posture.linux.service import sensor_sources
 from panasonic_posture.linux.service.sensor import (
@@ -122,8 +121,8 @@ class SensorTestCase(unittest.TestCase):
         self.stop = threading.Event()
         self.clock = AutoClock()
         self.boot_clock = lambda: 1234.5
-        self.iio = FakeSourceFactory(str(SensorSource.IIO))
-        self.sysfs = FakeSourceFactory(str(SensorSource.SYSFS))
+        self.iio = FakeSourceFactory(str("iio"))
+        self.sysfs = FakeSourceFactory(str("sysfs"))
         self.iio.stop = self.stop
         self.sysfs.stop = self.stop
         self.managers: list[SensorManager] = []
@@ -180,11 +179,11 @@ class SourceSelectionTests(SensorTestCase):
         manager = self.make()
         manager.start()
         self.assertTrue(wait_for(lambda: manager.reading().vector is not None))
-        self.assertEqual(manager.source, SensorSource.IIO)
+        self.assertEqual(manager.source, "iio")
         self.assertGreaterEqual(self.iio.opens, 1)
         self.assertIsNone(manager.sensor_error)
         reading = manager.reading()
-        self.assertEqual(reading.source, SensorSource.IIO)
+        self.assertEqual(reading.source, "iio")
         self.assertEqual(reading.stamp, 1234.5)
         self.assertEqual(reading.vector, (0.1, 0.2, -9.8))
 
@@ -193,10 +192,10 @@ class SourceSelectionTests(SensorTestCase):
         self.sysfs.vector()
         manager = self.make()
         manager.start()
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+        self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
         self.assertTrue(wait_for(lambda: manager.reading().vector == VECTOR))
         self.assertGreaterEqual(self.iio.opens, 1)
-        self.assertEqual(manager.reading().source, SensorSource.SYSFS)
+        self.assertEqual(manager.reading().source, "sysfs")
         self.assertIsNone(manager.sensor_error)
 
     def test_iio_without_samples_falls_back_to_sysfs(self) -> None:
@@ -204,7 +203,7 @@ class SourceSelectionTests(SensorTestCase):
         self.sysfs.vector()
         manager = self.make()
         manager.start()
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+        self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
         self.assertTrue(wait_for(lambda: manager.reading().vector == VECTOR))
         self.assertGreaterEqual(self.iio.opens, 1)
         self.assertGreaterEqual(self.iio.closes, 1)
@@ -220,17 +219,17 @@ class SourceSelectionTests(SensorTestCase):
         ):
             manager = self.make(clock=clock)
             manager.start()
-            self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+            self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
             first_attempts = self.iio.opens
             self.assertTrue(
                 wait_for(lambda: self.iio.opens > first_attempts),
                 "IIO shadow trial was not retried after the retry interval",
             )
-            self.assertEqual(manager.source, SensorSource.SYSFS)
+            self.assertEqual(manager.source, "sysfs")
             self.iio.fail_open = False
-            self.assertTrue(wait_for(lambda: manager.source == SensorSource.IIO))
+            self.assertTrue(wait_for(lambda: manager.source == "iio"))
             self.assertTrue(
-                wait_for(lambda: manager.reading().source == SensorSource.IIO)
+                wait_for(lambda: manager.reading().source == "iio")
             )
 
     def test_prefer_shared_uses_sysfs_and_switches_back_to_iio(self) -> None:
@@ -239,10 +238,10 @@ class SourceSelectionTests(SensorTestCase):
         manager = self.make()
         manager.set_prefer_shared(True)
         manager.start()
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+        self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
         self.assertEqual(self.iio.opens, 0)
         manager.set_prefer_shared(False)
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.IIO))
+        self.assertTrue(wait_for(lambda: manager.source == "iio"))
         self.assertGreaterEqual(self.iio.opens, 1)
         self.assertTrue(wait_for(lambda: manager.reading().vector == (1.0, 0.0, -9.8)))
 
@@ -258,7 +257,7 @@ class SourceSelectionTests(SensorTestCase):
             wait_for(lambda: "sysfs:" in (manager.sensor_error or "")),
             manager.sensor_error,
         )
-        self.assertEqual(manager.source, SensorSource.STARTING)
+        self.assertEqual(manager.source, "starting")
 
 
 class SensorLifecycleTests(SensorTestCase):
@@ -268,7 +267,7 @@ class SensorLifecycleTests(SensorTestCase):
         time.sleep(0.05)
         self.assertEqual(self.iio.opens, 0)
         self.assertEqual(self.sysfs.opens, 0)
-        self.assertEqual(manager.source, SensorSource.STARTING)
+        self.assertEqual(manager.source, "starting")
         self.assertIsNone(manager.reading().vector)
 
     def test_close_stops_worker(self) -> None:
@@ -300,7 +299,7 @@ class SensorLifecycleTests(SensorTestCase):
         release = threading.Event()
 
         class BlockingSource:
-            kind = str(SensorSource.IIO)
+            kind = str("iio")
 
             def open(self) -> None:
                 pass
@@ -415,7 +414,7 @@ class ShadowTrialTests(SensorTestCase):
             monotonic=time.monotonic, boot_clock=time.monotonic
         )
         manager.start()
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+        self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
         first_attempts = self.iio.opens
         self.assertTrue(
             wait_for(lambda: self.iio.opens > first_attempts),
@@ -434,7 +433,7 @@ class ShadowTrialTests(SensorTestCase):
                 last_stamp = reading.stamp
                 last_change = now
             time.sleep(0.002)
-        self.assertEqual(manager.source, SensorSource.SYSFS)
+        self.assertEqual(manager.source, "sysfs")
         self.assertLess(max_gap, 0.3, f"sysfs stream had a {max_gap:.2f}s gap")
         self.assertIsNone(manager.sensor_error)
         self.assertGreaterEqual(self.iio.opens, 2)
@@ -451,7 +450,7 @@ class ShadowTrialTests(SensorTestCase):
         )
         with mock.patch.object(sensor_module, "IIO_NO_SAMPLE_SECONDS", 0.2):
             manager.start()
-            self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+            self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
             self.iio.fail_open = False
             self.iio.repeat_last = False
             self.iio.vector((1.0, 2.0, -9.8))
@@ -478,8 +477,8 @@ class ShadowTrialTests(SensorTestCase):
                     last_change = now
                 time.sleep(0.002)
 
-        self.assertNotIn(SensorSource.IIO, sources)
-        self.assertEqual(manager.source, SensorSource.SYSFS)
+        self.assertNotIn("iio", sources)
+        self.assertEqual(manager.source, "sysfs")
         self.assertLess(max_gap, 0.15, f"sysfs stream had a {max_gap:.2f}s gap")
         self.assertIsNone(manager.sensor_error)
 
@@ -488,11 +487,11 @@ class ShadowTrialTests(SensorTestCase):
         self.sysfs.vector()
         manager = self.make()
         manager.start()
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+        self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
         first_attempts = self.iio.opens
         self.assertTrue(wait_for(lambda: self.iio.opens > first_attempts))
         time.sleep(0.05)
-        self.assertEqual(manager.source, SensorSource.SYSFS)
+        self.assertEqual(manager.source, "sysfs")
         self.assertIsNone(manager.sensor_error)
         self.assertTrue(wait_for(lambda: manager.reading().vector == VECTOR))
 
@@ -502,7 +501,7 @@ class ShadowTrialTests(SensorTestCase):
         self.sysfs.vector()
         manager = self.make()
         manager.start()
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+        self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
         # The next trial sees several empty reads before the first real sample;
         # it must not become the active source before that sample arrives.
         for _ in range(3):
@@ -512,11 +511,11 @@ class ShadowTrialTests(SensorTestCase):
         self.iio.fail_open = False
         first_attempts = self.iio.opens
         self.assertTrue(wait_for(lambda: self.iio.opens > first_attempts))
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.IIO))
+        self.assertTrue(wait_for(lambda: manager.source == "iio"))
         self.assertTrue(
             wait_for(lambda: manager.reading().vector == (1.0, 2.0, -3.0))
         )
-        self.assertEqual(manager.reading().source, SensorSource.IIO)
+        self.assertEqual(manager.reading().source, "iio")
         self.assertIsNone(manager.sensor_error)
 
     def test_prefer_shared_does_not_probe_iio(self) -> None:
@@ -525,7 +524,7 @@ class ShadowTrialTests(SensorTestCase):
         manager = self.make()
         manager.set_prefer_shared(True)
         manager.start()
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+        self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
         time.sleep(0.3)  # longer than the patched retry interval
         self.assertEqual(self.iio.opens, 0)
 
@@ -547,7 +546,7 @@ class ShadowTrialTests(SensorTestCase):
         source = manager._poll_shadow_trial()
         self.assertIsNotNone(source)
         self.assertIsNone(manager._trial)
-        self.assertEqual(manager.source, SensorSource.IIO)
+        self.assertEqual(manager.source, "iio")
         self.assertEqual(self.iio.opens, 1)
         self.assertEqual(self.iio.closes, 0)
         source.close()
@@ -620,15 +619,15 @@ class ShadowTrialTests(SensorTestCase):
         self.sysfs.vector()
         manager = self.make(monotonic=time.monotonic)
         manager.start()
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.SYSFS))
+        self.assertTrue(wait_for(lambda: manager.source == "sysfs"))
         self.iio.fail_open = False
         manager._iio_retry_at = 0.0
-        self.assertTrue(wait_for(lambda: manager.source == SensorSource.IIO))
+        self.assertTrue(wait_for(lambda: manager.source == "iio"))
         opens = self.iio.opens
         closes = self.iio.closes
 
         time.sleep(0.3)
-        self.assertEqual(manager.source, SensorSource.IIO)
+        self.assertEqual(manager.source, "iio")
         self.assertEqual(self.iio.opens, opens)
         self.assertEqual(self.iio.closes, closes)
         self.assertIsNone(manager.sensor_error)

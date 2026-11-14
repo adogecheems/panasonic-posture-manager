@@ -168,7 +168,7 @@ Windows CI 与本地检查：
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m compileall -q src/panasonic_posture/windows src/panasonic_posture/fluent
+python -m compileall -q src/panasonic_posture/windows
 python -m unittest discover -s tests -p "test_windows*.py" -v
 python -m unittest discover -s tests -p "test_session_refresh.py" -v
 python -m unittest discover -s tests -p "test_optional_input.py" -v

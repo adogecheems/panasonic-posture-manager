@@ -17,8 +17,8 @@ def main():
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFontDatabase
 from PyQt6.QtTest import QTest
-from panasonic_posture.fluent.app import Window
-from panasonic_posture.fluent.unavailable import UnavailableClient
+from panasonic_posture.windows.ui.app import Window
+from panasonic_posture.windows.ui.unavailable import UnavailableClient
 app = QApplication([])
 assert QFontDatabase.families(), 'Bundle verification requires installed system fonts'
 window = Window(client=UnavailableClient(), language='zh_CN')

@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 import stat
 
-from ..fluent.resources import application_name
-from ..localization import windows_catalog_language
+from .ui.resources import application_name
+from .localization import windows_catalog_language
 from ..product import APPLICATION_DISPLAY_NAME
 
 SOURCE_FOLDER = APPLICATION_DISPLAY_NAME

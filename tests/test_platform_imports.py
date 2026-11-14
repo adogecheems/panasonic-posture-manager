@@ -14,7 +14,6 @@ PACKAGE = "panasonic_posture"
 
 WINDOWS_PREFIXES = (
     "panasonic_posture.windows",
-    "panasonic_posture.fluent",
 )
 LINUX_PREFIXES = ("panasonic_posture.linux",)
 
@@ -85,14 +84,12 @@ def _package_module_exists(module: str) -> bool:
 class PlatformImportTests(unittest.TestCase):
     def test_windows_code_does_not_import_linux_adapters(self):
         violations: list[str] = []
-        roots = (PACKAGE_ROOT / "windows", PACKAGE_ROOT / "fluent")
-        for root in roots:
-            for path in _python_files(root):
-                for module in _imported_modules(path):
-                    if module == "gi" or module.startswith("gi."):
-                        violations.append(f"{path.relative_to(SOURCE)} imports {module}")
-                    elif _matches(module, frozenset(), LINUX_PREFIXES):
-                        violations.append(f"{path.relative_to(SOURCE)} imports {module}")
+        for path in _python_files(PACKAGE_ROOT / "windows"):
+            for module in _imported_modules(path):
+                if module == "gi" or module.startswith("gi."):
+                    violations.append(f"{path.relative_to(SOURCE)} imports {module}")
+                elif _matches(module, frozenset(), LINUX_PREFIXES):
+                    violations.append(f"{path.relative_to(SOURCE)} imports {module}")
         self.assertEqual(violations, [])
 
     def test_linux_adapters_do_not_import_windows_code(self):
@@ -107,7 +104,7 @@ class PlatformImportTests(unittest.TestCase):
         violations: list[str] = []
         for path in _python_files(PACKAGE_ROOT):
             parts = path.relative_to(PACKAGE_ROOT).parts
-            if parts[0] in {"linux", "windows", "fluent"}:
+            if parts[0] in {"linux", "windows"}:
                 continue
             for module in _imported_modules(path):
                 if _matches(module, frozenset(), WINDOWS_PREFIXES + LINUX_PREFIXES):
@@ -124,17 +121,15 @@ class PlatformImportTests(unittest.TestCase):
 
     def test_windows_and_linux_path_sets_are_explicit(self):
         windows = set(_python_files(PACKAGE_ROOT / "windows"))
-        fluent = set(_python_files(PACKAGE_ROOT / "fluent"))
         linux = set(_python_files(PACKAGE_ROOT / "linux"))
         self.assertTrue(windows)
-        self.assertTrue(fluent)
         self.assertTrue(linux)
-        self.assertFalse(windows & fluent)
         self.assertFalse(windows & linux)
-        self.assertFalse(fluent & linux)
         self.assertTrue((PACKAGE_ROOT / "windows" / "hardware_runtime.py").is_file())
+        self.assertTrue((PACKAGE_ROOT / "windows" / "ui" / "app.py").is_file())
         self.assertTrue((PACKAGE_ROOT / "linux" / "ui" / "app.py").is_file())
         self.assertFalse(list((PACKAGE_ROOT / "ui").rglob("*.py")))
+        self.assertFalse(list((PACKAGE_ROOT / "fluent").rglob("*.py")))
         self.assertFalse(list((PACKAGE_ROOT / "hardware").rglob("*.py")))
 
     def test_packaging_uses_the_linux_package_paths(self):

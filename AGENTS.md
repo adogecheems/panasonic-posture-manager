@@ -97,7 +97,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 
 | 归属 | 路径 | 边界 |
 | --- | --- | --- |
-| 共享核心 | `model.py`、`contracts.py`、`policy.py`、`controller.py`、`presentation.py`、`calibration.py`、`mounting.py`、`machine_profile.py`、`tasks.py`、`product.py`、`localization.py`、`snapshot_codec.py`、`frontend/` | 不导入 `linux/`、`windows/` 或 `fluent/`；平台入口负责提供身份、路径和 I/O |
+| 共享核心 | `model.py`、`contracts.py`、`policy.py`、`controller.py`、`presentation.py`、`calibration.py`、`mounting.py`、`machine_profile.py`、`tasks.py`、`product.py`、`localization.py`、`snapshot_codec.py`、`frontend/` | 不导入 `linux/` 或 `windows/`；平台入口负责提供身份、路径和 I/O |
 | 共享服务 | `service/{engine,callbacks,ports,hardware_monitor,settings_schema,settings_store}.py` | 只依赖共享端口和核心；不得导入 Linux D-Bus、设备、显示或界面适配 |
 | 共享会话 | `session/{runtime,ports,failures,transaction,journal_schema,journal_store}.py` | 由两个平台复用；不得导入 Linux 桌面适配或 Windows 实现 |
 | Linux 特权服务 | `linux/service/{access,actuator,application,daemon,sensor,sensor_sources,settings}.py` | 可依赖共享层和 Linux 契约，不得导入 Windows 包 |
@@ -105,7 +105,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | Linux 会话 | `linux/session/{agent,client,dbus_errors,desktop,display,errors,journal,lockstate,notify,plasma,screen_context}.py` | Linux D-Bus、Wayland/GNOME/KDE、默认状态目录和通知适配 |
 | Linux 界面与入口 | `linux/ui/`、`linux/cli.py` | PyGObject/GTK/libadwaita 与 Linux 用户入口 |
 | Linux 契约 | `linux/{protocol,contracts,state_codec}.py`、`linux/resources/` | 只承载 Linux 兼容契约和 D-Bus XML；共享逻辑使用 `contracts.py`、`machine_profile.py` 和 `snapshot_codec.py` |
-| Windows | `windows/`、`fluent/` | 可依赖共享层，不得导入 `linux/`、GTK `gi` 或 Linux 默认路径 |
+| Windows | `windows/`，其中 Fluent/PyQt 界面位于 `windows/ui/` | 可依赖共享层，不得导入 `linux/`、GTK `gi` 或 Linux 默认路径 |
 
 禁止在共享模块内用 `sys.platform` 选择服务职责；平台组合应由入口和适配器完成。
 新增平台依赖必须同步更新 `test_platform_imports.py` 的双向边界断言。
@@ -119,12 +119,12 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | 传感器、机型配置和设备发现 | `linux/service/sensor*.py`、`linux/hardware/`、`machine_profile.py`、`data/profiles/` | `test_sensor`、`test_iio`、`test_sysfs`、`test_profile` |
 | C relay 与内置输入 | `backend/`、`linux/service/actuator.py` | `make check-c`、`test_actuator` |
 | Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_desktop`、`test_display*`、`test_journal`、`test_agent` |
-| GTK/Fluent 界面 | `linux/ui/`、`fluent/`、`frontend/` | `test_ui_contract`、`test_fluent`、`test_frontend`、`make check-i18n` |
+| 平台界面 | `linux/ui/`、`windows/ui/`、共享 `frontend/` | `test_ui_contract`、`test_fluent`、`test_frontend`、`make check-i18n` |
 | Windows 硬件组合与 RPC | `windows/{hardware_application,hardware_runtime,hardware_host,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server}.py` | `test_windows_architecture`、`test_windows_hardware*` |
 | Windows ETW 与启动基线 | `windows/{etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_etw_switch`、`test_windows_slate_bootstrap` |
 | Windows 显示、CSM 和会话 | `windows/{display,screen_session,session_agent,session_display,session_client,session_context,convertible_slate,slate_journal}.py` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
 | Windows 服务与可信启动 | `windows/{hardware_service,trusted_runtime,session_supervisor,session_launch,session_stop,security}.py` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_*` |
-| Windows 界面、托盘和自启动 | `windows/{activation,instance,startup,update_check}.py`、`fluent/` | `test_windows_startup`、`test_fluent` |
+| Windows 界面、托盘和自启动 | `windows/{activation,instance,startup,update_check}.py`、`windows/ui/` | `test_windows_startup`、`test_fluent` |
 | Windows 打包与发布 | `packaging/windows/`、`.github/workflows/` | `test_windows_msi`、`test_windows_packaging`、`test_packaging_workflow`、`test_release` |
 | Linux 打包 | `Makefile`、`packaging/`、`pyproject.toml` | `test_packaging_workflow`、`test_release`、`make check-package` |
 
@@ -216,7 +216,7 @@ Windows 目标：
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m compileall -q src/panasonic_posture/windows src/panasonic_posture/fluent
+python -m compileall -q src/panasonic_posture/windows
 python -m unittest discover -s tests -p "test_windows*.py" -v
 python -m unittest discover -s tests -p "test_session_refresh.py" -v
 python -m unittest discover -s tests -p "test_optional_input.py" -v

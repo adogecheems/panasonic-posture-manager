@@ -9,7 +9,7 @@ the documented tent zone) and P2-7 (suspend reset / epoch invalidation).
 import math
 import unittest
 
-from panasonic_posture.model import SensorReading, SensorSource
+from panasonic_posture.model import SensorReading
 from panasonic_posture.policy import (
     MODE_DISABLED,
     MODE_HARDWARE,
@@ -44,26 +44,26 @@ def sample(pitch=0.0, magnitude=GRAVITY, roll=0.0, stamp=0.0):
     return SensorReading(
         vector=accel_vector(pitch, magnitude, roll),
         stamp=stamp,
-        source=SensorSource.IIO,
+        source="iio",
     )
 
 
 def invalid_sample(kind):
     if kind == "missing":
-        return SensorReading(vector=None, stamp=None, source=SensorSource.IIO)
+        return SensorReading(vector=None, stamp=None, source="iio")
     if kind == "zero":
-        return SensorReading(vector=(0.0, 0.0, 0.0), stamp=0.0, source=SensorSource.IIO)
+        return SensorReading(vector=(0.0, 0.0, 0.0), stamp=0.0, source="iio")
     if kind == "nan":
         return SensorReading(
-            vector=(float("nan"), 0.0, -GRAVITY), stamp=0.0, source=SensorSource.IIO
+            vector=(float("nan"), 0.0, -GRAVITY), stamp=0.0, source="iio"
         )
     if kind == "overrange":
         return SensorReading(
-            vector=accel_vector(0.0, 20.0), stamp=0.0, source=SensorSource.IIO
+            vector=accel_vector(0.0, 20.0), stamp=0.0, source="iio"
         )
     if kind == "underrange":
         return SensorReading(
-            vector=accel_vector(0.0, 2.0), stamp=0.0, source=SensorSource.IIO
+            vector=accel_vector(0.0, 2.0), stamp=0.0, source="iio"
         )
     raise AssertionError(f"unknown invalid kind {kind!r}")
 
@@ -493,7 +493,7 @@ class PostureClassificationTests(PolicyTestCase):
                 SensorReading(
                     vector=(GRAVITY, 0.0, 0.0),
                     stamp=self.now,
-                    source=SensorSource.IIO,
+                    source="iio",
                 ),
                 False,
             )

@@ -12,7 +12,7 @@ What is checked
   reported;
 * catalog cleanliness: msgids that are no longer referenced are an error
   (``--allow-stale`` demotes this to a warning);
-* parity: the session and Fluent error mappings cover the same protocol error
+* parity: the Linux session and Windows UI error mappings cover the same protocol error
   codes and source msgids;
 * desktop, WiX and polkit metadata have an English source and a non-empty
   ``zh_CN`` value where the format supports localized labels;
@@ -42,7 +42,7 @@ POTFILES = Path("po/POTFILES.in")
 CATALOGS = (Path("po/zh_CN.po"),)
 PROTOCOL = Path("src/panasonic_posture/contracts.py")
 PY_ERRORS = Path("src/panasonic_posture/linux/session/errors.py")
-FLUENT_ERRORS = Path("src/panasonic_posture/fluent/pages.py")
+WINDOWS_UI_ERRORS = Path("src/panasonic_posture/windows/ui/pages.py")
 DESKTOP_ENTRY = Path(
     "packaging/desktop/work.mmoe.panasonic.PostureManager.desktop"
 )
@@ -445,7 +445,7 @@ def run(allow_stale: bool = False) -> int:
     # 4. error code parity -------------------------------------------------
     codes = _error_code_values()
     python_mapping = _error_mapping(PY_ERRORS)
-    fluent_mapping = _error_mapping(FLUENT_ERRORS)
+    windows_ui_mapping = _error_mapping(WINDOWS_UI_ERRORS)
     if not codes:
         errors.append(f"{PROTOCOL}: cannot read the ErrorCode constants")
     if set(python_mapping) != set(codes):
@@ -454,17 +454,17 @@ def run(allow_stale: bool = False) -> int:
             f"missing={sorted(set(codes) - set(python_mapping))} "
             f"unknown={sorted(set(python_mapping) - set(codes))}"
         )
-    if set(fluent_mapping) != set(codes):
+    if set(windows_ui_mapping) != set(codes):
         errors.append(
-            "fluent/pages.py mapping does not cover exactly protocol.ErrorCode: "
-            f"missing={sorted(set(codes) - set(fluent_mapping))} "
-            f"unknown={sorted(set(fluent_mapping) - set(codes))}"
+            "windows/ui/pages.py mapping does not cover exactly protocol.ErrorCode: "
+            f"missing={sorted(set(codes) - set(windows_ui_mapping))} "
+            f"unknown={sorted(set(windows_ui_mapping) - set(codes))}"
         )
-    if python_mapping != fluent_mapping:
+    if python_mapping != windows_ui_mapping:
         errors.append(
-            "session and Fluent error mappings use different source msgids: "
-            f"python_only={sorted(set(python_mapping.items()) - set(fluent_mapping.items()))} "
-            f"fluent_only={sorted(set(fluent_mapping.items()) - set(python_mapping.items()))}"
+            "Linux session and Windows UI error mappings use different source msgids: "
+            f"python_only={sorted(set(python_mapping.items()) - set(windows_ui_mapping.items()))} "
+            f"windows_only={sorted(set(windows_ui_mapping.items()) - set(python_mapping.items()))}"
         )
 
     # 5. platform metadata ------------------------------------------------

@@ -11,8 +11,8 @@ from PyQt6.QtCore import QObject, QEvent, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QLabel, QMenu, QMessageBox, QSystemTrayIcon
 
-from ..contracts import TICK_SECONDS
-from ..frontend.state import notice_confirmable, notice_token
+from ...contracts import TICK_SECONDS
+from ...frontend.state import notice_confirmable, notice_token
 from .labels import mode_label
 from .resources import application_name, data_root, translator
 
