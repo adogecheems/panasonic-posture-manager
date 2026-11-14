@@ -311,10 +311,13 @@ def _append_service(component: ET.Element) -> None:
         'Vital': 'yes',
         'Arguments': '-B -I -m panasonic_posture.windows.service.daemon --serve',
     })
+    # Repair reinstalls the component without uninstalling it. Stop the host
+    # before InstallFiles so it releases runtime pins and cannot keep old code.
+    # ConfigureHardwareService starts the installed runtime with a bounded wait.
     ET.SubElement(component, 'ServiceControl', {
         'Id': 'HardwareServiceControl',
         'Name': 'PanasonicPostureManagerHardware',
-        'Stop': 'uninstall',
+        'Stop': 'both',
         'Remove': 'uninstall',
         'Wait': 'yes',
     })

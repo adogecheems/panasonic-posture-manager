@@ -175,8 +175,30 @@ class MsiPayloadTests(unittest.TestCase):
             element for element in root.iter()
             if element.tag.endswith('ServiceControl')
         )
+        self.assertEqual(control.get('Stop'), 'both')
+        self.assertEqual(control.get('Remove'), 'uninstall')
+        self.assertEqual(control.get('Wait'), 'yes')
         self.assertIsNone(control.get('Start'))
         self.assertIn('Remove="uninstall"', first)
+
+    def test_service_restart_uses_checked_configuration_after_registration(self):
+        root = ET.parse(ROOT / 'packaging/windows/msi/Package.wxs').getroot()
+        action = next(
+            element for element in root.iter()
+            if element.tag.endswith('CustomAction')
+            and element.get('Id') == 'ConfigureHardwareService'
+        )
+        # Startup failures must fail the repair instead of claiming success.
+        self.assertEqual(action.get('Execute'), 'deferred')
+        self.assertEqual(action.get('Impersonate'), 'no')
+        self.assertEqual(action.get('Return'), 'check')
+        scheduled = next(
+            element for element in root.iter()
+            if element.tag.endswith('Custom')
+            and element.get('Action') == 'ConfigureHardwareService'
+        )
+        self.assertEqual(scheduled.get('After'), 'InstallServices')
+        self.assertEqual(scheduled.get('Condition'), 'NOT REMOVE')
 
     def test_package_template_installs_full_runtime_and_reversible_csm_setup(self):
         source = (ROOT / 'packaging/windows/msi/Package.wxs').read_text(encoding='utf-8')
