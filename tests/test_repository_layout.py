@@ -63,7 +63,7 @@ class RepositoryLayoutTests(unittest.TestCase):
         self.assertEqual(payload_directories(assets), {"linux", "windows"})
         self.assertTrue((assets / "linux" / "laptop.svg").is_file())
         self.assertTrue(
-            (assets / "windows" / "work.mmoe.panasonic.PostureManager.ico").is_file()
+            (assets / "windows" / "icons" / "work.mmoe.panasonic.PostureManager.ico").is_file()
         )
 
     def test_platform_tests_have_explicit_names_and_homes(self):

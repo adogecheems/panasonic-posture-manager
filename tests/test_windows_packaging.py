@@ -81,9 +81,13 @@ class WindowsPackagingTests(unittest.TestCase):
                          'app/panasonic_posture/windows/ipc/client.py',
                          'app/panasonic_posture/windows/app/update_check.py',
                          'app/panasonic_posture/windows/ui/update_check.py',
-                         'data/assets/lets-note-window-icon.png',
-                         'data/assets/work.mmoe.panasonic.PostureManager.ico',
-                         'data/assets/work.mmoe.panasonic.PostureManager-square.png',
+                         'data/assets/branding/lets-note-window-icon.png',
+                         'data/assets/icons/work.mmoe.panasonic.PostureManager.ico',
+                         'data/assets/icons/work.mmoe.panasonic.PostureManager-square.png',
+                         'data/assets/postures/laptop.svg',
+                         'data/assets/postures/tablet.svg',
+                         'data/assets/postures/tent.svg',
+                         'data/assets/postures/stand.svg',
                          'data/profiles/cfqv8.json',
                          'data/profiles/cfqv9.json',
                          'data/profiles/cfqv1.json',
@@ -96,6 +100,7 @@ class WindowsPackagingTests(unittest.TestCase):
                          f'{builder.APPLICATION_DISPLAY_NAME}.cmd', 'Hardware.cmd'):
                 self.assertIn(name, files)
             self.assertNotIn('data/assets/notification-badge.svg', files)
+            self.assertFalse(any(name.startswith('data/assets/installer/') for name in files))
             self.assertEqual(
                 files['runtime/Lib/site-packages/PyQt6-6.8.1.dist-info/LICENSE'],
                 ROOT / 'packaging/windows/PyQt6-LICENSE',

@@ -1047,7 +1047,7 @@ window.navigation.items['settings'].click()
 assert window.stackedWidget.count() == 2
 assert window.stackedWidget.currentWidget() is window.settings
 assert window.navigation.currentRouteKey() == 'settings'
-app_icon = QIcon(str(asset_root() / 'work.mmoe.panasonic.PostureManager.png'))
+app_icon = QIcon(str(asset_root() / 'icons/work.mmoe.panasonic.PostureManager.png'))
 for theme, filename in ((Theme.LIGHT, 'lets-note-window-icon.png'),
                         (Theme.DARK, 'lets-note-window-icon-dark.png')):
     setTheme(theme)

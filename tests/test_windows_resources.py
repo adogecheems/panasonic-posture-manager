@@ -1,10 +1,63 @@
 """Windows application resources, independent of the widget toolkit."""
 import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
+from unittest.mock import patch
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class WindowsResourceTests(unittest.TestCase):
+    def test_assets_resolve_in_source_and_installed_layouts(self):
+        from panasonic_posture.windows.app.resources import asset_root
+        for layout in ('source', 'installed'):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as directory:
+                data = Path(directory) / 'data'
+                assets = data / 'assets'
+                if layout == 'source':
+                    assets /= 'windows'
+                assets.mkdir(parents=True)
+                with patch.dict(os.environ, PANASONIC_POSTURE_DATA_DIR=str(data)):
+                    self.assertEqual(asset_root(), assets)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'branding uses Windows image codecs')
+    def test_dark_wordmark_preserves_the_source_transparency(self):
+        powershell = shutil.which('powershell.exe')
+        if powershell is None:
+            self.skipTest('Windows PowerShell is unavailable')
+        # The former dark asset made near-transparent edge noise opaque.
+        # Compare decoded alpha rather than PNG bytes or encoder metadata.
+        command = r'''
+Add-Type -AssemblyName System.Drawing
+$root = Join-Path (Get-Location) 'data/assets/windows/branding'
+$light = [System.Drawing.Bitmap]::new((Join-Path $root 'lets-note-window-icon.png'))
+$dark = [System.Drawing.Bitmap]::new((Join-Path $root 'lets-note-window-icon-dark.png'))
+try {
+    if ($light.Size -ne $dark.Size) { throw 'Wordmark dimensions differ' }
+    for ($y = 0; $y -lt $light.Height; $y++) {
+        for ($x = 0; $x -lt $light.Width; $x++) {
+            if ($light.GetPixel($x, $y).A -ne $dark.GetPixel($x, $y).A) {
+                throw "Wordmark alpha differs at $x,$y"
+            }
+        }
+    }
+} finally {
+    $light.Dispose()
+    $dark.Dispose()
+}
+'''
+        result = subprocess.run(
+            [powershell, '-NoProfile', '-NonInteractive', '-Command',
+             "$ErrorActionPreference = 'Stop'; " + command],
+            cwd=ROOT, text=True, capture_output=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch

@@ -685,7 +685,7 @@ class MsiPayloadTests(unittest.TestCase):
         for name, expected in dimensions.items():
             with self.subTest(name=name):
                 self.assertEqual(
-                    png_dimensions(ROOT / 'packaging/windows/msi' / name),
+                    png_dimensions(ROOT / 'data/assets/windows/installer' / name),
                     expected,
                 )
 

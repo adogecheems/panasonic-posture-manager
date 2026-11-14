@@ -118,7 +118,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | Windows 原生后端 | `backend/windows/` | 原生输入控制和驱动辅助代码 |
 | 数据与资源 | `data/profiles/` | 两平台共用的机型 profile |
 | Linux 数据与资源 | `data/assets/linux/` | 姿态 SVG 和 Linux 图标 |
-| Windows 数据与资源 | `data/assets/windows/` | Windows 图标、方形标志和深色图标 |
+| Windows 数据与资源 | `data/assets/windows/` | `icons/` 应用与托盘图标、`branding/` 标题栏标志、`postures/` 姿态插图、`installer/` MSI 图片；安装负载只包含前三类 |
 | 公共打包 | `packaging/common/` | 跨平台版本更新脚本 |
 | Linux 打包 | `packaging/linux/` | AUR、Deb、RPM、systemd、D-Bus、polkit、desktop、模块加载、AUR CI 和 Linux 发布脚本 |
 | Windows 打包 | `packaging/windows/` | 便携组装、MSI、WiX、硬件服务和 Windows 发布脚本 |

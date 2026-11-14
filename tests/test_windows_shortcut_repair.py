@@ -63,7 +63,7 @@ class ShortcutRepairTests(unittest.TestCase):
         self.runtime = self.service / 'runtime'
         for relative in (
             'launch.py',
-            'data/assets/work.mmoe.panasonic.PostureManager.ico',
+            'data/assets/icons/work.mmoe.panasonic.PostureManager.ico',
         ):
             path = self.install / relative
             path.parent.mkdir(parents=True, exist_ok=True)

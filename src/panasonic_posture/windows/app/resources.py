@@ -1,4 +1,4 @@
-"""Portable source-runtime resources and gettext without Linux configuration."""
+"""Windows source and installed resources and gettext without Linux configuration."""
 import ast
 import ctypes
 import gettext

@@ -169,7 +169,9 @@ def application_files(runtime: Path, dependencies: Path) -> dict[str, Path | byt
         source = dependencies / package
         if source.is_dir():
             _add_bytecode_tree(files, source, f'runtime/Lib/site-packages/{package}')
-    add_tree(ROOT / 'data/assets/windows', 'data/assets')
+    # Installer artwork belongs to WiX, not the installed application payload.
+    for category in ('icons', 'branding', 'postures'):
+        add_tree(ROOT / 'data/assets/windows' / category, f'data/assets/{category}')
     add_tree(ROOT / 'data/profiles', 'data/profiles')
     files['po/zh_CN.po'] = ROOT / 'po/zh_CN.po'
     for name in ('LICENSE', 'README.md', 'MAINTENANCE.md'):

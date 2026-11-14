@@ -179,7 +179,7 @@ class Illustration(QWidget):
         return renderer
 
     def paintEvent(self, event):
-        path = asset_root() / f'{self.pose}.svg'
+        path = asset_root() / 'postures' / f'{self.pose}.svg'
         dark = isDarkTheme()
         renderer = self._renderer(path, dark)
         painter = QPainter(self)

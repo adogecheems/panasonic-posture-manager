@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 def resident_icon():
     """Return the opaque, square application icon shared by Shell surfaces."""
     return QIcon(str(
-        asset_root() / 'work.mmoe.panasonic.PostureManager-square.png'
+        asset_root() / 'icons/work.mmoe.panasonic.PostureManager-square.png'
     ))
 
 

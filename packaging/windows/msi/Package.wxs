@@ -179,7 +179,7 @@
 
     <Icon
         Id="ProductIcon.ico"
-        SourceFile="$(var.ProjectRoot)/data/assets/windows/work.mmoe.panasonic.PostureManager.ico" />
+        SourceFile="$(var.ProjectRoot)/data/assets/windows/icons/work.mmoe.panasonic.PostureManager.ico" />
 
     <Feature Id="Complete" Title="!(loc.FeatureTitle)" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="PayloadComponents" />
@@ -189,16 +189,16 @@
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
     <WixVariable
         Id="WixUIBannerBmp"
-        Value="$(var.ProjectRoot)/packaging/windows/msi/installer-banner.png" />
+        Value="$(var.ProjectRoot)/data/assets/windows/installer/installer-banner.png" />
     <WixVariable
         Id="WixUIDialogBmp"
-        Value="$(var.ProjectRoot)/packaging/windows/msi/installer-dialog.png" />
+        Value="$(var.ProjectRoot)/data/assets/windows/installer/installer-dialog.png" />
     <WixVariable
         Id="WixUIInfoIco"
-        Value="$(var.ProjectRoot)/packaging/windows/msi/installer-info.png" />
+        Value="$(var.ProjectRoot)/data/assets/windows/installer/installer-info.png" />
     <WixVariable
         Id="WixUIExclamationIco"
-        Value="$(var.ProjectRoot)/packaging/windows/msi/installer-info.png" />
+        Value="$(var.ProjectRoot)/data/assets/windows/installer/installer-info.png" />
 
     <InstallExecuteSequence>
       <Custom Action="EnforceMainPath" After="CostFinalize" Condition="NOT REMOVE" />

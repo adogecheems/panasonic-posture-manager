@@ -107,7 +107,7 @@ def run(*, language=None, background=False) -> int:
         app = QApplication([sys.argv[0]])
         _configure_application(app, language)
         app.setWindowIcon(QIcon(str(
-            asset_root() / 'work.mmoe.panasonic.PostureManager.png'
+            asset_root() / 'icons/work.mmoe.panasonic.PostureManager.png'
         )))
         if hardware_ui:
             from ..app.identity import APP_USER_MODEL_ID

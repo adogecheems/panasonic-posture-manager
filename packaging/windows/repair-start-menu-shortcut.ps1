@@ -52,7 +52,7 @@ foreach ($name in $knownNames) {
 
 $target = Join-Path $RuntimeFolder 'pythonw.exe'
 $launcher = Join-Path $InstallFolder 'launch.py'
-$icon = Join-Path $InstallFolder 'data\assets\work.mmoe.panasonic.PostureManager.ico'
+$icon = Join-Path $InstallFolder 'data\assets\icons\work.mmoe.panasonic.PostureManager.ico'
 $appUserModelId = 'work.mmoe.panasonic.PostureManager'
 if (Test-Path -LiteralPath $destinationLink -PathType Leaf) {
     Remove-Item -LiteralPath $destinationLink -Force

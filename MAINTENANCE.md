@@ -39,6 +39,14 @@ yay -S panasonic-posture-manager-bin
 systemctl --user restart panasonic-posture-manager-session.service
 ```
 
+## Windows 图片资源
+
+Windows 图片统一放在 `data/assets/windows/`：`icons/` 保存应用图标、ICO 和托盘使用的白底方形图；`branding/` 保存标题栏 Let's note 浅色与深色标志；`postures/` 保存姿态 SVG；`installer/` 保存 WiX 安装界面图片。
+
+构建只将前三类按相同子目录复制到安装目录的 `data/assets/`，安装器图片由 WiX 直接引用，不进入应用负载。源码运行使用平台资源目录，安装运行使用负载资源目录，均通过 `windows/app/resources.py` 定位。
+
+深色标题栏标志由浅色原图精确转换：保留尺寸、透明通道和蓝色笔画，将中性色笔画转为白色；修改浅色原图后在 Windows 运行 `powershell -NoProfile -File packaging/windows/prepare-branding.ps1` 重新生成，再核对两种主题的显示效果。
+
 ## 排查
 
 ### Linux
