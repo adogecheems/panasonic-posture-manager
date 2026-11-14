@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import patch
 
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.security import ExtendedInfo, HANDLE
-from panasonic_posture.windows.session_context import (
+from panasonic_posture.windows.common.security import ExtendedInfo, HANDLE
+from panasonic_posture.windows.session.context import (
     SessionPresence, WindowsSessionContext, NativePowerSource, NativeSessionPresence,
     SubscribeParameters, PowerHeader, DisplayPowerSetting, SESSION_DISPLAY_GUID,
 )

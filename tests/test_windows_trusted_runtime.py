@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from panasonic_posture.windows.trusted_runtime import (
+from panasonic_posture.windows.service.trusted_runtime import (
     Ace, protected_acl, TrustedRuntime, SYSTEM, ADMINS,
 )
 
@@ -46,8 +46,8 @@ class RuntimeTests(unittest.TestCase):
         for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/python-hardware.exe',
                      'runtime/Lib/os.py',
                      'runtime/DLLs/dummy.dll',
-                     'app/panasonic_posture/windows/hardware_service.py',
-                     'app/panasonic_posture/windows/session_agent.py',
+                     'app/panasonic_posture/windows/service/daemon.py',
+                     'app/panasonic_posture/windows/session/agent.py',
                      'data/profiles/cfqv8.json',
                      'data/profiles/cfqv9.json',
                      'data/profiles/cfqv1.json'):
@@ -71,10 +71,10 @@ class RuntimeTests(unittest.TestCase):
         runtime = self.runtime()
         journal = self.root.parent / 'user data' / 'display.json'
         self.assertEqual(runtime.agent_arguments(journal), [str(self.root / 'runtime/python-hardware.exe'),
-            '-B', '-I', '-m', 'panasonic_posture.windows.session_agent', '--journal', str(journal)])
+            '-B', '-I', '-m', 'panasonic_posture.windows.session.agent', '--journal', str(journal)])
         paths = [path for path, _ in self.guard.paths]
         self.assertIn(self.root / 'runtime/python-hardware.exe', paths)
-        self.assertIn(self.root / 'app/panasonic_posture/windows/session_agent.py', paths)
+        self.assertIn(self.root / 'app/panasonic_posture/windows/session/agent.py', paths)
         stop = 'Global\\PanasonicPostureManager.Stop.' + 'a' * 32
         self.assertEqual(runtime.agent_arguments(journal, stop_event=stop)[-2:], ['--stop-event', stop])
         with self.assertRaises(ValueError):

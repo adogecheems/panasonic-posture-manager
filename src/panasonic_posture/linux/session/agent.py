@@ -25,7 +25,7 @@ from functools import partial
 
 from gi.repository import Gio, GLib
 
-from .. import protocol
+from ..contracts import protocol
 from . import errors
 from .client import SystemClient
 from .desktop import create_display

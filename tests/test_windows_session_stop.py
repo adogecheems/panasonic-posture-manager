@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from panasonic_posture.windows.session_stop import NativeStopSignal, PREFIX
+from panasonic_posture.windows.common.stop_event import NativeStopSignal, PREFIX
 
 
 class Security:

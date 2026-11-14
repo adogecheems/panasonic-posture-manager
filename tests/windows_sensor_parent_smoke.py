@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from panasonic_posture.windows.sensor import WindowsSensor, PowerShellSource, IDENTITY
+from panasonic_posture.windows.hardware.sensor import WindowsSensor, PowerShellSource, IDENTITY
 
 
 def main():

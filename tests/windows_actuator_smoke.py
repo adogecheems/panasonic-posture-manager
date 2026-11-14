@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 from panasonic_posture.model import Target
 from panasonic_posture.service.ports import ActuatorError
-from panasonic_posture.windows.actuator import WindowsActuator, REQUEST, REPLY
+from panasonic_posture.windows.hardware.actuator import WindowsActuator, REQUEST, REPLY
 
 
 class Request(C.Structure):

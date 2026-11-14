@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from panasonic_posture.model import HardwareStatus
-from panasonic_posture.windows.hardware_runtime import HardwareRuntime, RESUME_GAP_SECONDS
+from panasonic_posture.windows.service.runtime import HardwareRuntime, RESUME_GAP_SECONDS
 
 
 class Switch:
@@ -250,7 +250,7 @@ class HardwareRuntimeTests(unittest.TestCase):
         def sleep(_seconds):
             return None
         with patch(
-            'panasonic_posture.windows.hardware_application.create_hardware_runtime',
+            'panasonic_posture.windows.service.application.create_hardware_runtime',
             return_value=result,
         ) as create:
             actual = HardwareRuntime.installed(

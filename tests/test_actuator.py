@@ -22,7 +22,7 @@ from tests._test_support import require_linux
 
 require_linux()
 
-from panasonic_posture.linux.protocol import RELAY_HEARTBEAT_SECONDS, ErrorCode
+from panasonic_posture.linux.contracts.protocol import RELAY_HEARTBEAT_SECONDS, ErrorCode
 from panasonic_posture.linux.service import actuator as actuator_module
 from panasonic_posture.linux.service.actuator import (
     ENV_RELAY,

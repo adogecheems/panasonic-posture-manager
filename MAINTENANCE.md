@@ -134,7 +134,7 @@ Windows 产品保持内置键盘和触控板可用，不加载自研输入过滤
 Linux 依赖 Python 3.11+、C11 编译器、Make、gettext、PyGObject、GTK 4、libadwaita 和桌面 Wayland 组件。执行 `make` 构建 relay 和翻译后运行：
 
 ```sh
-PYTHONPATH=src /usr/bin/python3 -m panasonic_posture.linux.cli
+PYTHONPATH=src /usr/bin/python3 -m panasonic_posture.linux.app.cli
 ```
 
 Windows 源码运行使用 64 位 Python 3.11+。Windows UI 固定使用 PyQt6 6.8.1 和 Qt 6.8.2；如需升级 Qt，必须先重新核对 Windows 支持范围和完成 UI 回归测试：

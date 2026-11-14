@@ -6,8 +6,8 @@ from pathlib import Path
 import sys
 import time
 
-from panasonic_posture.windows.security import WindowsSecurity
-from panasonic_posture.windows.session_context import WindowsSessionContext
+from panasonic_posture.windows.common.security import WindowsSecurity
+from panasonic_posture.windows.session.context import WindowsSessionContext
 
 
 def main() -> None:

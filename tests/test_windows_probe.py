@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from panasonic_posture.windows.probe import parse_sample, probe, SensorProbeError
+from panasonic_posture.windows.hardware.probe import parse_sample, probe, SensorProbeError
 
 
 def sample(**changes):
@@ -32,8 +32,8 @@ class WindowsProbeTests(unittest.TestCase):
 
     def test_process_output_is_bounded_and_uses_fixed_windows_program(self):
         stdout = json.dumps(sample()).encode() + b'\n'
-        with patch('panasonic_posture.windows.probe.sys.platform', 'win32'), \
-             patch('panasonic_posture.windows.probe.subprocess.run',
+        with patch('panasonic_posture.windows.hardware.probe.sys.platform', 'win32'), \
+             patch('panasonic_posture.windows.hardware.probe.subprocess.run',
                    return_value=SimpleNamespace(returncode=0, stdout=stdout, stderr=b'')) as run:
             result = probe(samples=1)
         self.assertEqual(len(result), 1)
@@ -44,11 +44,11 @@ class WindowsProbeTests(unittest.TestCase):
         self.assertIsNone(run.call_args.kwargs.get('input'))
 
     def test_non_windows_and_unbounded_request_do_not_start_a_process(self):
-        with patch('panasonic_posture.windows.probe.subprocess.run') as run:
+        with patch('panasonic_posture.windows.hardware.probe.subprocess.run') as run:
             for count in (0, 101, True):
                 with self.assertRaises(SensorProbeError):
                     probe(samples=count)
-            with patch('panasonic_posture.windows.probe.sys.platform', 'linux'):
+            with patch('panasonic_posture.windows.hardware.probe.sys.platform', 'linux'):
                 with self.assertRaises(SensorProbeError):
                     probe(samples=1)
         run.assert_not_called()
@@ -56,8 +56,8 @@ class WindowsProbeTests(unittest.TestCase):
     def test_device_change_or_missing_samples_is_not_reported_as_success(self):
         for stdout in (b'', json.dumps(sample()).encode() + b'\n',
                        (json.dumps(sample()) + '\n' + json.dumps(sample(device='another')) + '\n').encode()):
-            with patch('panasonic_posture.windows.probe.sys.platform', 'win32'), \
-                 patch('panasonic_posture.windows.probe.subprocess.run',
+            with patch('panasonic_posture.windows.hardware.probe.sys.platform', 'win32'), \
+                 patch('panasonic_posture.windows.hardware.probe.subprocess.run',
                        return_value=SimpleNamespace(returncode=0, stdout=stdout, stderr=b'')):
                 with self.assertRaises(SensorProbeError):
                     probe(samples=2)

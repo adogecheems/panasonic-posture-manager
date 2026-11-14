@@ -14,7 +14,7 @@ from panasonic_posture.session.failures import (
 )
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.session_display import QualifiedRefresh
+from panasonic_posture.windows.session.display import QualifiedRefresh
 
 
 class Deferred(Executor):

@@ -17,11 +17,11 @@ from panasonic_posture.controller import Controller
 from panasonic_posture.model import DeviceInfo, HardwareStatus, SensorInfo, SensorReading
 from panasonic_posture.presentation import PosePresentation
 from panasonic_posture.service.engine import Engine
-from panasonic_posture.windows.hardware_ipc import HardwareServer, HardwareConnection, HardwareOperationError
-from panasonic_posture.windows.security import WindowsSecurity
-from panasonic_posture.windows.session_launch import NativeSessionLauncher
-from panasonic_posture.windows.session_supervisor import SessionSupervisor
-from panasonic_posture.windows.trusted_runtime import TrustedRuntime
+from panasonic_posture.windows.service.ipc import HardwareServer, HardwareConnection, HardwareOperationError
+from panasonic_posture.windows.common.security import WindowsSecurity
+from panasonic_posture.windows.service.launch import NativeSessionLauncher
+from panasonic_posture.windows.service.supervisor import SessionSupervisor
+from panasonic_posture.windows.service.trusted_runtime import TrustedRuntime
 
 
 def prepare(directory: Path) -> dict:

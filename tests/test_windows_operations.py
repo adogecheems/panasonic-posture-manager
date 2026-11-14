@@ -1,7 +1,7 @@
 """Shared engine-operation mapping used by every Windows entry point."""
 import unittest
 
-from panasonic_posture.windows.operations import dispatch_engine_operation
+from panasonic_posture.windows.common.operations import dispatch_engine_operation
 
 
 class Engine:

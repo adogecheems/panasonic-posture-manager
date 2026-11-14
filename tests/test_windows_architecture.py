@@ -32,9 +32,9 @@ class WindowsArchitectureTests(unittest.TestCase):
     def test_windows_composition_has_no_machine_identity_allowlist(self):
         root = SOURCE / 'panasonic_posture'
         for relative in (
-            'windows/hardware_application.py',
-            'windows/machine_profile.py',
-            'windows/screen_session.py',
+            'windows/service/application.py',
+            'windows/hardware/machine_profile.py',
+            'windows/session/screen_session.py',
             'windows/ui/app.py',
         ):
             with self.subTest(relative=relative):
@@ -44,24 +44,25 @@ class WindowsArchitectureTests(unittest.TestCase):
 
     def test_legacy_development_backend_is_absent_from_the_product(self):
         windows = SOURCE / 'panasonic_posture/windows'
-        for name in ('backend.py', 'client.py', 'private_backend.py', 'simulation.py'):
+        for name in ('backend.py', 'private_backend.py', 'simulation.py'):
             with self.subTest(name=name):
-                self.assertFalse((windows / name).exists())
-        self.assertFalse((SOURCE / 'panasonic_posture/windows/ui/demo.py').exists())
+                self.assertFalse(list(windows.rglob(name)))
+        self.assertFalse((windows / 'client.py').exists())
+        self.assertFalse(list(windows.rglob('demo.py')))
 
     def test_hardware_composition_does_not_load_ui_or_screen_session_core(self):
         result = run_isolated(BLOCKER + '''
 blocked = {
-    'panasonic_posture.windows.hardware_client',
-    'panasonic_posture.windows.hardware_server',
-    'panasonic_posture.windows.screen_session',
-    'panasonic_posture.windows.security',
-    'panasonic_posture.windows.session_launch',
-    'panasonic_posture.windows.session_supervisor',
-    'panasonic_posture.windows.trusted_runtime',
+    'panasonic_posture.windows.ipc.client',
+    'panasonic_posture.windows.service.server',
+    'panasonic_posture.windows.session.screen_session',
+    'panasonic_posture.windows.common.security',
+    'panasonic_posture.windows.service.launch',
+    'panasonic_posture.windows.service.supervisor',
+    'panasonic_posture.windows.service.trusted_runtime',
     'panasonic_posture.windows.ui.app',
 }
-from panasonic_posture.windows.hardware_runtime import HardwareRuntime
+from panasonic_posture.windows.service.runtime import HardwareRuntime
 assert HardwareRuntime
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -69,15 +70,15 @@ assert HardwareRuntime
     def test_ui_rpc_and_protocol_do_not_load_the_privileged_server(self):
         result = run_isolated(BLOCKER + '''
 blocked = {
-    'panasonic_posture.windows.hardware_host',
-    'panasonic_posture.windows.hardware_runtime',
-    'panasonic_posture.windows.hardware_server',
-    'panasonic_posture.windows.session_agent',
-    'panasonic_posture.windows.session_launch',
+    'panasonic_posture.windows.service.host',
+    'panasonic_posture.windows.service.runtime',
+    'panasonic_posture.windows.service.server',
+    'panasonic_posture.windows.session.agent',
+    'panasonic_posture.windows.service.launch',
 }
-from panasonic_posture.windows.hardware_client import HardwareUIClient
-from panasonic_posture.windows.hardware_protocol import validate_request
-from panasonic_posture.windows.hardware_rpc import HardwareConnection
+from panasonic_posture.windows.ipc.client import HardwareUIClient
+from panasonic_posture.windows.ipc.protocol import validate_request
+from panasonic_posture.windows.ipc.rpc import HardwareConnection
 assert HardwareUIClient and HardwareConnection and validate_request
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -88,7 +89,7 @@ blocked = {
     'panasonic_posture.frontend',
     'panasonic_posture.frontend.ports',
 }
-from panasonic_posture.windows.hardware_protocol import validate_request
+from panasonic_posture.windows.ipc.protocol import validate_request
 assert validate_request
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -96,13 +97,13 @@ assert validate_request
     def test_machine_profile_has_no_session_or_privilege_dependency(self):
         result = run_isolated(BLOCKER + '''
 blocked = {
-    'panasonic_posture.windows.hardware_runtime',
-    'panasonic_posture.windows.native_preflight',
-    'panasonic_posture.windows.screen_session',
-    'panasonic_posture.windows.security',
-    'panasonic_posture.windows.session_agent',
+    'panasonic_posture.windows.service.runtime',
+    'panasonic_posture.windows.common.native_preflight',
+    'panasonic_posture.windows.session.screen_session',
+    'panasonic_posture.windows.common.security',
+    'panasonic_posture.windows.session.agent',
 }
-from panasonic_posture.windows.machine_profile import resolve_windows_profile
+from panasonic_posture.windows.hardware.machine_profile import resolve_windows_profile
 assert resolve_windows_profile
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -110,14 +111,14 @@ assert resolve_windows_profile
     def test_session_supervisor_depends_on_ports_not_native_launching(self):
         result = run_isolated(BLOCKER + '''
 blocked = {
-    'panasonic_posture.windows.hardware_pipe',
-    'panasonic_posture.windows.hardware_server',
-    'panasonic_posture.windows.security',
-    'panasonic_posture.windows.session_launch',
-    'panasonic_posture.windows.session_stop',
-    'panasonic_posture.windows.trusted_runtime',
+    'panasonic_posture.windows.ipc.pipe',
+    'panasonic_posture.windows.service.server',
+    'panasonic_posture.windows.common.security',
+    'panasonic_posture.windows.service.launch',
+    'panasonic_posture.windows.common.stop_event',
+    'panasonic_posture.windows.service.trusted_runtime',
 }
-from panasonic_posture.windows.session_supervisor import SessionSupervisor
+from panasonic_posture.windows.service.supervisor import SessionSupervisor
 assert SessionSupervisor
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)

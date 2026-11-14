@@ -39,7 +39,7 @@ window.close()
                 raise RuntimeError(executable + ': ' + result.stdout + result.stderr)
         restricted = '''
 import sys
-from panasonic_posture.windows.hardware_application import create_hardware_runtime
+from panasonic_posture.windows.service.application import create_hardware_runtime
 assert create_hardware_runtime
 try:
     import PyQt6

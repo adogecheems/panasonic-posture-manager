@@ -19,7 +19,7 @@ require_linux()
 
 from gi.repository import Gio, GLib
 
-from panasonic_posture.linux.protocol import IFACE, NAME, PATH, session_name
+from panasonic_posture.linux.contracts.protocol import IFACE, NAME, PATH, session_name
 from panasonic_posture.linux.service.access import (
     LOGIND_TIMEOUT_MS,
     SESSION_UNIT,
@@ -670,7 +670,7 @@ class DaemonAuthBoundaryTests(unittest.TestCase):
         )
         self.assertIsNotNone(invocation.error)
         name, message = invocation.error
-        from panasonic_posture.linux.protocol import DBUS_ERROR
+        from panasonic_posture.linux.contracts.protocol import DBUS_ERROR
 
         self.assertEqual(name, DBUS_ERROR)
         self.assertTrue(message.startswith("access-denied"), message)

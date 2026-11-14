@@ -2,9 +2,9 @@
 import unittest
 from datetime import datetime, timezone
 
-from panasonic_posture.windows.sensor import WindowsSensor, IDENTITY
+from panasonic_posture.windows.hardware.sensor import WindowsSensor, IDENTITY
 
-from panasonic_posture.windows.orientation import (
+from panasonic_posture.windows.hardware.orientation import (
     OrientationTracker, OrientationReading, OrientationError, QuadrantPolicy,
     SIMPLE_ORIENTATION_TRANSFORM,
 )

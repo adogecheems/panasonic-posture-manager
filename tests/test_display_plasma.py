@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from panasonic_posture.model import Target
-from panasonic_posture.linux.protocol import ErrorCode
+from panasonic_posture.linux.contracts.protocol import ErrorCode
 from panasonic_posture.linux.session.errors import DisplayError
 from panasonic_posture.linux.session.journal import Journal
 from panasonic_posture.linux.session.plasma import (

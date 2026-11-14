@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import sys
 
-from .resources import application_name, data_root
+from ..app.resources import application_name, data_root
 
 
 def local_state_directory() -> Path:
@@ -62,15 +62,15 @@ def run(*, language=None, background=False) -> int:
     resident = None
     hardware_ui = sys.platform == 'win32'
     if hardware_ui:
-        from ..app_identity import configure_process_identity
+        from ..app.identity import configure_process_identity
         configure_process_identity()
-        from ..native_preflight import require_native_user
+        from ..common.native_preflight import require_native_user
         try:
             require_native_user()
         except (PermissionError, OSError):
             return _show_start_failure(language)
-        from ..activation import WindowActivation
-        from ..startup import (
+        from ..app.activation import WindowActivation
+        from ..app.startup import (
             LoginStartup,
             UnavailableStartup,
             initialize_default_startup,
@@ -99,7 +99,7 @@ def run(*, language=None, background=False) -> int:
         from .resident import ResidentTray
         from .unavailable import UnavailableClient
         if hardware_ui:
-            from ..hardware_client import HardwareUIClient
+            from ..ipc.client import HardwareUIClient
             client = HardwareUIClient()
         else:
             client = UnavailableClient()
@@ -110,7 +110,7 @@ def run(*, language=None, background=False) -> int:
             data_root() / 'assets' / 'work.mmoe.panasonic.PostureManager.png'
         )))
         if hardware_ui:
-            from ..app_identity import APP_USER_MODEL_ID
+            from ..app.identity import APP_USER_MODEL_ID
             app.setDesktopFileName(APP_USER_MODEL_ID)
 
         resident = ResidentTray(

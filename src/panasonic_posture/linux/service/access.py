@@ -31,7 +31,7 @@ from typing import Any, Callable
 
 from gi.repository import GLib
 
-from ..protocol import (
+from ..contracts.protocol import (
     AUTH_CACHE_SECONDS,
     POLKIT_ACTION,
     SESSION_CHECK_SECONDS,

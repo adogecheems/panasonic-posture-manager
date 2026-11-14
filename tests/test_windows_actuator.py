@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 from panasonic_posture.model import Target
 from panasonic_posture.service.ports import ActuatorError
-from panasonic_posture.windows.actuator import WindowsActuator, NativeControl, REQUEST, REPLY
+from panasonic_posture.windows.hardware.actuator import WindowsActuator, NativeControl, REQUEST, REPLY
 
 TENT = Target(mode='tent', tablet=True, rotation=180, disable_internal_input=True)
 HARDWARE = Target(mode='hardware', tablet=True, rotation=None, disable_internal_input=False)
@@ -149,8 +149,8 @@ class NativeControlTests(unittest.TestCase):
     def test_requires_system_before_attempting_to_open_the_driver(self):
         security = Mock()
         security.require_system.side_effect = PermissionError('not SYSTEM')
-        with patch('panasonic_posture.windows.actuator.sys.platform', 'win32'), \
-             patch('panasonic_posture.windows.security.WindowsSecurity', return_value=security):
+        with patch('panasonic_posture.windows.hardware.actuator.sys.platform', 'win32'), \
+             patch('panasonic_posture.windows.common.security.WindowsSecurity', return_value=security):
             with self.assertRaises(PermissionError):
                 NativeControl()
         security.kernel.CreateFileW.assert_not_called()

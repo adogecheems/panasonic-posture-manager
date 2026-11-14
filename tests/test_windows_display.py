@@ -2,7 +2,7 @@
 from dataclasses import replace
 import unittest
 
-from panasonic_posture.windows.display import (
+from panasonic_posture.windows.session.display_backend import (
     ExternalOnlyDisplay, Panel, select_external_only, select_panel, WindowsDisplay,
     NativeDisplay, DevMode, PathInfo, ModeInfo,
 )

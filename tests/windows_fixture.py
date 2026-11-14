@@ -22,7 +22,7 @@ from panasonic_posture.session.failures import DisplayError
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.session.transaction import DisplayState, SoftwareDisplay
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.operations import dispatch_engine_operation
+from panasonic_posture.windows.common.operations import dispatch_engine_operation
 
 
 class MemoryJournal:

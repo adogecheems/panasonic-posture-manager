@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
-from panasonic_posture.windows.convertible_slate import SlateError
-from panasonic_posture.windows.slate_bootstrap import (
+from panasonic_posture.windows.hardware.convertible_slate import SlateError
+from panasonic_posture.windows.hardware.slate_bootstrap import (
     StartupPhysicalBaseline,
     pending_slate_leases,
     read_bootstrap_slate_state,

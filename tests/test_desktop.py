@@ -8,7 +8,7 @@ from tests._test_support import require_linux
 
 require_linux()
 
-from panasonic_posture.linux.protocol import ErrorCode
+from panasonic_posture.linux.contracts.protocol import ErrorCode
 from panasonic_posture.linux.session.desktop import (
     UnsupportedDisplay,
     create_display,

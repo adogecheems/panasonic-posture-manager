@@ -16,10 +16,10 @@ import traceback
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
-from panasonic_posture.windows.etw_switch import (
+from panasonic_posture.windows.hardware.etw_switch import (
     WindowsHidEventFilterBackend, parse_acpi_notification,
 )
-from panasonic_posture.windows.security import WindowsSecurity
+from panasonic_posture.windows.common.security import WindowsSecurity
 
 
 def main(argv=None):

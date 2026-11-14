@@ -32,7 +32,7 @@ Homepage = "https://github.com/adogecheems/panasonic-posture-manager"
 Repository = "https://github.com/adogecheems/panasonic-posture-manager"
 
 [project.scripts]
-panasonic-posture-manager = "panasonic_posture.linux.cli:launch_ui"
+panasonic-posture-manager = "panasonic_posture.linux.app.cli:launch_ui"
 panasonic-posture-manager-probe = "panasonic_posture.linux.hardware.probe:main"
 
 [tool.setuptools]
@@ -43,4 +43,4 @@ where = ["src"]
 include = ["panasonic_posture*"]
 
 [tool.setuptools.package-data]
-"panasonic_posture.linux.resources" = ["*.xml"]
+"panasonic_posture.linux.contracts.resources" = ["*.xml"]

@@ -103,39 +103,55 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | Linux 特权服务 | `linux/service/{access,actuator,application,daemon,sensor,sensor_sources,settings}.py` | 可依赖共享层和 Linux 契约，不得导入 Windows 包 |
 | Linux 硬件 | `linux/hardware/{iio,sysfs,probe,profile}.py` | Linux IIO、sysfs、DMI、profile 默认路径和设备探测；不得导入 Windows 包 |
 | Linux 会话 | `linux/session/{agent,client,dbus_errors,desktop,display,errors,journal,lockstate,notify,plasma,screen_context}.py` | Linux D-Bus、Wayland/GNOME/KDE、默认状态目录和通知适配 |
-| Linux 界面与入口 | `linux/ui/`、`linux/cli.py` | PyGObject/GTK/libadwaita 与 Linux 用户入口 |
-| Linux 契约 | `linux/{protocol,contracts,state_codec}.py`、`linux/resources/` | 只承载 Linux 兼容契约和 D-Bus XML；共享逻辑使用 `contracts.py`、`machine_profile.py` 和 `snapshot_codec.py` |
-| Windows | `windows/`，其中 Fluent/PyQt 界面位于 `windows/ui/` | 可依赖共享层，不得导入 `linux/`、GTK `gi` 或 Linux 默认路径 |
+| Linux 应用层 | `linux/app/` | 命令行入口；不得依赖 Windows |
+| Linux 界面 | `linux/ui/` | PyGObject/GTK/libadwaita 界面 |
+| Linux 契约 | `linux/contracts/` | 常量、协议投影、严格状态解码和 D-Bus XML；共享逻辑使用 `contracts.py`、`machine_profile.py` 和 `snapshot_codec.py` |
+| Windows 公共层 | `windows/common/` | 安全身份、实例锁、诊断、预检、会话停止事件和通用操作映射；只能依赖共享层或 Windows common |
+| Windows 应用层 | `windows/app/` | 启动、应用身份、本地化、资源和更新检查；不得依赖 Linux 或 Windows 服务入口 |
+| Windows 硬件 | `windows/hardware/` | WinRT 传感器、ETW、CSM、输入、朝向、机型身份和设备探测 |
+| Windows IPC | `windows/ipc/` | 命名管道、帧、请求/状态契约、RPC 和 UI 客户端；不得导入特权服务入口 |
+| Windows 服务 | `windows/service/` | LocalSystem 组合根、SCM 入口、鉴权、可信运行时和会话监管 |
+| Windows 会话 | `windows/session/` | 非提权会话进程、显示、资格校验和 CSM 通知；不得导入服务入口 |
+| Windows 界面 | `windows/ui/` | PyQt6/Fluent Widgets、托盘、页面和本地资源 |
 
 禁止在共享模块内用 `sys.platform` 选择服务职责；平台组合应由入口和适配器完成。
 新增平台依赖必须同步更新 `test_platform_imports.py` 的双向边界断言。
+`windows/` 根目录只保留 `__init__.py`；新增 Windows 模块必须归入上表职责域。
+`linux/` 根目录只保留 `__init__.py`；新增 Linux 模块必须归入 `app/`、
+`contracts/`、`hardware/`、`service/`、`session/` 或 `ui/`。
+Windows 域依赖由 `test_platform_imports.py` 强制：`app -> common`、
+`hardware -> common/ipc`、`ipc -> common`、`service/session -> common/hardware/ipc`、
+`ui -> app/common/ipc`；不得形成反向或跨层环。
+Linux 域依赖同样由测试强制：`app -> ui`、`hardware/service -> contracts`
+（service 另可依赖 hardware）、`session -> contracts`、`ui -> contracts/session`；
+不得形成反向或跨层环。
 
 | 改动 | 先读 | 目标测试 |
 | --- | --- | --- |
 | 姿态、阈值、迟滞、提示代次 | `policy.py`、`controller.py`、`presentation.py` | `test_policy`、`test_controller`、`test_presentation` |
-| 目标、状态和服务事务 | `linux/protocol.py`、`model.py`、`controller.py`、`service/engine.py` | `test_protocol`、`test_model`、`test_engine`、`test_application` |
+| 目标、状态和服务事务 | `linux/contracts/protocol.py`、`model.py`、`controller.py`、`service/engine.py` | `test_protocol`、`test_model`、`test_engine`、`test_application` |
 | Linux 鉴权、会话和租约 | `linux/service/access.py`、`linux/service/daemon.py`、`linux/session/agent.py` | `test_access`、`test_agent`、`make check-dbus` |
 | 设置、校准、持久化 | `linux/service/settings*.py`、`service/settings*.py`、`calibration.py`、`linux/ui/settings.py` | `test_settings`、`test_calibration`、`test_ui_contract` |
 | 传感器、机型配置和设备发现 | `linux/service/sensor*.py`、`linux/hardware/`、`machine_profile.py`、`data/profiles/` | `test_sensor`、`test_iio`、`test_sysfs`、`test_profile` |
 | C relay 与内置输入 | `backend/`、`linux/service/actuator.py` | `make check-c`、`test_actuator` |
 | Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_desktop`、`test_display*`、`test_journal`、`test_agent` |
 | 平台界面 | `linux/ui/`、`windows/ui/`、共享 `frontend/` | `test_ui_contract`、`test_fluent`、`test_frontend`、`make check-i18n` |
-| Windows 硬件组合与 RPC | `windows/{hardware_application,hardware_runtime,hardware_host,hardware_protocol,hardware_pipe,hardware_rpc,hardware_server}.py` | `test_windows_architecture`、`test_windows_hardware*` |
-| Windows ETW 与启动基线 | `windows/{etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_etw_switch`、`test_windows_slate_bootstrap` |
-| Windows 显示、CSM 和会话 | `windows/{display,screen_session,session_agent,session_display,session_client,session_context,convertible_slate,slate_journal}.py` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
-| Windows 服务与可信启动 | `windows/{hardware_service,trusted_runtime,session_supervisor,session_launch,session_stop,security}.py` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_*` |
-| Windows 界面、托盘和自启动 | `windows/{activation,instance,startup,update_check}.py`、`windows/ui/` | `test_windows_startup`、`test_fluent` |
+| Windows 硬件组合与 RPC | `windows/service/{application,runtime,host,server}.py`、`windows/ipc/` | `test_windows_architecture`、`test_windows_hardware*` |
+| Windows ETW 与启动基线 | `windows/hardware/{etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_etw_switch`、`test_windows_slate_bootstrap` |
+| Windows 显示、CSM 和会话 | `windows/hardware/{convertible_slate,slate_journal}.py`、`windows/session/` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
+| Windows 服务与可信启动 | `windows/service/{daemon,trusted_runtime,supervisor,launch}.py`、`windows/common/{identity,security,stop_event}.py` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_*` |
+| Windows 界面、托盘和自启动 | `windows/app/{activation,identity,startup,update_check}.py`、`windows/common/instance.py`、`windows/ui/` | `test_windows_startup`、`test_fluent` |
 | Windows 打包与发布 | `packaging/windows/`、`.github/workflows/` | `test_windows_msi`、`test_windows_packaging`、`test_packaging_workflow`、`test_release` |
 | Linux 打包 | `Makefile`、`packaging/`、`pyproject.toml` | `test_packaging_workflow`、`test_release`、`make check-package` |
 
 ## 7. 兼容契约
 
 - 状态快照 v2：`contracts.py`。
-- C relay v4：`linux/contracts.py`。
+- C relay v4：`linux/contracts/`。
 - 硬件 profile v1：`machine_profile.py`；Linux 默认查找位于 `linux/hardware/profile.py`。
 - 设置 v1：`service/settings_schema.py`。
 - 显示恢复日志 v1：`session/journal_schema.py`。
-- Windows 硬件 RPC 信封与请求/状态 schema：`windows/hardware_protocol.py`、`request_contract.py`、`state_contract.py`。
+- Windows 硬件 RPC 信封与请求/状态 schema：`windows/ipc/{protocol,requests,state}.py`。
 
 以下变化必须先取得用户明确授权：D-Bus 端点和方法、per-uid 名称、鉴权/polkit 语义、错误码、版本化载荷、租约或特权进程职责。修改后同步 Python、C、打包配置、所有调用方和契约测试。
 

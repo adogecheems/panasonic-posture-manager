@@ -15,7 +15,7 @@ from panasonic_posture.policy import (
     Policy,
     PolicyConfig,
 )
-from panasonic_posture.linux.protocol import ErrorCode
+from panasonic_posture.linux.contracts.protocol import ErrorCode
 
 GRAVITY = 9.80665
 

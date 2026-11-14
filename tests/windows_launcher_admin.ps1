@@ -112,7 +112,7 @@ try {
     $python = Join-Path $target 'runtime/python-hardware.exe'
     # Validate the actual staged ACLs and isolated interpreter before SYSTEM
     # executes anything. This command only pins and reads the protected tree.
-    & $python -B -I -c 'from panasonic_posture.windows.trusted_runtime import TrustedRuntime; r=TrustedRuntime.current(); r.close()' 2> (Join-Path $target 'validation/runtime-check.log')
+    & $python -B -I -c 'from panasonic_posture.windows.service.trusted_runtime import TrustedRuntime; r=TrustedRuntime.current(); r.close()' 2> (Join-Path $target 'validation/runtime-check.log')
     if ($LASTEXITCODE -ne 0) { throw 'Protected runtime verification failed.' }
     $arguments = '-B -I "' + (Join-Path $target 'fixture.py') + '" --system --root "' + $target + '"'
     $operation = New-ScheduledTaskAction -Execute $python -Argument $arguments -WorkingDirectory $target

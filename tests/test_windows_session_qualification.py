@@ -3,7 +3,7 @@ import unittest
 
 from panasonic_posture.model import StateSnapshot
 from panasonic_posture.session.failures import FailureKind, ServiceError
-from panasonic_posture.windows.session_qualification import QualifiedSessionClient
+from panasonic_posture.windows.session.qualification import QualifiedSessionClient
 
 
 class Context:

@@ -5,8 +5,8 @@ import time
 import unittest
 
 from panasonic_posture.model import StateSnapshot
-from panasonic_posture.windows.hardware_client import HardwareUIClient
-from panasonic_posture.windows.hardware_ipc import HardwareOperationError, validated_hardware_state
+from panasonic_posture.windows.ipc.client import HardwareUIClient
+from panasonic_posture.windows.service.ipc import HardwareOperationError, validated_hardware_state
 
 
 class Connection:

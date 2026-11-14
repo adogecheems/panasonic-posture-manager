@@ -71,7 +71,7 @@ function Protect-ServiceLogs {
 }
 
 function Test-ProtectedRuntime {
-    & cmd.exe /d /c "`"$Python`" -B -I -m panasonic_posture.windows.hardware_service --verify >nul 2>&1"
+    & cmd.exe /d /c "`"$Python`" -B -I -m panasonic_posture.windows.service.daemon --verify >nul 2>&1"
     return $LASTEXITCODE -eq 0
 }
 
@@ -193,7 +193,7 @@ if ($Action -eq 'Stop') {
 if (-not (Test-ProtectedRuntime)) {
     throw 'The bundle is not in a protected runtime path or failed its security preflight.'
 }
-$imagePath = (& $Python -B -I -m panasonic_posture.windows.hardware_service --image-path).Trim()
+$imagePath = (& $Python -B -I -m panasonic_posture.windows.service.daemon --image-path).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($imagePath)) {
     throw 'Cannot construct the hardware service command.'
 }

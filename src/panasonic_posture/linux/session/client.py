@@ -14,8 +14,8 @@ import logging
 
 from gi.repository import Gio, GLib
 
-from .. import protocol
-from .. import state_codec
+from ..contracts import protocol
+from ..contracts import state_codec
 from ...session.failures import ErrorCode, ServiceError, describe_error
 
 from .dbus_errors import service_error

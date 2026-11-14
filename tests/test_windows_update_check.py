@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from panasonic_posture.windows.update_check import (
+from panasonic_posture.windows.app.update_check import (
     GITHUB_RELEASE_API,
     PROXY_ENDPOINT,
     UpdateCheckError,

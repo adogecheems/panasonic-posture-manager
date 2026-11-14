@@ -3,9 +3,9 @@ from concurrent.futures import Future
 import unittest
 
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.hardware_host import ConsoleIdentity
-from panasonic_posture.windows.session_launch import ConsoleUser
-from panasonic_posture.windows.session_supervisor import SessionSupervisor
+from panasonic_posture.windows.service.host import ConsoleIdentity
+from panasonic_posture.windows.service.launch import ConsoleUser
+from panasonic_posture.windows.service.supervisor import SessionSupervisor
 
 USER = ConsoleUser('S-1-5-21-1000', 100, 1, True)
 

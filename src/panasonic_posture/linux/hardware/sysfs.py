@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from ...model import HardwareStatus
-from ..protocol import RELAY_VIRTUAL_NAME, RELAY_VIRTUAL_PHYS
+from ..contracts.protocol import RELAY_VIRTUAL_NAME, RELAY_VIRTUAL_PHYS
 
 _LOG = logging.getLogger(__name__)
 

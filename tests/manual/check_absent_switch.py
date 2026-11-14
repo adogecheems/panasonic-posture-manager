@@ -34,7 +34,7 @@ _SRC_DIR = REPO_ROOT / "src"
 if _SRC_DIR.is_dir() and str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
-from panasonic_posture.linux.protocol import IFACE, NAME, PATH  # noqa: E402
+from panasonic_posture.linux.contracts.protocol import IFACE, NAME, PATH  # noqa: E402
 
 HELPER = REPO_ROOT / "tests" / "manual" / "absent_switch_root.sh"
 SERVICE = "panasonic-posture-manager.service"

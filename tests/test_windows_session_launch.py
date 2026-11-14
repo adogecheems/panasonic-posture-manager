@@ -4,9 +4,9 @@ import ctypes as C
 from types import SimpleNamespace
 import unittest
 
-from panasonic_posture.windows.hardware_host import ConsoleIdentity
-from panasonic_posture.windows.security import ExtendedInfo, HANDLE
-from panasonic_posture.windows.session_launch import (
+from panasonic_posture.windows.service.host import ConsoleIdentity
+from panasonic_posture.windows.common.security import ExtendedInfo, HANDLE
+from panasonic_posture.windows.service.launch import (
     ConsoleUser, NativeSessionLauncher, NativeLaunchAPI, StartupInfo, ProcessInfo,
     ExtendedLimits, CREATE_FLAGS,
 )
@@ -29,7 +29,7 @@ class Runtime:
     closed = False
     def agent_arguments(self, journal, *, stop_event):
         return [str(self.root / 'runtime/python-hardware.exe'), '-B', '-I', '-m',
-                'panasonic_posture.windows.session_agent', '--journal', str(journal), '--stop-event', stop_event]
+                'panasonic_posture.windows.session.agent', '--journal', str(journal), '--stop-event', stop_event]
 
 
 class Api:
@@ -222,7 +222,7 @@ class NativeAPITests(unittest.TestCase):
             return True
         api.advapi = SimpleNamespace(CreateProcessAsUserW=create)
         args = [r'C:\Program Files\Posture\runtime\python-hardware.exe', '-B', '-I', '-m',
-                'panasonic_posture.windows.session_agent']
+                'panasonic_posture.windows.session.agent']
         result = api.start(11, args, 12, Path('C:/Program Files/Posture'))
         self.assertEqual(result, (14, 15, 42))
         self.assertEqual(seen[0][0], args[0])

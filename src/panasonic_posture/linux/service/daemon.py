@@ -32,7 +32,7 @@ except ImportError:  # pragma: no cover - fallback for non-Linux development
 from ... import __version__
 from ...model import StateSnapshot
 from ...product import APPLICATION_DISPLAY_NAME
-from ..protocol import (
+from ..contracts.protocol import (
     DBUS_ERROR,
     DBUS_XML,
     IFACE,

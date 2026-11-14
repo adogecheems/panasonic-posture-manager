@@ -3,7 +3,7 @@
 import unittest
 import xml.etree.ElementTree as ET
 
-from panasonic_posture.linux import protocol
+from panasonic_posture.linux.contracts import protocol
 
 
 class ErrorCodeTests(unittest.TestCase):

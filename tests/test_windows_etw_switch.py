@@ -3,7 +3,7 @@ import struct
 import unittest
 
 from panasonic_posture.model import HardwareStatus
-from panasonic_posture.windows.etw_switch import (
+from panasonic_posture.windows.hardware.etw_switch import (
     ACPI_LAPTOP_NOTIFY, ACPI_TABLET_NOTIFY, AcpiPhysicalSwitch,
     _EventHeader, _EventRecord, parse_acpi_notification,
 )
@@ -87,7 +87,7 @@ class PhysicalSwitchTests(unittest.TestCase):
         def bootstrap():
             raise OSError('indicator unavailable')
 
-        with self.assertLogs('panasonic_posture.windows.etw_switch', level='WARNING'):
+        with self.assertLogs('panasonic_posture.windows.hardware.etw_switch', level='WARNING'):
             switch = AcpiPhysicalSwitch(backend, initial_reader=bootstrap)
             switch.start()
             switch.bootstrap()

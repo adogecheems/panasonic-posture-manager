@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Self
 
-from ..protocol import IIO_NO_SAMPLE_SECONDS
+from ..contracts.protocol import IIO_NO_SAMPLE_SECONDS
 from .profile import apply_mount
 
 IIO_ROOT = Path("/sys/bus/iio/devices")

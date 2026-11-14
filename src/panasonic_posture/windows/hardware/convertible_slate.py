@@ -1,0 +1,469 @@
+"""Narrow access to the unique Intel convertible-slate GPIO indicator.
+
+The Windows PDO consumes a one-byte write which toggles the indicator; it is
+not an assignment API. This module discovers one present device with the
+supported ACPI hardware ID, opens only its physical-device-object path, reads
+the current raw state before every change, performs at most one toggle, and
+verifies the result by reading it back. It never writes the shell tablet mode
+and never patches the CSM registry cache.
+"""
+from __future__ import annotations
+
+import ctypes as C
+from ctypes import wintypes
+import sys
+import time
+from typing import Callable, Protocol
+
+from panasonic_posture.model import HardwareStatus
+from panasonic_posture.windows.hardware.slate_journal import SlateJournal, SlateLease
+
+SLATE_HARDWARE_ID = r"ACPI\INT33D3"
+
+_GENERIC_READ = 0x80000000
+_GENERIC_WRITE = 0x40000000
+_FILE_SHARE_READ = 0x00000001
+_FILE_SHARE_WRITE = 0x00000002
+_FILE_SHARE_DELETE = 0x00000004
+_OPEN_EXISTING = 3
+_FILE_ATTRIBUTE_NORMAL = 0x00000080
+_DEVPROP_TYPE_STRING = 0x00000012
+_DIGCF_PRESENT = 0x00000002
+_DIGCF_ALLCLASSES = 0x00000004
+_INVALID_HANDLE_VALUE = C.c_void_p(-1).value
+_ERROR_NO_MORE_ITEMS = 259
+# The verified convertible-slate driver exposes 1 for laptop. SlateNotifier
+# may write 0 to publish a software tent/stand posture to Windows.
+_SLATE_RAW = 0
+_LAPTOP_RAW = 1
+
+
+class SlateError(OSError):
+    """The supported convertible-slate indicator is unavailable or invalid."""
+
+
+def slate_instance_matches(
+    instance_id: object,
+    hardware_id: str = SLATE_HARDWARE_ID,
+) -> bool:
+    """Match the ACPI hardware ID while allowing firmware instance suffixes."""
+    if not isinstance(instance_id, str) or not isinstance(hardware_id, str):
+        return False
+    value = instance_id.strip().casefold()
+    expected = hardware_id.strip().casefold()
+    return bool(expected) and (value == expected or value.startswith(expected + '\\'))
+
+
+class GUID(C.Structure):
+    _fields_ = [
+        ("data1", wintypes.DWORD),
+        ("data2", wintypes.WORD),
+        ("data3", wintypes.WORD),
+        ("data4", C.c_ubyte * 8),
+    ]
+
+
+class DevInfoData(C.Structure):
+    _fields_ = [
+        ("size", wintypes.DWORD),
+        ("class_guid", GUID),
+        ("dev_inst", wintypes.DWORD),
+        ("reserved", C.c_size_t),
+    ]
+
+
+class DevicePropertyKey(C.Structure):
+    _fields_ = [("format_id", GUID), ("property_id", wintypes.DWORD)]
+
+
+_DEVPKEY_DEVICE_PDO_NAME = DevicePropertyKey(
+    GUID(
+        0xA45C254E,
+        0xDF1C,
+        0x4EFD,
+        (0x80, 0x20, 0x67, 0xD1, 0x46, 0xA8, 0x50, 0xE0),
+    ),
+    16,
+)
+
+
+class NativeSlateDevice:
+    """Open and toggle the unique supported child device."""
+
+    def __init__(
+        self,
+        *,
+        expected_hardware_id: str = SLATE_HARDWARE_ID,
+        sleep=time.sleep,
+    ) -> None:
+        if sys.platform != "win32":
+            raise OSError("convertible-slate access requires Windows")
+        if not isinstance(expected_hardware_id, str) or not expected_hardware_id.strip():
+            raise ValueError("a convertible-slate hardware ID is required")
+        self.expected_hardware_id = expected_hardware_id.strip()
+        self.sleep = sleep
+        self.handle = None
+        self._bind()
+        try:
+            pdo_name = self._physical_device_object_name(self.expected_hardware_id)
+            self.handle = self._open_pdo(pdo_name)
+        except BaseException:
+            self.close()
+            raise
+
+    def _bind(self) -> None:
+        self.setup = C.WinDLL("setupapi", use_last_error=True)
+        self.kernel = C.WinDLL("kernel32", use_last_error=True)
+
+        def bind(dll, name, result, *args):
+            function = getattr(dll, name)
+            function.restype, function.argtypes = result, args
+            return function
+
+        self.SetupDiGetClassDevsW = bind(
+            self.setup,
+            "SetupDiGetClassDevsW",
+            wintypes.HANDLE,
+            C.c_void_p,
+            wintypes.LPCWSTR,
+            wintypes.HWND,
+            wintypes.DWORD,
+        )
+        self.SetupDiEnumDeviceInfo = bind(
+            self.setup,
+            "SetupDiEnumDeviceInfo",
+            wintypes.BOOL,
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            C.POINTER(DevInfoData),
+        )
+        self.SetupDiGetDeviceInstanceIdW = bind(
+            self.setup,
+            "SetupDiGetDeviceInstanceIdW",
+            wintypes.BOOL,
+            wintypes.HANDLE,
+            C.POINTER(DevInfoData),
+            wintypes.LPWSTR,
+            wintypes.DWORD,
+            C.POINTER(wintypes.DWORD),
+        )
+        self.SetupDiGetDevicePropertyW = bind(
+            self.setup,
+            "SetupDiGetDevicePropertyW",
+            wintypes.BOOL,
+            wintypes.HANDLE,
+            C.POINTER(DevInfoData),
+            C.POINTER(DevicePropertyKey),
+            C.POINTER(wintypes.DWORD),
+            C.c_void_p,
+            wintypes.DWORD,
+            C.POINTER(wintypes.DWORD),
+            wintypes.DWORD,
+        )
+        self.SetupDiDestroyDeviceInfoList = bind(
+            self.setup, "SetupDiDestroyDeviceInfoList", wintypes.BOOL, wintypes.HANDLE
+        )
+        self.CreateFileW = bind(
+            self.kernel,
+            "CreateFileW",
+            wintypes.HANDLE,
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        )
+        self.ReadFile = bind(
+            self.kernel,
+            "ReadFile",
+            wintypes.BOOL,
+            wintypes.HANDLE,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            C.POINTER(wintypes.DWORD),
+            wintypes.LPVOID,
+        )
+        self.WriteFile = bind(
+            self.kernel,
+            "WriteFile",
+            wintypes.BOOL,
+            wintypes.HANDLE,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            C.POINTER(wintypes.DWORD),
+            wintypes.LPVOID,
+        )
+        self.CloseHandle = bind(
+            self.kernel, "CloseHandle", wintypes.BOOL, wintypes.HANDLE
+        )
+
+    def _physical_device_object_name(self, hardware_id: str) -> str:
+        handle = self.SetupDiGetClassDevsW(
+            None, None, None, _DIGCF_PRESENT | _DIGCF_ALLCLASSES
+        )
+        if not handle or handle == _INVALID_HANDLE_VALUE:
+            raise SlateError(C.get_last_error(), "cannot enumerate Windows devices")
+        try:
+            found = []
+            index = 0
+            while True:
+                info = DevInfoData()
+                info.size = C.sizeof(info)
+                if not self.SetupDiEnumDeviceInfo(handle, index, C.byref(info)):
+                    error = C.get_last_error()
+                    if error == _ERROR_NO_MORE_ITEMS:
+                        break
+                    raise SlateError(error, "cannot enumerate Windows devices")
+                buffer = C.create_unicode_buffer(512)
+                if not self.SetupDiGetDeviceInstanceIdW(
+                    handle, C.byref(info), buffer, len(buffer), None
+                ):
+                    raise SlateError(C.get_last_error(), "cannot read device identity")
+                if slate_instance_matches(buffer.value, hardware_id):
+                    found.append(info)
+                index += 1
+            if len(found) != 1:
+                raise SlateError(
+                    "verified convertible-slate device is absent or ambiguous"
+                )
+            size = wintypes.DWORD()
+            buffer = C.create_unicode_buffer(512)
+            kind = wintypes.DWORD()
+            function = self.SetupDiGetDevicePropertyW
+            if not function(
+                handle,
+                C.byref(found[0]),
+                C.byref(_DEVPKEY_DEVICE_PDO_NAME),
+                C.byref(kind),
+                C.cast(buffer, C.c_void_p),
+                C.sizeof(buffer),
+                C.byref(size),
+                0,
+            ):
+                raise SlateError(
+                    C.get_last_error(), "cannot read the convertible-slate device path"
+                )
+            pdo = buffer.value
+            if (
+                kind.value != _DEVPROP_TYPE_STRING
+                or not 2 <= size.value <= C.sizeof(buffer)
+                or not pdo.startswith("\\Device\\")
+                or len(pdo) > 256
+                or any(char in pdo for char in "\0\r\n")
+            ):
+                raise SlateError("the convertible-slate device path is invalid")
+            return pdo
+        finally:
+            self.SetupDiDestroyDeviceInfoList(handle)
+
+    def _open_pdo(self, pdo_name: str):
+        path = r"\\.\GLOBALROOT" + pdo_name
+        handle = self.CreateFileW(
+            path,
+            _GENERIC_READ | _GENERIC_WRITE,
+            _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
+            None,
+            _OPEN_EXISTING,
+            _FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+        if not handle or handle == _INVALID_HANDLE_VALUE:
+            error = C.get_last_error()
+            raise SlateError(
+                error,
+                "cannot open the convertible-slate indicator; configure "
+                "LaptopSlateExclusiveAccess=0 and restart Windows",
+            )
+        return handle
+
+    def close(self) -> None:
+        if getattr(self, "handle", None) not in (None, _INVALID_HANDLE_VALUE):
+            handle = self.handle
+            self.handle = None
+            if not self.CloseHandle(handle):
+                raise OSError(C.get_last_error(), "cannot close convertible-slate device")
+
+    def _raw_read(self) -> int:
+        if self.handle is None:
+            raise SlateError("convertible-slate device is closed")
+        data, count = C.create_string_buffer(1), wintypes.DWORD()
+        if not self.ReadFile(self.handle, data, 1, C.byref(count), None):
+            raise SlateError(C.get_last_error(), "convertible-slate read failed")
+        if count.value != 1 or data.raw[0] not in (_LAPTOP_RAW, _SLATE_RAW):
+            raise SlateError("convertible-slate returned an invalid state")
+        return data.raw[0]
+
+    def read(self) -> bool:
+        """Return True for slate/tablet use and False for laptop use."""
+
+        return self._raw_read() == _SLATE_RAW
+
+    def set(self, slate: bool) -> bool:
+        """Idempotently set slate state and verify at most one toggle."""
+
+        if type(slate) is not bool:
+            raise ValueError("slate state must be boolean")
+        expected = _SLATE_RAW if slate else _LAPTOP_RAW
+        before = self._raw_read()
+        if before == expected:
+            return False
+        data, count = C.create_string_buffer(b"\x01", 1), wintypes.DWORD()
+        if not self.WriteFile(self.handle, data, 1, C.byref(count), None):
+            raise SlateError(C.get_last_error(), "convertible-slate write failed")
+        if count.value != 1:
+            raise SlateError("convertible-slate write was not accepted")
+        for _ in range(10):
+            if self._raw_read() == expected:
+                return True
+            self.sleep(0.05)
+        raise SlateError("convertible-slate read-back did not match the request")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.close()
+
+
+class SlateDevice(Protocol):
+    def read(self) -> bool: ...
+    def set(self, slate: bool) -> bool: ...
+    def close(self) -> None: ...
+
+
+class SlateNotifier:
+    """Publish app posture through the CSM, gated by the physical ETW source."""
+
+    def __init__(
+        self,
+        device: SlateDevice,
+        journal: SlateJournal | None = None,
+        *,
+        hardware_query: Callable[[], tuple[bool | None, HardwareStatus]],
+    ) -> None:
+        self.device = device
+        self.journal = journal
+        self.hardware_query = hardware_query
+        self.original: bool | None = None
+        self.last: bool | None = None
+        self.pending: SlateLease | None = None
+        self.closed = False
+        try:
+            self.pending = journal.load() if journal is not None else None
+        except BaseException:
+            device.close()
+            raise
+        try:
+            current = bool(device.read())
+            self.original = self.pending.original if self.pending is not None else current
+            self.last = current
+        except (OSError, ValueError):
+            # Keep the backend's primary failure at the first posture request.
+            if self.pending is not None:
+                self.original = self.pending.original
+
+    @staticmethod
+    def desired(mode: str) -> bool | None:
+        if mode in ("tent", "stand", "tablet", "hardware"):
+            return True
+        if mode == "laptop":
+            return False
+        return None
+
+    def _require_hardware(self) -> bool:
+        try:
+            hardware, status = self.hardware_query()
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            raise SlateError('physical tablet state is unavailable') from error
+        if type(hardware) is not bool or status != HardwareStatus.OK:
+            raise SlateError('physical tablet state is unavailable')
+        return hardware
+
+    def _recover(self) -> bool:
+        """Restore the journal's startup value before applying a new posture."""
+        if self.pending is None:
+            return False
+        original = self.pending.original
+        changed = bool(self.device.set(original))
+        if self.journal is not None:
+            self.journal.clear()
+        self.pending = None
+        self.original = original
+        self.last = original
+        return changed
+
+    def sync_mode(self, mode: str) -> bool:
+        if self.closed:
+            raise SlateError("convertible-slate notifier is closed")
+        desired = self.desired(mode)
+        if desired is None:
+            return False
+        hardware = self._require_hardware()
+        if hardware and desired is False:
+            # A software task can finish after Event 115 has already made the
+            # physical tablet authoritative. Never publish that stale laptop
+            # result over the active tablet lease.
+            return False
+        if self.pending is not None and self.pending.desired == desired:
+            # A pending lease that already targets this posture is still the
+            # same software ownership. Replaying its original laptop value
+            # would briefly drop the tablet signal when tent/stand hands over
+            # to the physical tablet (or when a session restarts in tent).
+            self.original = self.pending.original
+            changed = bool(self.device.set(desired))
+            self.last = desired
+            if desired == self.original:
+                if self.journal is not None:
+                    self.journal.clear()
+                self.pending = None
+            return changed
+        self._recover()
+        if self.original is None:
+            self.original = bool(self.device.read())
+        temporary = desired != self.original
+        if temporary and self.journal is not None:
+            self.journal.save(self.original, desired)
+            self.pending = SlateLease(self.original, desired)
+        changed = bool(self.device.set(desired))
+        if not temporary and self.journal is not None:
+            self.journal.clear()
+            self.pending = None
+        self.last = desired
+        return changed
+
+    def release(self) -> None:
+        """Return the indicator to its startup value, keeping the lease reusable."""
+
+        if self.closed:
+            return
+        if self.original is None and self.pending is None:
+            return
+        if (self.pending is None and self.original is not None
+                and self.last == self.original
+                and (self.journal is None or self.journal.load() is None)):
+            return
+        self._require_hardware()
+        if self.pending is not None:
+            self._recover()
+            return
+        self.device.set(self.original)
+        if self.journal is not None:
+            self.journal.clear()
+        self.last = self.original
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        try:
+            self.release()
+        finally:
+            self.closed = True
+            self.device.close()
+
+
+__all__ = [
+    "NativeSlateDevice", "SLATE_HARDWARE_ID", "SlateError", "SlateNotifier",
+    "slate_instance_matches",
+]

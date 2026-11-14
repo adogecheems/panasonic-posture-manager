@@ -6,7 +6,7 @@ import sys
 import threading
 import unittest
 
-from panasonic_posture.windows.hardware_service import (
+from panasonic_posture.windows.service.daemon import (
     ERROR_SERVICE_SPECIFIC_ERROR,
     HardwareServiceRunner,
     SERVICE_DESCRIPTION,
@@ -120,7 +120,7 @@ class HardwareServiceRunnerTests(unittest.TestCase):
         self.assertEqual(
             command,
             r'"C:\Program Files\PanasonicPostureManager\runtime\python-hardware.exe" '
-            '-B -I -m panasonic_posture.windows.hardware_service --serve',
+            '-B -I -m panasonic_posture.windows.service.daemon --serve',
         )
 
     @unittest.skipUnless(sys.platform == 'win32', 'SCM ABI requires Windows')
@@ -131,7 +131,7 @@ class HardwareServiceRunnerTests(unittest.TestCase):
             'import runpy, sys; '
             f'sys.path.insert(0, {source}); '
             "sys.argv = ['hardware_service', '--serve']; "
-            "runpy.run_module('panasonic_posture.windows.hardware_service', run_name='__main__')"
+            "runpy.run_module('panasonic_posture.windows.service.daemon', run_name='__main__')"
         )
         result = subprocess.run(
             [sys.executable, '-B', '-c', code],

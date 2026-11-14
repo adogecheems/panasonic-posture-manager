@@ -3,8 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from panasonic_posture.windows.instance import InstanceLock
-from panasonic_posture.windows.protocol import (
+from panasonic_posture.windows.common.instance import InstanceLock
+from panasonic_posture.windows.ipc.frames import (
     MAX_FRAME,
     ProtocolError,
     decode,

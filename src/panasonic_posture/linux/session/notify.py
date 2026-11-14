@@ -16,7 +16,7 @@ from typing import Callable
 
 from gi.repository import Gio, GLib
 
-from .. import protocol
+from ..contracts import protocol
 from ...product import APPLICATION_DISPLAY_NAME
 from . import errors
 from .errors import describe_error

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..protocol import (
+from ..contracts.protocol import (
     RELAY_HEARTBEAT_SECONDS,
     RELAY_INSTALL_PATH,
     RELAY_PROTOCOL,

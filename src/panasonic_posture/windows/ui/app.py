@@ -14,9 +14,9 @@ from qfluentwidgets import (
 from ...contracts import TICK_SECONDS
 from ...frontend.ports import UIClient
 from .unavailable import UnavailableClient
-from ..hardware_client import HardwareUIClient
+from ..ipc.client import HardwareUIClient
 from .pages import Home, Settings
-from .resources import application_name, data_root, translator
+from ..app.resources import application_name, data_root, translator
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     PageSwitcher, apply_app_font, BODY_SIZE, CAPTION_SIZE, HEADING_SIZE,

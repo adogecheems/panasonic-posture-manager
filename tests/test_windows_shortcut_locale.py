@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from panasonic_posture.windows.shortcut_locale import (
+from panasonic_posture.windows.app.shortcut_locale import (
     LEGACY_FOLDER,
     LEGACY_SHORTCUT,
     SOURCE_FOLDER,

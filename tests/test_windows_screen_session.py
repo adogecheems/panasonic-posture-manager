@@ -16,12 +16,12 @@ from panasonic_posture.model import (
 from panasonic_posture.service.engine import Engine
 from panasonic_posture.session.failures import DisplayError, ServiceError
 from panasonic_posture.session.journal_store import Journal
-from panasonic_posture.windows.display import Panel
-from panasonic_posture.windows.screen_session import (
+from panasonic_posture.windows.session.display_backend import Panel
+from panasonic_posture.windows.session.screen_session import (
     SCREEN_MODES, ScreenSession, SessionBridge, select_native_display,
 )
-from panasonic_posture.windows.session_display import QualifiedDisplay
-from panasonic_posture.windows.hardware_release import HardwareReleaseCoordinator
+from panasonic_posture.windows.session.display import QualifiedDisplay
+from panasonic_posture.windows.session.release import HardwareReleaseCoordinator
 try:
     from tests.windows_fixture import Backend, BackendError, SimulatedDisplay
 except ModuleNotFoundError:
@@ -244,11 +244,11 @@ class BridgeTests(unittest.TestCase):
 
     def test_native_startup_role_rejects_other_sessions_without_requiring_unlock(self):
         from unittest.mock import patch
-        from panasonic_posture.windows.screen_session import require_native_user
+        from panasonic_posture.windows.session.screen_session import require_native_user
         security = SimpleNamespace(require_unprivileged=lambda: None,
             process_identity=lambda pid: SimpleNamespace(session_id=1),
             kernel=SimpleNamespace(WTSGetActiveConsoleSessionId=lambda: 1))
-        with patch('panasonic_posture.windows.security.WindowsSecurity', return_value=security):
+        with patch('panasonic_posture.windows.common.security.WindowsSecurity', return_value=security):
             require_native_user()
             for console in (0, 0xffffffff, 2):
                 security.kernel.WTSGetActiveConsoleSessionId = lambda: console
@@ -263,7 +263,7 @@ class Block:
             'actuator', 'hardware_host', 'hardware_ipc', 'session_client', 'session_agent', 'session_launch'):
             raise AssertionError(name)
 sys.meta_path.insert(0, Block())
-from panasonic_posture.windows.screen_session import ScreenSession
+from panasonic_posture.windows.session.screen_session import ScreenSession
 '''], capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
 

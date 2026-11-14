@@ -20,8 +20,8 @@ from panasonic_posture.model import DeviceInfo, SensorInfo, SensorReading, Hardw
 from panasonic_posture.presentation import PosePresentation
 from panasonic_posture.service.engine import Engine, ServiceError
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.hardware_ipc import HardwareServer, HardwareConnection, NativePipes
-from panasonic_posture.windows.security import WindowsSecurity, AuthenticationError
+from panasonic_posture.windows.service.ipc import HardwareServer, HardwareConnection, NativePipes
+from panasonic_posture.windows.common.security import WindowsSecurity, AuthenticationError
 
 TEST_PIPE = r'\\.\pipe\PanasonicPostureManager.Hardware.Validation.v1'
 ACL_PIPE = TEST_PIPE + '.acl'

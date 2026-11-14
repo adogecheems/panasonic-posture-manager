@@ -15,9 +15,9 @@ require_linux()
 
 from gi.repository import Gio, GLib
 
-from panasonic_posture.linux import protocol
+from panasonic_posture.linux.contracts import protocol
 from panasonic_posture.model import StateSnapshot, Target
-from panasonic_posture.linux.protocol import ErrorCode
+from panasonic_posture.linux.contracts.protocol import ErrorCode
 from panasonic_posture.linux.session.agent import Agent
 from panasonic_posture.linux.session.client import SystemClient
 from panasonic_posture.linux.session.display import DisplayError

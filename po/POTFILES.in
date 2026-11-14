@@ -9,4 +9,4 @@ src/panasonic_posture/windows/ui/app.py
 src/panasonic_posture/windows/ui/labels.py
 src/panasonic_posture/windows/ui/pages.py
 src/panasonic_posture/windows/ui/resident.py
-src/panasonic_posture/windows/ui/resources.py
+src/panasonic_posture/windows/app/resources.py

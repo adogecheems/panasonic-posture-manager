@@ -241,11 +241,11 @@ def payload_files(
     }
     required = {
         'main': {
-            'app/panasonic_posture/windows/hardware_client.py',
+            'app/panasonic_posture/windows/ipc/client.py',
             'launch.py',
         },
         'service': {
-            'app/panasonic_posture/windows/hardware_service.py',
+            'app/panasonic_posture/windows/service/daemon.py',
             'configure-slate-device.ps1',
             'hardware-service.ps1',
             'repair-start-menu-shortcut.ps1',
@@ -309,7 +309,7 @@ def _append_service(component: ET.Element) -> None:
         'ErrorControl': 'normal',
         'Account': 'LocalSystem',
         'Vital': 'yes',
-        'Arguments': '-B -I -m panasonic_posture.windows.hardware_service --serve',
+        'Arguments': '-B -I -m panasonic_posture.windows.service.daemon --serve',
     })
     ET.SubElement(component, 'ServiceControl', {
         'Id': 'HardwareServiceControl',

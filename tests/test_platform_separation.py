@@ -43,7 +43,7 @@ class PlatformSeparationTests(unittest.TestCase):
 
     def test_linux_decoder_still_rejects_unknown_sensor_sources(self):
         from panasonic_posture.model import StateSnapshot, dumps_state
-        from panasonic_posture.linux.state_codec import parse_state_snapshot
+        from panasonic_posture.linux.contracts.state_codec import parse_state_snapshot
         with self.assertRaises(ValueError):
             parse_state_snapshot(dumps_state(StateSnapshot(sensor_source="test-sensor")))
         state = parse_state_snapshot(dumps_state(StateSnapshot(sensor_source="iio")))

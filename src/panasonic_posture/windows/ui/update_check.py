@@ -4,7 +4,7 @@ import logging
 from PyQt6.QtCore import QObject, QTimer, QUrl, pyqtSignal
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 
-from ..update_check import (
+from ..app.update_check import (
     PROXY_ENDPOINT,
     parse_latest_release,
     parse_release_redirect,

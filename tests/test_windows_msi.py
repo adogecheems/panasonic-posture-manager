@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from panasonic_posture.windows.shortcut_locale import (
+from panasonic_posture.windows.app.shortcut_locale import (
     START_MENU_RELATIVE_PATH,
     remove_start_menu_entries,
 )
@@ -60,11 +60,11 @@ class MsiPayloadTests(unittest.TestCase):
         main = manifest['main']
         service = manifest['service']
         self.assertIn('launch.py', main)
-        self.assertIn('app/panasonic_posture/windows/hardware_client.py', main)
+        self.assertIn('app/panasonic_posture/windows/ipc/client.py', main)
         self.assertNotIn('runtime/python-hardware.exe', main)
         self.assertIn('runtime/python-hardware.exe', service)
         self.assertIn('runtime/python-hardware._pth', service)
-        self.assertIn('app/panasonic_posture/windows/hardware_service.py', service)
+        self.assertIn('app/panasonic_posture/windows/service/daemon.py', service)
         self.assertIn('configure-slate-device.ps1', service)
         self.assertIn('hardware-service.ps1', service)
         self.assertIn('data/profiles/cfqv8.json', service)
@@ -155,7 +155,7 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertEqual(service.get('Description'), '!(loc.ServiceDescription)')
         self.assertIn('Name="PanasonicPostureManagerHardware"', first)
         self.assertIn('Account="LocalSystem"', first)
-        self.assertIn('panasonic_posture.windows.hardware_service --serve', first)
+        self.assertIn('panasonic_posture.windows.service.daemon --serve', first)
         self.assertIn('Start="install"', first)
         self.assertIn('Remove="uninstall"', first)
 
@@ -218,10 +218,10 @@ class MsiPayloadTests(unittest.TestCase):
             'Id="LocalizeStartMenu"',
             'Id="RepairStartMenuShortcut"',
             '[#ServiceShortcutRepairScript]',
-            'panasonic_posture.windows.shortcut_locale --install',
+            'panasonic_posture.windows.app.shortcut_locale --install',
             '--language-id [UserLanguageID]',
             'Id="RemoveLocalizedStartMenu"',
-            'panasonic_posture.windows.shortcut_locale --remove',
+            'panasonic_posture.windows.app.shortcut_locale --remove',
             'Id="WIXUI_EXITDIALOGOPTIONALTEXT"',
             'Before="ExecuteAction"',
             'Sequence="ui"',

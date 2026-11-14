@@ -18,7 +18,7 @@ require_linux()
 
 from panasonic_posture.linux.hardware import sysfs
 from panasonic_posture.model import HardwareStatus
-from panasonic_posture.linux.protocol import RELAY_VIRTUAL_NAME, RELAY_VIRTUAL_PHYS
+from panasonic_posture.linux.contracts.protocol import RELAY_VIRTUAL_NAME, RELAY_VIRTUAL_PHYS
 
 # Real `capabilities/key` fixtures.
 KEYBOARD_KEY_BITMAP = (

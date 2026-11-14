@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 import unittest
 
-from panasonic_posture.windows.hardware_host import HardwareHost
+from panasonic_posture.windows.service.host import HardwareHost
 
 
 class Engine:

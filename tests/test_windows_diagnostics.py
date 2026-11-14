@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from panasonic_posture.windows.diagnostics import create_handler, log_path
+from panasonic_posture.windows.common.diagnostics import create_handler, log_path
 
 
 def emit(handler: logging.Handler, message: str) -> None:

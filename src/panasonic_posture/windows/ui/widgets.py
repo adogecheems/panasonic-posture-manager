@@ -13,7 +13,7 @@ from qfluentwidgets import (
 )
 from qfluentwidgets.common.style_sheet import addStyleSheet
 
-from .resources import data_root
+from ..app.resources import data_root
 
 WINDOW_LIGHT = '#f6f7f9'
 WINDOW_DARK = '#22252b'

@@ -101,7 +101,7 @@
         Return="check" />
     <SetProperty
         Id="LocalizeStartMenu"
-        Value="&quot;[#ServicePythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --install --language-id [UserLanguageID]"
+        Value="&quot;[#ServicePythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.app.shortcut_locale --install --language-id [UserLanguageID]"
         Before="LocalizeStartMenu"
         Sequence="execute" />
     <CustomAction
@@ -125,7 +125,7 @@
         Return="check" />
     <SetProperty
         Id="RemoveLocalizedStartMenu"
-        Value="&quot;[#ServicePythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.shortcut_locale --remove --language-id [UserLanguageID]"
+        Value="&quot;[#ServicePythonHardwareExe]&quot; -B -I -m panasonic_posture.windows.app.shortcut_locale --remove --language-id [UserLanguageID]"
         Before="RemoveLocalizedStartMenu"
         Sequence="execute" />
     <CustomAction

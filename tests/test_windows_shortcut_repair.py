@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 REPAIR_SCRIPT = ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
-APP_IDENTITY_SOURCE = ROOT / 'src/panasonic_posture/windows/app_identity.py'
+APP_IDENTITY_SOURCE = ROOT / 'src/panasonic_posture/windows/app/identity.py'
 APP_USER_MODEL_ID = 'work.mmoe.panasonic.PostureManager'
 MSI_BUILDER_SPEC = importlib.util.spec_from_file_location(
     'windows_shortcut_msi_build',

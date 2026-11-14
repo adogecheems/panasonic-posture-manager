@@ -5,7 +5,7 @@ import logging
 from concurrent.futures import Future
 from gi.repository import Gio, GLib
 from ..contracts import NAME as BUS_NAME, PATH as OBJECT_PATH, IFACE as INTERFACE
-from ..state_codec import parse_state_data
+from ..contracts.state_codec import parse_state_data
 from ...frontend.ports import Preference
 from .errors import ServiceUnavailable, unknown_method
 

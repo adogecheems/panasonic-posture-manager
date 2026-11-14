@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from panasonic_posture.windows.sensor import SampleTracker, SensorError, PowerShellSource, WindowsSensor
+from panasonic_posture.windows.hardware.sensor import SampleTracker, SensorError, PowerShellSource, WindowsSensor
 
 IDENTITY = (1., 0., 0., 0., 1., 0., 0., 0., 1.)
 
@@ -75,12 +75,12 @@ class SampleTrackerTests(unittest.TestCase):
 
 class SourceTests(unittest.TestCase):
     def test_non_windows_never_spawns_and_stream_script_never_writes_sensor_settings(self):
-        with patch('panasonic_posture.windows.sensor.sys.platform', 'linux'), \
-             patch('panasonic_posture.windows.sensor.subprocess.Popen') as spawn:
+        with patch('panasonic_posture.windows.hardware.sensor.sys.platform', 'linux'), \
+             patch('panasonic_posture.windows.hardware.sensor.subprocess.Popen') as spawn:
             with self.assertRaises(SensorError):
                 PowerShellSource()
         spawn.assert_not_called()
-        from panasonic_posture.windows.sensor import STREAM_SCRIPT
+        from panasonic_posture.windows.hardware.sensor import STREAM_SCRIPT
         self.assertIn('FindAllAsync', STREAM_SCRIPT)
         self.assertIn('$identityCheck.Elapsed.TotalSeconds -ge 2', STREAM_SCRIPT)
         self.assertLess(STREAM_SCRIPT.index('$identityCheck=[Diagnostics.Stopwatch]::StartNew()'),
@@ -92,9 +92,9 @@ class SourceTests(unittest.TestCase):
         import base64
         process = SimpleNamespace(stdout=io.BytesIO(b''), poll=lambda: 0, wait=lambda timeout: 0)
         for enabled in (False, True):
-            with patch('panasonic_posture.windows.sensor.sys.platform', 'win32'), \
-                 patch('panasonic_posture.windows.sensor._parent_start_time', return_value=123), \
-                 patch('panasonic_posture.windows.sensor.subprocess.Popen', return_value=process) as spawn:
+            with patch('panasonic_posture.windows.hardware.sensor.sys.platform', 'win32'), \
+                 patch('panasonic_posture.windows.hardware.sensor._parent_start_time', return_value=123), \
+                 patch('panasonic_posture.windows.hardware.sensor.subprocess.Popen', return_value=process) as spawn:
                 process.stdout = io.BytesIO(b'')
                 source = PowerShellSource(include_orientation=enabled)
                 source.close()
@@ -109,9 +109,9 @@ class SourceTests(unittest.TestCase):
         payload = json.dumps(frame()).encode() + b'\n'
         process = SimpleNamespace(stdout=io.BytesIO(payload), pid=123,
             poll=lambda: 0, wait=lambda timeout: 0)
-        with patch('panasonic_posture.windows.sensor.sys.platform', 'win32'), \
-             patch('panasonic_posture.windows.sensor._parent_start_time', return_value=123), \
-             patch('panasonic_posture.windows.sensor.subprocess.Popen', return_value=process) as spawn:
+        with patch('panasonic_posture.windows.hardware.sensor.sys.platform', 'win32'), \
+             patch('panasonic_posture.windows.hardware.sensor._parent_start_time', return_value=123), \
+             patch('panasonic_posture.windows.hardware.sensor.subprocess.Popen', return_value=process) as spawn:
             source = PowerShellSource()
             try:
                 value, _, _ = source.read(timeout=2)
@@ -126,9 +126,9 @@ class SourceTests(unittest.TestCase):
     def test_oversized_or_invalid_frame_is_rejected(self):
         for payload in (b'x' * 65537, b'{"version":1,"version":1}\n'):
             process = SimpleNamespace(stdout=io.BytesIO(payload), poll=lambda: 0, wait=lambda timeout: 0)
-            with patch('panasonic_posture.windows.sensor.sys.platform', 'win32'), \
-                 patch('panasonic_posture.windows.sensor._parent_start_time', return_value=123), \
-                 patch('panasonic_posture.windows.sensor.subprocess.Popen', return_value=process):
+            with patch('panasonic_posture.windows.hardware.sensor.sys.platform', 'win32'), \
+                 patch('panasonic_posture.windows.hardware.sensor._parent_start_time', return_value=123), \
+                 patch('panasonic_posture.windows.hardware.sensor.subprocess.Popen', return_value=process):
                 source = PowerShellSource()
                 try:
                     with self.assertRaises(SensorError):

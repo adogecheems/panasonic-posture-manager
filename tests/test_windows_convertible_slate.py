@@ -7,15 +7,15 @@ from unittest import mock
 from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
 from panasonic_posture.contracts import ErrorCode
 from panasonic_posture.session.failures import DisplayError, FailureKind, ServiceError
-from panasonic_posture.windows.convertible_slate import (
+from panasonic_posture.windows.hardware.convertible_slate import (
     NativeSlateDevice,
     SlateError,
     SlateNotifier,
     slate_instance_matches,
 )
-from panasonic_posture.windows.session_display import QualifiedDisplay, SessionHardwareQuery
-from panasonic_posture.windows.session_qualification import QualifiedSessionClient
-from panasonic_posture.windows.slate_journal import SlateJournal, lease_path
+from panasonic_posture.windows.session.display import QualifiedDisplay, SessionHardwareQuery
+from panasonic_posture.windows.session.qualification import QualifiedSessionClient
+from panasonic_posture.windows.hardware.slate_journal import SlateJournal, lease_path
 
 
 class FakeSlateDevice:

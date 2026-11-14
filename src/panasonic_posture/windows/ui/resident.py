@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QMenu, QMessageBox, QSystemTra
 from ...contracts import TICK_SECONDS
 from ...frontend.state import notice_confirmable, notice_token
 from .labels import mode_label
-from .resources import application_name, data_root, translator
+from ..app.resources import application_name, data_root, translator
 
 log = logging.getLogger(__name__)
 

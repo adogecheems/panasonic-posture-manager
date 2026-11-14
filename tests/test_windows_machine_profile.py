@@ -3,8 +3,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 
-from panasonic_posture.windows.hardware_application import create_hardware_runtime
-from panasonic_posture.windows.machine_profile import WindowsProfile, resolve_windows_profile
+from panasonic_posture.windows.service.application import create_hardware_runtime
+from panasonic_posture.windows.hardware.machine_profile import WindowsProfile, resolve_windows_profile
 
 PROFILES = Path(__file__).resolve().parents[1] / 'data' / 'profiles'
 
@@ -56,7 +56,7 @@ class WindowsMachineProfileTests(unittest.TestCase):
 
     def test_unreadable_identity_still_uses_the_generic_capability_path(self):
         with patch(
-            'panasonic_posture.windows.machine_profile.read_machine_identity',
+            'panasonic_posture.windows.hardware.machine_profile.read_machine_identity',
             side_effect=OSError('BIOS identity unavailable'),
         ):
             profile = resolve_windows_profile(profile_dirs=(PROFILES,))
@@ -72,13 +72,13 @@ class WindowsMachineProfileTests(unittest.TestCase):
             mount_matrix=(1., 0., 0., 0., 1., 0., 0., 0., 1.),
         )
         with patch(
-            'panasonic_posture.windows.hardware_application.WindowsSensor',
+            'panasonic_posture.windows.service.application.WindowsSensor',
         ) as sensor_factory, patch(
-            'panasonic_posture.windows.hardware_application.AcpiPhysicalSwitch',
+            'panasonic_posture.windows.service.application.AcpiPhysicalSwitch',
         ) as switch_factory, patch(
-            'panasonic_posture.windows.hardware_application.Engine',
+            'panasonic_posture.windows.service.application.Engine',
         ) as engine_factory, patch(
-            'panasonic_posture.windows.hardware_application.HardwareRuntime',
+            'panasonic_posture.windows.service.application.HardwareRuntime',
         ) as runtime_factory:
             create_hardware_runtime(runtime=Mock(), profile=profile)
         sensor_factory.assert_called_once_with(

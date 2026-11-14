@@ -100,7 +100,7 @@ class UiClientTests(unittest.TestCase):
     def test_source_catalog_fallback(self):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
-        from panasonic_posture.windows.ui.resources import translator
+        from panasonic_posture.windows.app.resources import translator
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'po').mkdir()
@@ -112,7 +112,7 @@ class UiClientTests(unittest.TestCase):
                 self.assertEqual(translator('en')('Laptop'), 'Laptop')
 
     def test_application_display_name_matches_the_window_title_source(self):
-        from panasonic_posture.windows.ui.resources import application_name
+        from panasonic_posture.windows.app.resources import application_name
         from panasonic_posture.product import APPLICATION_DISPLAY_NAME
         self.assertEqual(application_name('en'), APPLICATION_DISPLAY_NAME)
         self.assertEqual(
@@ -121,18 +121,18 @@ class UiClientTests(unittest.TestCase):
 
     def test_windows_ui_language_wins_over_process_lang(self):
         from unittest.mock import patch
-        from panasonic_posture.windows.ui.resources import default_language
+        from panasonic_posture.windows.app.resources import default_language
         environment = {'LANGUAGE': '', 'LC_ALL': '', 'LC_MESSAGES': '', 'LANG': 'C.UTF-8'}
         with patch.dict(os.environ, environment), \
-                patch('panasonic_posture.windows.ui.resources._windows_language',
+                patch('panasonic_posture.windows.app.resources._windows_language',
                       return_value='zh_CN'):
             self.assertEqual(default_language(), 'zh_CN')
         with patch.dict(os.environ, environment), \
-                patch('panasonic_posture.windows.ui.resources._windows_language',
+                patch('panasonic_posture.windows.app.resources._windows_language',
                       return_value=None):
             self.assertEqual(default_language(), 'C.UTF-8')
         with patch.dict(os.environ, dict(environment, LC_ALL='zh_CN.UTF-8')), \
-                patch('panasonic_posture.windows.ui.resources._windows_language',
+                patch('panasonic_posture.windows.app.resources._windows_language',
                       return_value=None):
             self.assertEqual(default_language(), 'zh_CN.UTF-8')
 
@@ -140,7 +140,7 @@ class UiClientTests(unittest.TestCase):
         import gettext
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
-        from panasonic_posture.windows.ui.resources import translator
+        from panasonic_posture.windows.app.resources import translator
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'po').mkdir()
@@ -284,7 +284,7 @@ from qfluentwidgets import PrimaryPushButton, SettingCard
 from panasonic_posture.windows.ui.app import Window
 from panasonic_posture.windows.ui.pages import APP_VERSION
 from panasonic_posture.windows.ui.update_check import UpdateChecker
-from panasonic_posture.windows.update_check import UpdateInfo
+from panasonic_posture.windows.app.update_check import UpdateInfo
 from fluent_fixture import SyntheticClient
 
 latest_version = '99.0.0'
@@ -686,7 +686,7 @@ assert client.stopped >= 1
 
     def test_startup_ui_reads_back_and_reverts_failures_without_requiring_backend(self):
         self.run_ui('''
-from panasonic_posture.windows.startup import LoginStartup
+from panasonic_posture.windows.app.startup import LoginStartup
 class Registry:
     value = None
     fail = False
@@ -751,9 +751,9 @@ from tempfile import TemporaryDirectory
 from PyQt6.QtTest import QTest
 from panasonic_posture.model import SensorInfo
 from panasonic_posture.service.settings_store import SettingsStore
-from panasonic_posture.windows.hardware_client import HardwareUIClient
-from panasonic_posture.windows.hardware_host import HardwareHost, ConsoleIdentity
-from panasonic_posture.windows.hardware_ipc import HardwareConnection, PipePoll
+from panasonic_posture.windows.ipc.client import HardwareUIClient
+from panasonic_posture.windows.service.host import HardwareHost, ConsoleIdentity
+from panasonic_posture.windows.service.ipc import HardwareConnection, PipePoll
 from windows_fixture import Simulation
 window.close()
 with TemporaryDirectory() as directory:
@@ -940,7 +940,7 @@ assert window.home.detail.isVisible()
     def test_backend_state_reconciles_once_per_second(self):
         self.run_ui('''
 from panasonic_posture.contracts import TICK_SECONDS
-from panasonic_posture.windows.hardware_client import HardwareUIClient
+from panasonic_posture.windows.ipc.client import HardwareUIClient
 class PollingClient(HardwareUIClient):
     def __init__(self):
         super().__init__()
@@ -1041,7 +1041,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from panasonic_posture.contracts import TICK_SECONDS
-from panasonic_posture.windows.hardware_client import HardwareUIClient
+from panasonic_posture.windows.ipc.client import HardwareUIClient
 from panasonic_posture.windows.ui.unavailable import UnavailableClient
 import os, time
 with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=directory):
@@ -1100,7 +1100,7 @@ translated.close()
         self.run_ui('''
 from qfluentwidgets import fontFamilies, setTheme, Theme
 from PyQt6.QtGui import QFont, QIcon
-from panasonic_posture.windows.ui.resources import data_root
+from panasonic_posture.windows.app.resources import data_root
 assert (window.width(), window.height()) == (500, 660)
 assert window.stackedWidget.count() == 2
 assert not hasattr(window, 'navigationInterface')

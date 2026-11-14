@@ -83,8 +83,8 @@ class WindowsPackagingTests(unittest.TestCase):
                 for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/python._pth',
                              'runtime/pythonw._pth', 'runtime/python-hardware.exe',
                              'runtime/python-hardware._pth',
-                             'app/panasonic_posture/windows/hardware_client.py',
-                             'app/panasonic_posture/windows/update_check.py',
+                             'app/panasonic_posture/windows/ipc/client.py',
+                             'app/panasonic_posture/windows/app/update_check.py',
                              'app/panasonic_posture/windows/ui/update_check.py',
                              'data/assets/lets-note-window-icon.png',
                              'data/assets/work.mmoe.panasonic.PostureManager.ico',
@@ -111,14 +111,24 @@ class WindowsPackagingTests(unittest.TestCase):
                 self.assertFalse(any('Hardware Service' in name for name in names))
                 self.assertFalse(any('/app/panasonic_posture/linux/' in name for name in names))
                 for retired in (
-                    'app/panasonic_posture/windows/ui/demo.py',
-                    'app/panasonic_posture/windows/backend.py',
-                    'app/panasonic_posture/windows/client.py',
-                    'app/panasonic_posture/windows/private_backend.py',
-                    'app/panasonic_posture/windows/simulation.py',
+                    'backend.py',
+                    'private_backend.py',
+                    'simulation.py',
                 ):
                     with self.subTest(retired=retired):
-                        self.assertNotIn(prefix + retired, names)
+                        self.assertFalse(
+                            any(
+                                name.startswith(
+                                    prefix + 'app/panasonic_posture/windows/'
+                                )
+                                and name.endswith('/' + retired)
+                                for name in names
+                            )
+                        )
+                self.assertFalse(
+                    any(name.endswith('/windows/ui/demo.py') for name in names)
+                )
+                self.assertNotIn(prefix + 'app/panasonic_posture/windows/client.py', names)
                 self.assertNotIn(prefix + 'runtime/python311._pth', names)
                 self.assertLess(max(map(len, names)), 240)
                 native = bundle.read(prefix + 'Hardware.cmd').decode('utf-8')

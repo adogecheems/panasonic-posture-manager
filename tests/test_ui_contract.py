@@ -198,7 +198,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_python_entry_and_packaging(self):
         import inspect
-        from panasonic_posture.linux.cli import launch_ui
+        from panasonic_posture.linux.app.cli import launch_ui
         self.assertNotIn('execv', inspect.getsource(launch_ui))
         for name in ('packaging/aur/PKGBUILD', 'packaging/aur/.SRCINFO',
                      'packaging/aur-bin/PKGBUILD.in', 'packaging/deb/control.in',
@@ -302,7 +302,7 @@ import subprocess, sys
 application = app.Application(service_factory=lambda: service)
 assert application.register(None)
 application.ensure_ui()
-remote = subprocess.Popen([sys.executable, '-m', 'panasonic_posture.linux.cli', '--settings'],
+remote = subprocess.Popen([sys.executable, '-m', 'panasonic_posture.linux.app.cli', '--settings'],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 loop = GLib.MainLoop()
 expired = []

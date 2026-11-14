@@ -1,7 +1,7 @@
 """The Windows taskbar must not inherit pythonw's shell identity."""
 import unittest
 
-from panasonic_posture.windows.app_identity import (
+from panasonic_posture.windows.app.identity import (
     APP_USER_MODEL_ID,
     configure_process_identity,
 )

@@ -10,11 +10,11 @@ from panasonic_posture.model import HardwareStatus, Mode, Target
 from panasonic_posture.service.hardware_monitor import HardwareMonitor
 from panasonic_posture.service.ports import SessionOwner
 from panasonic_posture.service.settings_store import SettingsStore
-from panasonic_posture.windows.hardware_host import ConsoleIdentity, HardwareHost, CHANNEL, validate_request
-from panasonic_posture.windows.hardware_pipe import FILE_FLAG_OVERLAPPED, NativePipes, PipePoll
-from panasonic_posture.windows.protocol import ProtocolError
-from panasonic_posture.windows.hardware_ipc import ConsoleGuard, HardwareServer, HardwareConnection, CLIENT_ACCESS
-from panasonic_posture.windows.security import foreground_matches
+from panasonic_posture.windows.service.host import ConsoleIdentity, HardwareHost, CHANNEL, validate_request
+from panasonic_posture.windows.ipc.pipe import FILE_FLAG_OVERLAPPED, NativePipes, PipePoll
+from panasonic_posture.windows.ipc.frames import ProtocolError
+from panasonic_posture.windows.service.ipc import ConsoleGuard, HardwareServer, HardwareConnection, CLIENT_ACCESS
+from panasonic_posture.windows.common.security import foreground_matches
 from panasonic_posture.tasks import InlineExecutor
 try:
     from tests.windows_fixture import Simulation

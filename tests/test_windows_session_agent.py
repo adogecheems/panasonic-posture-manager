@@ -12,13 +12,13 @@ from unittest.mock import patch
 from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
 from panasonic_posture.session.failures import ServiceError, FailureKind
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.session_agent import (
+from panasonic_posture.windows.session.agent import (
     WindowsSessionAgent,
     build_display,
     build_optional_slate,
     main,
 )
-from panasonic_posture.windows.security import WindowsSecurity, AuthenticationError
+from panasonic_posture.windows.common.security import WindowsSecurity, AuthenticationError
 
 
 class Context:
@@ -271,7 +271,7 @@ class SessionAgentTests(unittest.TestCase):
                 )
 
         self.client.session_update = startup_tick
-        with patch('panasonic_posture.windows.session_agent.time.sleep'):
+        with patch('panasonic_posture.windows.session.agent.time.sleep'):
             self.agent.start()
             self.agent.tick(10.)
         self.assertEqual(self.created, [True])
@@ -392,8 +392,8 @@ class SessionAgentTests(unittest.TestCase):
                 raise OSError('LaptopSlateExclusiveAccess=1')
 
         with tempfile.TemporaryDirectory() as directory, \
-                patch('panasonic_posture.windows.convertible_slate.NativeSlateDevice', Denied), \
-                self.assertLogs('panasonic_posture.windows.session_agent', level='WARNING') as logged:
+                patch('panasonic_posture.windows.hardware.convertible_slate.NativeSlateDevice', Denied), \
+                self.assertLogs('panasonic_posture.windows.session.agent', level='WARNING') as logged:
             result = build_optional_slate(self.client, Path(directory) / 'display.json')
         self.assertIsNone(result)
         self.assertIn('continuing without CSM', '\n'.join(logged.output))
@@ -402,7 +402,7 @@ class SessionAgentTests(unittest.TestCase):
         state = StateSnapshot(hardware=None, hardware_status=HardwareStatus.ABSENT)
         client = SimpleNamespace(get_state=lambda: state)
         with tempfile.TemporaryDirectory() as directory, patch(
-            'panasonic_posture.windows.display.WindowsDisplay'
+            'panasonic_posture.windows.session.display_backend.WindowsDisplay'
         ) as display:
             build_display(client, Path(directory) / 'display.json')
         query = display.call_args.kwargs['hardware_query']
@@ -424,12 +424,12 @@ class SessionAgentTests(unittest.TestCase):
                 return 'snapshot'
 
         with tempfile.TemporaryDirectory() as directory, \
-                patch('panasonic_posture.windows.convertible_slate.NativeSlateDevice', Device), \
-                patch('panasonic_posture.windows.convertible_slate.SlateNotifier', Notifier):
+                patch('panasonic_posture.windows.hardware.convertible_slate.NativeSlateDevice', Device), \
+                patch('panasonic_posture.windows.hardware.convertible_slate.SlateNotifier', Notifier):
             result = build_optional_slate(Client(), Path(directory) / 'display.json')
         self.assertIsInstance(created['device'], Device)
         self.assertIsInstance(result, Notifier)
-        from panasonic_posture.windows.session_display import SessionHardwareQuery
+        from panasonic_posture.windows.session.display import SessionHardwareQuery
         self.assertIsInstance(created['query'], SessionHardwareQuery)
 
 
@@ -445,11 +445,11 @@ class NativeAgentTokenTests(unittest.TestCase):
         agent = SimpleNamespace(start=lambda: events.append('start'), tick=tick,
                                 close=lambda: events.append('restore'))
         with tempfile.TemporaryDirectory() as directory:
-            with patch('panasonic_posture.windows.session_agent.WindowsSessionAgent', return_value=agent), \
-                 patch('panasonic_posture.windows.session_stop.NativeStopSignal.open', return_value=signal), \
-                 patch('panasonic_posture.windows.diagnostics.configure_logging'), \
-                 patch('panasonic_posture.windows.session_agent.sys.platform', 'win32'), \
-                 patch('panasonic_posture.windows.session_agent.time.sleep'):
+            with patch('panasonic_posture.windows.session.agent.WindowsSessionAgent', return_value=agent), \
+                 patch('panasonic_posture.windows.common.stop_event.NativeStopSignal.open', return_value=signal), \
+                 patch('panasonic_posture.windows.common.diagnostics.configure_logging'), \
+                 patch('panasonic_posture.windows.session.agent.sys.platform', 'win32'), \
+                 patch('panasonic_posture.windows.session.agent.time.sleep'):
                 result = main(['--journal', str(Path(directory) / 'display.json'), '--stop-event', 'fixture'])
         self.assertEqual(result, 0)
         self.assertEqual(events, ['start', 'tick', 'restore', 'event-close'])

@@ -721,7 +721,7 @@ class PackageAcceptance:
             env["PANASONIC_POSTURE_UI_DIR"] = str(ui_dir.parent / "ui")
             code = (
                 "import panasonic_posture\n"
-                "from panasonic_posture.linux import protocol\n"
+                "from panasonic_posture.linux.contracts import protocol\n"
                 "from panasonic_posture.linux.ui.common import DATA_ROOT\n"
                 f"assert panasonic_posture.__version__ == {self.version!r}\n"
                 f"assert protocol.NAME == {INTERFACE!r}\n"

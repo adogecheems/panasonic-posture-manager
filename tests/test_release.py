@@ -151,7 +151,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             "packaging/windows/msi/main-path-actions.js",
             "packaging/windows/msi/Setup.zh-CN.wxl",
             "packaging/windows/msi/Setup.en-US.wxl",
-            "src/panasonic_posture/linux/resources/dbus.xml",
+            "src/panasonic_posture/linux/contracts/resources/dbus.xml",
             "MAINTENANCE.md",
         ):
             with self.subTest(relative=relative):

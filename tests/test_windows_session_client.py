@@ -17,18 +17,18 @@ from panasonic_posture.session.journal_store import Journal
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.session.failures import ServiceError, FailureKind
 from panasonic_posture.tasks import InlineExecutor
-from panasonic_posture.windows.display import Panel, WindowsDisplay
-from panasonic_posture.windows.hardware_ipc import (
+from panasonic_posture.windows.session.display_backend import Panel, WindowsDisplay
+from panasonic_posture.windows.service.ipc import (
     HardwareConnection, HardwareOperationError, validated_hardware_state, PipePoll,
 )
-from panasonic_posture.windows.hardware_host import CHANNEL, ConsoleIdentity, HardwareHost
+from panasonic_posture.windows.service.host import CHANNEL, ConsoleIdentity, HardwareHost
 try:
     from tests.windows_fixture import SimulatedInput
 except ModuleNotFoundError:
     from windows_fixture import SimulatedInput
-from panasonic_posture.windows.session_client import WindowsSessionClient
-from panasonic_posture.windows.session_agent import WindowsSessionAgent
-from panasonic_posture.windows.hardware_protocol import ProtocolError
+from panasonic_posture.windows.session.client import WindowsSessionClient
+from panasonic_posture.windows.session.agent import WindowsSessionAgent
+from panasonic_posture.windows.ipc.protocol import ProtocolError
 
 
 def state(instance='native-one'):

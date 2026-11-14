@@ -16,6 +16,23 @@ WINDOWS_PREFIXES = (
     "panasonic_posture.windows",
 )
 LINUX_PREFIXES = ("panasonic_posture.linux",)
+LINUX_DOMAIN_DEPENDENCIES = {
+    "app": frozenset({"app", "ui"}),
+    "contracts": frozenset({"contracts"}),
+    "hardware": frozenset({"hardware", "contracts"}),
+    "service": frozenset({"service", "contracts", "hardware"}),
+    "session": frozenset({"session", "contracts"}),
+    "ui": frozenset({"ui", "contracts", "session"}),
+}
+WINDOWS_DOMAIN_DEPENDENCIES = {
+    "app": frozenset({"app", "common"}),
+    "common": frozenset({"common"}),
+    "hardware": frozenset({"hardware", "common", "ipc"}),
+    "ipc": frozenset({"ipc", "common"}),
+    "service": frozenset({"service", "common", "hardware", "ipc"}),
+    "session": frozenset({"session", "common", "hardware", "ipc"}),
+    "ui": frozenset({"ui", "app", "common", "ipc"}),
+}
 
 
 def _module_parts(path: Path) -> tuple[list[str], bool]:
@@ -53,9 +70,11 @@ def _imported_modules(path: Path) -> set[str]:
             imported.add(base)
             if node.module is None:
                 imported.update(
-                    f"{base}.{alias.name}"
+                    candidate
                     for alias in node.names
-                    if not (base == PACKAGE and alias.name == "__version__")
+                    if _package_module_exists(
+                        candidate := f"{base}.{alias.name}"
+                    )
                 )
     return imported
 
@@ -111,6 +130,44 @@ class PlatformImportTests(unittest.TestCase):
                     violations.append(f"{path.relative_to(SOURCE)} imports {module}")
         self.assertEqual(violations, [])
 
+    def test_windows_domains_follow_the_dependency_direction(self):
+        violations: list[str] = []
+        windows = PACKAGE_ROOT / "windows"
+        for path in _python_files(windows):
+            parts = path.relative_to(windows).parts
+            if len(parts) == 1:
+                continue
+            source = parts[0]
+            allowed = WINDOWS_DOMAIN_DEPENDENCIES[source]
+            for module in _imported_modules(path):
+                if not module.startswith("panasonic_posture.windows."):
+                    continue
+                target = module.split(".")[2]
+                if target not in allowed:
+                    violations.append(
+                        f"{path.relative_to(SOURCE)} imports {module}"
+                    )
+        self.assertEqual(violations, [])
+
+    def test_linux_domains_follow_the_dependency_direction(self):
+        violations: list[str] = []
+        linux = PACKAGE_ROOT / "linux"
+        for path in _python_files(linux):
+            parts = path.relative_to(linux).parts
+            if len(parts) == 1:
+                continue
+            source = parts[0]
+            allowed = LINUX_DOMAIN_DEPENDENCIES[source]
+            for module in _imported_modules(path):
+                if not module.startswith("panasonic_posture.linux."):
+                    continue
+                target = module.split(".")[2]
+                if target not in allowed:
+                    violations.append(
+                        f"{path.relative_to(SOURCE)} imports {module}"
+                    )
+        self.assertEqual(violations, [])
+
     def test_all_package_imports_resolve_to_source_modules(self):
         violations: list[str] = []
         for path in _python_files(PACKAGE_ROOT):
@@ -125,9 +182,40 @@ class PlatformImportTests(unittest.TestCase):
         self.assertTrue(windows)
         self.assertTrue(linux)
         self.assertFalse(windows & linux)
-        self.assertTrue((PACKAGE_ROOT / "windows" / "hardware_runtime.py").is_file())
+        self.assertTrue(
+            (PACKAGE_ROOT / "windows" / "service" / "runtime.py").is_file()
+        )
+        for domain in (
+            "app",
+            "common",
+            "hardware",
+            "ipc",
+            "service",
+            "session",
+            "ui",
+        ):
+            with self.subTest(domain=domain):
+                self.assertTrue((PACKAGE_ROOT / "windows" / domain).is_dir())
+        for domain in (
+            "app",
+            "contracts",
+            "hardware",
+            "service",
+            "session",
+            "ui",
+        ):
+            with self.subTest(linux_domain=domain):
+                self.assertTrue((PACKAGE_ROOT / "linux" / domain).is_dir())
         self.assertTrue((PACKAGE_ROOT / "windows" / "ui" / "app.py").is_file())
         self.assertTrue((PACKAGE_ROOT / "linux" / "ui" / "app.py").is_file())
+        self.assertEqual(
+            {path.name for path in (PACKAGE_ROOT / "windows").glob("*.py")},
+            {"__init__.py"},
+        )
+        self.assertEqual(
+            {path.name for path in (PACKAGE_ROOT / "linux").glob("*.py")},
+            {"__init__.py"},
+        )
         self.assertFalse(list((PACKAGE_ROOT / "ui").rglob("*.py")))
         self.assertFalse(list((PACKAGE_ROOT / "fluent").rglob("*.py")))
         self.assertFalse(list((PACKAGE_ROOT / "hardware").rglob("*.py")))
@@ -139,7 +227,7 @@ class PlatformImportTests(unittest.TestCase):
         self.assertEqual(
             project["project"]["scripts"],
             {
-                "panasonic-posture-manager": "panasonic_posture.linux.cli:launch_ui",
+                "panasonic-posture-manager": "panasonic_posture.linux.app.cli:launch_ui",
                 "panasonic-posture-manager-probe": (
                     "panasonic_posture.linux.hardware.probe:main"
                 ),
@@ -147,10 +235,16 @@ class PlatformImportTests(unittest.TestCase):
         )
         self.assertEqual(
             project["tool"]["setuptools"]["package-data"],
-            {"panasonic_posture.linux.resources": ["*.xml"]},
+            {"panasonic_posture.linux.contracts.resources": ["*.xml"]},
         )
         self.assertTrue(
-            (PACKAGE_ROOT / "linux" / "resources" / "dbus.xml").is_file()
+            (
+                PACKAGE_ROOT
+                / "linux"
+                / "contracts"
+                / "resources"
+                / "dbus.xml"
+            ).is_file()
         )
 
 

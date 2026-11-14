@@ -38,7 +38,7 @@ from typing import Any
 
 from ...model import SensorReading, SensorInfo
 from ..contracts import SensorSource
-from ..protocol import IIO_NO_SAMPLE_SECONDS, SENSOR_RETRY_SECONDS
+from ..contracts.protocol import IIO_NO_SAMPLE_SECONDS, SENSOR_RETRY_SECONDS
 from .sensor_sources import (
     DEFAULT_ACCEL_NAME,
     IIO_DEVICE_GLOB,

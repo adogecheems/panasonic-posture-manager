@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from panasonic_posture.windows.activation import WindowActivation
-from panasonic_posture.windows.startup import (
+from panasonic_posture.windows.app.activation import WindowActivation
+from panasonic_posture.windows.app.startup import (
     initialize_default_startup, LoginStartup, StartupError, UnavailableStartup, startup_command,
 )
 
@@ -199,7 +199,7 @@ class LoginStartupTests(unittest.TestCase):
             def ensure_default_enabled(self):
                 raise StartupError('startup-entry-conflict')
 
-        with self.assertLogs('panasonic_posture.windows.startup', level='WARNING') as logs:
+        with self.assertLogs('panasonic_posture.windows.app.startup', level='WARNING') as logs:
             initialize_default_startup(Failing())
         self.assertIn('startup-entry-conflict', logs.output[0])
 
@@ -227,7 +227,7 @@ class WindowActivationTests(unittest.TestCase):
     def test_path_or_permission_failure_is_not_mistaken_for_an_existing_ui(self):
         with tempfile.TemporaryDirectory() as directory:
             activation = WindowActivation(Path(directory))
-            with patch('panasonic_posture.windows.instance.os.open', side_effect=PermissionError('denied')):
+            with patch('panasonic_posture.windows.common.instance.os.open', side_effect=PermissionError('denied')):
                 with self.assertRaises(PermissionError): activation.acquire()
             self.assertFalse(activation.request.exists())
 
