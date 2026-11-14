@@ -491,7 +491,9 @@ class HardwareHandoffTests(unittest.TestCase):
 
         self.assertIn(('hold',), events)
         self.assertNotIn(('restore',), events)
-        self.assertTrue(runtime.retry_display)
+        self.assertFalse(runtime.retry_display)
+        self.assertIsNotNone(runtime._transient_since)
+        self.assertFalse(any(event[0] == 'feedback' for event in events))
 
     def test_lease_keepalive_refreshes_the_idle_lease_channel(self):
         state = StateSnapshot(

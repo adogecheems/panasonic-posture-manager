@@ -46,11 +46,20 @@ class WakeEvent:
         """
         if self.handle is not None:
             raise OSError('hardware wake event is already open')
-        attrs = SecurityAttributes(C.sizeof(SecurityAttributes), None, False)
-        handle = self.kernel.CreateEventW(C.byref(attrs), False, False, self.name)
-        if not handle:
-            raise C.WinError(C.get_last_error())
-        self.handle = handle
+        # A NULL lpSecurityDescriptor selects the creator token's default
+        # DACL; it does not grant the documented cross-session signal access.
+        descriptor = HANDLE()
+        self.security._check(
+            self.security.advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                'D:NO_ACCESS_CONTROL', 1, C.byref(descriptor), None))
+        try:
+            attrs = SecurityAttributes(C.sizeof(SecurityAttributes), descriptor, False)
+            handle = self.kernel.CreateEventW(C.byref(attrs), False, False, self.name)
+            if not handle:
+                raise C.WinError(C.get_last_error())
+            self.handle = handle
+        finally:
+            self.kernel.LocalFree(descriptor)
 
     def open(self) -> None:
         if self.handle is not None:

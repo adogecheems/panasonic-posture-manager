@@ -1,10 +1,12 @@
 """Hardware-service composition: ordering, physical gating and cleanup."""
 import time
+import threading
 import unittest
 from unittest.mock import patch
 
 from panasonic_posture.model import HardwareStatus
 from panasonic_posture.windows.service.runtime import HardwareRuntime, RESUME_GAP_SECONDS
+from panasonic_posture.windows.service.launch import NativeSessionLauncher
 
 
 class Switch:
@@ -125,6 +127,54 @@ class Supervisor:
 
 
 class HardwareRuntimeTests(unittest.TestCase):
+    def test_stop_deadline_does_not_wait_for_the_launcher_lock_or_unpin_live_work(self):
+        entered, release, stopped = threading.Event(), threading.Event(), threading.Event()
+        events, result = [], {}
+
+        class API:
+            def require_system(self):
+                pass
+            def console_token(self):
+                entered.set()
+                release.wait()
+                return None, None
+
+        def run():
+            engine, trusted = Engine(events), Runtime(events)
+            launcher = NativeSessionLauncher(trusted, api=API())
+            runtime = HardwareRuntime(
+                engine=engine, switch=Switch(events), sensor=Sensor(events), runtime=trusted,
+                server_factory=lambda admission: Server(events, engine, admission),
+                launcher_factory=lambda: launcher, stop_timeout=.02,
+            )
+            result.update(runtime=runtime, trusted=trusted, launcher=launcher)
+            try:
+                runtime.start()
+                runtime.poll()
+                entered.wait(2)
+                runtime.close()
+            except OSError as error:
+                result['error'] = error
+            finally:
+                stopped.set()
+
+        caller = threading.Thread(target=run)
+        caller.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            self.assertTrue(stopped.wait(1), 'service stop waited for a blocked native query')
+            self.assertIn('error', result)
+            self.assertFalse(result['trusted'].closed)
+            self.assertIn('server-close', events)
+            self.assertIn('switch-close', events)
+        finally:
+            release.set()
+            caller.join(2)
+        self.assertFalse(caller.is_alive())
+        result['runtime']._cleanup_task.result(timeout=2)
+        self.assertTrue(result['launcher'].closed)
+        self.assertTrue(result['trusted'].closed)
+
     def make(self, *, value=False, status=HardwareStatus.OK, clock=time.monotonic):
         events = []
         switch, sensor, engine, runtime = Switch(events, value, status), Sensor(events), Engine(events), Runtime(events)

@@ -12,17 +12,17 @@ Startup order is part of the safety contract:
 2. start the WinRT sensor worker;
 3. only then create the RPC endpoint and the trusted-session supervisor.
 
-The CSM is an output only.  Before the first valid ETW event the physical
-state is unknown, so the host accepts only not-ready session heartbeats and
-no display or CSM transition may be confirmed.  The desktop agent still
-starts before that event so journal recovery and display setup do not race
-the first physical posture change.  A later ETW failure revokes admission
-again; the host retries the source instead of reading the indicator it may
-have written.
+The CSM is an output only. Generic hardware requires the first valid ETW
+event before display admission; explicit profiles may use their one-time
+read-only startup baseline while ETW is healthy. Until admission opens, the
+host accepts only not-ready session heartbeats. The desktop agent may start
+before admission, but cannot confirm a display or CSM transition. A later
+ETW failure revokes admission without re-reading a software-owned indicator.
 """
 from __future__ import annotations
 
 from collections.abc import Callable
+from concurrent.futures import Future
 import logging
 import time
 from typing import TYPE_CHECKING, Protocol
@@ -74,6 +74,7 @@ class SessionLifecycle(Protocol):
     def poll(self) -> None: ...
     def request_stop(self) -> None: ...
     def close(self) -> None: ...
+    def defer_close(self, after_close: Callable[[], None]) -> Future: ...
 
 
 class ServerLifecycle(Protocol):
@@ -148,6 +149,7 @@ class HardwareRuntime:
         self._bootstrap_until: float | None = None
         self._last_poll_at: float | None = None
         self._wake_signature: tuple | None = None
+        self._cleanup_task: Future | None = None
         self.started = self.closed = False
 
     def admitted(self) -> bool:
@@ -264,7 +266,21 @@ class HardwareRuntime:
             except BaseException as error:
                 errors.append(error)
 
-        for resource in (self.launcher, self.server, self.sensor, self.switch, self.runtime):
+        if supervisor is not None and not supervisor.closed:
+            # Never reacquire the launcher's lock on the owner loop after a
+            # timed-out WTS/create operation. Its worker retains the runtime
+            # pins and reaps late children before releasing the installation.
+            resources = (self.server, self.sensor, self.switch)
+            try:
+                self._cleanup_task = supervisor.defer_close(self.runtime.close)
+                self._cleanup_task.add_done_callback(self._deferred_close_done)
+            except BaseException as error:
+                # If scheduling itself fails, retain pins rather than racing
+                # native creation; still close the hardware and RPC resources.
+                errors.append(error)
+        else:
+            resources = (self.launcher, self.server, self.sensor, self.switch, self.runtime)
+        for resource in resources:
             if resource is None:
                 continue
             try:
@@ -285,6 +301,13 @@ class HardwareRuntime:
             errors.append(error)
         if errors:
             raise OSError('hardware runtime cleanup is incomplete') from errors[0]
+
+    @staticmethod
+    def _deferred_close_done(task: Future) -> None:
+        try:
+            task.result()
+        except Exception:
+            log.exception('deferred session cleanup failed; installation pins retained')
 
     @classmethod
     def installed(

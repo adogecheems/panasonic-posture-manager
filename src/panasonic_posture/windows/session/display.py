@@ -39,12 +39,19 @@ def transient_context_blip(context: SessionContext) -> bool:
         state = snapshot()
     except Exception:  # noqa: BLE001 - snapshot failures stay conservative
         return False
-    if not isinstance(state, dict) or state.get("suspended") is True:
+    if (not isinstance(state, dict) or state.get('suspended') is not False
+            or state.get('error') is not None or type(state.get('display_on')) is not bool
+            or state.get('control_available') is not False
+            or state.get('presence_stale') is not True):
         return False
     presence = state.get("presence")
     if not isinstance(presence, dict):
         return False
-    return presence.get("active") is True and presence.get("locked") is False
+    session = presence.get('session_id')
+    console = presence.get('console_session_id')
+    return (type(session) is int and 0 < session < 0xffffffff
+            and type(console) is int and console == session
+            and presence.get('active') is True and presence.get('locked') is False)
 
 
 class SlatePosture(Protocol):
@@ -326,6 +333,8 @@ class QualifiedRefresh:
 
     def _require_current(self, expected: StateSnapshot) -> StateSnapshot:
         if not self.context.control_available():
+            if transient_context_blip(self.context):
+                raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, TRANSIENT_CONTROL_DETAIL)
             raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-control-unavailable')
         current = self.current()
         if (current.instance != expected.instance or current.generation != expected.generation or

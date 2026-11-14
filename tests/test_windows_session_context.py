@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from panasonic_posture.tasks import InlineExecutor
+from panasonic_posture.windows.session.display import transient_context_blip
 from panasonic_posture.windows.common.security import ExtendedInfo, HANDLE
 from panasonic_posture.windows.session.context import (
     SessionPresence, WindowsSessionContext, NativePowerSource, NativeSessionPresence,
@@ -38,6 +39,33 @@ class ContextTests(unittest.TestCase):
             clock=lambda: self.now, executor=kwargs.pop('executor', InlineExecutor()), **kwargs)
         self.addCleanup(context.close)
         return context
+
+    def test_only_stale_presence_is_a_transient_control_loss(self):
+        context = self.context()
+        context.poll()
+        self.assertFalse(transient_context_blip(context))
+        self.now += 1.1
+        self.assertFalse(context.control_available())
+        self.assertTrue(transient_context_blip(context))
+        context.poll()
+        self.sources[-1].error = 'fixture observer failure'
+        self.assertFalse(context.control_available())
+        self.assertFalse(transient_context_blip(context))
+        self.sources[-1].error = None
+        self.presence = SessionPresence(1, 2, True, False)
+        self.now += .6
+        context.poll()
+        self.assertFalse(context.control_available())
+        self.assertFalse(transient_context_blip(context))
+        self.presence = SessionPresence(1, 1, True, True)
+        self.now += .6
+        context.poll()
+        self.assertFalse(transient_context_blip(context))
+        self.presence = SessionPresence(1, 1, True, False)
+        self.now += .6
+        context.poll()
+        self.sources[-1].callback('suspend', None)
+        self.assertFalse(transient_context_blip(context))
 
     def test_only_fresh_unlocked_local_console_and_known_on_display_are_attended(self):
         context = self.context()

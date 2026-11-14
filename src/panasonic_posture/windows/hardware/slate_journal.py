@@ -26,25 +26,27 @@ class SlateJournal:
         self.path = Path(path)
         self._clock = clock
 
-    def load(self) -> SlateLease | None:
+    def load(self, *, quarantine: bool = True) -> SlateLease | None:
         try:
             document = json.loads(self.path.read_text(encoding='utf-8'))
         except FileNotFoundError:
             return None
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-            self._quarantine(error)
+        except (ValueError, RecursionError) as error:
+            if quarantine:
+                self._quarantine(error)
             return None
         try:
             if not isinstance(document, dict) or set(document) != {
                     'version', 'original', 'desired'}:
                 raise ValueError('unexpected slate journal fields')
-            if document['version'] != VERSION:
+            if type(document['version']) is not int or document['version'] != VERSION:
                 raise ValueError(f"unsupported slate journal version {document['version']!r}")
             original, desired = document['original'], document['desired']
             if type(original) is not bool or type(desired) is not bool:
                 raise ValueError('slate journal states must be booleans')
         except ValueError as error:
-            self._quarantine(error)
+            if quarantine:
+                self._quarantine(error)
             return None
         return SlateLease(original, desired)
 
@@ -86,7 +88,7 @@ class SlateJournal:
             return
         except OSError as error:
             log.warning('cannot remove slate journal %s: %s', self.path, error)
-            return
+            raise
         self._fsync_directory()
 
     def _quarantine(self, reason: BaseException | str) -> None:
@@ -104,6 +106,7 @@ class SlateJournal:
             )
         except OSError as error:
             log.warning('slate journal %s is invalid (%s): %s', self.path, reason, error)
+            raise
 
     def _fsync_directory(self) -> None:
         try:

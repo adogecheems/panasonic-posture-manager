@@ -8,6 +8,7 @@ forced termination is reserved for failure or an expired restoration grace.
 from collections.abc import Callable
 from concurrent.futures import Executor, Future
 from dataclasses import dataclass
+import logging
 import threading
 import time
 from typing import Protocol
@@ -18,6 +19,7 @@ from panasonic_posture.windows.common.identity import ConsoleIdentity, ConsoleUs
 PROBE_SECONDS = .5
 STOP_GRACE_SECONDS = 5.
 RESULT_MAX_AGE = 5.
+log = logging.getLogger(__name__)
 
 
 class ManagedChild(Protocol):
@@ -60,6 +62,7 @@ class SessionSupervisor:
         self.closed = self.stopping = self._retiring = False
         self._stop_at = self._next = 0.
         self._task: _Task | None = None
+        self._cleanup_task: Future | None = None
 
     def _owner_only(self) -> None:
         if threading.get_ident() != self._owner:
@@ -130,7 +133,7 @@ class SessionSupervisor:
 
     def poll(self) -> None:
         self._owner_only()
-        if self.closed:
+        if self.closed or self._cleanup_task is not None:
             return
         if self._task is not None:
             if not self._task.future.done():
@@ -176,3 +179,38 @@ class SessionSupervisor:
         if not self.closed:
             self.request_stop()
             raise OSError('continue polling until session shutdown completes')
+
+    def defer_close(self, after_close: Callable[[], None]) -> Future:
+        """Finish on the launch worker when the owner's stop deadline expires.
+
+        Keep installation pins alive until even a late suspended child is
+        reaped. No late completion may register or resume a session after this
+        handoff; the owner can close its RPC endpoint immediately.
+        """
+        self._owner_only()
+        if self._cleanup_task is not None:
+            return self._cleanup_task
+        self.request_stop()
+        task, child = self._task, self.child
+
+        def finish() -> None:
+            late_child = None
+            if task is not None:
+                try:
+                    value = task.future.result()
+                    if task.kind == 'create':
+                        late_child = value
+                except Exception:
+                    # The launcher retains partial create resources itself.
+                    log.debug('native lifecycle task failed during deferred stop', exc_info=True)
+            for current in (child, late_child):
+                if current is not None and not current.closed:
+                    current.close()
+            self.launcher.close()
+            after_close()
+            self.closed = True
+
+        self._cleanup_task = self.executor.submit(finish)
+        if self._owned_executor:
+            self.executor.shutdown(wait=False)
+        return self._cleanup_task

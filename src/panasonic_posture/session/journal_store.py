@@ -7,8 +7,9 @@ properties matter:
 
 * the write is atomic and durable (temporary file, fsync file and directory,
   private permissions where supported, ``os.replace``);
-* a corrupt or schema-invalid journal never crashes the session service: it
-  is renamed to ``<name>.corrupt-<ts>`` and treated as absent.
+* a corrupt or schema-invalid journal is treated as absent only after it has
+  been renamed to ``<name>.corrupt-<ts>``. Storage failures propagate so an
+  unreadable or unisolated record cannot be replaced by new ownership.
 
 Platform packages choose the default location and instantiate this store with
 an explicit path.  This module deliberately has no platform-default path.
@@ -49,16 +50,10 @@ class Journal:
         except UnicodeDecodeError as error:
             self._quarantine(error)
             return None
-        except IsADirectoryError:
-            log.warning("display journal %s is a directory; ignoring", self.path)
-            return None
-        except OSError as error:
-            log.warning("cannot read display journal %s: %s", self.path, error)
-            return None
         try:
             document = json.loads(raw)
             return _validate(document)
-        except (TypeError, ValueError, json.JSONDecodeError) as error:
+        except (TypeError, ValueError, RecursionError) as error:
             self._quarantine(error)
             return None
 
@@ -96,7 +91,7 @@ class Journal:
             return
         except OSError as error:
             log.warning("cannot remove display journal %s: %s", self.path, error)
-            return
+            raise
         _fsync_directory(self.path.parent)
 
     def _quarantine(self, reason: BaseException | str) -> None:
@@ -116,13 +111,14 @@ class Journal:
                 reason,
                 target.name,
             )
-        except OSError as error:  # pragma: no cover - best effort quarantine
+        except OSError as error:
             log.warning(
                 "display journal %s is invalid (%s): %s",
                 self.path,
                 reason,
                 error,
             )
+            raise
 
 
 def _fsync_directory(directory: Path) -> None:

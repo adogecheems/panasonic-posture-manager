@@ -14,6 +14,21 @@ from panasonic_posture.model import SensorReading
 
 
 class SlateBootstrapTests(unittest.TestCase):
+    def test_corrupt_recovery_record_is_only_read_during_privileged_bootstrap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            users = Path(directory)
+            journal = (users / 'fixture-user' / 'AppData' / 'Local'
+                       / 'PanasonicPostureManager' / 'native-display-slate.json')
+            journal.parent.mkdir(parents=True)
+            journal.write_bytes(b'{')
+            device = Mock()
+            with self.assertRaises(SlateError):
+                read_bootstrap_slate_state(users_root=users, device_factory=device)
+            device.assert_not_called()
+            self.assertTrue(journal.exists())
+            self.assertEqual(journal.read_bytes(), b'{')
+            self.assertEqual(list(journal.parent.iterdir()), [journal])
+
     def test_reads_the_raw_indicator_when_the_previous_run_is_clean(self):
         closed = []
 

@@ -281,6 +281,8 @@ class WindowsSessionContext:
             now = self.clock()
             return dict(unattended=self._unattended_at(now), display_on=self._display,
                         control_available=not self._unavailable_at(now),
+                        presence_stale=(self._presence is not None
+                                        and now - self._checked > PRESENCE_MAX_AGE),
                         suspended=self._suspended, error=self.error or getattr(self._power, 'error', None),
                         presence=asdict(self._presence) if self._presence is not None else None)
 

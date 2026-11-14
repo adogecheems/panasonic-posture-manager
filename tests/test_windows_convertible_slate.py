@@ -103,6 +103,28 @@ def healthy(value=False):
 
 
 class SlateNotifierTests(unittest.TestCase):
+    def test_corrupt_record_is_not_isolated_before_the_physical_gate_is_healthy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'slate.json'
+            path.write_bytes(b'{')
+            device = FakeSlateDevice(False)
+            status = [HardwareStatus.ABSENT]
+            notifier = SlateNotifier(device, SlateJournal(path),
+                                     hardware_query=lambda: (False, status[0]))
+            self.addCleanup(notifier.close)
+            self.assertTrue(path.exists())
+            notifier.release()  # An idempotent release must also remain read-only.
+            with self.assertRaises(SlateError):
+                notifier.sync_mode('tent')
+            self.assertEqual(path.read_bytes(), b'{')
+            self.assertEqual(device.sets, [])
+            status[0] = HardwareStatus.OK
+            notifier.sync_mode('tent')
+            isolated = list(path.parent.glob('slate.json.corrupt-*'))
+            self.assertEqual(len(isolated), 1)
+            self.assertEqual(isolated[0].read_bytes(), b'{')
+            self.assertTrue(device.state)
+
     def test_postures_call_an_idempotent_set_and_track_the_temporary_lease(self):
         device = FakeSlateDevice(False)
         notifier = SlateNotifier(device, hardware_query=healthy())
@@ -659,8 +681,9 @@ class QualifiedDisplayTests(unittest.TestCase):
         display, context = FakeDisplay(), FakeContext()
         context.available = False
         context.snapshot = lambda: dict(
-            suspended=False,
-            presence=dict(active=True, locked=False),
+            suspended=False, error=None, display_on=True, control_available=False,
+            presence_stale=True,
+            presence=dict(session_id=1, console_session_id=1, active=True, locked=False),
         )
         slate = mock.Mock()
         proxy = QualifiedDisplay(display, context, slate, settle=lambda delay: None)
@@ -704,7 +727,9 @@ class QualifiedSessionClientTests(unittest.TestCase):
 
     def test_stale_presence_blip_is_transient_and_does_not_report_lost(self):
         client, inner = self.make_client(
-            lambda: dict(suspended=False, presence=dict(active=True, locked=False)),
+            lambda: dict(suspended=False, error=None, display_on=True, control_available=False,
+                         presence_stale=True,
+                         presence=dict(session_id=1, console_session_id=1, active=True, locked=False)),
         )
         with self.assertRaises(ServiceError) as caught:
             client.get_state()

@@ -94,6 +94,38 @@ class SupervisorTests(unittest.TestCase):
         self.assertLess(self.events.index(('register', None)), self.events.index(('stop', peer)))
         self.assertLess(self.events.index(('stop', peer)), self.events.index(('close', peer)))
 
+    def test_deferred_close_reaps_late_create_before_releasing_runtime_pins(self):
+        self.worker = ManualExecutor()
+        supervisor = SessionSupervisor(self.launcher, lambda peer: self.events.append(('register', peer)),
+                                       clock=lambda: self.now, executor=self.worker)
+        supervisor.poll()
+        self.worker.complete()
+        supervisor.poll()
+        pending = supervisor.defer_close(lambda: self.events.append(('unpin', None)))
+        self.assertFalse(pending.done())
+        self.worker.complete()  # The create already in flight may finish late.
+        child = self.launcher.children[0]
+        self.assertFalse(child.resumed)
+        self.worker.complete()  # Serialized cleanup runs after that create.
+        pending.result()
+        self.assertTrue(child.closed)
+        self.assertTrue(supervisor.closed)
+        self.assertLess(self.events.index(('close', child.identity)), self.events.index(('unpin', None)))
+        self.assertNotIn(('register', child.identity), self.events)
+
+    def test_failed_deferred_cleanup_keeps_the_runtime_pinned(self):
+        self.worker = ManualExecutor()
+        supervisor = SessionSupervisor(self.launcher, lambda peer: None,
+                                       clock=lambda: self.now, executor=self.worker)
+        self.launcher.close = lambda: (_ for _ in ()).throw(OSError('fixture close failed'))
+        unpinned = []
+        pending = supervisor.defer_close(lambda: unpinned.append(True))
+        self.worker.complete()
+        with self.assertRaises(OSError):
+            pending.result()
+        self.assertEqual(unpinned, [])
+        self.assertFalse(supervisor.closed)
+
     def test_user_switch_reaps_previous_child_before_creating_replacement(self):
         supervisor = self.start()
         self.until(lambda: supervisor.child is not None and supervisor.child.resumed)

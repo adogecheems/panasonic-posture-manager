@@ -6,6 +6,7 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from panasonic_posture.session.journal_store import JOURNAL_VERSION, Journal
 
@@ -80,6 +81,28 @@ class JournalTests(unittest.TestCase):
         self.assertFalse(self.path.exists())
         self.journal.clear()  # idempotent
 
+    def test_read_failure_does_not_hide_existing_ownership(self):
+        self.journal.save(document())
+        with patch.object(Path, 'read_text', side_effect=PermissionError('fixture denied')):
+            with self.assertRaises(OSError):
+                self.journal.load()
+        self.assertEqual(self.journal.load(), document())
+
+    def test_failed_quarantine_is_not_reported_as_an_absent_journal(self):
+        self.directory.mkdir(parents=True)
+        self.path.write_bytes(b'{')
+        with patch.object(Path, 'replace', side_effect=PermissionError('fixture denied')):
+            with self.assertRaises(OSError):
+                self.journal.load()
+        self.assertEqual(self.path.read_bytes(), b'{')
+
+    def test_failed_clear_keeps_ownership_retryable(self):
+        self.journal.save(document())
+        with patch.object(Path, 'unlink', side_effect=PermissionError('fixture denied')):
+            with self.assertRaises(OSError):
+                self.journal.clear()
+        self.assertEqual(self.journal.load(), document())
+
     # -- corruption isolation --------------------------------------------
 
     def test_non_utf8_journal_is_quarantined_and_can_be_replaced(self):
@@ -102,6 +125,13 @@ class JournalTests(unittest.TestCase):
         quarantined = self.directory / "display.json.corrupt-1234"
         self.assertTrue(quarantined.is_file())
         self.assertEqual(quarantined.read_text(encoding="utf-8"), "not json at all")
+
+    def test_deeply_nested_json_is_quarantined(self):
+        self.directory.mkdir(parents=True)
+        self.path.write_text('[' * 20000 + '0' + ']' * 20000, encoding='utf-8')
+        self.assertIsNone(self.journal.load())
+        self.assertFalse(self.path.exists())
+        self.assertTrue((self.directory / 'display.json.corrupt-1234').is_file())
 
     def test_non_object_json_is_quarantined(self):
         self.directory.mkdir(parents=True)
@@ -186,7 +216,8 @@ class JournalTests(unittest.TestCase):
         self.path.write_text(json.dumps(document()), encoding="utf-8")
         os.chmod(self.path, 0o000)
         try:
-            self.assertIsNone(self.journal.load())
+            with self.assertRaises(PermissionError):
+                self.journal.load()
         finally:
             os.chmod(self.path, 0o600)
         self.assertTrue(self.path.exists())

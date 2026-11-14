@@ -39,7 +39,9 @@ def pending_slate_leases(users_root: Path | None = None) -> tuple[SlateLease, ..
         )
         try:
             if journal.is_file():
-                lease = SlateJournal(journal).load()
+                # Bootstrap is read-only even for malformed user records;
+                # isolation belongs to the qualified session's recovery path.
+                lease = SlateJournal(journal).load(quarantine=False)
                 if lease is None:
                     unreadable = True
                 else:

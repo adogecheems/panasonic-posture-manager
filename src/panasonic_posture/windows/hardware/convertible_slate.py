@@ -351,7 +351,7 @@ class SlateNotifier:
         self.pending: SlateLease | None = None
         self.closed = False
         try:
-            self.pending = journal.load() if journal is not None else None
+            self.pending = journal.load(quarantine=False) if journal is not None else None
         except BaseException:
             device.close()
             raise
@@ -406,6 +406,12 @@ class SlateNotifier:
             # physical tablet authoritative. Never publish that stale laptop
             # result over the active tablet lease.
             return False
+        if self.pending is None and self.journal is not None:
+            # Isolation mutates the recovery record and must use the same
+            # healthy physical gate as device writes. Construction is read-only.
+            self.pending = self.journal.load()
+            if self.pending is not None:
+                self.original = self.pending.original
         if self.pending is not None and self.pending.desired == desired:
             # A pending lease that already targets this posture is still the
             # same software ownership. Replaying its original laptop value
@@ -442,7 +448,7 @@ class SlateNotifier:
             return
         if (self.pending is None and self.original is not None
                 and self.last == self.original
-                and (self.journal is None or self.journal.load() is None)):
+                and (self.journal is None or self.journal.load(quarantine=False) is None)):
             return
         self._require_hardware()
         if self.pending is not None:

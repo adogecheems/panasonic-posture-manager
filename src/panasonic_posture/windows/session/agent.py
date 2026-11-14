@@ -13,9 +13,11 @@ from pathlib import Path
 import sys
 import time
 
-from panasonic_posture.contracts import AGENT_HEARTBEAT_SECONDS, ErrorCode, TICK_SECONDS
+from panasonic_posture.contracts import (
+    AGENT_FAILURE_GRACE_SECONDS, AGENT_HEARTBEAT_SECONDS, ErrorCode, TICK_SECONDS,
+)
 from panasonic_posture.session.failures import FailureKind, ServiceError
-from panasonic_posture.session.ports import DisplayBackend
+from panasonic_posture.session.ports import DisplayBackend, DisplayRefresh
 from panasonic_posture.session.runtime import SessionRuntime
 from panasonic_posture.tasks import thread_executor
 from panasonic_posture.windows.session.release import HardwareReleaseCoordinator
@@ -23,9 +25,11 @@ from panasonic_posture.windows.session.client import WindowsSessionClient
 from panasonic_posture.windows.session.context import WindowsSessionContext
 from panasonic_posture.windows.session.display import (
     QualifiedDisplay as _QualifiedDisplay,
+    QualifiedRefresh,
     SessionContext,
     SessionHardwareQuery,
     SlatePosture,
+    transient_context_blip,
 )
 from panasonic_posture.windows.session.qualification import (
     ClosableSessionClient as ClosableClient,
@@ -64,10 +68,11 @@ def build_optional_slate(client, journal: Path) -> SlatePosture | None:
 def build_display(client, journal: Path) -> DisplayBackend:
     """Create display recovery behind the same physical-state gate as apply."""
     from panasonic_posture.session.journal_store import Journal
-    from panasonic_posture.windows.session.display_backend import WindowsDisplay
+    from panasonic_posture.windows.session.display_backend import NativeDisplay
+    from panasonic_posture.windows.session.screen_session import select_native_display
 
-    return WindowsDisplay(
-        journal=Journal(journal),
+    return select_native_display(
+        NativeDisplay(), Journal(journal),
         hardware_query=SessionHardwareQuery(client.get_state),
     )
 
@@ -100,6 +105,7 @@ class WindowsSessionAgent:
         self._started = self._closed = False
         self._qualification_task: Future | None = None
         self._heartbeat_at = float('-inf')
+        self._qualification_blip_since: float | None = None
         self.hardware_release: HardwareReleaseCoordinator | None = None
 
     def _prove_receipt_authority(self) -> None:
@@ -197,6 +203,8 @@ class WindowsSessionAgent:
         # runtime construction still restores through the qualified display.
         self._stack.callback(close_runtime)
         self.hardware_release = HardwareReleaseCoordinator(qualified)
+        refresh = (QualifiedRefresh(display, self.context, qualified_client.get_state)
+                   if isinstance(display, DisplayRefresh) else None)
         self.runtime = SessionRuntime(
             qualified_client,
             qualified,
@@ -204,6 +212,7 @@ class WindowsSessionAgent:
             screen_locked=lambda: not self.context.control_available(),
             executor=self.executor,
             lease_executor=self.lease_executor,
+            display_refresh=refresh,
             defer_hardware_handoff=True,
             hardware_release_target=self.hardware_release.target_for,
             lease_keepalive=True,
@@ -219,6 +228,12 @@ class WindowsSessionAgent:
             return
         self.context.poll()
         unavailable = not self.context.control_available()
+        if unavailable and transient_context_blip(self.context):
+            if self._qualification_blip_since is None:
+                self._qualification_blip_since = now
+            unavailable = now - self._qualification_blip_since >= AGENT_FAILURE_GRACE_SECONDS
+        else:
+            self._qualification_blip_since = None
         if self._qualification_task is not None:
             if self._qualification_task.done():
                 try:
@@ -251,7 +266,13 @@ def main(argv=None) -> int:
     from panasonic_posture.windows.common.diagnostics import configure_logging
     from panasonic_posture.windows.common.instance import InstanceLock
     from panasonic_posture.windows.common.stop_event import NativeStopSignal
+    from panasonic_posture.windows.common.native_preflight import require_native_user
 
+    try:
+        require_native_user()
+    except OSError as error:
+        print(f'native session unavailable: {error}', file=sys.stderr)
+        return 1
     configure_logging(options.journal)
 
     def display_factory(client):

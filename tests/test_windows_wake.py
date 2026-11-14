@@ -1,5 +1,9 @@
 """Wake-event publication: signal-only transport and runtime change detection."""
 import unittest
+import ctypes as C
+from uuid import uuid4
+
+from panasonic_posture.windows.common.security import HANDLE, I32
 
 from panasonic_posture.model import (
     BackendState,
@@ -34,6 +38,26 @@ def make_state():
 
 
 class WakeEventTests(unittest.TestCase):
+    def test_create_uses_a_null_dacl_instead_of_the_service_token_default(self):
+        event = WakeEvent(name=f'PanasonicPostureManager.Wake.Test.{uuid4().hex}')
+        event.create()
+        self.addCleanup(event.close)
+        descriptor, dacl = HANDLE(), HANDLE()
+        api = event.security.advapi
+        event.security._fn(api, 'GetSecurityDescriptorDacl', I32, HANDLE,
+                           C.POINTER(I32), C.POINTER(HANDLE), C.POINTER(I32))
+        error = api.GetSecurityInfo(event.handle, 6, 4, None, None, C.byref(dacl), None,
+                                    C.byref(descriptor))
+        self.assertEqual(error, 0)
+        try:
+            present, defaulted = I32(), I32()
+            self.assertTrue(api.GetSecurityDescriptorDacl(
+                descriptor, C.byref(present), C.byref(dacl), C.byref(defaulted)))
+            self.assertTrue(present.value)
+            self.assertIsNone(dacl.value)
+        finally:
+            event.kernel.LocalFree(descriptor)
+
     def test_signature_only_changes_with_observable_fields(self):
         state = make_state()
         before = _state_signature(state)

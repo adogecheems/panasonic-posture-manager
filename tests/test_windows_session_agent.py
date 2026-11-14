@@ -179,6 +179,67 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(set(restore_workers), set(workers))
         self.assertEqual(set(slate_workers), set(workers))
 
+    def test_installed_agent_repairs_a_late_unlock_without_rotating_twice(self):
+        from tests.test_windows_display import Api
+        from tests.windows_fixture import MemoryJournal
+        from panasonic_posture.windows.session.display_backend import WindowsDisplay
+        self.client.state = replace(self.client.state, hardware_status=HardwareStatus.OK)
+        api = Api()
+        api.current = replace(api.current, auto_rotation=0)
+        self.agent.display_factory = lambda client: WindowsDisplay(
+            api=api, journal=MemoryJournal(), hardware_query=lambda: (False, HardwareStatus.OK),
+        )
+        self.agent.start()
+        self.agent.tick(10.)
+        self.assertEqual(api.writes, [2])
+        api.current = replace(api.current, auto_rotation=0)
+        self.agent.tick(10.1)
+        self.assertTrue(self.agent.runtime.ready)
+        self.assertEqual(api.writes, [2])
+        self.assertEqual(api.lock_writes, [True, True])
+
+    def test_presence_aging_between_state_read_and_refresh_keeps_the_owned_display(self):
+        self.client.state = replace(self.client.state, hardware_status=HardwareStatus.OK)
+        self.display.needs_refresh = lambda target: target.mode == 'tent'
+        self.display.refresh = lambda state: self.display.writes.append('refresh')
+        self.agent.start()
+        self.agent.tick(10.)
+        self.context.snapshot = lambda: dict(
+            suspended=False, error=None, display_on=True, control_available=False,
+            presence_stale=True,
+            presence=dict(session_id=1, console_session_id=1, active=True, locked=False),
+        )
+        checks = 0
+        def available():
+            nonlocal checks
+            checks += 1
+            return checks <= 2  # Agent tick and state read succeed; refresh sees stale presence.
+        self.context.control_available = available
+        before = list(self.client.feedback)
+        self.agent.tick(10.1)
+        self.assertTrue(self.agent.runtime.ready)
+        self.assertEqual(self.display.writes, [2])
+        self.assertEqual(self.client.feedback, before)
+        self.assertFalse(self.agent.runtime.failure_active)
+
+    def test_installed_display_factory_handles_external_only_without_ignoring_recovery(self):
+        from panasonic_posture.windows.session.display_backend import Panel
+        from panasonic_posture.session.journal_store import Journal
+        from panasonic_posture.session.failures import DisplayError
+        api = SimpleNamespace(panels=lambda: [Panel('external', r'\\.\DISPLAY2',
+                                                  (1, 0, 1), 5, 0, 1920, 1080, 0)])
+        with tempfile.TemporaryDirectory() as directory, patch(
+            'panasonic_posture.windows.session.display_backend.NativeDisplay', return_value=api,
+        ):
+            path = Path(directory) / 'display.json'
+            selected = build_display(self.client, path)
+            self.assertEqual(selected.backend_name, 'windows-external-only')
+            Journal(path).save(dict(version=1, backend='windows', spec=['internal'],
+                                    original_transform=0, original_lock=False))
+            with self.assertRaises(DisplayError) as caught:
+                build_display(self.client, path)
+            self.assertEqual(caught.exception.detail, 'external-only-display-recovery-pending')
+
     def test_unavailable_target_renews_the_lease_without_reporting_ready(self):
         self.client.state = replace(
             self.client.state,
@@ -229,6 +290,41 @@ class SessionAgentTests(unittest.TestCase):
         self.assertFalse(self.agent.runtime.failure_active)
         self.assertTrue(self.agent.runtime.ready)
         self.assertEqual(self.display.current, 2)
+
+    def test_stale_presence_keeps_ready_and_does_not_report_lost_within_grace(self):
+        self.context.snapshot = lambda: dict(
+            suspended=False, error=None, display_on=True, control_available=False,
+            presence_stale=True,
+            presence=dict(session_id=1, console_session_id=1, active=True, locked=False),
+        )
+        self.agent.start()
+        self.agent.tick(10.)
+        feedback_before = len(self.client.feedback)
+        writes_before = list(self.display.writes)
+        self.context.absent = True
+        for now in (10.6, 11., 12., 13.5):
+            self.agent.tick(now)
+        self.assertEqual(self.client.feedback[feedback_before:], [])
+        self.assertEqual(self.display.writes, writes_before)
+        self.assertTrue(self.agent.runtime.ready)
+        self.context.absent = False
+        self.agent.tick(13.6)
+        self.assertTrue(self.agent.runtime.ready)
+
+    def test_stale_presence_reports_lost_when_grace_expires(self):
+        self.context.snapshot = lambda: dict(
+            suspended=False, error=None, display_on=True, control_available=False,
+            presence_stale=True,
+            presence=dict(session_id=1, console_session_id=1, active=True, locked=False),
+        )
+        self.agent.start()
+        self.agent.tick(10.)
+        self.context.absent = True
+        self.agent.tick(10.6)
+        self.agent.tick(13.7)
+        self.assertIn((0, False, 'display-unavailable', 'native-session-unavailable'),
+                      self.client.feedback)
+        self.assertFalse(self.agent.runtime.ready)
 
     def test_unknown_context_at_startup_cannot_apply_a_new_rotation(self):
         self.context.absent = True
@@ -402,8 +498,8 @@ class SessionAgentTests(unittest.TestCase):
         state = StateSnapshot(hardware=None, hardware_status=HardwareStatus.ABSENT)
         client = SimpleNamespace(get_state=lambda: state)
         with tempfile.TemporaryDirectory() as directory, patch(
-            'panasonic_posture.windows.session.display_backend.WindowsDisplay'
-        ) as display:
+            'panasonic_posture.windows.session.display_backend.NativeDisplay'
+        ), patch('panasonic_posture.windows.session.screen_session.select_native_display') as display:
             build_display(client, Path(directory) / 'display.json')
         query = display.call_args.kwargs['hardware_query']
         self.assertEqual(query(), (None, HardwareStatus.ABSENT))
@@ -434,6 +530,24 @@ class SessionAgentTests(unittest.TestCase):
 
 
 class NativeAgentTokenTests(unittest.TestCase):
+    def test_rejected_entry_does_not_access_user_state_or_construct_the_agent(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        with patch('panasonic_posture.windows.session.agent.sys.platform', 'win32'), \
+             patch('panasonic_posture.windows.common.native_preflight.require_native_user',
+                   side_effect=PermissionError('fixture not local')) as require, \
+             patch('panasonic_posture.windows.common.diagnostics.configure_logging') as logging, \
+             patch('panasonic_posture.windows.common.instance.InstanceLock',
+                   side_effect=PermissionError('fixture must not acquire a lock')) as lock, \
+             patch('panasonic_posture.windows.session.agent.WindowsSessionAgent') as agent, \
+             redirect_stderr(StringIO()):
+            result = main(['--journal', str(Path(tempfile.gettempdir()) / 'fixture-display.json')])
+        self.assertEqual(result, 1)
+        require.assert_called_once_with()
+        logging.assert_not_called()
+        lock.assert_not_called()
+        agent.assert_not_called()
+
     def test_launcher_stop_event_exits_through_runtime_cleanup_before_closing_event(self):
         events = []
         signal = SimpleNamespace(signaled=False)
@@ -447,12 +561,15 @@ class NativeAgentTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch('panasonic_posture.windows.session.agent.WindowsSessionAgent', return_value=agent), \
                  patch('panasonic_posture.windows.common.stop_event.NativeStopSignal.open', return_value=signal), \
-                 patch('panasonic_posture.windows.common.diagnostics.configure_logging'), \
+                 patch('panasonic_posture.windows.common.diagnostics.configure_logging',
+                       side_effect=lambda path: events.append('logging')), \
+                 patch('panasonic_posture.windows.common.native_preflight.require_native_user',
+                       side_effect=lambda: events.append('preflight')), \
                  patch('panasonic_posture.windows.session.agent.sys.platform', 'win32'), \
                  patch('panasonic_posture.windows.session.agent.time.sleep'):
                 result = main(['--journal', str(Path(directory) / 'display.json'), '--stop-event', 'fixture'])
         self.assertEqual(result, 0)
-        self.assertEqual(events, ['start', 'tick', 'restore', 'event-close'])
+        self.assertEqual(events, ['preflight', 'logging', 'start', 'tick', 'restore', 'event-close'])
 
     def security(self, *, sid='S-1-5-21-1000', session=1, elevation=0, length=4):
         api = object.__new__(WindowsSecurity)

@@ -366,6 +366,18 @@ class SessionRuntime:
         elif task.kind == "probe":
             self._enter_failure(now, error)
         elif task.kind in ("apply", "hold", "refresh"):
+            if isinstance(error, ServiceError):
+                self._handle_service_failure(now, error)
+                return
+            if isinstance(error, DisplayError) and error.detail == TRANSIENT_CONTROL_DETAIL:
+                # Local qualification can age out between the state read and
+                # a display/refresh task. Use the same bounded grace as RPC
+                # failures instead of withdrawing an existing success.
+                self._handle_service_failure(now, ServiceError(
+                    ErrorCode.DISPLAY_UNAVAILABLE, TRANSIENT_CONTROL_DETAIL,
+                    kind=FailureKind.UNAVAILABLE,
+                ))
+                return
             self._hold_until = 0.0
             state, generation, daemon_error = task.context
             if isinstance(error, DisplayError):
@@ -373,11 +385,7 @@ class SessionRuntime:
             else:
                 self._fail_display(ErrorCode.INTERNAL, describe_error(error), now)
             if task.kind == "hold":
-                if not (
-                    isinstance(error, DisplayError)
-                    and error.detail == TRANSIENT_CONTROL_DETAIL
-                ):
-                    self._restore_display_async(now)
+                self._restore_display_async(now)
             self._queue_feedback(state, generation, now, daemon_error)
             if task.kind == 'refresh':
                 # Withdraw the old success before restoring a failed ongoing
