@@ -1,8 +1,10 @@
-"""Build a self-contained Windows portable ZIP using an existing runtime.
+"""Assemble a diagnostic Windows portable ZIP using an existing runtime.
 
 Run on Windows after installing requirements-ui.txt into a separate --target
 directory. This script never downloads packages, installs a service, modifies
-the host Python or publishes a release.
+the host Python or publishes a release. The portable ZIP is not a Windows
+release or compatibility contract; the localized MSI installers are the only
+supported Windows packages.
 """
 import argparse
 import fnmatch

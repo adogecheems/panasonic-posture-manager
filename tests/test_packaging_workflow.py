@@ -285,6 +285,19 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("files=(*.deb *.rpm *.pkg.tar.zst *.msi)", self.workflow)
         self.assertIn("expected five package files", self.workflow)
 
+    def test_windows_ci_does_not_treat_portable_zip_as_contract(self) -> None:
+        windows = read(".github/workflows/windows.yml")
+        self.assertNotIn(
+            "python packaging/windows/build.py --dependencies",
+            windows,
+        )
+        self.assertNotIn(
+            "panasonic-posture-windows-portable.zip",
+            windows,
+        )
+        self.assertNotIn("windows_bundle_smoke.py", windows)
+        self.assertIn("path: dist/windows/*.msi", windows)
+
     def test_windows_workflows_install_required_wix_extensions(self) -> None:
         extensions = (
             "WixToolset.UI.wixext/5.0.2",

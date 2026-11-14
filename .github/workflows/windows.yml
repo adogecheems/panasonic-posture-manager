@@ -50,6 +50,7 @@ jobs:
           python tests/check_i18n.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Stage third-party packages with licenses
+        if: matrix.python == '3.13'
         run: python -m pip install --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
       - name: Install WiX
         if: matrix.python == '3.13'
@@ -60,8 +61,6 @@ jobs:
           $env:PATH = "$tools;$env:PATH"
           wix extension add -g WixToolset.UI.wixext/5.0.2
           wix extension add -g WixToolset.Util.wixext/5.0.2
-      - name: Build portable application
-        run: python packaging/windows/build.py --dependencies build/windows-dependencies
       - name: Build MSI
         if: matrix.python == '3.13'
         run: |
@@ -71,13 +70,6 @@ jobs:
             python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture $culture
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
-      - name: Verify extracted bundle with its own Python
-        run: |
-          Expand-Archive dist/windows/panasonic-posture-windows-portable.zip -DestinationPath build/unpacked
-          Remove-Item Env:PYTHONPATH
-          $env:POSTURE_BUNDLE = (Resolve-Path build/unpacked/PanasonicPostureManager).Path
-          python tests/manual/windows/windows_bundle_smoke.py
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Verify MSI administrative payload
         if: matrix.python == '3.13'
         run: |
@@ -102,7 +94,8 @@ jobs:
             }
           }
       - uses: actions/upload-artifact@v4
+        if: matrix.python == '3.13'
         with:
           name: windows-python-${{ matrix.python }}
-          path: dist/windows/*
+          path: dist/windows/*.msi
           if-no-files-found: error

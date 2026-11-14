@@ -1,8 +1,8 @@
-"""Build the per-machine Windows MSI from the portable application payload.
+"""Build the per-machine Windows MSI from the shared application payload.
 
-The MSI installs the same protected runtime and UI as the portable bundle,
-registers the LocalSystem hardware service, and runs the reversible CSM setup
-as an elevated custom action. A failed build never replaces an existing MSI.
+The MSI installs the protected runtime and UI, registers the LocalSystem
+hardware service, and runs the reversible CSM setup as an elevated custom
+action. A failed build never replaces an existing MSI.
 """
 from __future__ import annotations
 
@@ -209,18 +209,18 @@ def payload_files(
     dependencies: Path,
 ) -> dict[str, dict[str, Path | bytes]]:
     """Split the selectable UI from the fixed, protected service runtime."""
-    portable = _bundle_builder().application_files(runtime, dependencies)
-    portable['configure-slate-device.ps1'] = (
+    application = _bundle_builder().application_files(runtime, dependencies)
+    application['configure-slate-device.ps1'] = (
         ROOT / 'packaging/windows/configure-slate-device.ps1'
     )
-    portable['hardware-service.ps1'] = (
+    application['hardware-service.ps1'] = (
         ROOT / 'packaging/windows/hardware-service.ps1'
     )
-    portable['repair-start-menu-shortcut.ps1'] = (
+    application['repair-start-menu-shortcut.ps1'] = (
         ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
     )
     selected = {
-        name: value for name, value in portable.items()
+        name: value for name, value in application.items()
         if name not in EXCLUDED_HELPERS
         and name not in {'Hardware.cmd', f'{APPLICATION_DISPLAY_NAME}.cmd'}
     }
