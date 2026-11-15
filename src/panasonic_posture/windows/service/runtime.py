@@ -24,11 +24,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from concurrent.futures import Future
 import logging
+import threading
 import time
 from typing import TYPE_CHECKING, Protocol
 
 from panasonic_posture.model import DeviceInfo, HardwareStatus
 from panasonic_posture.service.engine import Engine
+from panasonic_posture.windows.common.power import SuspendResumeSource
 
 if TYPE_CHECKING:
     from panasonic_posture.windows.common.identity import ConsoleIdentity
@@ -66,6 +68,7 @@ class PhysicalSwitch(Protocol):
     def query(self) -> tuple[bool | None, HardwareStatus]: ...
     def bootstrap(self) -> None: ...
     def finalize_bootstrap(self, fallback: bool) -> None: ...
+    def invalidate(self) -> None: ...
     def close(self) -> None: ...
 
 
@@ -121,6 +124,7 @@ class HardwareRuntime:
         launcher_factory: Callable[[], LauncherLifecycle],
         supervisor_factory: SupervisorFactory | None = None,
         wake: WakeLifecycle | None = None,
+        power_factory: Callable[[Callable[[bool], None]], SuspendResumeSource] = SuspendResumeSource,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         stop_timeout: float = 12.,
@@ -146,6 +150,11 @@ class HardwareRuntime:
         self.launcher = None
         self.supervisor = None
         self.wake = wake
+        self._power_factory = power_factory
+        self._power = None
+        self._power_lock = threading.Lock()
+        self._suspended = self._resume_seen = False
+        self._power_epoch = self._power_epoch_seen = 0
         self._bootstrap_until: float | None = None
         self._last_poll_at: float | None = None
         self._wake_signature: tuple | None = None
@@ -154,6 +163,10 @@ class HardwareRuntime:
 
     def admitted(self) -> bool:
         """Return whether a trusted session may currently own a display lease."""
+        with self._power_lock:
+            if (self._suspended or self._power_epoch != self._power_epoch_seen
+                    or getattr(self._power, 'error', None) is not None):
+                return False
         try:
             value, status = self.switch.query()
         except (OSError, ValueError, RuntimeError):
@@ -168,6 +181,7 @@ class HardwareRuntime:
             # ETW is the only physical input.  It must be live before the
             # sensor, RPC endpoint or any session display writer exists.
             self.switch.start()
+            self._power = self._power_factory(self._power_event)
             self.engine.start()
             self._bootstrap_until = self.clock() + 5.
             self.server = self.server_factory(self.admitted)
@@ -193,17 +207,40 @@ class HardwareRuntime:
             self.close()
             raise
 
+    def _power_event(self, suspended: bool) -> None:
+        # Native callbacks may only invalidate the guarded hardware cache and
+        # signal owner-loop work. They never touch the engine or a display.
+        with self._power_lock:
+            if self.closed or (suspended and self._suspended) or (not suspended and self._resume_seen):
+                return
+            # Also clear on the first resume: an event delivered after the
+            # suspend callback but before the machine actually slept is old.
+            self.switch.invalidate()
+            self._suspended = suspended
+            self._resume_seen = not suspended
+            self._power_epoch += 1
+
     def poll(self) -> None:
         if not self.started or self.closed:
             return
         now = self.clock()
-        if (self._last_poll_at is not None
-                and now - self._last_poll_at >= RESUME_GAP_SECONDS):
+        with self._power_lock:
+            power_changed = self._power_epoch != self._power_epoch_seen
+            self._power_epoch_seen = self._power_epoch
+        gap = (self._last_poll_at is not None
+               and now - self._last_poll_at >= RESUME_GAP_SECONDS)
+        if power_changed or gap:
             # Windows monotonic time advances across sleep.  The service owner
             # loop resumes before it reads more RPC work, so discard the old
             # pose before a desktop session can replay a pre-sleep tent target.
-            log.info("session gap %.2fs; requiring a fresh posture", now - self._last_poll_at)
+            log.info("session power boundary; requiring a fresh posture")
             self.engine.reset_after_session_context_loss()
+            if not power_changed:
+                # Lost native callbacks still cannot authorize a sleep-era
+                # cache. With callbacks, preserve an ETW event already received
+                # after resume and before this first owner-loop iteration.
+                self.switch.invalidate()
+            self._bootstrap_until = None
         self._last_poll_at = now
         if self._bootstrap_until is not None:
             self.switch.bootstrap()
@@ -270,7 +307,7 @@ class HardwareRuntime:
             # Never reacquire the launcher's lock on the owner loop after a
             # timed-out WTS/create operation. Its worker retains the runtime
             # pins and reaps late children before releasing the installation.
-            resources = (self.server, self.sensor, self.switch)
+            resources = (self._power, self.server, self.sensor, self.switch)
             try:
                 self._cleanup_task = supervisor.defer_close(self.runtime.close)
                 self._cleanup_task.add_done_callback(self._deferred_close_done)
@@ -279,7 +316,7 @@ class HardwareRuntime:
                 # native creation; still close the hardware and RPC resources.
                 errors.append(error)
         else:
-            resources = (self.launcher, self.server, self.sensor, self.switch, self.runtime)
+            resources = (self._power, self.launcher, self.server, self.sensor, self.switch, self.runtime)
         for resource in resources:
             if resource is None:
                 continue

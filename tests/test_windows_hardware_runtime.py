@@ -1,12 +1,14 @@
 """Hardware-service composition: ordering, physical gating and cleanup."""
 import time
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from panasonic_posture.model import HardwareStatus
 from panasonic_posture.windows.service.runtime import HardwareRuntime, RESUME_GAP_SECONDS
 from panasonic_posture.windows.service.launch import NativeSessionLauncher
+from panasonic_posture.windows.hardware.etw_switch import AcpiPhysicalSwitch
 
 
 class Switch:
@@ -28,9 +30,24 @@ class Switch:
     def finalize_bootstrap(self, fallback):
         self.events.append(('switch-finalize', fallback))
 
+    def invalidate(self):
+        self.events.append('switch-invalidate')
+        self.value, self.status = None, HardwareStatus.ABSENT
+
     def close(self):
         self.closed = True
         self.events.append('switch-close')
+
+
+class Power:
+    error = None
+
+    def __init__(self, callback):
+        self.callback = callback
+        self.closed = False
+
+    def close(self):
+        self.closed = True
 
 
 class Sensor:
@@ -146,6 +163,7 @@ class HardwareRuntimeTests(unittest.TestCase):
                 engine=engine, switch=Switch(events), sensor=Sensor(events), runtime=trusted,
                 server_factory=lambda admission: Server(events, engine, admission),
                 launcher_factory=lambda: launcher, stop_timeout=.02,
+                power_factory=Power,
             )
             result.update(runtime=runtime, trusted=trusted, launcher=launcher)
             try:
@@ -201,6 +219,7 @@ class HardwareRuntimeTests(unittest.TestCase):
             launcher_factory=launcher_factory,
             supervisor_factory=supervisor_factory,
             clock=clock,
+            power_factory=Power,
         )
         return runtime_object, events, switch, engine, sensor, runtime
 
@@ -260,10 +279,89 @@ class HardwareRuntimeTests(unittest.TestCase):
         self.assertEqual(engine.resets, 1)
         self.assertEqual(events[0], 'engine-reset')
         self.assertLess(events.index('engine-reset'), events.index('server-poll'))
+        self.assertLess(events.index('switch-invalidate'), events.index('server-poll'))
+        self.assertFalse(runtime.admitted())
         self.assertLess(events.index('server-poll'), events.index('engine-tick'))
         runtime.poll()
         self.assertEqual(engine.resets, 1)
         runtime.close()
+
+    def test_power_boundary_preserves_a_new_etw_event_and_ignores_second_resume(self):
+        for gap in (.1, 60.):
+            with self.subTest(gap=gap):
+                now = [10.]
+                runtime, events, switch, engine, _, _ = self.make(clock=lambda: now[0])
+                runtime.start()
+                self.addCleanup(runtime.close)
+                runtime.poll()
+                power = runtime._power
+                power.callback(True)
+                self.assertFalse(runtime.admitted())
+                self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+                self.assertEqual(engine.resets, 0, 'native callback ran owner-loop work')
+                switch.value, switch.status = False, HardwareStatus.OK
+                power.callback(False)
+                self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+                # The provider can deliver a fresh Event 115 before owner-loop
+                # polling resumes. That observation must survive reconciliation.
+                switch.value, switch.status = True, HardwareStatus.OK
+                self.assertFalse(runtime.admitted())
+                now[0] += gap
+                runtime.poll()
+                self.assertEqual(engine.resets, 1)
+                self.assertTrue(runtime.admitted())
+                self.assertEqual(switch.query(), (True, HardwareStatus.OK))
+                power.callback(False)
+                runtime.poll()
+                self.assertEqual(engine.resets, 1)
+                self.assertTrue(runtime.admitted())
+                power.callback(True)
+                runtime.poll()
+                self.assertEqual(engine.resets, 2)
+                self.assertFalse(runtime.admitted())
+                self.assertNotIn(('switch-finalize', False), events)
+                runtime.close()
+                self.assertTrue(power.closed)
+
+    def test_failed_power_registration_cleans_up_without_starting_rpc(self):
+        runtime, events, switch, engine, _, _ = self.make()
+        def fail(callback):
+            raise OSError('fixture registration failed')
+        runtime._power_factory = fail
+        with self.assertRaises(OSError):
+            runtime.start()
+        self.assertNotIn('server-create', events)
+        self.assertTrue(switch.closed)
+        self.assertEqual(engine.shutdowns, 1)
+
+    def test_resume_admission_uses_only_a_post_suspend_etw_observation(self):
+        import struct
+        for event_before_poll in (False, True):
+            with self.subTest(event_before_poll=event_before_poll):
+                now = [10.]
+                runtime, _, _, _, _, _ = self.make(clock=lambda: now[0])
+                backend = SimpleNamespace(failure=None, close=lambda: None)
+                backend.start = lambda callback: setattr(backend, 'emit', callback)
+                runtime.switch = AcpiPhysicalSwitch(backend, initial_reader=lambda: False)
+                runtime.start()
+                self.addCleanup(runtime.close)
+                runtime.poll()
+                self.assertTrue(runtime.admitted())
+                runtime._power.callback(True)
+                self.assertFalse(runtime.admitted())
+                now[0] += 60.
+                runtime._power.callback(False)
+                if event_before_poll:
+                    backend.emit(struct.pack('<II', 0xC0, 0xCC))
+                runtime.poll()
+                self.assertEqual(runtime.admitted(), event_before_poll)
+                if not event_before_poll:
+                    runtime.switch.bootstrap()
+                    runtime.switch.finalize_bootstrap(False)
+                    self.assertFalse(runtime.admitted())
+                    backend.emit(struct.pack('<II', 0xC0, 0xCC))
+                self.assertTrue(runtime.admitted())
+                self.assertEqual(runtime.switch.query(), (True, HardwareStatus.OK))
 
     def test_close_stops_supervisor_before_releasing_owned_resources(self):
         runtime, events, switch, engine, sensor, trusted_runtime = self.make()

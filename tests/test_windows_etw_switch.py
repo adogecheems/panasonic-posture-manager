@@ -60,6 +60,27 @@ class PayloadTests(unittest.TestCase):
 
 
 class PhysicalSwitchTests(unittest.TestCase):
+    def test_suspend_invalidation_requires_a_new_physical_event(self):
+        for initial in (False, True):
+            with self.subTest(initial=initial):
+                backend = FakeBackend()
+                reads = []
+                switch = AcpiPhysicalSwitch(backend, initial_reader=lambda: reads.append(True) or initial)
+                switch.start()
+                self.addCleanup(switch.close)
+                switch.bootstrap()
+                self.assertEqual(switch.query(), (initial, HardwareStatus.OK))
+                switch.invalidate()
+                switch.bootstrap()
+                switch.finalize_bootstrap(False)
+                backend.emit(0xC0, 0xCA)
+                self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+                self.assertEqual(len(reads), 1)
+                backend.emit(0xC0, ACPI_TABLET_NOTIFY if not initial else ACPI_LAPTOP_NOTIFY)
+                self.assertEqual(switch.query(), (not initial, HardwareStatus.OK))
+                backend.failure = OSError('fixture ETW failure')
+                self.assertEqual(switch.query(), (None, HardwareStatus.READ_ERROR))
+
     def test_read_only_startup_baseline_seeds_an_unobserved_switch(self):
         backend = FakeBackend()
         switch = AcpiPhysicalSwitch(backend, initial_reader=lambda: False)

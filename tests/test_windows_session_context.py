@@ -182,6 +182,22 @@ class ContextTests(unittest.TestCase):
         old.callback('suspend', None)
         self.assertFalse(context.unattended())
 
+    def test_resume_pair_does_not_invalidate_a_recovered_context(self):
+        context = self.context()
+        context.poll()
+        for cycle in range(2):
+            with self.subTest(cycle=cycle):
+                self.sources[-1].callback('suspend', None)
+                self.assertFalse(context.control_available())
+                self.sources[-1].callback('resume', None)
+                context.poll()
+                self.assertTrue(context.control_available())
+                subscription_count = len(self.sources)
+                self.sources[-1].callback('resume', None)
+                self.assertTrue(context.control_available())
+                context.poll()
+                self.assertEqual(len(self.sources), subscription_count)
+
     def test_close_and_clock_reversal_fail_closed(self):
         context = self.context()
         context.poll()

@@ -201,6 +201,7 @@ class WindowsSessionContext:
         self._owner = threading.get_ident()
         self._lock = threading.Lock()
         self._closed = self._fatal = self._suspended = self._rearm = False
+        self._resume_seen = False
         self._presence: SessionPresence | None = None
         self._display: bool | None = None
         self._checked = float('-inf')
@@ -243,6 +244,11 @@ class WindowsSessionContext:
         with self._lock:
             if self._closed or self._fatal or subscription != self._subscription:
                 return
+            # Windows can send automatic resume followed by user resume. Keep
+            # this fence across re-subscriptions so the latter cannot undo an
+            # already recovered display transaction. A new suspend rearms it.
+            if kind == 'resume' and self._resume_seen:
+                return
             if kind == 'display':
                 self._display = value != 0 if type(value) is int and value in (0, 1, 2) else None
                 if self._display is not None:
@@ -253,9 +259,11 @@ class WindowsSessionContext:
                 self._display = None
                 if kind == 'suspend':
                     self._suspended = True
+                    self._resume_seen = False
                 elif kind == 'resume':
                     self._suspended = False
                     self._rearm = True
+                    self._resume_seen = True
 
     def unattended(self) -> bool:
         with self._lock:

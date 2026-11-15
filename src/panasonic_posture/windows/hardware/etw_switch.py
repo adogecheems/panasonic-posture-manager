@@ -313,6 +313,7 @@ class AcpiPhysicalSwitch:
         self._lock = threading.Lock()
         self._state = _SwitchState(None, HardwareStatus.ABSENT)
         self._started = self._bootstrap_failed = False
+        self._requires_event = False
 
     def start(self) -> None:
         with self._lock:
@@ -340,7 +341,7 @@ class AcpiPhysicalSwitch:
                 or self._bootstrap_failed):
             return
         with self._lock:
-            if not self._started or self._state.status != HardwareStatus.ABSENT:
+            if not self._started or self._requires_event or self._state.status != HardwareStatus.ABSENT:
                 return
         if self.backend.failure is not None:
             return
@@ -357,7 +358,7 @@ class AcpiPhysicalSwitch:
         with self._lock:
             # Never overwrite an ETW event that arrived while the read-only
             # startup baseline was being acquired.
-            if self._started and self._state.status == HardwareStatus.ABSENT:
+            if self._started and not self._requires_event and self._state.status == HardwareStatus.ABSENT:
                 self._state = _SwitchState(initial, HardwareStatus.OK)
 
     def finalize_bootstrap(self, fallback: bool) -> None:
@@ -370,8 +371,14 @@ class AcpiPhysicalSwitch:
         if self.backend.failure is not None:
             return
         with self._lock:
-            if self._started and self._state.status == HardwareStatus.ABSENT:
+            if self._started and not self._requires_event and self._state.status == HardwareStatus.ABSENT:
                 self._state = _SwitchState(fallback, HardwareStatus.OK)
+
+    def invalidate(self) -> None:
+        """A suspend boundary cannot reuse startup reads or software outputs."""
+        with self._lock:
+            self._requires_event = True
+            self._state = _SwitchState(None, HardwareStatus.ABSENT)
 
     def _ingest(self, payload: bytes) -> None:
         value = parse_acpi_notification(payload)
@@ -379,6 +386,7 @@ class AcpiPhysicalSwitch:
             return
         with self._lock:
             if self._started:
+                self._requires_event = False
                 self._state = _SwitchState(value, HardwareStatus.OK)
 
     def query(self) -> tuple[bool | None, HardwareStatus]:
