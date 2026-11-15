@@ -1244,7 +1244,7 @@ style_message_box(dialog)
 dialog.show()
 for theme in (Theme.LIGHT, Theme.DARK):
     setTheme(theme)
-    window.notify(True)
+    window.notify(False, '中文文字 English text')
     QTest.qWait(100)
     for surface in (window, translated):
         for widget in surface.findChildren((QLabel, QAbstractButton, QComboBox)):
@@ -1255,6 +1255,7 @@ for theme in (Theme.LIGHT, Theme.DARK):
             assert font.hintingPreference() == QFont.HintingPreference.PreferVerticalHinting, (
                 type(widget).__name__, widget.objectName(), font.hintingPreference())
             assert font.styleStrategy() & QFont.StyleStrategy.PreferAntialias
+            assert font.styleStrategy() & QFont.StyleStrategy.PreferOutline
             assert not font.styleStrategy() & (
                 QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
 dialog.close()
@@ -1271,7 +1272,8 @@ assert window.stackedWidget.count() == 1  # Settings page builds on first use
 assert not hasattr(window, 'navigationInterface')
 assert window.stackedWidget.currentWidget() is window.home
 assert app.font().hintingPreference() == QFont.HintingPreference.PreferVerticalHinting
-assert app.font().styleStrategy() == QFont.StyleStrategy.PreferAntialias
+assert app.font().styleStrategy() == (QFont.StyleStrategy.PreferAntialias |
+                                     QFont.StyleStrategy.PreferOutline)
 assert fontFamilies() == app.font().families()
 assert window.titleBar.titleLabel.font().families() == fontFamilies()
 assert window.titleBar.titleLabel.font().pixelSize() == 13

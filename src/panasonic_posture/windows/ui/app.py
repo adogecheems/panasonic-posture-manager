@@ -18,6 +18,7 @@ from ..ipc.client import HardwareUIClient
 from .pages import Home, Settings
 from ..app.resources import application_name, asset_root, data_root, translator
 from .wake import WakeWatch
+from .fonts import configure_application_font as configure_native_font
 from .widgets import (
     WINDOW_LIGHT, WINDOW_DARK, TEXT_LIGHT, TEXT_DARK, MUTED_LIGHT, MUTED_DARK,
     PageSwitcher, apply_app_font, BODY_SIZE, CAPTION_SIZE, HEADING_SIZE,
@@ -26,24 +27,14 @@ from .widgets import (
 
 
 def configure_application_font():
-    """Keep vertical text alignment without Windows' full grid fitting.
-
-    Full grid-fitting hinting renders CJK glyphs with visibly stepped edges
-    on Windows. The platform default also selects full hinting, so request
-    vertical hinting explicitly. This preserves vertical alignment at small
-    sizes while allowing smoother horizontal outlines at fractional DPI.
-    Keep subpixel antialiasing available to the native renderer.
-    """
+    """Give Fluent controls the same font families as the startup shell."""
     app = QApplication.instance()
     if app is None:
         return
-    font = QFont(app.font())
-    families = [family for family in font.families() if family]
+    configure_native_font()
+    families = app.font().families()
     if families:
         setFontFamilies(families)
-    font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
-    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-    app.setFont(font)
 
 
 def configure_application(language=None):

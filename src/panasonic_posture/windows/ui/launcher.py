@@ -25,8 +25,11 @@ def _require_ui_dependencies() -> None:
 
 
 def _configure_application(app, language) -> None:
+    from .fonts import configure_application_font
+
     name = application_name(language)
     app.setStyle('Fusion')
+    configure_application_font()
     app.setApplicationName(name)
     app.setApplicationDisplayName(name)
 

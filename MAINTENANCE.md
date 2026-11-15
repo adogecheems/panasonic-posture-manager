@@ -179,7 +179,7 @@ PYTHONPATH=src /usr/bin/python3 -m panasonic_posture.linux.app.cli
 Windows 源码运行使用 64 位 Python 3.11+。Windows UI 固定使用 PyQt6 6.8.1 和 Qt 6.8.2；如需升级 Qt，必须先重新核对 Windows 支持范围和完成 UI 回归测试。
 `PyQt6-Frameless-Window` 在 Windows 上还依赖 `pywin32`；MSI 构建会验证 `win32api`、`win32gui`、`win32comext` 和配套 DLL，CI 解包后会实际导入 UI 组件。
 
-正文与 Fluent 控件沿用系统字体，显式使用垂直微调（`PreferVerticalHinting`）并请求抗锯齿，保留原生子像素渲染能力。Windows 的默认微调仍为完整像素对齐，不能用默认值代替垂直微调。离屏回归覆盖中英文、明暗主题、弹窗和 100%／125%／150%／200% 缩放；实际 ClearType 观感仍需在目标屏幕上人工确认。
+启动壳与 Fluent 控件沿用系统主字体，优先追加已安装的 `Microsoft YaHei UI`（缺失时使用 `Microsoft YaHei`）作为中文回退；两者都缺失时保留系统回退。字体配置在托盘创建前生效，不加载 Fluent。显式使用垂直微调（`PreferVerticalHinting`）、抗锯齿和轮廓字体优先（`PreferOutline`），保留原生子像素渲染能力。Windows 的默认微调仍为完整像素对齐，不能用默认值代替垂直微调。离屏回归覆盖中英文、明暗主题、弹窗和 100%／125%／150%／200% 缩放；实际 ClearType 观感仍需在目标屏幕上人工确认。
 
 ```bat
 py -3 -m venv .venv-windows
