@@ -264,9 +264,13 @@
       <DialogRef Id="InvalidMainPathDlg" />
       <DialogRef Id="PostureInstallDirDlg" />
       <DialogRef Id="MsiRMFilesInUse" />
-      <!-- WixUI shows PrepareDlg while AppSearch runs. The action finishes too
-           quickly on these machines, producing a visible flash before the
-           welcome page, so the first interactive screen is WelcomeDlg. -->
+      <!-- Keep the modeless preparation page visible through upgrade detection,
+           registry searches and file costing. WelcomeDlg is sequenced after
+           costing; omitting PrepareDlg leaves a long invisible startup gap. -->
+      <DialogRef Id="PrepareDlg" />
+      <InstallUISequence>
+        <Show Dialog="override PrepareDlg" Before="FindRelatedProducts" />
+      </InstallUISequence>
       <DialogRef Id="ProgressDlg" />
       <DialogRef Id="ResumeDlg" />
       <DialogRef Id="UserExit" />

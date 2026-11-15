@@ -626,7 +626,7 @@ class MsiPayloadTests(unittest.TestCase):
             source,
         )
 
-    def test_startup_does_not_show_the_transient_prepare_dialog(self):
+    def test_startup_keeps_preparation_visible_during_initialization(self):
         root = ET.fromstring(
             (ROOT / 'packaging/windows/msi/Package.wxs').read_text(
                 encoding='utf-8'
@@ -637,11 +637,18 @@ class MsiPayloadTests(unittest.TestCase):
             for element in root.iter()
             if element.tag.endswith('DialogRef')
         }
-        self.assertNotIn(
-            'PrepareDlg',
-            dialog_refs,
-            'WixUI PrepareDlg flashes before WelcomeDlg when AppSearch is fast',
+        self.assertIn('PrepareDlg', dialog_refs)
+        ns = {'w': msi.WIX_NAMESPACE}
+        shows = root.findall(
+            './/w:InstallUISequence/w:Show[@Dialog="override PrepareDlg"]', ns,
         )
+        self.assertEqual(len(shows), 1)
+        # Cover upgrade detection as well as registry search and file costing.
+        # Do not restrict this feedback to first installs or require a click
+        # before the initialization actions can continue.
+        self.assertEqual(shows[0].get('Before'), 'FindRelatedProducts')
+        self.assertIsNone(shows[0].get('Condition'))
+        self.assertIsNone(shows[0].get('OnExit'))
 
     def test_launch_condition_does_not_block_maintenance_mode(self):
         root = ET.fromstring(

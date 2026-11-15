@@ -168,6 +168,8 @@ Windows 首次构建前先按下方“Windows 构建依赖”准备 Python 依�
 
 Windows 正式发布提供简体中文和英文 MSI。每次安装测试使用新的 `--test-build` 编号（也可指定，如 `--test-build 7`）。自动编号依据同版本已有构建，请保留输出目录。测试版高于相同基础版本的正式包，安装该正式包前需先卸载测试版。
 
+MSI 完整交互界面在检测旧版本前显示 WiX 的非模态准备页，并在注册表搜索、安装空间计算期间保持可见，随后进入欢迎或维护页面。不要仅为消除快速机器上的短暂准备页而移除它，否则初始化较慢时会出现无窗口等待。此页面只覆盖 MSI 界面序列；Windows Installer 启动界面序列前的系统准备耗时不在其控制范围内。静默安装保持无界面。
+
 静默安装指定 `INSTALLFOLDER` 时，请使用本地固定磁盘上的完整绝对路径，末级目录为 `PanasonicPostureManager`。服务固定安装到 `Program Files\PanasonicPostureManagerService`。
 
 #### Windows 构建依赖
