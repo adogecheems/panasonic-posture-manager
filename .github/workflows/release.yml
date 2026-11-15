@@ -61,7 +61,8 @@ jobs:
                 "cd /tmp/ppm-arch && python3 packaging/common/release_version.py --tag $RELEASE_TAG"
               su - builder -c "cd /tmp/ppm-arch && make WERROR=1 check"
               # Build from the checked-out commit and export the tag-pinned
-              # recipe separately for the source AUR package.
+              # recipe separately, pinned to this exact source commit so a
+              # same-version rebuild never uses an older immutable tag.
               su - builder -c \
                 "cd /tmp/ppm-arch &&
                 git archive --format=tar.gz --prefix=panasonic-posture-manager/ \
@@ -77,9 +78,10 @@ jobs:
                 ! -name "*-debug-*" -print -quit)
               test -n "$package"
               install -m644 "$package" /work/dist/release/
-              su - builder -c "cd /tmp/ppm-arch/packaging/linux/aur && makepkg --printsrcinfo" \
+              su - builder -c "cd /tmp/ppm-arch && python3 packaging/linux/scripts/pin_aur_source.py packaging/linux/aur/PKGBUILD.release"
+              su - builder -c "cd /tmp/ppm-arch/packaging/linux/aur && makepkg --printsrcinfo -p PKGBUILD.release" \
                 >/work/dist/aur/SRCINFO
-              install -m644 /tmp/ppm-arch/packaging/linux/aur/PKGBUILD /work/dist/aur/PKGBUILD
+              install -m644 /tmp/ppm-arch/packaging/linux/aur/PKGBUILD.release /work/dist/aur/PKGBUILD
               install -m644 /tmp/ppm-arch/packaging/linux/aur/panasonic-posture-manager.install \
                 /work/dist/aur/panasonic-posture-manager.install
 

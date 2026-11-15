@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from panasonic_posture.model import HardwareStatus, Mode, Target
 from panasonic_posture.service.hardware_monitor import HardwareMonitor
@@ -507,6 +508,19 @@ class PipeTests(HostFixture):
 
 
 class NativePipeReadTests(unittest.TestCase):
+    def setUp(self):
+        # The injected kernel and its last-error slot form one fake native API.
+        self.last_error = 0
+        def set_error(value):
+            self.last_error = value
+        for name, function in (
+            ('set_last_error', set_error),
+            ('get_last_error', lambda: self.last_error),
+        ):
+            replacement = patch.object(C, name, function, create=True)
+            replacement.start()
+            self.addCleanup(replacement.stop)
+
     def test_server_and_client_handles_request_overlapped_io(self):
         calls = []
 

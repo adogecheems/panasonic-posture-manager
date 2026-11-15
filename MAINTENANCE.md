@@ -287,7 +287,7 @@ python packaging/common/release_version.py --tag v2.5.0
 ```
 
 3. 通过完整测试后推送版本标签。发布工作流会构建 Arch、Deb、RPM 和简体中文/英文 Windows MSI，生成 `SHA256SUMS`，上传 GitHub Release，并更新两个 AUR 包。
-4. 重建已有版本时手动运行发布工作流，指定源码提交和标签；同名附件会被替换。
+4. 重建已有版本时手动运行发布工作流，指定源码提交和标签；同名附件会被替换。版本号与已有标签保持不变，构建使用所选提交；导出的 AUR 源码包配方固定到该提交的完整 SHA，避免重新获取旧标签的源码。
 
 包内必须保留 Python、PyQt6、Qt、Fluent Widgets 及其传递依赖的许可。
 

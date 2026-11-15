@@ -216,10 +216,11 @@ class CommandTests(unittest.TestCase):
         ):
             actuator = Actuator(environ={})
         self.assertTrue(actuator.executable.is_absolute())
-        self.assertEqual(actuator.executable.parts[-2:], ("backend", "relay"))
+        self.assertEqual(actuator.executable.parts[-3:], ("backend", "linux", "relay"))
         expected = (
-            Path(actuator_module.__file__).resolve().parents[3]
+            Path(actuator_module.__file__).resolve().parents[4]
             / "backend"
+            / "linux"
             / "relay"
         )
         self.assertEqual(actuator.executable, expected)

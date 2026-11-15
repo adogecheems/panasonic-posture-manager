@@ -148,6 +148,7 @@ class SessionRuntime:
         self.restore_error: Exception | None = None
         self._restore_retry_at = 0.0
         self._hold_key: tuple[str, int] | None = None
+        self._unavailable_key: tuple[str, int] | None = None
         self._hold_until = 0.0
         self._hold_check_at = 0.0
         self._hardware_release_until: float | None = None
@@ -334,6 +335,7 @@ class SessionRuntime:
                 # No device target is ready yet. Commit the restore result but
                 # keep renewing the service lease with not-ready feedback.
                 self.ready = False
+                self._unavailable_key = (result.instance, generation)
                 self.error_code = ""
                 self.error_detail = ""
                 self.apply_now = False
@@ -502,6 +504,7 @@ class SessionRuntime:
         """Stop display transactions after an authorization/lease failure."""
         self._reset_transient()
         self._hold_until = 0.0
+        self._unavailable_key = None
         if not self.failure_active:
             self.failure_active = True
             message = describe_error(error)
@@ -771,6 +774,12 @@ class SessionRuntime:
                     # applying an unprepared target here can rotate twice.
                     return False
         key = (state.instance, generation)
+        if (state.target.mode == 'unavailable' and self._unavailable_key == key
+                and not self._display_needs_restore):
+            # A verified restore owns no display state. Keep the lease not-ready
+            # without repeating that transaction on every pending-posture poll.
+            self.apply_now = False
+            return True
         waiting = (
             state.posture_pending and state.hardware is False
             and state.target.mode == "unavailable" and state.session_connected

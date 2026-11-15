@@ -1,6 +1,7 @@
 """Wake-event publication: signal-only transport and runtime change detection."""
 import unittest
 import ctypes as C
+import sys
 from uuid import uuid4
 
 from panasonic_posture.windows.common.security import HANDLE, I32
@@ -38,6 +39,7 @@ def make_state():
 
 
 class WakeEventTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'win32', 'native event ACL requires Windows')
     def test_create_uses_a_null_dacl_instead_of_the_service_token_default(self):
         event = WakeEvent(name=f'PanasonicPostureManager.Wake.Test.{uuid4().hex}')
         event.create()
@@ -65,6 +67,7 @@ class WakeEventTests(unittest.TestCase):
         state.generation += 1
         self.assertNotEqual(_state_signature(state), before)
 
+    @unittest.skipUnless(sys.platform == 'win32', 'native named events require Windows')
     def test_named_event_roundtrip_auto_resets(self):
         # An unqualified name lands in the session-local namespace, so the
         # unprivileged test process can create it while the production name
@@ -81,6 +84,7 @@ class WakeEventTests(unittest.TestCase):
         # The auto-reset event is consumed by one waiter.
         self.assertEqual(watcher.wait(0), WAIT_TIMEOUT)
 
+    @unittest.skipUnless(sys.platform == 'win32', 'native named events require Windows')
     def test_closed_event_rejects_operations(self):
         event = WakeEvent(name='PanasonicPostureManager.Wake.Test.Closed')
         with self.assertRaises(OSError):
@@ -182,6 +186,7 @@ class RuntimeWakeTests(unittest.TestCase):
             launcher_factory=launcher_factory,
             supervisor_factory=supervisor_factory,
             wake=wake,
+            power_factory=lambda callback: Sensor(),
         )
         return runtime, engine, wake
 

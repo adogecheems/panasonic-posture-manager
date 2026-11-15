@@ -474,11 +474,13 @@ class PackageAcceptance:
     def expected_source_copies(self) -> dict[str, Path]:
         copies: dict[str, Path] = {}
         data_root = self.source_root / "data"
-        for source in data_root.rglob("*"):
-            if source.is_file():
-                copies[
-                    f"usr/share/panasonic-posture-manager/{source.relative_to(data_root).as_posix()}"
-                ] = source
+        for source_dir, installed in ((data_root / 'profiles', 'profiles'),
+                                      (data_root / 'assets/linux', 'assets')):
+            for source in source_dir.rglob('*'):
+                if source.is_file():
+                    copies[
+                        f'usr/share/panasonic-posture-manager/{installed}/{source.relative_to(source_dir).as_posix()}'
+                    ] = source
         copies[
             "usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png"
         ] = data_root / "assets/linux/work.mmoe.panasonic.PostureManager.png"

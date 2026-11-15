@@ -335,8 +335,8 @@ page.close()
         self.run_ui('''
 assert page.detail.get_label() == ''
 assert not page.detail.get_visible()
-for mode, expected in [('tent','Tent'),('stand','Stand'),('hardware','Tablet'),('laptop','Laptop')]:
-    page.update(state(applied={'mode': mode}))
+for pose, expected in [('tent','Tent'),('stand','Stand'),('tablet','Tablet'),('laptop','Laptop')]:
+    page.update(state(pose=pose, applied={'mode': 'laptop'}))
     assert page.heading.get_label() == expected
 page.update(state(manual='tent', target={'mode':'tent'}, pose='laptop'))
 assert page.heading.get_label() == 'Tent'
@@ -344,7 +344,7 @@ page.update(state(manual='tent', target={'mode':'tent'}, pose='laptop', error_co
 assert page.heading.get_label() == 'Laptop'
 assert 'Mode change failed' in page.detail.get_label()
 page.update(state(pose='unknown', target={'mode':'unavailable'}, hardware=True))
-assert page.heading.get_label() == 'Laptop'
+assert page.heading.get_label() == 'Tablet'
 assert not page.detail.get_visible()
 page.update(state(target={'mode':'unavailable'}, hardware=None))
 assert 'tablet switch state is unavailable' in page.detail.get_label()

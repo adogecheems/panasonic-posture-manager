@@ -11,7 +11,7 @@ def data_root() -> Path:
     override = os.environ.get('PANASONIC_POSTURE_UI_DIR')
     if override:
         return Path(override).parent / 'assets'
-    source = Path(__file__).resolve().parents[3] / 'data'
+    source = Path(__file__).resolve().parents[4] / 'data'
     source_assets = source / 'assets' / 'linux'
     return source_assets if source_assets.is_dir() else Path(DATA_DIR) / 'assets'
 

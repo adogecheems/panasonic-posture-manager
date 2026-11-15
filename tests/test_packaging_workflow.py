@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import re
 import shutil
@@ -30,6 +31,23 @@ def read(relative: str) -> str:
 
 
 class ReleaseVersionTests(unittest.TestCase):
+    def test_exported_aur_source_pins_the_build_commit_and_validates_inputs(self):
+        spec = importlib.util.spec_from_file_location(
+            'pin_aur_source', ROOT / 'packaging/linux/scripts/pin_aur_source.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        recipe = read('packaging/linux/aur/PKGBUILD')
+        commit = 'a' * 40
+        pinned = module.pin_source(recipe, commit)
+        self.assertIn(f'#commit={commit}', pinned)
+        self.assertNotIn('#tag=v${pkgver}', pinned)
+        self.assertEqual(pinned.replace(f'#commit={commit}', '#tag=v${pkgver}'), recipe)
+        for invalid in ('main', 'v2.5.0', '', 'a' * 39):
+            with self.subTest(commit=invalid), self.assertRaises(ValueError):
+                module.pin_source(recipe, invalid)
+        with self.assertRaises(ValueError):
+            module.pin_source('no source declaration', commit)
+
     def run_version(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(RELEASE_VERSION), *arguments],
@@ -52,6 +70,21 @@ class ReleaseVersionTests(unittest.TestCase):
 
 
 class DistributionPackagingTests(unittest.TestCase):
+    def test_arch_payload_maps_linux_resources_to_the_runtime_asset_directory(self):
+        spec = importlib.util.spec_from_file_location(
+            'check_arch_payload', ROOT / 'tests/package/check_package.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        checker = module.PackageAcceptance(ROOT / 'unused.pkg.tar.zst',
+            source_root=ROOT, previous=None, install=False)
+        copies = checker.expected_source_copies()
+        self.assertEqual(copies['usr/share/panasonic-posture-manager/assets/laptop.svg'],
+                         ROOT / 'data/assets/linux/laptop.svg')
+        self.assertEqual(copies['usr/share/panasonic-posture-manager/profiles/cfqv8.json'],
+                         ROOT / 'data/profiles/cfqv8.json')
+        self.assertFalse(any('/assets/windows/' in str(path) for path in copies.values()))
+        self.assertFalse(any('/assets/linux/' in name for name in copies))
+
     def test_package_scripts_are_executable_and_parse(self) -> None:
         if sys.platform == "win32":
             self.skipTest("POSIX package scripts require a Linux build host")
@@ -259,7 +292,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(arch.index(archive), arch.index(override))
         self.assertLess(arch.index(override), arch.index(build))
         self.assertIn("makepkg --printsrcinfo", arch)
-        self.assertIn("/tmp/ppm-arch/packaging/linux/aur/PKGBUILD /work/dist/aur/PKGBUILD", arch)
+        self.assertIn("/tmp/ppm-arch/packaging/linux/aur/PKGBUILD.release /work/dist/aur/PKGBUILD", arch)
+        self.assertIn('makepkg --printsrcinfo -p PKGBUILD.release', arch)
+        self.assertIn('pin_aur_source.py packaging/linux/aur/PKGBUILD.release', arch)
         self.assertIn("#tag=v${pkgver}", read("packaging/linux/aur/PKGBUILD"))
 
     def test_all_three_package_builders_are_present(self) -> None:

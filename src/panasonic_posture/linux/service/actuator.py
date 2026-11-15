@@ -144,8 +144,8 @@ class Actuator:
         installed = Path(RELAY_INSTALL_PATH)
         if installed.is_file():
             return installed
-        # Repository checkout: src/panasonic_posture/service/actuator.py
-        return Path(__file__).resolve().parents[3] / "backend" / "relay"
+        # The source checkout mirrors the platform-specific relay directory.
+        return Path(__file__).resolve().parents[4] / "backend" / "linux" / "relay"
 
     def command(self, recover: bool = False) -> list[str]:
         """Return the argv used to start (or recover) the relay."""

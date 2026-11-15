@@ -53,7 +53,7 @@ def locate_locale_root() -> str | None:
     installed = Path(LOCALE_DIR)
     if _has_catalog(installed):
         return str(installed)
-    source = Path(__file__).resolve().parents[3] / "locale"
+    source = Path(__file__).resolve().parents[4] / "locale"
     if _has_catalog(source):
         return str(source)
     return None

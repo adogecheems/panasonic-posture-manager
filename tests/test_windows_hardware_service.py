@@ -153,10 +153,11 @@ class HardwareServiceRunnerTests(unittest.TestCase):
         self.assertEqual(reports[-1][0], SERVICE_STOPPED)
 
     def test_scm_command_uses_the_restricted_interpreter_and_fixed_module(self):
-        command = service_image_path(Path(r'C:\Program Files\PanasonicPostureManager'))
+        root = Path(__file__).resolve().parent / 'PanasonicPostureManager'
+        command = service_image_path(root)
         self.assertEqual(
             command,
-            r'"C:\Program Files\PanasonicPostureManager\runtime\python-hardware.exe" '
+            f'"{root.absolute() / "runtime/python-hardware.exe"}" '
             '-B -I -m panasonic_posture.windows.service.daemon --serve',
         )
 

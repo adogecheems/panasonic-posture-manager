@@ -7,7 +7,7 @@
 set -euo pipefail
 export LC_ALL=C
 
-repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
 output_dir=${1:-"$repo_root/dist/packages"}
 
 version=$(python3 "$repo_root/packaging/common/release_version.py")

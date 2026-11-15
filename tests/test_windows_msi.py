@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
@@ -34,6 +35,13 @@ def png_dimensions(path: Path) -> tuple[int, int]:
 
 class MsiPayloadTests(unittest.TestCase):
     def setUp(self):
+        # Exercise orchestration with a fake Windows host and subprocess runner;
+        # patch only the builder's sys reference, never pathlib's host platform.
+        host = SimpleNamespace(**vars(sys))
+        host.platform = 'win32'
+        self.host_patch = patch.object(msi, 'sys', host)
+        self.host_patch.start()
+        self.addCleanup(self.host_patch.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)

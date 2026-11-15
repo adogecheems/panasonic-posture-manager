@@ -4,7 +4,7 @@
 set -euo pipefail
 export LC_ALL=C
 
-repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
 
 if [[ $# -ne 3 ]]; then
   echo "usage: $0 TAG PACKAGE OUTPUT_DIR" >&2

@@ -18,7 +18,7 @@
 set -euo pipefail
 export LC_ALL=C
 
-repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)
 metadata_dir=${1:-"$repo_root/packaging/linux/aur"}
 metadata_dir=$(CDPATH='' cd -- "$metadata_dir" && pwd)
 package=${AUR_PACKAGE:-panasonic-posture-manager}

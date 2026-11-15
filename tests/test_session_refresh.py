@@ -67,6 +67,20 @@ class RefreshTests(unittest.TestCase):
         self.assertEqual(len([e for e in self.events if e[0] == 'refresh']), 2)
         self.assertEqual(len([e for e in self.events if e[0] == 'apply']), 1)
 
+    def test_unavailable_generation_restores_once_and_never_reports_ready(self):
+        self.state = replace(self.state, target=Target(mode='unavailable'), posture_pending=True)
+        for now in (0., 1., 2.1, 3., 4.):
+            self.runtime.tick(now)
+        self.assertEqual([e for e in self.events if e[0] == 'apply'], [('apply', 'unavailable')])
+        self.assertFalse(self.runtime.ready)
+        self.assertTrue(all(not e[2] for e in self.events if e[0] == 'feedback'))
+        self.state = replace(self.state, generation=2, posture_pending=False,
+                             target=Target(mode='tent', rotation=180))
+        self.runtime.tick(4.1)
+        self.assertTrue(self.runtime.ready)
+        self.assertEqual([e for e in self.events if e[0] == 'apply'],
+                         [('apply', 'unavailable'), ('apply', 'tent')])
+
     def test_fixed_modes_and_default_linux_runtime_do_not_poll_the_optional_port(self):
         self.state = replace(self.state, target=Target(mode='tent'))
         self.runtime.tick(0.)
@@ -77,6 +91,22 @@ class RefreshTests(unittest.TestCase):
         self.runtime.tick(.3)
         self.assertTrue(self.runtime.ready)
         self.assertFalse(any(e[0] == 'refresh' for e in self.events))
+
+    def test_failed_unavailable_restore_is_retried_before_it_is_deduplicated(self):
+        self.state = replace(self.state, target=Target(mode='unavailable'))
+        calls = []
+        def apply(target):
+            calls.append(target.mode)
+            if len(calls) == 1:
+                raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'restore-failed')
+        self.display.apply = apply
+        self.runtime.tick(0.)
+        self.assertTrue(self.runtime.retry_display)
+        now = self.runtime.retry_at + .1
+        self.runtime.tick(now)
+        self.runtime.tick(now + 1.)
+        self.assertEqual(calls, ['unavailable', 'unavailable'])
+        self.assertFalse(self.runtime.ready)
 
     def test_failed_refresh_withdraws_success_before_restore_and_recovers_through_retry(self):
         self.refresh_fails = True
