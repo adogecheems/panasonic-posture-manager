@@ -10,7 +10,7 @@ This cross-platform tool recognizes how you position your convertible laptop and
 
 You can prop a Panasonic Let's note QV convertible up like a tent or rest it keyboard-side down as a stand, but its built-in hardware and software don't respond correctly to either setup. We built this app with two everyday uses in mind. In tent mode, the picture should rotate 180° so it appears upright. In stand mode, tapping a text field should bring up the system’s on-screen keyboard when you need to type.
 
-**Current version: 3.0.0** · [Download an installer](https://github.com/adogecheems/panasonic-posture-manager/releases)
+**Current version: 3.0.1** · [Download an installer](https://github.com/adogecheems/panasonic-posture-manager/releases)
 
 ## Supported devices and installation
 
