@@ -21,8 +21,8 @@ Get-FileHash -Algorithm SHA256 -Path .\*.msi | Format-List Path, Hash
 | Arch Linux | `sudo pacman -U ./panasonic-posture-manager-3.0.0-1-x86_64.pkg.tar.zst` |
 | Ubuntu / Debian | `sudo apt install ./panasonic-posture-manager_3.0.0-1_amd64.deb` |
 | Fedora | `sudo dnf install ./panasonic-posture-manager-3.0.0-1.x86_64.rpm` |
-| Windows（简体中文） | 双击 `panasonic-posture-manager-3.0.0-zh-CN-windows-x64.msi`，完成后重启 |
-| Windows（英文） | 双击 `panasonic-posture-manager-3.0.0-en-US-windows-x64.msi`，完成后重启 |
+| Windows（简体中文） | 双击 `panasonic-posture-manager-3.0.0-zh-CN-windows-x64.msi`，按提示重启 |
+| Windows（英文） | 双击 `panasonic-posture-manager-3.0.0-en-US-windows-x64.msi`，按提示重启 |
 
 文件名以实际发布版本为准。Ubuntu/Debian 需要 GTK 4.12+ 和 libadwaita 1.4+，依赖由包管理器安装。
 
@@ -38,16 +38,6 @@ yay -S panasonic-posture-manager-bin
 ```sh
 systemctl --user restart panasonic-posture-manager-session.service
 ```
-
-## Windows 图片资源
-
-Windows 图片统一放在 `data/assets/windows/`：`icons/` 保存应用图标、ICO 和托盘使用的白底方形图；`branding/` 保存标题栏 Let's note 浅色与深色标志；`postures/` 保存姿态 SVG；`installer/` 保存 WiX 安装界面图片。
-
-安装器只定制横幅和侧图；信息与警告提示使用 WiX 内置图标，不使用应用标志覆盖。
-
-构建只将前三类按相同子目录复制到安装目录的 `data/assets/`，安装器图片由 WiX 直接引用，不进入应用负载。源码运行使用平台资源目录，安装运行使用负载资源目录，均通过 `windows/app/resources.py` 定位。
-
-深色标题栏标志由浅色原图精确转换：保留尺寸、透明通道和蓝色笔画，将中性色笔画转为白色；修改浅色原图后在 Windows 运行 `powershell -NoProfile -File packaging/windows/prepare-branding.ps1` 重新生成，再核对两种主题的显示效果。
 
 ## 排查
 
@@ -92,12 +82,14 @@ Get-Content "$env:ProgramData\PanasonicPostureManager\Logs\hardware-service.log"
 %LOCALAPPDATA%\PanasonicPostureManager\native-display.log
 ```
 
-服务未安装或未运行时，界面只显示断线。重新运行 MSI 修复安装并重启；不要从源码或便携目录手工注册服务。
-硬件服务使用普通自动启动，不使用 Windows 的延迟自动启动，以便登录后的桌面会话能尽早发现 RPC 端点。
-Windows 界面收到桌面会话未就绪的 `display-unavailable` 状态时，先显示等待桌面就绪，最多等待 5 秒再显示失败与「重试」；重复快照不延长等待。状态恢复或断线会取消等待，其他错误及会话已就绪后的显示错误立即显示。此等待只影响界面呈现，不改变服务错误、租约或执行结果。
-安装和修复统一配置 SCM 故障恢复：失败后依次等待 5、15、60 秒重启，后续失败继续使用 60 秒间隔；24 小时无故障后重置计数。同时启用 `failureflag=1`，使服务完成清理并报告非零错误退出时也触发恢复；正常停止不触发恢复。该标志按 Windows 文档在下次系统启动时生效。
-界面不可用时先区分服务断线与硬件状态未就绪：服务为 Running 且鉴权查询成功，表示通信仍可用，不能据此断言姿态功能正常。睡眠唤醒后会清除旧目标和物理缓存；已验证 QV8/QV9/QV1 使用恢复轮询之后的新鲜传感器样本，稳定约 0.5 秒的笔记本/帐篷几何可自动恢复非平板基线，无须用户翻转屏幕。恢复不读取 CSM 软件输出、不重用旧样本、不采用超时默认值；平板或不明确几何、ETW 故障和通用机型仍须等待新的合法物理事件。
-MSI 在安装、修复和卸载时通过 `ServiceControl` 等待服务停止，确保替换运行时文件前释放服务持有的句柄。安装和修复注册服务后，由配置动作重新请求启动并最多等待 30 秒，启动失败会使安装失败；服务删除仅在卸载时执行。
+| 现象 | 维护操作 |
+| --- | --- |
+| 服务缺失或界面断线 | 在本地控制台以普通用户打开界面。若服务缺失或启动失败，检查服务日志，用 MSI 修复并按提示重启。特权服务只能从受保护的安装目录运行。 |
+| 服务运行但桌面未就绪 | 等待最多五秒。若显示「重试」，查看桌面会话日志，区分显示失败与硬件尚未就绪。 |
+| 唤醒后未识别姿态 | 将设备放稳。QV8/QV9/QV1 可在笔记本或帐篷姿态恢复识别，其他兼容机型需要新的物理折叠事件。 |
+| 锁屏后方向变化 | 已运行的会话会切回自动模式并继续调整方向。服务刚重启时，先解锁以启动桌面会话。 |
+
+检测偏好与校准位于 `%ProgramData%\PanasonicPostureManager\State\settings.json`，由服务写入。外观设置和显示日志位于当前用户的 `%LOCALAPPDATA%\PanasonicPostureManager`。排查恢复失败时保留恢复记录和日志。
 
 ## 卸载
 
@@ -113,7 +105,7 @@ systemctl --user stop panasonic-posture-manager-session.service
 | Arch Linux（`-bin` 包） | `sudo pacman -Rns panasonic-posture-manager-bin` |
 | Ubuntu / Debian | `sudo apt remove panasonic-posture-manager` |
 | Fedora | `sudo dnf remove panasonic-posture-manager` |
-| Windows | 在「已安装的应用」中卸载，完成后重启 |
+| Windows | 在「已安装的应用」中卸载，按提示重启 |
 
 Linux 卸载后会保留以下状态，确认屏幕方向已恢复后可手动删除：
 
@@ -121,53 +113,6 @@ Linux 卸载后会保留以下状态，确认屏幕方向已恢复后可手动�
 - `${XDG_STATE_HOME:-$HOME/.local/state}/panasonic-posture-manager/`
 
 Windows MSI 会停止并移除服务，同时恢复安装前的平板指示器配置。用户日志和恢复记录可在确认应用已正常退出后，从 `%LOCALAPPDATA%\PanasonicPostureManager` 清理。
-
-应用和安装器支持英文与简体中文；繁体中文及其他语言当前回退到英文。Linux desktop entry、polkit description/message 提供简体中文；systemd 不支持本地化 unit `Description`，因此系统服务描述保持英文。polkit 的 vendor 是不支持翻译的固定项目名。
-
-## Windows 运维
-
-正式安装支持 Windows 10/11 x64。Panasonic CFQV8、CFQV9、CFQV1 全系使用明确的已验证产品族配置；其他机型回退到与 Linux 相同的 `generic/compatible` 路径，由 WinRT 传感器、ETW 物理源、唯一 `ACPI\INT33D3` 输出和显示会话实际探测能力。MSI 包含受保护运行时、桌面界面、LocalSystem 硬件服务和可逆的 `ACPI\INT33D3` 非独占配置。
-
-### 硬件识别与服务连接
-
-- 物理姿态变化只接受 Intel HID Event Filter Event 115：`0xCC` 为平板，`0xCD` 为笔记本。
-- 明确 QV8/QV9/QV1 配置在启动时只读取一次平板指示器和恢复记录，建立初始状态；无法明确时最多等待五秒，然后使用非平板安全基线。其他机型必须通过能力探测收到一次合法 ETW Event 115 后才开放物理准入。
-- `ACPI\INT33D3` 按硬件 ID 唯一发现，不绑定某个固件实例后缀；它只用于发布软件帐篷/支架姿态，不用于反推运行期物理状态，也不会发布 shell 平板模式或自动打开屏幕键盘。
-- 界面通过经过身份校验的本地命名管道连接硬件服务；服务不可用时显示断线，不回退到模拟数据。
-- 界面和会话进程以普通用户运行；显示操作与硬件写入都必须匹配服务登记、会话资格、姿态代次和租约。
-- 会话入口在创建用户日志、实例锁或恢复后端之前检查普通用户和本地控制台身份。只有会话观察快照过旧、且其余条件正常时才使用三秒宽限期；挂起、控制台切换和观察器故障立即撤销。单纯锁屏继续已有会话的方向控制。
-- 服务停止时先撤销会话登记并等待清理；超过停止期限后由同一启动工作线程处理迟到结果，主循环继续关闭 RPC 和硬件资源。安装目录的保护句柄一直保留到子进程和启动器清理成功；原生调用持续阻塞时不会提前释放这些句柄，清理不完整会报告失败。
-
-### 登录、界面与安装资源
-
-- 硬件服务在已发布状态签名变化时置位一个仅信号用途的全局命名事件，界面观察器醒来后立即通过鉴权 RPC 刷新快照；事件不可用或丢失时界面按 0.1 秒空闲刷新兜底。窗口只在首次进入设置页时构建设置页面，首开窗口只加载主页。
-- 登录启动先创建仅依赖 PyQt、硬件客户端和托盘资源的启动壳；完整 Fluent 窗口首次打开时才加载。窗口尚未创建时，托盘通知仍按当前实例、提示代次和可确认条件直接确认。
-- 升级时只把能够确认属于本应用的已知旧 Run 命令迁移到当前固定命令并回读；初始化标记仍保留。用户已关闭的空值不得自动重开，未知内容不得覆盖或删除。
-- MSI 同时携带应用源码与纯 Python UI 依赖的确定性 `unchecked-hash` 字节码；`pythonw` 入口和开始菜单快捷方式使用 `-B -I`，安装目录不需要在运行期写入 `__pycache__`。字节码必须由与受保护运行时相同版本的 Python 生成。
-- MSI 开始菜单快捷方式与界面进程使用同一个固定 AUMID；快捷方式重建后必须回读校验，避免通知来源回退为 `Python`。
-- MSI 交互式安装（含 major upgrade）成功后的完成页默认勾选「启动应用」。点击完成通过 WiX `WixUnelevatedShellExec` 打开主目录内 MSI 管理的 `LaunchFrontend.lnk`，以桌面用户身份运行受保护的 `pythonw -B -I launch.py`；静默安装、修复、卸载和失败路径不启动。启动失败保留完成页并报告错误，不回退到提权启动。启动目标显式补齐路径分隔符，快捷方式参数通过 MSI 文件引用定位 `launch.py`，不依赖目录属性的末尾反斜杠。完成页只给复选框本身保留背景，说明文字透明绘制，避免覆盖品牌背景。
-- 开始菜单快捷方式直接位于 `Programs` 根级，不创建同名应用文件夹；升级时只迁移已知的旧应用文件夹内链接，并仅在旧文件夹为空时清理该文件夹。
-
-### 显示恢复与姿态交接
-
-- 所有显示写入使用恢复日志。用户切换、硬件源失效或写入失败时，程序撤销确认并恢复原方向。
-- 单纯锁屏时，服务端把手动模式切回自动，但保留健康会话租约、显示与 CSM 所有权。已登记的精确会话进程可继续读取状态和提交显示回执，沿用令牌、登录实例、进程创建时间、活动本地控制台与鉴权时效校验；普通界面和其他 RPC 操作仍被拒绝。锁屏与熄屏只影响无人值守提示，不否定显示已应用。恢复查询仍使用原显示工作线程及其 RPC 通道，物理源不健康时保留恢复日志。新会话进程只在解锁时启动；服务重启或会话进程退出后，锁屏期间等待解锁再启动。
-- 恢复日志读取、损坏隔离或删除失败时保留失败状态，不把旧所有权当成不存在。服务启动基线只读检查 CSM 恢复记录，损坏记录由合格用户会话隔离。正式会话同时接入内屏事务刷新和仅外屏的只读拓扑校验；已有内屏恢复记录会阻止忽略该记录而选择仅外屏路径。
-- 平板退出前不再预锁方向：Windows 在释放 convertible-slate 指示器时会覆盖旋转锁并转向桌面原生方向，预锁只会带来额外的回滚转动。退出后只读等待最多两秒并持续补锁，等待不因硬件状态短暂不可读而提前结束，目标稳定后一次写入方向。软件帐篷和支架先发布 CSM 并等待 Windows 响应落地，再一次写入方向和锁；笔记本仍先写方向再发布 CSM。显示回滚或平台改写期间保留已成功发布的 CSM 租约，只有资格丢失、CSM 通知失败或真正释放才恢复启动值。物理接管时不得把旧软件目标或启动值重新写入 CSM。
-- 会话启动时授权证明、显示恢复、后续显示写入和最终恢复/CSM 释放共用显示工作线程；lease worker 使用独立 RPC 通道，主线程不构造或恢复显示，也不会占用第三个有界通道。重复释放 CSM 保持幂等，不再重复查询硬件或重写启动值。
-- 睡眠或休眠会结束旧姿态事务。服务在恢复会话请求前检查主循环时钟跳变；资格或物理源恢复后，自动模式必须等新的稳定姿态，不能先发布临时笔记本目标再跳向帐篷。单纯锁屏及解锁不会触发恢复原方向。
-- 服务直接订阅挂起和恢复通知：挂起及首次恢复通知立即作废物理开关缓存，owner loop 清除旧事务；恢复优先接受新的合法 ETW Event 115，已验证机型也允许以新的稳定笔记本/帐篷几何自动恢复非平板基线，不能读取 CSM 软件输出或超时伪造状态。无法确认时保持不可用并保留恢复记录。丢失通知时由主循环时钟跳变作废缓存兜底；正常通知路径保留恢复通知后、首次恢复轮询前已收到的新物理事件。
-- 自动恢复和用户恢复通知属于同一轮唤醒：会话与服务只处理一次恢复，直到下一次挂起重新开放处理，避免已恢复的显示再次撤销。
-
-Windows 产品保持内置键盘和触控板可用，不加载自研输入过滤驱动，不要求测试签名。源码目录不能作为特权运行时；正式服务只由 MSI 安装。
-
-Windows 服务将检测偏好、提示偏好和传感器校准原子写入 `%ProgramData%\PanasonicPostureManager\State\settings.json`。MSI 在启动服务前为 State 目录设置仅 SYSTEM 和管理员可写的 ACL；损坏设置按共享设置存储规则隔离。
-
-Windows 外观选择独立写入当前用户的 `%LOCALAPPDATA%\PanasonicPostureManager\appearance.ini`，使用原子同步并在首次打开窗口时恢复；写入失败会恢复原选择并提示保存失败。无法读取或内容无效时使用系统外观，保留原文件；无效文件不会被设置操作覆盖。登录启动偏好保存在当前用户的 Run 值与初始化标记中。手动模式只在当前控制周期有效，锁屏、睡眠、会话失效或服务重启后回到自动，不持久化旧目标。
-
-Windows RPC v1 增加无参数的 `start_control` 和 `stop_control`，仍要求当前本地控制台身份鉴权，可信会话进程不能调用这两个 UI 操作。`stop_control` 的 `accepted=False` 表示正常等待恢复，客户端须继续查询，不能提前宣告退出成功。监管器向会话进程发送既有停止信号，保留恢复期间的 RPC 资格，进程成功退出并完成资源清理后才返回 True；超时强制结束或非零退出码均报告失败。停止只约束发起请求的登录实例，重新打开界面会发送一次 `start_control`；重连不重放启动或停止请求。
-
-MSI 只有在安装前没有产品配置标记时才注册 CSM 配置移除回滚。升级和修复沿用旧安装的恢复记录，失败回滚不得撤销该配置。
 
 ## 开发运行
 
@@ -177,10 +122,7 @@ Linux 依赖 Python 3.11+、C11 编译器、Make、gettext、PyGObject、GTK 4�
 PYTHONPATH=src /usr/bin/python3 -m panasonic_posture.linux.app.cli
 ```
 
-Windows 源码运行使用 64 位 Python 3.11+。Windows UI 固定使用 PyQt6 6.8.1 和 Qt 6.8.2；如需升级 Qt，必须先重新核对 Windows 支持范围和完成 UI 回归测试。
-`PyQt6-Frameless-Window` 在 Windows 上还依赖 `pywin32`；MSI 构建会验证 `win32api`、`win32gui`、`win32comext` 和配套 DLL，CI 解包后会实际导入 UI 组件。
-
-启动壳与 Fluent 控件沿用系统主字体，优先追加已安装的 `Microsoft YaHei UI`（缺失时使用 `Microsoft YaHei`）作为中文回退；两者都缺失时保留系统回退。字体配置在托盘创建前生效，不加载 Fluent。显式使用垂直微调（`PreferVerticalHinting`）、抗锯齿和轮廓字体优先（`PreferOutline`），保留原生子像素渲染能力。Windows 的默认微调仍为完整像素对齐，不能用默认值代替垂直微调。离屏回归覆盖中英文、明暗主题、弹窗和 100%／125%／150%／200% 缩放；实际 ClearType 观感仍需在目标屏幕上人工确认。
+Windows 使用 64 位 Python 3.11+。在本地控制台用普通用户启动界面，并连接已安装的硬件服务。
 
 ```bat
 py -3 -m venv .venv-windows
@@ -188,7 +130,7 @@ py -3 -m venv .venv-windows
 packaging\windows\run.cmd --language zh_CN
 ```
 
-支持的参数只有 `--language en|zh_CN` 和 Windows 专用的 `--background`。源码界面同样只连接已安装的硬件服务。
+界面支持 `--language en|zh_CN`，Windows 另支持 `--background`。
 
 ## 构建与验证
 
@@ -200,35 +142,7 @@ Linux 完整检查：
 make WERROR=1 check
 ```
 
-常用分类：
-
-```sh
-make check-unit
-make check-c
-make check-dbus
-make check-i18n
-```
-
-只检查两平台的静态导入边界时，运行
-`python -m unittest discover -s tests -p "test_platform_imports.py" -v`
-（同样需要 `PYTHONPATH=src`）。该检查每轮只解析一次源码，并覆盖绝对导入、
-相对导入和 `from 包 import 子模块`，不加载平台适配器或访问硬件。
-
-Windows CI 与本地检查：
-
-共享界面交互逻辑在 `test_frontend.py` 验证；Windows 资源与语言选择在
-`test_windows_resources.py` 验证，两者都不需要 Qt。`test_windows_ui.py`
-保留入口、断线客户端和隔离控件测试；参数矩阵直接调用入口，帮助命令保留独立进程检查。
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m compileall -q src/panasonic_posture/windows
-python -m unittest discover -s tests -p "test_windows*.py" -v
-python -m unittest discover -s tests -p "test_session_refresh.py" -v
-python -m unittest discover -s tests -p "test_frontend.py" -v
-python -m unittest tests.test_localization tests.test_i18n_check -v
-python tests/check_i18n.py
-```
+按改动选择目标测试、Windows 完整检查和跳过项记录方法，见 [AGENTS.md 第 6、10 节](AGENTS.md)。
 
 ### 打包
 
@@ -242,17 +156,9 @@ Windows 首次构建前先按下方“Windows 构建依赖”准备 Python 依�
 | Windows MSI（正式） | `python packaging\windows\build_msi.py --dependencies build\windows-dependencies --culture all` | `dist/windows/` 下两个带 culture 的文件名 |
 | Windows MSI（安装测试） | 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies --test-build` | `dist/windows/` 下带 `build<N>` 的文件名 |
 
-Windows 的正式构建、发布和兼容契约只覆盖两个本地化 MSI。`panasonic-posture-windows-portable.zip` 不属于发布产物；开发时若通过 `packaging/windows/build.py` 生成，只用于诊断，其文件名、目录布局、校验文件和兼容性均不受支持。
+Windows 正式发布提供简体中文和英文 MSI。每次安装测试使用新的 `--test-build` 编号（也可指定，如 `--test-build 7`）。自动编号依据同版本已有构建，请保留输出目录。测试版高于相同基础版本的正式包，安装该正式包前需先卸载测试版。
 
-每次安装测试必须使用新的 build 编号。`--test-build` 会根据 `dist/windows/` 中同版本产物自动选择下一个编号，也可用 `--test-build 7` 显式指定。用户可见版本为 `3.0.0-build7`，MSI 内部四段版本为 `3.0.0.7`；ProductCode 由正式版本和 build 编号共同确定，同一 build 的中英文安装包共享 ProductCode，不同 build 使用不同 ProductCode，UpgradeCode 始终不变。这样后续测试构建会执行 major upgrade 并替换缺少文件版本资源的新负载。安装包的 `BUILD-VERSION` 和关于页显示该测试版本，正式发布构建不带此后缀。
-
-安装测试的 MSI 版本高于同一基础版本的正式包。在测试机上安装同基础版本的正式包前，应先卸载测试构建，或先提升正式版本号。
-
-Windows MSI 默认构建简体中文界面；正式发布同时生成简体中文和英文安装包。`--culture all` 在同一进程中复用负载枚举、字节码、哈希和组件清单；所有语言包均通过 WiX 验证后才替换原有安装包。它与 `--test-build` 组合时只分配一次编号。两种文化使用相同的版本 ProductCode 和 UpgradeCode，文件名分别包含 `zh-CN` 或 `en-US`，不能相互覆盖。安装与卸载共用同一套方形应用标志、欢迎/完成页背景、微软雅黑字体、最终确认页和重启提示，界面资源位于 `packaging/windows/msi/`；卸载流程提供明确的维护说明、卸载确认、带品牌背景的执行页和卸载专用完成提示。主程序可安装到用户选择的本地固定磁盘目录，输入上级目录时自动补全 `PanasonicPostureManager` 叶目录；安装器拒绝磁盘根、Windows/系统目录、固定服务目录、重解析点、过长路径和已有陌生文件的目录。静默安装必须在 `INSTALLFOLDER` 中给出包含该叶目录的完整绝对路径。硬件运行时和服务固定安装到 `Program Files\PanasonicPostureManagerService`，不随主程序路径变化。
-
-含非 ASCII 文本的 PowerShell 脚本必须保存为带 BOM 的 UTF-8；Windows PowerShell 5.1 会按系统 ANSI 代码页解释无 BOM 的 UTF-8，可能破坏安装自定义动作的字符串边界。打包测试会检查 `packaging/windows/` 下的脚本。
-
-开始菜单快捷方式使用 `IShellLinkW` 和 `IPersistFile` 保存 Unicode 路径及通知身份，避免 `WScript.Shell` 在英文系统或路径包含系统代码页以外字符时保存失败；目标 Programs 目录缺失时由修复脚本创建。
+静默安装指定 `INSTALLFOLDER` 时，请使用本地固定磁盘上的完整绝对路径，末级目录为 `PanasonicPostureManager`。服务固定安装到 `Program Files\PanasonicPostureManagerService`。
 
 #### Windows 构建依赖
 
@@ -270,9 +176,9 @@ wix extension add -g WixToolset.Util.wixext/5.0.2
 & .\.venv-windows\Scripts\python.exe packaging\windows\build_msi.py --dependencies build\windows-dependencies --culture all
 ```
 
-依赖目录仅用于打包，必须由同一解释器创建，切换 Python 版本时使用新的 `--target` 目录，不向旧目录叠加安装。测试使用虚拟环境内的依赖；打包使用独立目录，避免混入开发工具。`--no-compile` 避免 pip 生成随后会被打包器排除的字节码；安装负载的确定性字节码仍由打包器生成。CI 使用 pip 下载缓存，不缓存已展开的依赖目录。
+切换解释器时重新创建依赖目录。`--check-environment` 校验运行时、UI 依赖及许可证，实际构建另行验证 WiX 扩展和 MSI。修改安装器时保留依赖许可证，含非 ASCII 文本的 PowerShell 脚本使用带 BOM 的 UTF-8。
 
-构建入口在准备负载前验证 Windows x64、WiX 可执行文件，以及 `--runtime` 的 Python 主次版本和字节码格式；默认运行时为构建解释器的 `sys.base_prefix`。`--check-environment` 还校验负载、UI 依赖及许可证，成功后不生成 MSI，也不安装或操作硬件。WiX 扩展和 MSI 的完整校验仍在实际构建时执行。
+Windows 品牌图片位于 `data/assets/windows/`。修改浅色标题栏标志后，运行 `packaging/windows/prepare-branding.ps1` 生成深色版本并核对两种主题。
 
 #### Arch 包验证
 
@@ -286,28 +192,7 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 
 ## 发布
 
-1. 同步 `pyproject.toml`、`__version__`、README、AUR、翻译文件头和其他发布元数据。
-2. 运行版本一致性检查：
-
-```sh
-python packaging/common/release_version.py --tag v3.0.0
-```
-
-3. 通过完整测试后推送版本标签。发布工作流会构建 Arch、Deb、RPM 和简体中文/英文 Windows MSI，生成 `SHA256SUMS`，上传 GitHub Release，并更新两个 AUR 包。
-4. 重建已有版本时手动运行发布工作流，指定源码提交和标签；同名附件会被替换。版本号与已有标签保持不变，构建使用所选提交；导出的 AUR 源码包配方固定到该提交的完整 SHA，避免重新获取旧标签的源码。
-
-包内必须保留 Python、PyQt6、Qt、Fluent Widgets 及其传递依赖的许可。
-
-## 扩展平台
-
-先阅读 [AGENTS.md](AGENTS.md) 的模块地图和系统不变量。新平台至少需要实现：
-
-| 部分 | 接口 | 要求 |
-| --- | --- | --- |
-| 传感器与输入 | `service/ports.py` | 统一到设备坐标和时间基准；不得伪造硬件状态。 |
-| 桌面会话 | `session/ports.py` | 提供方向、方向锁、显示恢复日志和就绪回执。 |
-| 界面通信 | `frontend/ports.py` | 校验服务快照；断线后丢弃旧结果。 |
-
-共用层负责姿态策略、目标/结果分离、租约、恢复事务和状态发布。平台层只负责硬件、桌面和权限适配，不能用平台特例绕过共用事务。
-
-现行协议版本为：状态快照 v2、C relay v4、硬件 profile v1、设置 v1、显示恢复日志 v1。修改兼容契约前须取得明确授权，并同步所有调用方、打包配置和契约测试。
+1. 同步版本号、README、AUR 配方和翻译文件头。运行 `python packaging/common/release_version.py --tag v3.0.0`，标签换成本次版本。
+2. 在 `docs/releases/v<版本>.md` 编写本次发布说明，按「简体中文」「English」分节。对照上个发布版本，写清哪些用户受影响、使用体验有何变化，以及是否需要升级后操作。两种语言应覆盖相同事实，明确区分 Windows、Linux 和实验性支持。[3.0.0 示例](docs/releases/v3.0.0.md)
+3. 审核双语正文，通过完整检查并取得发布授权后推送版本标签。工作流用该文件创建 Release，附上 Arch、Deb、RPM、两种语言的 Windows MSI 和 `SHA256SUMS`，随后更新两个 AUR 包。
+4. 重建已有版本时，从所选源码提交手动运行发布工作流并指定原标签。同名附件会被替换，已有发布正文会保留。若重建影响用户，须同步更新线上中英文说明并注明实际构建提交。

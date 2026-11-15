@@ -349,6 +349,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out release notes from the package source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+
       - name: Download package artifacts
         uses: actions/download-artifact@v4
         with:
@@ -381,10 +387,17 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${assets[@]}" --clobber
           else
+            notes="docs/releases/$TAG.md"
+            for heading in '## 简体中文' '## English'; do
+              grep -Fxq "$heading" "$notes" || {
+                echo "Missing '$heading' in $notes" >&2
+                exit 1
+              }
+            done
             gh release create "$TAG" "${assets[@]}" \
               --verify-tag \
               --title "Panasonic 2-in-1 Tablet Posture Management Tool $TAG" \
-              --generate-notes
+              --notes-file "$notes"
           fi
 
   aur:

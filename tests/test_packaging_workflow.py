@@ -278,7 +278,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             "github.sha || github.ref_name }}",
             self.workflow,
         )
-        self.assertEqual(self.workflow.count("ref: ${{ env.SOURCE_REF }}"), 5)
+        self.assertEqual(self.workflow.count("ref: ${{ env.SOURCE_REF }}"), 6)
 
     def test_arch_build_uses_checkout_and_exports_tag_pinned_aur_metadata(self) -> None:
         arch = self.workflow.split("  package-arch:", 1)[1].split("  package-deb:", 1)[0]
@@ -424,6 +424,13 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("gh release upload", release)
         self.assertIn("gh release create", release)
         self.assertIn("SHA256SUMS", release)
+
+    def test_new_release_uses_reviewed_notes_for_its_tag(self) -> None:
+        release = self.workflow.split("  release:", 1)[1].split("  aur:", 1)[0]
+        self.assertIn("ref: ${{ env.SOURCE_REF }}", release)
+        self.assertIn('notes="docs/releases/$TAG.md"', release)
+        self.assertIn('--notes-file "$notes"', release)
+        self.assertNotIn("--generate-notes", release)
 
     def test_aur_push_uses_generated_metadata_and_a_secret(self) -> None:
         aur = self.workflow.split("  aur:", 1)[1]

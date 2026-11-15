@@ -138,6 +138,13 @@ class ReleaseMetadataTests(unittest.TestCase):
                     "README must describe user outcomes, not implementation details",
                 )
 
+    def test_current_release_has_notes_in_both_languages(self) -> None:
+        notes = read(f"docs/releases/v{self.project_version}.md")
+        chinese, english = notes.split("\n## English\n")
+        self.assertTrue(chinese.startswith("## 简体中文\n"))
+        self.assertRegex(chinese.removeprefix("## 简体中文\n"), r"[\u4e00-\u9fff]")
+        self.assertRegex(english, r"[A-Za-z]{2,}")
+
     def test_release_inputs_exist(self) -> None:
         for relative in (
             "README.md",
