@@ -18,11 +18,11 @@ Get-FileHash -Algorithm SHA256 -Path .\*.msi | Format-List Path, Hash
 
 | 平台 | 安装命令 |
 | --- | --- |
-| Arch Linux | `sudo pacman -U ./panasonic-posture-manager-2.5.0-1-x86_64.pkg.tar.zst` |
-| Ubuntu / Debian | `sudo apt install ./panasonic-posture-manager_2.5.0-1_amd64.deb` |
-| Fedora | `sudo dnf install ./panasonic-posture-manager-2.5.0-1.x86_64.rpm` |
-| Windows（简体中文） | 双击 `panasonic-posture-manager-2.5.0-zh-CN-windows-x64.msi`，完成后重启 |
-| Windows（英文） | 双击 `panasonic-posture-manager-2.5.0-en-US-windows-x64.msi`，完成后重启 |
+| Arch Linux | `sudo pacman -U ./panasonic-posture-manager-3.0.0-1-x86_64.pkg.tar.zst` |
+| Ubuntu / Debian | `sudo apt install ./panasonic-posture-manager_3.0.0-1_amd64.deb` |
+| Fedora | `sudo dnf install ./panasonic-posture-manager-3.0.0-1.x86_64.rpm` |
+| Windows（简体中文） | 双击 `panasonic-posture-manager-3.0.0-zh-CN-windows-x64.msi`，完成后重启 |
+| Windows（英文） | 双击 `panasonic-posture-manager-3.0.0-en-US-windows-x64.msi`，完成后重启 |
 
 文件名以实际发布版本为准。Ubuntu/Debian 需要 GTK 4.12+ 和 libadwaita 1.4+，依赖由包管理器安装。
 
@@ -244,7 +244,7 @@ Windows 首次构建前先按下方“Windows 构建依赖”准备 Python 依�
 
 Windows 的正式构建、发布和兼容契约只覆盖两个本地化 MSI。`panasonic-posture-windows-portable.zip` 不属于发布产物；开发时若通过 `packaging/windows/build.py` 生成，只用于诊断，其文件名、目录布局、校验文件和兼容性均不受支持。
 
-每次安装测试必须使用新的 build 编号。`--test-build` 会根据 `dist/windows/` 中同版本产物自动选择下一个编号，也可用 `--test-build 7` 显式指定。用户可见版本为 `2.5.0-build7`，MSI 内部四段版本为 `2.5.0.7`；ProductCode 由正式版本和 build 编号共同确定，同一 build 的中英文安装包共享 ProductCode，不同 build 使用不同 ProductCode，UpgradeCode 始终不变。这样后续测试构建会执行 major upgrade 并替换缺少文件版本资源的新负载。安装包的 `BUILD-VERSION` 和关于页显示该测试版本，正式发布构建不带此后缀。
+每次安装测试必须使用新的 build 编号。`--test-build` 会根据 `dist/windows/` 中同版本产物自动选择下一个编号，也可用 `--test-build 7` 显式指定。用户可见版本为 `3.0.0-build7`，MSI 内部四段版本为 `3.0.0.7`；ProductCode 由正式版本和 build 编号共同确定，同一 build 的中英文安装包共享 ProductCode，不同 build 使用不同 ProductCode，UpgradeCode 始终不变。这样后续测试构建会执行 major upgrade 并替换缺少文件版本资源的新负载。安装包的 `BUILD-VERSION` 和关于页显示该测试版本，正式发布构建不带此后缀。
 
 安装测试的 MSI 版本高于同一基础版本的正式包。在测试机上安装同基础版本的正式包前，应先卸载测试构建，或先提升正式版本号。
 
@@ -290,7 +290,7 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 2. 运行版本一致性检查：
 
 ```sh
-python packaging/common/release_version.py --tag v2.5.0
+python packaging/common/release_version.py --tag v3.0.0
 ```
 
 3. 通过完整测试后推送版本标签。发布工作流会构建 Arch、Deb、RPM 和简体中文/英文 Windows MSI，生成 `SHA256SUMS`，上传 GitHub Release，并更新两个 AUR 包。
