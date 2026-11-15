@@ -2,7 +2,7 @@
 """End-to-end session adapter check on an isolated development bus.
 
 Run by ``make check-dbus`` inside ``dbus-run-session``.  A real daemon starts
-on the session bus with the normal sensor/switch composition; the real
+on the session bus with injected healthy sensor/switch ports; the real
 ``Agent`` process shell and ``SessionRuntime`` then own the per-uid adapter
 name, apply one display target through an injected fake Display, send a lease
 heartbeat and clean up on quit.  No Mutter, notification daemon, system bus or
@@ -67,6 +67,9 @@ class FakeDisplay:
     def restore(self, normal: bool = False) -> None:
         self.restores += 1
 
+    def hold_orientation(self) -> None:
+        pass
+
 
 class FakeNotifier:
     def __init__(self) -> None:
@@ -117,7 +120,8 @@ def main() -> int:
         raise SystemExit(f"missing helper: {DAEMON}")
     with tempfile.TemporaryDirectory(prefix="posture-agent-") as config_dir:
         process = subprocess.Popen(
-            [sys.executable, str(DAEMON), str(Path(config_dir) / "settings.json")],
+            [sys.executable, str(DAEMON), str(Path(config_dir) / "settings.json"),
+             '--ready-fixture'],
             cwd=str(REPO_ROOT),
         )
         try:
