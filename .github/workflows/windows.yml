@@ -10,6 +10,7 @@ on:
       - 'backend/windows/**'
       - 'data/assets/**'
       - 'po/**'
+      - 'pyproject.toml'
       - '.github/workflows/windows.yml'
   pull_request:
   workflow_dispatch:
@@ -33,6 +34,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           architecture: x64
+          cache: pip
+          cache-dependency-path: packaging/windows/requirements-ui.txt
       - name: Install Windows UI dependencies
         run: python -m pip install -r packaging/windows/requirements-ui.txt
       - name: Check Windows hardware, frontend and Qt widgets
@@ -51,25 +54,26 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Stage third-party packages with licenses
         if: matrix.python == '3.13'
-        run: python -m pip install --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
+        run: python -m pip install --no-compile --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
       - name: Install WiX
         if: matrix.python == '3.13'
         run: |
           dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
           $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $env:PATH = "$tools;$env:PATH"
           wix extension add -g WixToolset.UI.wixext/5.0.2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           wix extension add -g WixToolset.Util.wixext/5.0.2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build MSI
         if: matrix.python == '3.13'
         run: |
           $version = python packaging/common/release_version.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($culture in @('zh-CN', 'en-US')) {
-            python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture $culture
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
+          python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture all
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Verify MSI administrative payload
         if: matrix.python == '3.13'
         run: |

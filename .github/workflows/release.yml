@@ -255,6 +255,8 @@ jobs:
         with:
           python-version: '3.13'
           architecture: x64
+          cache: pip
+          cache-dependency-path: packaging/windows/requirements-ui.txt
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
@@ -264,13 +266,18 @@ jobs:
       - name: Install application and WiX dependencies
         run: |
           python -m pip install -r packaging/windows/requirements-ui.txt
-          python -m pip install --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install --no-compile --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $tools = Join-Path $env:USERPROFILE '.dotnet\tools'
           $tools | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $env:PATH = "$tools;$env:PATH"
           wix extension add -g WixToolset.UI.wixext/5.0.2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           wix extension add -g WixToolset.Util.wixext/5.0.2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Run Windows checks
         run: |
@@ -291,10 +298,8 @@ jobs:
         run: |
           $version = python packaging/common/release_version.py --tag $env:RELEASE_TAG
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          foreach ($culture in @('zh-CN', 'en-US')) {
-            python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture $culture
-            if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          }
+          python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture all
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $packages = @(Get-ChildItem dist/windows/*.msi)
           if ($packages.Count -ne 2) {
             throw "Expected two localized MSI packages, found $($packages.Count)."

@@ -230,7 +230,7 @@ Windows 首次构建前先按下方“Windows 构建依赖”准备 Python 依�
 | Arch | `(cd packaging/linux/aur && makepkg --cleanbuild)` | 当前目录 |
 | Debian / Ubuntu | `make package-deb` | `dist/packages/` |
 | Fedora | `make package-rpm` | `dist/packages/` |
-| Windows MSI（正式） | 分别使用 `--culture zh-CN` 和 `--culture en-US` 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies` | `dist/windows/` 下两个带 culture 的文件名 |
+| Windows MSI（正式） | `python packaging\windows\build_msi.py --dependencies build\windows-dependencies --culture all` | `dist/windows/` 下两个带 culture 的文件名 |
 | Windows MSI（安装测试） | 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies --test-build` | `dist/windows/` 下带 `build<N>` 的文件名 |
 
 Windows 的正式构建、发布和兼容契约只覆盖两个本地化 MSI。`panasonic-posture-windows-portable.zip` 不属于发布产物；开发时若通过 `packaging/windows/build.py` 生成，只用于诊断，其文件名、目录布局、校验文件和兼容性均不受支持。
@@ -239,18 +239,29 @@ Windows 的正式构建、发布和兼容契约只覆盖两个本地化 MSI。`p
 
 安装测试的 MSI 版本高于同一基础版本的正式包。在测试机上安装同基础版本的正式包前，应先卸载测试构建，或先提升正式版本号。
 
-Windows MSI 默认构建简体中文界面；正式发布同时生成简体中文和英文安装包。两种文化使用相同的版本 ProductCode 和 UpgradeCode，文件名分别包含 `zh-CN` 或 `en-US`，不能相互覆盖。安装与卸载共用同一套方形应用标志、欢迎/完成页背景、微软雅黑字体、最终确认页和重启提示，界面资源位于 `packaging/windows/msi/`；卸载流程提供明确的维护说明、卸载确认、带品牌背景的执行页和卸载专用完成提示。主程序可安装到用户选择的本地固定磁盘目录，输入上级目录时自动补全 `PanasonicPostureManager` 叶目录；安装器拒绝磁盘根、Windows/系统目录、固定服务目录、重解析点、过长路径和已有陌生文件的目录。静默安装必须在 `INSTALLFOLDER` 中给出包含该叶目录的完整绝对路径。硬件运行时和服务固定安装到 `Program Files\PanasonicPostureManagerService`，不随主程序路径变化。
+Windows MSI 默认构建简体中文界面；正式发布同时生成简体中文和英文安装包。`--culture all` 在同一进程中复用负载枚举、字节码、哈希和组件清单；所有语言包均通过 WiX 验证后才替换原有安装包。它与 `--test-build` 组合时只分配一次编号。两种文化使用相同的版本 ProductCode 和 UpgradeCode，文件名分别包含 `zh-CN` 或 `en-US`，不能相互覆盖。安装与卸载共用同一套方形应用标志、欢迎/完成页背景、微软雅黑字体、最终确认页和重启提示，界面资源位于 `packaging/windows/msi/`；卸载流程提供明确的维护说明、卸载确认、带品牌背景的执行页和卸载专用完成提示。主程序可安装到用户选择的本地固定磁盘目录，输入上级目录时自动补全 `PanasonicPostureManager` 叶目录；安装器拒绝磁盘根、Windows/系统目录、固定服务目录、重解析点、过长路径和已有陌生文件的目录。静默安装必须在 `INSTALLFOLDER` 中给出包含该叶目录的完整绝对路径。硬件运行时和服务固定安装到 `Program Files\PanasonicPostureManagerService`，不随主程序路径变化。
 
 含非 ASCII 文本的 PowerShell 脚本必须保存为带 BOM 的 UTF-8；Windows PowerShell 5.1 会按系统 ANSI 代码页解释无 BOM 的 UTF-8，可能破坏安装自定义动作的字符串边界。打包测试会检查 `packaging/windows/` 下的脚本。
 
 #### Windows 构建依赖
 
-```bat
-python -m pip install --target build\windows-dependencies -r packaging\windows\requirements-ui.txt
+使用 Windows x64 CPython 3.11+ 完整安装；CI 的打包解释器为 3.13，兼容性测试覆盖 3.11、3.13、3.14。先确认 `python --version` 能输出版本；若 `Get-Command python` 指向 `WindowsApps` 且无法运行，请使用已安装解释器的绝对路径。建议建立仓库专用虚拟环境，避免修改宿主 Python：
+
+```powershell
+# python 应为可运行的 x64 CPython；也可替换为其绝对路径。
+python -m venv .venv-windows
+& .\.venv-windows\Scripts\python.exe -m pip install -r packaging\windows\requirements-ui.txt
+& .\.venv-windows\Scripts\python.exe -m pip install --no-compile --target build\windows-dependencies -r packaging\windows\requirements-ui.txt
 dotnet tool install --global wix --version 5.0.2
 wix extension add -g WixToolset.UI.wixext/5.0.2
 wix extension add -g WixToolset.Util.wixext/5.0.2
+& .\.venv-windows\Scripts\python.exe packaging\windows\build_msi.py --dependencies build\windows-dependencies --check-environment
+& .\.venv-windows\Scripts\python.exe packaging\windows\build_msi.py --dependencies build\windows-dependencies --culture all
 ```
+
+依赖目录仅用于打包，必须由同一解释器创建，切换 Python 版本时使用新的 `--target` 目录，不向旧目录叠加安装。测试使用虚拟环境内的依赖；打包使用独立目录，避免混入开发工具。`--no-compile` 避免 pip 生成随后会被打包器排除的字节码；安装负载的确定性字节码仍由打包器生成。CI 使用 pip 下载缓存，不缓存已展开的依赖目录。
+
+构建入口在准备负载前验证 Windows x64、WiX 可执行文件，以及 `--runtime` 的 Python 主次版本和字节码格式；默认运行时为构建解释器的 `sys.base_prefix`。`--check-environment` 还校验负载、UI 依赖及许可证，成功后不生成 MSI，也不安装或操作硬件。WiX 扩展和 MSI 的完整校验仍在实际构建时执行。
 
 #### Arch 包验证
 

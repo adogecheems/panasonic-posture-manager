@@ -928,6 +928,109 @@ class MsiPayloadTests(unittest.TestCase):
             build_commands[1][build_commands[1].index('-culture') + 1],
         )
 
+    def test_localized_build_prepares_payload_once_and_validates_each_msi(self):
+        commands = []
+
+        def runner(command, **options):
+            commands.append(command)
+            if command[1] == 'build':
+                Path(command[command.index('-o') + 1]).write_bytes(b'msi')
+
+        with patch.object(msi, 'payload_files', wraps=msi.payload_files) as payload:
+            packages = msi.build_many(
+                self.root / 'localized', self.runtime, self.dependencies,
+                cultures=('zh-CN', 'en-US'), test_build=7, runner=runner,
+            )
+        self.assertEqual(payload.call_count, 1)
+        self.assertEqual(len(packages), 2)
+        self.assertEqual([c[1] for c in commands], ['build', 'msi', 'build', 'msi'])
+        self.assertEqual(commands[0][-1], commands[2][-1])
+        for package in packages:
+            self.assertEqual(package.read_bytes(), b'msi')
+            self.assertIn('build7', package.name)
+            self.assertTrue(package.with_suffix('.msi.sha256').is_file())
+
+    def test_second_culture_validation_failure_preserves_both_existing_packages(self):
+        output = self.root / 'localized'
+        output.mkdir()
+        originals = [output / msi.artifact_name(msi.project_version(), culture)
+                     for culture in ('zh-CN', 'en-US')]
+        for path in originals:
+            path.write_bytes(b'previous')
+
+        def runner(command, **options):
+            if command[1] == 'build':
+                Path(command[command.index('-o') + 1]).write_bytes(b'new')
+            elif 'en-US' in command[-1]:
+                raise subprocess.CalledProcessError(1, command)
+
+        with self.assertRaises(subprocess.CalledProcessError):
+            msi.build_many(output, self.runtime, self.dependencies,
+                           cultures=('zh-CN', 'en-US'), runner=runner)
+        self.assertEqual([path.read_bytes() for path in originals],
+                         [b'previous', b'previous'])
+
+    def test_preflight_rejects_incompatible_runtime_and_missing_wix(self):
+        from types import SimpleNamespace
+        identity = msi.runtime_identity()
+        for key, value in (('bits', 32), ('magic', 'invalid'),
+                           ('platform', 'linux'), ('version', [0, 0]),
+                           ('machine', 'arm64')):
+            with self.subTest(key=key):
+                incompatible = dict(identity, **{key: value})
+                with self.assertRaisesRegex(ValueError, 'runtime'):
+                    msi.check_environment(self.runtime, 'wix', runner=lambda *a, **k:
+                                          SimpleNamespace(stdout=json.dumps(incompatible)))
+        with patch.object(msi.shutil, 'which', return_value=None):
+            with self.assertRaisesRegex(ValueError, 'WiX'):
+                msi.check_environment(self.runtime, 'missing', runner=lambda *a, **k:
+                                      SimpleNamespace(stdout=json.dumps(identity)))
+
+    def test_preflight_accepts_matching_runtime_and_reports_probe_failures(self):
+        from types import SimpleNamespace
+        commands = []
+
+        def runner(command, **options):
+            commands.append((command, options))
+            return SimpleNamespace(stdout=json.dumps(msi.runtime_identity()))
+
+        with patch.object(msi.shutil, 'which', return_value='wix.exe'):
+            msi.check_environment(self.runtime, 'wix', runner=runner)
+        self.assertEqual(commands[0][0][1:3], ['-I', '-S'])
+        self.assertEqual(commands[0][1]['timeout'], 15)
+        for error in (FileNotFoundError(), subprocess.TimeoutExpired('python', 15),
+                      subprocess.CalledProcessError(1, 'python'), ValueError()):
+            with self.subTest(error=type(error).__name__):
+                with self.assertRaisesRegex(ValueError, 'cannot inspect'):
+                    with patch.object(msi.subprocess, 'run', side_effect=error) as run:
+                        msi.check_environment(self.runtime, 'wix', runner=run)
+
+    def test_cli_all_allocates_one_test_build_and_check_only_does_not_build(self):
+        with patch.object(msi, 'check_environment'), \
+                patch.object(msi, 'next_test_build', return_value=8) as number, \
+                patch.object(msi, 'build_many', return_value=[]) as build:
+            self.assertEqual(msi.main(['--dependencies', str(self.dependencies),
+                                      '--culture', 'all', '--test-build']), 0)
+        number.assert_called_once()
+        self.assertEqual(build.call_args.kwargs['test_build'], 8)
+        self.assertEqual(set(build.call_args.kwargs['cultures']), {'zh-CN', 'en-US'})
+        with patch.object(msi, 'check_environment'), \
+                patch.object(msi, 'payload_files') as payload, \
+                patch.object(msi, 'build_many') as build:
+            self.assertEqual(msi.main(['--dependencies', str(self.dependencies),
+                                      '--check-environment']), 0)
+        payload.assert_called_once()
+        build.assert_not_called()
+
+    def test_invalid_culture_sets_fail_before_preparing_payload(self):
+        for cultures in ((), ('zh-CN', 'zh-CN'), ('unknown',)):
+            with self.subTest(cultures=cultures):
+                with patch.object(msi, 'payload_files') as payload:
+                    with self.assertRaises(ValueError):
+                        msi.build_many(self.root / 'output', self.runtime,
+                                       self.dependencies, cultures=cultures)
+                payload.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

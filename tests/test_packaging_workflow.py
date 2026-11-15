@@ -278,8 +278,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("dotnet tool install --global wix --version 5.0.2", windows)
         self.assertIn("WixToolset.UI.wixext/5.0.2", windows)
         self.assertIn("python packaging/windows/build_msi.py", windows)
-        self.assertIn("foreach ($culture in @('zh-CN', 'en-US'))", windows)
-        self.assertIn("--culture $culture", windows)
+        self.assertIn("--culture all", windows)
         self.assertIn("name: windows-package", windows)
         self.assertIn("dist/windows/*.msi", windows)
         self.assertIn("files=(*.deb *.rpm *.pkg.tar.zst *.msi)", self.workflow)
@@ -297,6 +296,15 @@ class ReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertNotIn("windows_bundle_smoke.py", windows)
         self.assertIn("path: dist/windows/*.msi", windows)
+
+    def test_windows_workflows_cache_downloads_and_skip_discarded_bytecode(self) -> None:
+        for workflow in (".github/workflows/windows.yml", ".github/workflows/release.yml"):
+            source = read(workflow)
+            with self.subTest(workflow=workflow):
+                self.assertIn("cache: pip", source)
+                self.assertIn("cache-dependency-path: packaging/windows/requirements-ui.txt", source)
+                self.assertIn("pip install --no-compile --target build/windows-dependencies", source)
+                self.assertIn("--culture all", source)
 
     def test_windows_workflows_install_required_wix_extensions(self) -> None:
         extensions = (

@@ -12,8 +12,10 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path, PurePosixPath
+import platform
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -438,6 +440,24 @@ def build(
     runner=subprocess.run,
 ) -> Path:
     """Build one versioned MSI atomically and return its path."""
+    return build_many(
+        output, runtime, dependencies, version=version, cultures=(culture,),
+        test_build=test_build, wix=wix, runner=runner,
+    )[0]
+
+
+def build_many(
+    output: Path,
+    runtime: Path,
+    dependencies: Path,
+    *,
+    version: str | None = None,
+    cultures: tuple[str, ...] = ('zh-CN', 'en-US'),
+    test_build: int | None = None,
+    wix: str = 'wix',
+    runner=subprocess.run,
+) -> list[Path]:
+    """Share payload preparation; validate every culture before replacing artifacts."""
     version = version or project_version()
     if version != project_version():
         raise ValueError(f'MSI version {version!r} does not match the project version')
@@ -446,13 +466,14 @@ def build(
         raise ValueError('MSI package source is missing')
     if sys.platform != 'win32':
         raise OSError('the Windows MSI build must run on Windows')
-    localization, license_rtf = culture_files(culture)
-    for resource in (localization, license_rtf):
-        if not resource.is_file():
-            raise ValueError(f'MSI culture resource is missing: {resource}')
+    if not cultures or len(set(cultures)) != len(cultures):
+        raise ValueError('MSI cultures must be nonempty and unique')
+    for culture in cultures:
+        for resource in culture_files(culture):
+            if not resource.is_file():
+                raise ValueError(f'MSI culture resource is missing: {resource}')
 
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / artifact_name(version, culture, test_build)
     with tempfile.TemporaryDirectory(prefix='posture-msi-', dir=output) as temporary:
         work = Path(temporary)
         groups = payload_files(runtime, dependencies)
@@ -496,35 +517,77 @@ def build(
             encoding='utf-8',
             newline='\n',
         )
-        temporary_msi = work / archive.name
-        runner([
-            wix, 'build',
-            '-arch', 'x64',
-            '-culture', culture,
-            '-ext', 'WixToolset.UI.wixext',
-            '-ext', 'WixToolset.Util.wixext',
-            '-loc', str(localization),
-            '-d', f'ProductVersion={installer_version(version, test_build)}',
-            '-d', f'ProductCode={product_code(version, test_build)}',
-            '-d', f'ProjectRoot={ROOT}',
-            '-d', f'LicenseRtf={license_rtf}',
-            '-o', str(temporary_msi),
-            str(PACKAGE_WXS),
-            str(components),
-        ], cwd=ROOT, check=True)
-        if not temporary_msi.is_file():
-            raise OSError('WiX did not create the requested MSI')
-        runner([
-            wix, 'msi', 'validate',
-            '-sice', 'ICE61',  # Same-version rebuilds are an explicit release mode.
-            str(temporary_msi),
-        ], cwd=ROOT, check=True)
-        temporary_msi.replace(archive)
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    archive.with_suffix('.msi.sha256').write_text(
-        f'{digest}  {archive.name}\n', encoding='ascii'
+        archives = []
+        for culture in cultures:
+            localization, license_rtf = culture_files(culture)
+            archive = output / artifact_name(version, culture, test_build)
+            temporary_msi = work / archive.name
+            runner([
+                wix, 'build',
+                '-arch', 'x64',
+                '-culture', culture,
+                '-ext', 'WixToolset.UI.wixext',
+                '-ext', 'WixToolset.Util.wixext',
+                '-loc', str(localization),
+                '-d', f'ProductVersion={installer_version(version, test_build)}',
+                '-d', f'ProductCode={product_code(version, test_build)}',
+                '-d', f'ProjectRoot={ROOT}',
+                '-d', f'LicenseRtf={license_rtf}',
+                '-o', str(temporary_msi),
+                str(PACKAGE_WXS),
+                str(components),
+            ], cwd=ROOT, check=True)
+            if not temporary_msi.is_file():
+                raise OSError('WiX did not create the requested MSI')
+            runner([
+                wix, 'msi', 'validate',
+                '-sice', 'ICE61',  # Same-version rebuilds are an explicit release mode.
+                str(temporary_msi),
+            ], cwd=ROOT, check=True)
+            archives.append((temporary_msi, archive))
+        for temporary_msi, archive in archives:
+            temporary_msi.replace(archive)
+    for _, archive in archives:
+        digest = bundle.file_digest(archive)
+        archive.with_suffix('.msi.sha256').write_text(
+            f'{digest}  {archive.name}\n', encoding='ascii'
+        )
+    return [archive for _, archive in archives]
+
+
+def runtime_identity() -> dict[str, object]:
+    return {
+        'version': list(sys.version_info[:2]),
+        'magic': importlib.util.MAGIC_NUMBER.hex(),
+        'bits': struct.calcsize('P') * 8,
+        'platform': sys.platform,
+        'machine': platform.machine().casefold(),
+    }
+
+
+def check_environment(runtime: Path, wix: str, *, runner=subprocess.run) -> None:
+    """Reject incompatible bytecode and native runtimes before preparing the payload."""
+    if (sys.platform != 'win32' or struct.calcsize('P') != 8
+            or platform.machine().casefold() not in ('amd64', 'x86_64')):
+        raise ValueError('build with a Windows x64 Python interpreter')
+    probe = (
+        'import importlib.util,json,platform,struct,sys; '
+        'print(json.dumps(dict(version=list(sys.version_info[:2]), '
+        'magic=importlib.util.MAGIC_NUMBER.hex(), '
+        'bits=struct.calcsize("P")*8, platform=sys.platform, '
+        'machine=platform.machine().casefold())))'
     )
-    return archive
+    try:
+        result = runner([str(runtime / 'python.exe'), '-I', '-S', '-c', probe],
+                        check=True, capture_output=True, text=True, timeout=15)
+        identity = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        raise ValueError(f'cannot inspect Windows Python runtime: {runtime}') from error
+    if identity != runtime_identity():
+        raise ValueError('Windows Python runtime must match the build interpreter '
+                         'version, bytecode format and x64 architecture')
+    if shutil.which(wix) is None:
+        raise ValueError('WiX executable not found; prepare WiX 5.0.2 or pass --wix')
 
 
 def main(argv=None) -> int:
@@ -535,9 +598,9 @@ def main(argv=None) -> int:
     parser.add_argument('--version', default=None)
     parser.add_argument(
         '--culture',
-        choices=tuple(sorted(CULTURE_FILES)),
+        choices=(*sorted(CULTURE_FILES), 'all'),
         default=DEFAULT_MSI_CULTURE,
-        help='Windows Installer UI culture (default: zh-CN)',
+        help='Windows Installer UI culture; all shares payload preparation (default: zh-CN)',
     )
     parser.add_argument(
         '--test-build',
@@ -548,7 +611,17 @@ def main(argv=None) -> int:
         help='build installation-test MSI as VERSION-buildN; omit N for the next number',
     )
     parser.add_argument('--wix', default='wix')
+    parser.add_argument('--check-environment', action='store_true',
+                        help='check interpreter, WiX and payload inputs without building an MSI')
     options = parser.parse_args(argv)
+    try:
+        check_environment(options.runtime, options.wix)
+        if options.check_environment:
+            payload_files(options.runtime, options.dependencies)
+            print('Windows MSI build environment is ready')
+            return 0
+    except ValueError as error:
+        parser.error(str(error))
     test_build = options.test_build
     if test_build == 0:
         try:
@@ -560,15 +633,17 @@ def main(argv=None) -> int:
             test_build = _validate_test_build(test_build)
         except ValueError as error:
             parser.error(str(error))
-    print(build(
+    packages = build_many(
         options.output,
         options.runtime,
         options.dependencies,
         version=options.version,
-        culture=options.culture,
+        cultures=tuple(CULTURE_FILES) if options.culture == 'all' else (options.culture,),
         test_build=test_build,
         wix=options.wix,
-    ))
+    )
+    for package in packages:
+        print(package)
     return 0
 
 
