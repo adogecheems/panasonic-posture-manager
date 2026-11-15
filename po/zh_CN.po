@@ -283,9 +283,6 @@ msgstr "返回自动"
 msgid "Detect tent mode automatically"
 msgstr "自动识别帐篷模式"
 
-msgid "Settings saved"
-msgstr "设置已保存"
-
 msgid "Open app"
 msgstr "打开应用"
 

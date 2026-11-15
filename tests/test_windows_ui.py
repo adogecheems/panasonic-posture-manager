@@ -1316,29 +1316,16 @@ def center_y(widget, parent):
     return origin.y() + widget.height() / 2
 
 window.notify(True)
-bar = window.findChildren(InfoBar)[-1]
-assert effective(bar.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
-assert effective(bar.contentLabel) == (BODY_SIZE, QFont.Weight.Normal)
-assert bar.titleLabel.font().families() == app.font().families()
-assert bar.height() < 40, 'the notice bar must stay slim'
-assert bar.iconWidget.width() == 24
-assert bar.closeButton.width() == 28
-for item in (bar.titleLabel, bar.iconWidget, bar.closeButton):
-    assert abs(center_y(item, bar) - bar.height() / 2) <= 2
-title = bar.titleLabel.mapTo(bar, bar.titleLabel.rect().topLeft())
-icon = bar.iconWidget.mapTo(bar, bar.iconWidget.rect().topLeft())
-close = bar.closeButton.mapTo(bar, bar.closeButton.rect().topLeft())
-left_gap = title.x() - (icon.x() + bar.iconWidget.width())
-right_gap = close.x() - (title.x() + bar.titleLabel.width())
-assert 6 <= left_gap <= 10, 'the copy keeps a small gap from the glyph'
-assert right_gap <= 14, 'the copy must hug the close button'
-assert abs(left_gap - right_gap) <= 6, 'the copy sits between even gaps'
+assert not window.findChildren(InfoBar), 'successful settings changes stay silent'
 window.notify(False, 'Please try again.')
 error_bar = window.findChildren(InfoBar)[-1]
 assert effective(error_bar.titleLabel) == (SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
 assert effective(error_bar.contentLabel) == (BODY_SIZE, QFont.Weight.Normal)
+assert error_bar.titleLabel.font().families() == app.font().families()
 assert error_bar.contentLabel.font().families() == app.font().families()
 assert error_bar.height() < 40
+assert error_bar.iconWidget.width() == 24
+assert error_bar.closeButton.width() == 28
 for item in (error_bar.titleLabel, error_bar.contentLabel,
              error_bar.iconWidget, error_bar.closeButton):
     assert abs(center_y(item, error_bar) - error_bar.height() / 2) <= 2

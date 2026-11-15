@@ -279,13 +279,11 @@ class Window(FluentWidget):
         self.connection_lost.emit()
 
     def notify(self, success, detail: str | None = None):
-        _ = self._
         if success:
-            bar = InfoBar.success(_('Settings saved'), '', duration=3500,
-                                  position=InfoBarPosition.TOP, parent=self)
-        else:
-            bar = InfoBar.error(_('Unable to complete the operation'), detail or _('Please try again.'),
-                                duration=3500, position=InfoBarPosition.TOP, parent=self)
+            return
+        _ = self._
+        bar = InfoBar.error(_('Unable to complete the operation'), detail or _('Please try again.'),
+                            duration=3500, position=InfoBarPosition.TOP, parent=self)
         apply_app_font(bar.titleLabel, SECTION_TITLE_SIZE, EMPHASIS_WEIGHT)
         apply_app_font(bar.contentLabel, BODY_SIZE)
         if isinstance(bar, InfoBar):
