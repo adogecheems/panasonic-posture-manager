@@ -1,4 +1,4 @@
-"""Read-only startup baseline for Windows convertible physical state."""
+"""Read-only startup and fresh geometry baselines for convertible state."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -81,9 +81,11 @@ class StartupPhysicalBaseline:
         sensor,
         clock: Callable[[], float],
         settle: float = .5,
+        minimum_stamp: float | None = None,
     ) -> None:
         self.slate_reader, self.sensor, self.clock = slate_reader, sensor, clock
         self.settle = settle
+        self.minimum_stamp = minimum_stamp
         self._slate_loaded = False
         self._slate: bool | None = None
         self._stable_since: float | None = None
@@ -110,6 +112,7 @@ class StartupPhysicalBaseline:
             and reading.stamp is not None
             and reading.vector is not None
             and 0 <= now - reading.stamp <= 1.
+            and (self.minimum_stamp is None or reading.stamp > self.minimum_stamp)
         ):
             self._stable_since = self._last_stamp = None
             return None

@@ -88,9 +88,48 @@ class HardwareServiceRunnerTests(unittest.TestCase):
         ).read_text(encoding='utf-8')
         self.assertEqual(
             source.count('sc.exe config $ServiceName start= auto obj= LocalSystem'),
-            2,
+            1,
         )
         self.assertNotIn('delayed-auto', source)
+
+    @unittest.skipUnless(sys.platform == 'win32', 'PowerShell recovery fixture requires Windows')
+    def test_recovery_covers_reported_failures_and_checks_each_configuration_step(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / 'packaging/windows/hardware-service.ps1'
+        ).read_text(encoding='utf-8')
+        helper = source[source.index('function Configure-ServiceRecovery'):source.index('function Protect-ServiceLogs')]
+        configure = source[source.index("if ($Action -eq 'Configure')"):source.index("if ($Action -eq 'Remove')")]
+        self.assertIn('Configure-ServiceRecovery', configure)
+        # Execute the production helper with a command fake: never modify SCM.
+        for failure in ('', 'config', 'failure', 'failureflag'):
+            with self.subTest(failure=failure):
+                script = (
+                    "$ErrorActionPreference = 'Stop'\n"
+                    "$ServiceName = 'FixtureHardware'\n"
+                    "$script:commands = [Collections.Generic.List[string]]::new()\n"
+                    "function sc.exe {\n"
+                    "  $script:commands.Add(($args -join ' '))\n"
+                    f"  $global:LASTEXITCODE = if ($args[0] -eq '{failure}') {{ 5 }} else {{ 0 }}\n"
+                    "}\n" + helper +
+                    "try { Configure-ServiceRecovery; $success = $true } "
+                    "catch { $success = $false }\n"
+                    "@{success=$success; commands=@($script:commands.ToArray())} | ConvertTo-Json -Compress\n"
+                )
+                result = subprocess.run(
+                    ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
+                    capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                payload = json.loads(result.stdout)
+                self.assertEqual(payload['success'], not failure)
+                expected = [
+                    'config FixtureHardware start= auto obj= LocalSystem',
+                    'failure FixtureHardware reset= 86400 actions= restart/5000/restart/15000/restart/60000',
+                    'failureflag FixtureHardware 1',
+                ]
+                count = {'': 3, 'config': 1, 'failure': 2, 'failureflag': 3}[failure]
+                self.assertEqual(payload['commands'], expected[:count])
 
     def test_service_start_is_bounded_so_a_failure_cannot_hang_install(self):
         source = (
@@ -119,6 +158,29 @@ class HardwareServiceRunnerTests(unittest.TestCase):
             SERVICE_STOP_PENDING, SERVICE_STOPPED,
         ])
         self.assertEqual(reports[-1][1]['win32_exit_code'], 0)
+        self.assertEqual(reports[-1][1]['service_specific_exit_code'], 0)
+
+    def test_construction_and_cleanup_failures_report_nonzero_status_for_recovery(self):
+        for stage in ('construction', 'cleanup'):
+            with self.subTest(stage=stage):
+                reports, events = [], []
+                stop = threading.Event()
+                stop.set()
+                runtime = Runtime(events)
+
+                def fail():
+                    raise OSError(f'fixture {stage} failure')
+
+                if stage == 'cleanup':
+                    runtime.close = fail
+                factory = fail if stage == 'construction' else lambda: runtime
+                runner = HardwareServiceRunner(factory, tick=.001)
+                with self.assertLogs(daemon.log, level='ERROR'):
+                    code = runner.run(stop, lambda state, **values: reports.append((state, values)))
+                self.assertEqual(code, ERROR_SERVICE_SPECIFIC_ERROR)
+                self.assertEqual(reports[-1][0], SERVICE_STOPPED)
+                self.assertEqual(reports[-1][1]['win32_exit_code'], code)
+                self.assertEqual(reports[-1][1]['service_specific_exit_code'], 1)
 
     def test_startup_failure_is_reported_and_owned_resources_are_closed(self):
         events, reports = [], []

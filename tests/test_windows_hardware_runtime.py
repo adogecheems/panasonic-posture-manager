@@ -34,6 +34,9 @@ class Switch:
         self.events.append('switch-invalidate')
         self.value, self.status = None, HardwareStatus.ABSENT
 
+    def recover(self):
+        pass
+
     def close(self):
         self.closed = True
         self.events.append('switch-close')
@@ -362,6 +365,41 @@ class HardwareRuntimeTests(unittest.TestCase):
                     backend.emit(struct.pack('<II', 0xC0, 0xCC))
                 self.assertTrue(runtime.admitted())
                 self.assertEqual(runtime.switch.query(), (True, HardwareStatus.OK))
+
+    def test_validated_resume_recovers_from_fresh_geometry_without_a_flip(self):
+        from panasonic_posture.model import SensorReading
+        from panasonic_posture.windows.hardware.slate_bootstrap import StartupPhysicalBaseline
+        now = [10.]
+        runtime, _, _, engine, _, _ = self.make(clock=lambda: now[0])
+        backend = SimpleNamespace(failure=None, close=lambda: None)
+        backend.start = lambda callback: None
+        sensor = SimpleNamespace(reading=lambda: SensorReading((0., -9.5, -2.), now[0], 'iio'))
+        runtime.switch = AcpiPhysicalSwitch(
+            backend, initial_reader=lambda: False,
+            resume_reader_factory=lambda: StartupPhysicalBaseline(
+                slate_reader=lambda: None, sensor=sensor, clock=lambda: now[0], minimum_stamp=now[0]),
+        )
+        runtime.start()
+        self.addCleanup(runtime.close)
+        runtime.poll()
+        self.assertTrue(runtime.admitted())
+        runtime._power.callback(True)
+        now[0] += 60.
+        runtime.poll()
+        self.assertFalse(runtime.admitted())
+        runtime._power.callback(False)
+        runtime.poll()
+        self.assertFalse(runtime.admitted())
+        for _ in range(8):
+            now[0] += .1
+            runtime.poll()
+        self.assertTrue(runtime.admitted())
+        runtime._power.callback(False)
+        runtime.poll()
+        self.assertTrue(runtime.admitted())
+        runtime._power.callback(True)
+        runtime.poll()
+        self.assertFalse(runtime.admitted())
 
     def test_close_stops_supervisor_before_releasing_owned_resources(self):
         runtime, events, switch, engine, sensor, trusted_runtime = self.make()

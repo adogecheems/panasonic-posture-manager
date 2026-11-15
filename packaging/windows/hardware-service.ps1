@@ -70,6 +70,10 @@ function Configure-ServiceRecovery {
     & sc.exe failure $ServiceName reset= 86400 `
         actions= restart/5000/restart/15000/restart/60000 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Cannot configure hardware service recovery.' }
+    # The runner cleans up and reports SERVICE_STOPPED with a nonzero code.
+    # SCM otherwise only restarts crashes, leaving handled failures stopped.
+    & sc.exe failureflag $ServiceName 1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot enable recovery for reported hardware service failures.' }
 }
 
 function Protect-ServiceLogs {
@@ -114,11 +118,7 @@ if ($Action -eq 'Configure') {
     if ($null -eq (Get-ServiceRecord)) {
         throw 'Hardware service is not installed.'
     }
-    & sc.exe config $ServiceName start= auto obj= LocalSystem | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot configure the hardware service startup.' }
-    & sc.exe failure $ServiceName reset= 86400 `
-        actions= restart/5000/restart/15000/restart/60000 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot configure hardware service recovery.' }
+    Configure-ServiceRecovery
     Protect-ServiceLogs
     Start-InstalledService | Out-Null
     Write-Output 'Hardware service configuration updated.'

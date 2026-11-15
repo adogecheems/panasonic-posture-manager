@@ -14,6 +14,21 @@ from panasonic_posture.model import SensorReading
 
 
 class SlateBootstrapTests(unittest.TestCase):
+    def test_resume_requires_new_samples_and_a_complete_stability_window(self):
+        now, stamp = [10.], [9.9]
+        sensor = Mock()
+        sensor.reading.side_effect = lambda: SensorReading((0., -9.5, -2.), stamp[0], 'iio')
+        baseline = StartupPhysicalBaseline(
+            slate_reader=lambda: None, sensor=sensor, clock=lambda: now[0], minimum_stamp=10.,
+        )
+        self.assertIsNone(baseline())
+        stamp[0] = now[0] = 10.1
+        self.assertIsNone(baseline())
+        now[0] = 10.7
+        self.assertIsNone(baseline(), 'one repeated sample cannot establish stability')
+        stamp[0] = now[0]
+        self.assertIs(baseline(), False)
+
     def test_corrupt_recovery_record_is_only_read_during_privileged_bootstrap(self):
         with tempfile.TemporaryDirectory() as directory:
             users = Path(directory)

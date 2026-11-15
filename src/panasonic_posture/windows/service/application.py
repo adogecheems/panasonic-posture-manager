@@ -66,6 +66,12 @@ def create_hardware_runtime(
     switch = AcpiPhysicalSwitch(
         initial_reader=baseline,
         trusted_startup_baseline=resolved_profile.support_tier == 'validated',
+        resume_reader_factory=lambda: StartupPhysicalBaseline(
+            slate_reader=lambda: None,
+            sensor=sensor,
+            clock=clock,
+            minimum_stamp=clock(),
+        ),
     )
     engine = Engine(
         controller=Controller(input_control=False),

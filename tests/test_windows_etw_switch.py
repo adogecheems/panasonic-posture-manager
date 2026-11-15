@@ -60,6 +60,44 @@ class PayloadTests(unittest.TestCase):
 
 
 class PhysicalSwitchTests(unittest.TestCase):
+    def test_resume_recovery_requires_independent_confirmation_and_healthy_etw(self):
+        for trusted, failed, value in ((True, False, False), (False, False, False),
+                                       (True, True, False), (True, False, None),
+                                       (True, False, True)):
+            with self.subTest(trusted=trusted, failed=failed, value=value):
+                backend = FakeBackend()
+                switch = AcpiPhysicalSwitch(
+                    backend, trusted_startup_baseline=trusted,
+                    resume_reader_factory=lambda: lambda: value,
+                )
+                switch.start()
+                self.addCleanup(switch.close)
+                switch.invalidate()
+                if failed:
+                    backend.failure = OSError('ETW unavailable')
+                switch.recover()
+                expected = HardwareStatus.OK if trusted and not failed and value is False else (
+                    HardwareStatus.READ_ERROR if failed else HardwareStatus.ABSENT)
+                self.assertEqual(switch.query()[1], expected)
+
+    def test_event_or_suspend_during_resume_read_wins(self):
+        for action in ('event', 'suspend'):
+            with self.subTest(action=action):
+                backend = FakeBackend()
+                def read():
+                    if action == 'event':
+                        backend.emit(0xC0, ACPI_TABLET_NOTIFY)
+                    else:
+                        switch.invalidate()
+                    return False
+                switch = AcpiPhysicalSwitch(backend, resume_reader_factory=lambda: read)
+                switch.start()
+                self.addCleanup(switch.close)
+                switch.invalidate()
+                switch.recover()
+                self.assertEqual(switch.query(), (True, HardwareStatus.OK) if action == 'event'
+                                 else (None, HardwareStatus.ABSENT))
+
     def test_suspend_invalidation_requires_a_new_physical_event(self):
         for initial in (False, True):
             with self.subTest(initial=initial):

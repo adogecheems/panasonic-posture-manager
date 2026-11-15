@@ -69,6 +69,7 @@ class PhysicalSwitch(Protocol):
     def bootstrap(self) -> None: ...
     def finalize_bootstrap(self, fallback: bool) -> None: ...
     def invalidate(self) -> None: ...
+    def recover(self) -> None: ...
     def close(self) -> None: ...
 
 
@@ -249,6 +250,10 @@ class HardwareRuntime:
             elif self.clock() >= self._bootstrap_until:
                 self.switch.finalize_bootstrap(False)
                 self._bootstrap_until = None
+        with self._power_lock:
+            recovering = not self._suspended and self._power_epoch == self._power_epoch_seen
+        if recovering:
+            self.switch.recover()
         # The supervisor registers before resume and the server owns the only
         # engine tick.  Do not call engine.tick() here: HardwareServer.poll()
         # already performs host.tick() followed by exactly one engine tick.

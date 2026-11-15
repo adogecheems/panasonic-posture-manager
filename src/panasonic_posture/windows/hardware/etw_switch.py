@@ -294,8 +294,9 @@ class _SwitchState:
 class AcpiPhysicalSwitch:
     """Expose only independently observed physical ACPI notifications.
 
-    The convertible-slate indicator (CSM) is a software output and can reflect
-    this application's own writes.  It must never seed or replace this state.
+    CSM is a software output: resume recovery uses independent fresh geometry
+    on validated machines, never the application's own CSM writes. A new ETW
+    event always wins over either baseline.
     """
 
     def __init__(
@@ -304,12 +305,16 @@ class AcpiPhysicalSwitch:
         initial_reader: Callable[[], bool | None] | None = None,
         *,
         trusted_startup_baseline: bool = True,
+        resume_reader_factory: Callable[[], Callable[[], bool | None]] | None = None,
     ) -> None:
         if type(trusted_startup_baseline) is not bool:
             raise ValueError('startup baseline trust must be explicit')
         self.backend = backend or WindowsHidEventFilterBackend()
         self.initial_reader = initial_reader
         self.trusted_startup_baseline = trusted_startup_baseline
+        self.resume_reader_factory = resume_reader_factory
+        self._resume_reader = None
+        self._epoch = 0
         self._lock = threading.Lock()
         self._state = _SwitchState(None, HardwareStatus.ABSENT)
         self._started = self._bootstrap_failed = False
@@ -375,10 +380,42 @@ class AcpiPhysicalSwitch:
                 self._state = _SwitchState(fallback, HardwareStatus.OK)
 
     def invalidate(self) -> None:
-        """A suspend boundary cannot reuse startup reads or software outputs."""
+        """Discard sleep-era state and the preceding recovery's samples."""
         with self._lock:
+            self._epoch += 1
+            self._resume_reader = None
             self._requires_event = True
             self._state = _SwitchState(None, HardwareStatus.ABSENT)
+
+    def recover(self) -> None:
+        """Owner-loop recovery from fresh independent non-tablet geometry."""
+        with self._lock:
+            if (not self._started or not self._requires_event
+                    or not self.trusted_startup_baseline or self.resume_reader_factory is None):
+                return
+            epoch = self._epoch
+            reader = self._resume_reader
+        if self.backend.failure is not None:
+            return
+        if reader is None:
+            reader = self.resume_reader_factory()
+            with self._lock:
+                if epoch != self._epoch:
+                    return
+                self._resume_reader = reader
+        try:
+            value = reader()
+        except (OSError, ValueError):
+            with self._lock:
+                if epoch == self._epoch:
+                    self._resume_reader = None
+            return
+        # Recovery cannot assert tablet state or invent a timeout fallback.
+        with self._lock:
+            if (value is False and self._started and self._requires_event
+                    and epoch == self._epoch and self.backend.failure is None):
+                self._requires_event = False
+                self._state = _SwitchState(False, HardwareStatus.OK)
 
     def _ingest(self, payload: bytes) -> None:
         value = parse_acpi_notification(payload)
