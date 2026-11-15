@@ -31,6 +31,7 @@ GITHUB_URL = 'https://github.com/adogecheems/panasonic-posture-manager'
 APP_VERSION = display_version()
 CARD_INSET = 16
 APPEARANCE_MODES = (Theme.AUTO, Theme.LIGHT, Theme.DARK)
+DISPLAY_READINESS_GRACE_SECONDS = 5
 
 
 def mode_labels(_):
@@ -103,6 +104,11 @@ class Home(Page):
         self.model = PostureModel()
         self.labels = mode_labels(_)
         self.action_detail = None
+        self.readiness_deadline: float | None = None
+        self.readiness_timer = QTimer(self)
+        self.readiness_timer.setSingleShot(True)
+        self.readiness_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.readiness_timer.timeout.connect(self.render_readiness)
         self.actions = ActionRunner(self.sync_buttons, self.action_failed, client.refresh)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -154,11 +160,35 @@ class Home(Page):
             self.illustration.setAccessibleName(self.labels[self.model.pose])
             self.illustration.update()
             self.heading.setText(self.labels[self.model.pose])
-        self.render_detail()
+        # Initial display qualification can lag the RPC endpoint. Repeated
+        # snapshots must not extend this presentation-only grace indefinitely.
+        if (state['error_code'] == ErrorCode.DISPLAY_UNAVAILABLE
+                and not state['session_connected']):
+            if self.readiness_deadline is None:
+                self.readiness_deadline = time.monotonic() + DISPLAY_READINESS_GRACE_SECONDS
+        else:
+            self.readiness_deadline = None
+        self.render_readiness()
         set_visible(self.confirm_button, state['pending_notification'] is not None)
-        set_visible(self.retry_button, bool(state['error_code']))
         set_visible(self.auto_button, self.model.can_return_auto)
         self.sync_buttons()
+
+    @property
+    def waiting_for_display(self) -> bool:
+        return (self.readiness_deadline is not None
+                and time.monotonic() < self.readiness_deadline)
+
+    def render_readiness(self) -> None:
+        self.readiness_timer.stop()
+        if self.waiting_for_display:
+            self.readiness_timer.start(max(
+                1, math.ceil((self.readiness_deadline - time.monotonic()) * 1000)
+            ))
+        self.render_detail()
+        set_visible(self.retry_button, bool(
+            self.model.state and self.model.state['error_code']
+            and not self.waiting_for_display
+        ))
 
     def render_detail(self):
         _ = self._
@@ -173,6 +203,8 @@ class Home(Page):
         }
         if self.action_detail is not None:
             text = self.action_detail
+        elif self.waiting_for_display:
+            text = messages[Detail.SESSION]
         elif self.model.detail == Detail.ERROR:
             code = self.model.state['error_code'] if self.model.state else None
             text = f"{_('Mode change failed')}: {stable_error_text(code, _)}"
@@ -190,6 +222,8 @@ class Home(Page):
 
     def unavailable(self):
         self.timer.stop()
+        self.readiness_timer.stop()
+        self.readiness_deadline = None
         self.actions.disconnect()
         self.action_detail = None
         self.model.disconnect()

@@ -251,6 +251,71 @@ assert errors[-1] == (
 )
 ''')
 
+    def test_display_readiness_wait_is_bounded_and_does_not_offer_retry(self):
+        self.run_ui('''
+from unittest.mock import patch
+from panasonic_posture.contracts import ErrorCode
+client, home = window.client, window.home
+with patch('panasonic_posture.windows.ui.pages.time.monotonic', return_value=100) as clock:
+    client.scenario('disconnected')
+    assert home.retry_button.isHidden()
+    client.scenario('laptop')
+    client.state.update(session_connected=False, error_code=ErrorCode.DISPLAY_UNAVAILABLE)
+    client.refresh()
+    assert home.retry_button.isHidden()
+    assert home.detail.text() == 'Waiting for the desktop to get ready…'
+    assert home.readiness_timer.isActive()
+    clock.return_value = 104
+    client.refresh()
+    assert home.retry_button.isHidden()
+    clock.return_value = 105
+    home.readiness_timer.timeout.emit()
+    assert not home.retry_button.isHidden()
+    assert home.detail.text().startswith('Mode change failed:')
+    client.refresh()
+    assert not home.retry_button.isHidden(), 'Repeated snapshots must not renew the wait'
+    client.scenario('laptop')
+    assert home.retry_button.isHidden()
+    assert not home.readiness_timer.isActive()
+    client.state.update(session_connected=False, error_code=ErrorCode.DISPLAY_LOCK)
+    client.refresh()
+    assert not home.retry_button.isHidden(), 'Other failures must remain visible immediately'
+    client.state.update(session_connected=True, error_code=ErrorCode.DISPLAY_UNAVAILABLE)
+    client.refresh()
+    assert not home.retry_button.isHidden(), 'A ready session must report its display failure'
+    client.state['session_connected'] = False
+    client.refresh()
+    assert home.retry_button.isHidden()
+    client.scenario('disconnected')
+    assert not home.readiness_timer.isActive()
+    clock.return_value = 110
+    home.readiness_timer.timeout.emit()
+    assert home.retry_button.isHidden(), 'A stale timer must not revive disconnected actions'
+''')
+
+    def test_display_readiness_recovery_cancels_the_error_timer(self):
+        self.run_ui('''
+from unittest.mock import patch
+from panasonic_posture.contracts import ErrorCode
+client, home = window.client, window.home
+with patch('panasonic_posture.windows.ui.pages.time.monotonic', return_value=100) as clock:
+    client.state.update(session_connected=False, error_code=ErrorCode.DISPLAY_UNAVAILABLE)
+    client.refresh()
+    clock.return_value = 101
+    home.readiness_timer.timeout.emit()
+    assert home.readiness_timer.isActive(), 'An early timer must preserve the deadline'
+    client.scenario('laptop')
+    client.state['session_connected'] = True
+    client.refresh()
+    assert not home.readiness_timer.isActive()
+    assert home.detail.isHidden()
+    assert home.retry_button.isHidden()
+    clock.return_value = 106
+    home.readiness_timer.timeout.emit()
+    assert home.detail.isHidden()
+    assert home.retry_button.isHidden()
+''')
+
     def test_retry_button_reports_an_in_progress_request(self):
         self.run_ui('''
 from concurrent.futures import Future
