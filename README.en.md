@@ -8,7 +8,7 @@
 
 This cross-platform tool recognizes how you position your convertible laptop and automatically rotates the built-in screen on **Windows and Linux**.
 
-The Panasonic Let's note QV folds through 360°, but it can't tell on its own when you've set it up as a tent or a stand. We built this tool to add those two modes. Prop the laptop up like a tent and the picture turns upright. Rest it keyboard-side down as a stand and the picture stays upright.
+You can prop a Panasonic Let's note QV convertible up like a tent or rest it keyboard-side down as a stand, but its built-in hardware and software don't respond correctly to either setup. We built this app so the screen orientation follows how you position the laptop. In tent mode, the picture rotates 180° so it appears upright. In stand mode, it stays in its usual landscape orientation.
 
 **Current version: 3.0.0** · [Download an installer](https://github.com/adogecheems/panasonic-posture-manager/releases)
 
