@@ -23,6 +23,10 @@ env:
   SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref_name }}
 
 jobs:
+  check-linux:
+    name: Linux release checks
+    uses: ./.github/workflows/linux.yml
+
   package-arch:
     name: Arch package and AUR metadata
     runs-on: ubuntu-24.04
@@ -341,6 +345,7 @@ jobs:
   release:
     name: Publish GitHub release
     needs:
+      - check-linux
       - package-arch
       - package-deb
       - package-rpm

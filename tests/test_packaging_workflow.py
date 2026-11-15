@@ -262,6 +262,46 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
         self.workflow = read(".github/workflows/release.yml")
 
+    def test_daily_workflows_do_not_filter_out_metadata_or_documentation(self):
+        for platform in ('linux', 'windows'):
+            with self.subTest(platform=platform):
+                workflow = read(f'.github/workflows/{platform}.yml')
+                triggers = workflow.split('permissions:', 1)[0]
+                self.assertIn('  push:\n', triggers)
+                self.assertIn('  pull_request:\n', triggers)
+                self.assertIn('  workflow_dispatch:\n', triggers)
+                self.assertNotIn('paths:', triggers)
+                self.assertNotIn('paths-ignore:', triggers)
+
+    def test_linux_matrix_make_steps_use_the_selected_python(self):
+        workflow = read('.github/workflows/linux.yml')
+        matrix = workflow.split('  linux:', 1)[1].split('  linux-full:', 1)[0]
+        self.assertIn('python-version: ${{ matrix.python }}', matrix)
+        commands = re.findall(r'run: (make .*)', matrix)
+        self.assertTrue(commands)
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertIn('PYTHON=python', command)
+
+    def test_linux_daily_ci_runs_full_checks_with_native_dependencies(self):
+        workflow = read('.github/workflows/linux.yml')
+        self.assertIn('  workflow_call:\n', workflow)
+        full = workflow.split('  linux-full:', 1)[1]
+        self.assertNotIn('actions/setup-python', full)
+        for dependency in ('dbus', 'python3-gi', 'python3-gi-cairo',
+                           'gir1.2-gtk-4.0', 'gir1.2-adw-1', 'libgtk-4-bin',
+                           'desktop-file-utils', 'libxml2-utils'):
+            with self.subTest(dependency=dependency):
+                self.assertIn(dependency, full)
+        self.assertIn('command -v gtk4-broadwayd', full)
+        self.assertIn('make WERROR=1 PYTHON=/usr/bin/python3 check', full)
+
+    def test_release_requires_linux_checks_from_its_own_source(self):
+        checks = self.workflow.split('  check-linux:', 1)[1].split('  package-arch:', 1)[0]
+        self.assertIn('uses: ./.github/workflows/linux.yml', checks)
+        release = self.workflow.split('  release:', 1)[1].split('  aur:', 1)[0]
+        self.assertIn('      - check-linux\n', release)
+
     def test_linux_workflow_references_existing_test_modules(self) -> None:
         modules = re.findall(r'tests\.(test_\w+)', read('.github/workflows/linux.yml'))
         self.assertTrue(modules)

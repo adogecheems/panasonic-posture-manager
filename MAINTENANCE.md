@@ -144,6 +144,16 @@ make WERROR=1 check
 
 按改动选择目标测试、Windows 完整检查和跳过项记录方法，见 [AGENTS.md 第 6、10 节](AGENTS.md)。
 
+### CI
+
+每次 push、PR 和手动触发都会运行 Linux、Windows 工作流，不按修改路径过滤，因此文档、版本元数据和跨平台资源也会接受检查。
+
+Linux 分为两类作业：Python 3.11/3.13 矩阵运行指定的兼容性测试，Make 步骤显式使用矩阵解释器；Ubuntu 24.04 系统 Python 作业安装发行版 PyGObject、GTK 和 libadwaita，执行完整 `make WERROR=1 PYTHON=/usr/bin/python3 check`，包括全量单测、私有 Broadway 界面测试和临时会话总线上的 D-Bus 集成检查。桌面测试前先检查 GI 和 Broadway 依赖，避免依赖缺失导致界面测试被跳过。
+
+Windows 使用 Python 3.13 x64，运行 Windows、共享界面、会话刷新和翻译检查，构建中英文 MSI，执行管理解包及内置运行时的 UI 导入检查，并上传安装包。此流程不包含实际安装、服务运行或真机姿态验收。
+
+发布工作流在自身源码提交上复用 Linux 工作流；Linux 检查和四路打包全部成功后才允许上传 Release 附件，随后更新 AUR。手动重建仍检查所选源码提交，不借用其他提交或此前运行的检查结果。自动化检查不代替真实桌面会话和真机验收。
+
 ### 打包
 
 Windows 首次构建前先按下方“Windows 构建依赖”准备 Python 依赖和 WiX。

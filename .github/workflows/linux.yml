@@ -2,18 +2,9 @@ name: Linux
 
 on:
   push:
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'backend/linux/**'
-      - 'packaging/linux/**'
-      - 'packaging/common/**'
-      - 'data/**'
-      - 'po/**'
-      - 'Makefile'
-      - '.github/workflows/linux.yml'
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -33,11 +24,11 @@ jobs:
       - name: Install native and translation tooling
         run: sudo apt-get update && sudo apt-get install -y build-essential gettext
       - name: Build and check C relay
-        run: make check-c
+        run: make PYTHON=python check-c
       - name: Compile Python sources
-        run: make check-compile
+        run: make PYTHON=python check-compile
       - name: Check translations and localized metadata
-        run: make check-i18n
+        run: make PYTHON=python check-i18n
       - name: Run platform-neutral and Linux-only unit tests
         env:
           PYTHONPATH: src
@@ -63,3 +54,24 @@ jobs:
             tests.test_linux_iio \
             tests.test_linux_sysfs \
             tests.test_linux_sensor -v
+
+  linux-full:
+    name: Full Linux checks (system Python)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # GI's native extensions must use the distribution's Python ABI.
+      - name: Install native, desktop and validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential dbus desktop-file-utils gettext \
+            gir1.2-adw-1 gir1.2-gtk-4.0 libgtk-4-bin libxml2-utils \
+            python3 python3-gi python3-gi-cairo
+      - name: Verify desktop test prerequisites
+        run: |
+          command -v gtk4-broadwayd
+          /usr/bin/python3 -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('Adw', '1'); from gi.repository import Gio, Gtk, Adw; import cairo"
+      - name: Run complete unit, private desktop and D-Bus checks
+        run: make WERROR=1 PYTHON=/usr/bin/python3 check
