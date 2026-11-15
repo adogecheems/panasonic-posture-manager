@@ -38,11 +38,6 @@ from .screen_context import desktop_context
 
 log = logging.getLogger(__name__)
 
-try:  # pragma: no cover - GLibUnix is only needed for the real process
-    from gi.repository import GLibUnix
-except (ImportError, ValueError):  # pragma: no cover - old PyGObject
-    GLibUnix = None
-
 STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 
 
@@ -99,7 +94,7 @@ class Agent:
         self._loop_factory = loop_factory or GLib.MainLoop
         self._timeout_add = timeout_add or GLib.timeout_add
         self._signal_add = signal_add or (
-            GLibUnix.signal_add if (install_signals and GLibUnix is not None) else None
+            GLib.unix_signal_add if install_signals else None
         )
         self._screen_locked = screen_locked
         self._journal_path = journal_path
@@ -201,7 +196,8 @@ class Agent:
         log.info("session adapter stopping on signal")
         self._stopping = True
         self._quit()
-        return False
+        # _cleanup owns source removal, including the source that fired.
+        return GLib.SOURCE_CONTINUE
 
     def _quit(self) -> None:
         if self.loop is not None:
@@ -428,6 +424,9 @@ class Agent:
 
     def _cleanup(self) -> None:
         self._stopping = True
+        for source in self._signal_sources:
+            GLib.source_remove(source)
+        self._signal_sources.clear()
         if self._timer is not None:
             try:
                 GLib.source_remove(self._timer)

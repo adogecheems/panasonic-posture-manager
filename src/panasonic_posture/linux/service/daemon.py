@@ -24,11 +24,6 @@ from typing import Any, Sequence
 
 from gi.repository import Gio, GLib
 
-try:  # pragma: no cover - always present on the target platform
-    from gi.repository import GLibUnix
-except ImportError:  # pragma: no cover - fallback for non-Linux development
-    GLibUnix = None  # type: ignore[assignment]
-
 from ... import __version__
 from ...model import StateSnapshot
 from ...product import APPLICATION_DISPLAY_NAME
@@ -392,14 +387,12 @@ class Daemon:
             max(1, int(TICK_SECONDS * 1000)), guard(self._tick)
         )
         for signum in (signal.SIGTERM, signal.SIGINT):
-            if GLibUnix is not None:
-                try:
-                    source = GLibUnix.signal_add(
-                        GLib.PRIORITY_DEFAULT, signum, guard(self._quit)
-                    )
-                    self._signal_sources.append(source)
-                except (TypeError, ValueError):  # pragma: no cover - unusual build
-                    pass
+            # GLib exposes the Python binding on supported older distributions;
+            # their GLibUnix namespace does not export signal_add.
+            source = GLib.unix_signal_add(
+                GLib.PRIORITY_DEFAULT, signum, guard(self._quit)
+            )
+            self._signal_sources.append(source)
         try:
             self.loop.run()
         finally:
