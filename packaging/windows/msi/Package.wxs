@@ -38,7 +38,7 @@
          the protected interpreter retains -B -I and the exact UI entry point.
          Explorer supplies the ordinary user's token even for elevated setup. -->
     <CustomAction Id="SetFrontendLaunchTarget" Property="WixUnelevatedShellExecTarget"
-                  Value="[INSTALLFOLDER]LaunchFrontend.lnk" />
+                  Value="[INSTALLFOLDER]\LaunchFrontend.lnk" />
     <CustomAction
         Id="LaunchFrontend"
         BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
@@ -271,10 +271,10 @@
       <DialogRef Id="ResumeDlg" />
       <DialogRef Id="UserExit" />
 
-      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
-      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="SetFrontendLaunchTarget"
+      <Publish Dialog="PostureExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+      <Publish Dialog="PostureExitDialog" Control="Finish" Event="DoAction" Value="SetFrontendLaunchTarget"
                Order="1" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed AND NOT REMOVE" />
-      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchFrontend"
+      <Publish Dialog="PostureExitDialog" Control="Finish" Event="DoAction" Value="LaunchFrontend"
                Order="2" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed AND NOT REMOVE" />
 
       <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT Installed" />
@@ -301,6 +301,26 @@
       <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
     </UI>
     <UI Id="WixUI_PosturePathDialogs">
+      <Dialog Id="PostureExitDialog" Width="370" Height="270" Title="!(loc.InstallDirDialogTitle)">
+        <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIFinish)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUICancel)" />
+        <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="WixUI_Bmp_Dialog" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUIBack)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="[POSTURE_EXIT_TITLE]" />
+        <Control Id="Description" Type="Text" X="135" Y="70" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="[POSTURE_EXIT_DESCRIPTION]" />
+        <Control Id="OptionalText" Type="Text" X="135" Y="110" Width="220" Height="80" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="[WIXUI_EXITDIALOGOPTIONALTEXT]" ShowCondition="WIXUI_EXITDIALOGOPTIONALTEXT AND NOT Installed" />
+        <!-- MSI checkboxes paint an opaque rectangle over the dialog bitmap.
+             Limit that rectangle to the box and draw its label transparently. -->
+        <Control Id="OptionalCheckBox" Type="CheckBox" X="135" Y="191" Width="10" Height="10" Hidden="yes" Property="WIXUI_EXITDIALOGOPTIONALCHECKBOX" CheckBoxValue="1" ToolTip="[WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT]" ShowCondition="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT AND NOT Installed AND NOT REMOVE" />
+        <Control Id="LaunchLabel" Type="Text" X="149" Y="190" Width="206" Height="24" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="[WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT]" ShowCondition="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT AND NOT Installed AND NOT REMOVE" />
+      </Dialog>
+      <InstallUISequence>
+        <Show Dialog="PostureExitDialog" OnExit="success" />
+      </InstallUISequence>
+      <AdminUISequence>
+        <Show Dialog="PostureExitDialog" OnExit="success" />
+      </AdminUISequence>
       <Dialog Id="PostureInstallDirDlg" X="50" Y="50" Width="370" Height="270" Title="!(loc.InstallDirDialogTitle)">
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Text="!(loc.WixUINext)" TabSkip="no" Default="yes" />
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" TabSkip="no" />

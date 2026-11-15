@@ -334,7 +334,7 @@ def _append_shortcut(file_element: ET.Element) -> None:
         'Description': '!(loc.ShortcutDescription)',
         'Advertise': 'yes',
         'Icon': 'ProductIcon.ico',
-        'Arguments': '-B -I "[INSTALLFOLDER]launch.py"',
+        'Arguments': '-B -I "[#LaunchScript]"',
         'WorkingDirectory': 'INSTALLFOLDER',
     })
     ET.SubElement(shortcut, 'ShortcutProperty', {
@@ -348,7 +348,7 @@ def _append_shortcut(file_element: ET.Element) -> None:
         'Directory': 'INSTALLFOLDER',
         'Name': 'LaunchFrontend',
         'Advertise': 'no',
-        'Arguments': '-B -I "[INSTALLFOLDER]launch.py"',
+        'Arguments': '-B -I "[#LaunchScript]"',
         'WorkingDirectory': 'INSTALLFOLDER',
         'Icon': 'ProductIcon.ico',
     })

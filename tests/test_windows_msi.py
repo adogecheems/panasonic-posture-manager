@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import ntpath
 import os
 from pathlib import Path
 import shutil
@@ -34,6 +35,23 @@ def png_dimensions(path: Path) -> tuple[int, int]:
 
 
 class MsiPayloadTests(unittest.TestCase):
+    def test_finish_checkbox_has_no_opaque_label_background(self):
+        root = ET.parse(ROOT / 'packaging/windows/msi/Package.wxs').getroot()
+        dialog = next(e for e in root.iter()
+                      if e.tag.endswith('Dialog') and e.get('Id') == 'PostureExitDialog')
+        controls = {e.get('Id'): e for e in dialog if e.tag.endswith('Control')}
+        checkbox = controls['OptionalCheckBox']
+        label = controls['LaunchLabel']
+        self.assertIsNone(checkbox.get('Text'))
+        self.assertLessEqual(int(checkbox.get('Width')), 12)
+        self.assertLessEqual(int(checkbox.get('Height')), 12)
+        self.assertEqual(label.get('Type'), 'Text')
+        self.assertEqual(label.get('Transparent'), 'yes')
+        self.assertEqual(label.get('Text'), '[WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT]')
+        self.assertEqual(label.get('ShowCondition'), checkbox.get('ShowCondition'))
+        self.assertGreaterEqual(int(label.get('X')),
+                                int(checkbox.get('X')) + int(checkbox.get('Width')))
+
     def test_finish_launch_is_optional_unelevated_and_only_for_install(self):
         root = ET.parse(ROOT / 'packaging/windows/msi/Package.wxs').getroot()
         actions = {e.get('Id'): e for e in root.iter() if e.tag.endswith('CustomAction')}
@@ -44,11 +62,18 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertEqual(launch.get('Return'), 'check')
         properties = {e.get('Id'): e.get('Value') for e in root.iter() if e.tag.endswith('Property')}
         self.assertEqual(actions['SetFrontendLaunchTarget'].get('Property'), 'WixUnelevatedShellExecTarget')
-        self.assertEqual(actions['SetFrontendLaunchTarget'].get('Value'), '[INSTALLFOLDER]LaunchFrontend.lnk')
+        target = actions['SetFrontendLaunchTarget'].get('Value')
+        for directory in (r'C:\Program Files\PanasonicPostureManager',
+                          'D:\\应用\\PanasonicPostureManager\\'):
+            with self.subTest(directory=directory):
+                self.assertEqual(
+                    ntpath.normpath(target.replace('[INSTALLFOLDER]', directory)),
+                    ntpath.join(directory, 'LaunchFrontend.lnk'),
+                )
         self.assertEqual(properties['WIXUI_EXITDIALOGOPTIONALCHECKBOX'], '1')
         self.assertEqual(properties['WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT'], '!(loc.LaunchFrontendText)')
         publish = next(e for e in root.iter() if e.tag.endswith('Publish') and e.get('Value') == 'LaunchFrontend')
-        self.assertEqual(publish.get('Dialog'), 'ExitDialog')
+        self.assertEqual(publish.get('Dialog'), 'PostureExitDialog')
         self.assertEqual(publish.get('Control'), 'Finish')
         self.assertEqual(publish.get('Event'), 'DoAction')
         self.assertEqual(publish.get('Condition'), 'WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed AND NOT REMOVE')
@@ -68,7 +93,7 @@ class MsiPayloadTests(unittest.TestCase):
         parents = {child: parent for parent in root.iter() for child in parent}
         self.assertEqual(parents[shortcut].get('Id'), 'ServicePythonwExe')
         self.assertIsNone(shortcut.get('Target'))
-        self.assertEqual(shortcut.get('Arguments'), '-B -I "[INSTALLFOLDER]launch.py"')
+        self.assertEqual(shortcut.get('Arguments'), '-B -I "[#LaunchScript]"')
         self.assertEqual(shortcut.get('WorkingDirectory'), 'INSTALLFOLDER')
         self.assertEqual(shortcut.get('Advertise'), 'no')
 
@@ -191,7 +216,7 @@ class MsiPayloadTests(unittest.TestCase):
         self.assertEqual(shortcut.get('Directory'), 'ProgramMenuFolder')
         self.assertEqual(
             shortcut.get('Arguments'),
-            '-B -I "[INSTALLFOLDER]launch.py"',
+            '-B -I "[#LaunchScript]"',
         )
         self.assertIn('Name="a&amp;b.py"', first)
         self.assertIn('Id="ServicePythonHardwareExe"', first)
@@ -525,11 +550,11 @@ class MsiPayloadTests(unittest.TestCase):
                     if element.tag.endswith('}UI')
                 }
                 self.assertEqual(
-                    overrides[('ExitDialog', 'Title')].get('Text'),
+                    overrides[('PostureExitDialog', 'Title')].get('Text'),
                     '[POSTURE_EXIT_TITLE]',
                 )
                 self.assertEqual(
-                    overrides[('ExitDialog', 'Description')].get('Text'),
+                    overrides[('PostureExitDialog', 'Description')].get('Text'),
                     '[POSTURE_EXIT_DESCRIPTION]',
                 )
 
