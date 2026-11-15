@@ -256,7 +256,7 @@ Windows MSI 默认构建简体中文界面；正式发布同时生成简体中�
 
 #### Windows 构建依赖
 
-使用 Windows x64 CPython 3.11+ 完整安装；CI 的打包解释器为 3.13，兼容性测试覆盖 3.11、3.13、3.14。先确认 `python --version` 能输出版本；若 `Get-Command python` 指向 `WindowsApps` 且无法运行，请使用已安装解释器的绝对路径。建议建立仓库专用虚拟环境，避免修改宿主 Python：
+使用 Windows x64 CPython 3.11+ 完整安装；Windows CI 只使用与 MSI 内置运行时一致的 Python 3.13，执行完整测试、双语言 MSI 构建和解包验证；其他 Python 版本的源码兼容性按需检查。先确认 `python --version` 能输出版本；若 `Get-Command python` 指向 `WindowsApps` 且无法运行，请使用已安装解释器的绝对路径。建议建立仓库专用虚拟环境，避免修改宿主 Python：
 
 ```powershell
 # python 应为可运行的 x64 CPython；也可替换为其绝对路径。

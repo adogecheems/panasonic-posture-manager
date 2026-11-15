@@ -379,6 +379,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 )
                 self.assertNotIn("-Filter hardware_service.py", source)
 
+    def test_windows_ci_uses_the_packaged_python_runtime(self) -> None:
+        workflow = read('.github/workflows/windows.yml')
+        self.assertIn("python-version: '3.13'", workflow)
+        self.assertNotIn('matrix.python', workflow)
+        self.assertNotIn('strategy:', workflow)
+
     def test_windows_workflow_runs_the_complete_current_windows_suite(self) -> None:
         windows = read(".github/workflows/windows.yml")
         self.assertIn(
