@@ -25,6 +25,17 @@ class Power:
 
 
 class ContextTests(unittest.TestCase):
+    def test_lock_retains_control_but_suppresses_attended_actions(self):
+        context = self.context()
+        context.poll()
+        self.presence = SessionPresence(1, 1, True, True)
+        self.now += .3
+        context.poll()
+        self.assertTrue(context.control_available())
+        self.assertTrue(context.unattended())
+        self.sources[-1].callback('suspend', None)
+        self.assertFalse(context.control_available())
+
     def setUp(self):
         self.now = 10.
         self.presence = SessionPresence(1, 1, True, False)

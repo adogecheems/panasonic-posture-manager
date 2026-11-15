@@ -30,6 +30,22 @@ class Deferred(Executor):
 
 
 class RefreshTests(unittest.TestCase):
+    def test_same_target_generation_change_during_refresh_does_not_restore_direction(self):
+        self.runtime._display_refresh = QualifiedRefresh(self.refresher,
+            SimpleNamespace(control_available=lambda: True), lambda: self.state)
+        self.runtime.tick(0.)
+        self.on_refresh = lambda: setattr(self, 'state', replace(self.state, generation=2))
+        before = len(self.events)
+        self.runtime.tick(.2)
+        self.assertNotIn(('restore',), self.events)
+        self.assertNotIn(('feedback', 1, True), self.events[before:])
+        self.on_refresh = lambda: None
+        for now in (.4, .6, .8):
+            self.runtime.tick(now)
+        self.assertTrue(self.runtime.ready)
+        self.assertIn(('feedback', 2, True), self.events)
+        self.assertNotIn(('restore',), self.events)
+
     def setUp(self):
         self.events = []
         self.state = StateSnapshot(instance='fixture', generation=1, session_connected=True,
@@ -220,18 +236,22 @@ class QualificationTests(unittest.TestCase):
         port = SimpleNamespace(needs_refresh=lambda target: target.mode == 'tablet',
             refresh=lambda snapshot: calls.append(snapshot))
         guarded = QualifiedRefresh(port, context, lambda: current[0])
-        for changes in (dict(generation=2), dict(instance='new'), dict(session_connected=False),
+        for changes in (dict(instance='new'), dict(session_connected=False),
                         dict(hardware=True), dict(hardware_status=HardwareStatus.AMBIGUOUS),
                         dict(sensor_error='lost'), dict(error_code=ErrorCode.INTERNAL),
                         dict(target=Target(mode='tent')), dict(supported=False)):
             current[0] = replace(state, **changes)
             with self.subTest(changes=changes), self.assertRaises(DisplayError): guarded.refresh(state)
         self.assertEqual(calls, [])
+        current[0] = replace(state, generation=2)
+        with self.assertRaises(ServiceError):
+            guarded.refresh(state)
+        self.assertEqual(calls, [])
         current[0] = state
         guarded.refresh(state)
         self.assertEqual(calls, [state])
         port.refresh = lambda snapshot: current.__setitem__(0, replace(state, generation=2))
-        with self.assertRaises(DisplayError): guarded.refresh(state)
+        with self.assertRaises(ServiceError): guarded.refresh(state)
         current[0] = state
         context.control_available = lambda: False
         with self.assertRaises(DisplayError): guarded.refresh(state)

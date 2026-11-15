@@ -36,7 +36,7 @@ class SessionResetTests(unittest.TestCase):
         )
         return engine, host, admitted
 
-    def test_lock_resets_once_even_if_the_pipe_already_cleared_the_owner(self):
+    def test_qualification_loss_resets_once_even_if_the_pipe_already_cleared_the_owner(self):
         active = [True]
         engine, host, _ = self.host(active=active)
 

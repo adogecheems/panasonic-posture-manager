@@ -17,7 +17,7 @@ from panasonic_posture.windows.ipc.pipe import FILE_FLAG_OVERLAPPED, NativePipes
 from panasonic_posture.windows.ipc.frames import ProtocolError
 from panasonic_posture.windows.service.ipc import ConsoleGuard, HardwareServer, HardwareConnection, CLIENT_ACCESS
 from panasonic_posture.windows.common.security import (
-    AuthenticationError, ExtendedInfo, WindowsSecurity, foreground_matches,
+    AuthenticationError, ConsoleAccess, ExtendedInfo, WindowsSecurity, foreground_matches,
 )
 from panasonic_posture.tasks import InlineExecutor
 try:
@@ -27,6 +27,11 @@ except ModuleNotFoundError:
 
 UI = ConsoleIdentity('S-1-5-21-1000', 100, 1, 42, 100000)
 AGENT = ConsoleIdentity('S-1-5-21-1000', 100, 1, 43, 100001)
+
+
+class FixtureSecurity:
+    def console_access(self, peer):
+        return ConsoleAccess(self.is_active(peer))
 
 
 class HostFixture(unittest.TestCase):
@@ -49,6 +54,29 @@ class HostFixture(unittest.TestCase):
 
 
 class HardwareHostTests(HostFixture):
+    def test_lock_switches_to_auto_without_releasing_the_registered_session(self):
+        self.engine.revoke_session(self.engine.session_owner)
+        self.engine.set_mode('tent')
+        self.engine.tick()
+        self.host.session_authorize = lambda peer: peer == AGENT
+        locked = [False]
+        self.host.session_locked = lambda: locked[0]
+        self.engine.session_update(self.engine.state.generation, True, None, None, AGENT.owner)
+        locked[0], self.active = True, False
+        self.host.tick()
+        self.assertEqual(self.engine.state.manual, 'auto')
+        self.assertEqual(self.engine.session_owner, AGENT.owner)
+        generation = self.engine.state.generation
+        self.host.tick()
+        self.assertEqual(self.engine.state.generation, generation)
+        reply = self.host.dispatch(AGENT, self.request('session_update', generation=generation,
+            ready=True, error_code=None, error_detail=None, unattended=True))
+        self.assertTrue(reply['accepted'])
+        with self.assertRaisesRegex(Exception, 'access-denied'):
+            self.host.dispatch(UI, self.request('get_state'))
+        with self.assertRaisesRegex(Exception, 'access-denied'):
+            self.host.dispatch(AGENT, self.request('set_mode', mode='tent'))
+
     def test_recovery_read_is_exact_process_only_and_never_renews_ownership(self):
         self.active = False
         self.host.tick()
@@ -205,7 +233,7 @@ class HardwareHostTests(HostFixture):
                 self.host.dispatch(UI, request)
         self.assertEqual(self.engine.state.to_dict(), original)
         for params in (dict(generation=True), dict(error_code=[]), dict(ready=1),
-                       dict(ready=True, unattended=True), dict(error_detail='x' * 513)):
+                       dict(unattended=1), dict(error_detail='x' * 513)):
             request = self.request('session_update', generation=self.engine.state.generation,
                 ready=False, error_code=None, error_detail=None, unattended=False)
             request['params'].update(params)
@@ -338,6 +366,41 @@ class SecurityTests(unittest.TestCase):
 
 
 class PipeTests(HostFixture):
+    def test_locked_agent_can_renew_but_ui_and_other_methods_cannot_authenticate(self):
+        server, _, _ = self.server()
+        self.engine.revoke_session(self.engine.session_owner)
+        server.security.console_access = lambda peer: ConsoleAccess(True, True)
+        server.guard.check = server.security.console_access
+        server.guard.tick()
+        server.guard.tick()
+        server.host.tick()
+        self.assertTrue(server.guard.allow(AGENT))
+        self.assertFalse(server.guard.allow_ui(AGENT))
+        peer = [AGENT]
+        def authenticate(handle, *, recovery_process=None):
+            if peer[0] != recovery_process:
+                raise AuthenticationError('locked fixture')
+            return peer[0]
+        server.security.peer = authenticate
+        request = self.request('session_update', generation=self.engine.state.generation,
+                               ready=True, error_code=None, error_detail=None, unattended=True)
+        server.pipes.read = lambda handle: PipePoll.ready(request)
+        slot = server.slots[0]
+        server._read_request(slot)
+        self.assertTrue(server._finish_authentication(slot))
+        self.assertTrue(slot.reply['accepted'])
+        self.assertEqual(self.engine.session_owner, AGENT.owner)
+        self.assertFalse(server.guard.allow_ui(AGENT))
+        for identity, method, params in ((UI, 'get_state', {}), (UI, 'session_update', request['params']),
+                (AGENT, 'set_mode', dict(mode='tent')), (AGENT, 'start_control', {})):
+            with self.subTest(identity=identity, method=method):
+                peer[0] = identity
+                slot.peer = None
+                request = self.request(method, **params)
+                server._read_request(slot)
+                with self.assertRaises(AuthenticationError):
+                    server._finish_authentication(slot)
+
     def test_recovery_read_does_not_authorize_receipts_or_break_ui_reads(self):
         server, _, _ = self.server()
         peer, locked = [AGENT], [True]
@@ -439,7 +502,7 @@ class PipeTests(HostFixture):
             def write(self, handle, value):
                 replies.append(value)
                 return PipePoll.ready()
-        class Security:
+        class Security(FixtureSecurity):
             def require_system(self): pass
             def is_active(self, peer): return True
         server = HardwareServer(self.engine, session_process=AGENT, security=Security(), pipes=Pipes(),
@@ -503,7 +566,7 @@ class PipeTests(HostFixture):
                 return PipePoll.ready({'version': 1})
             def close(self, handle):
                 pass
-        class Security:
+        class Security(FixtureSecurity):
             def require_system(self):
                 pass
             def is_active(self, peer):
@@ -543,7 +606,7 @@ class PipeTests(HostFixture):
             def reset(self, handle):
                 pass
 
-        class Security:
+        class Security(FixtureSecurity):
             def require_system(self):
                 pass
 
@@ -586,7 +649,7 @@ class PipeTests(HostFixture):
             def close(self, handle): closed.append(handle)
             def reset(self, handle): pass
 
-        class Security:
+        class Security(FixtureSecurity):
             def require_system(self): pass
             def is_active(self, peer): return True
 
@@ -622,7 +685,7 @@ class PipeTests(HostFixture):
         handles = iter(range(4))
         pipes = Pipes()
         pipes.create = lambda name, first: next(handles)
-        class Security:
+        class Security(FixtureSecurity):
             def require_system(self):
                 pass
             def peer(self, handle):

@@ -209,7 +209,7 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(api.writes, [2])
         self.assertEqual(api.lock_writes, [True, True])
 
-    def test_lock_restores_before_unlock_instead_of_replaying_recovery_after_unlock(self):
+    def test_qualification_loss_restores_before_recovery_instead_of_replaying_old_writes(self):
         from tests.test_windows_display import Api
         from tests.windows_fixture import MemoryJournal
         self.client.state = replace(self.client.state, hardware_status=HardwareStatus.OK)
@@ -233,6 +233,51 @@ class SessionAgentTests(unittest.TestCase):
             self.agent.tick(now)
         self.assertTrue(self.agent.runtime.ready)
         self.assertEqual(api.writes, [2, 0, 2])
+
+    def test_real_context_lock_keeps_direction_and_refresh_but_suspend_restores(self):
+        from tests.test_windows_display import Api
+        from tests.windows_fixture import MemoryJournal
+        from tests.test_windows_session_context import Power
+        from panasonic_posture.windows.session.context import SessionPresence, WindowsSessionContext
+        from panasonic_posture.windows.session.display_backend import WindowsDisplay
+        now, locked = [10.], [False]
+        sources = []
+        def power(callback):
+            source = Power(callback)
+            sources.append(source)
+            return source
+        context = WindowsSessionContext(
+            query=lambda: SessionPresence(1, 1, True, locked[0]), power_factory=power,
+            clock=lambda: now[0], executor=InlineExecutor())
+        self.context = context
+        self.client.state = replace(self.client.state, hardware_status=HardwareStatus.OK)
+        api, journal = Api(), MemoryJournal()
+        self.agent.display_factory = lambda client: WindowsDisplay(
+            api=api, journal=journal, hardware_query=lambda: (False, HardwareStatus.OK))
+        self.agent.start()
+        self.agent.tick(now[0])
+        self.assertEqual(api.writes, [2])
+        locked[0] = True
+        now[0] += .3
+        self.agent.tick(now[0])
+        self.assertTrue(context.unattended())
+        self.assertTrue(self.agent.runtime.ready)
+        api.current = replace(api.current, auto_rotation=0)
+        now[0] += .3
+        self.agent.tick(now[0])
+        now[0] += .1
+        self.agent.tick(now[0])
+        self.assertTrue(api.current.auto_rotation & 1)
+        self.assertEqual(api.writes, [2])
+        locked[0] = False
+        now[0] += .3
+        self.agent.tick(now[0])
+        self.assertEqual(api.writes, [2])
+        sources[0].callback('suspend', None)
+        now[0] += .3
+        self.agent.tick(now[0])
+        self.assertFalse(self.agent.runtime.ready)
+        self.assertEqual(api.writes, [2, 0])
 
     def test_presence_aging_between_state_read_and_refresh_keeps_the_owned_display(self):
         self.client.state = replace(self.client.state, hardware_status=HardwareStatus.OK)

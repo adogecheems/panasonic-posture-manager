@@ -16,7 +16,7 @@ from panasonic_posture.windows.ipc.pipe import (
 )
 from panasonic_posture.windows.ipc.protocol import CHANNEL
 from panasonic_posture.windows.ipc.frames import ProtocolError
-from panasonic_posture.windows.common.security import AuthenticationError, WindowsSecurity
+from panasonic_posture.windows.common.security import AuthenticationError, ConsoleAccess, WindowsSecurity
 
 AUTH_SECONDS = 1.0
 CLIENT_TIMEOUT = 5.0
@@ -25,7 +25,7 @@ CLIENT_TIMEOUT = 5.0
 class ConsoleGuard:
     """Fresh cached decisions; slow session validation cannot renew a lease."""
 
-    def __init__(self, check: Callable[[ConsoleIdentity], bool],
+    def __init__(self, check: Callable[[ConsoleIdentity], bool | ConsoleAccess],
                  agent: ConsoleIdentity | None, *,
                  clock: Callable[[], float] = time.monotonic,
                  executor: Executor | None = None) -> None:
@@ -33,7 +33,8 @@ class ConsoleGuard:
         self.executor = executor or thread_executor('windows-session-auth')
         self.owned_executor = executor is None
         self.entries: dict[ConsoleIdentity, tuple[float, bool]] = {}
-        self.pending: Future[tuple[float, bool]] | None = None
+        self.locked: dict[ConsoleIdentity, bool] = {}
+        self.pending: Future[tuple[float, bool | ConsoleAccess]] | None = None
         self._epoch = 0
         self._pending_epoch = -1
         self._pending_agent: ConsoleIdentity | None = None
@@ -47,6 +48,7 @@ class ConsoleGuard:
         self.agent = peer
         self._epoch += 1
         self.entries.clear()
+        self.locked.clear()
         self.next_check = 0.
         # Keep a running old check in its one slot. Its result is discarded,
         # rather than creating more workers while WTS is still occupied.
@@ -58,6 +60,9 @@ class ConsoleGuard:
         checked, valid = self.entries.get(peer, (float('-inf'), False))
         return valid is True and 0 <= self.clock() - checked < AUTH_SECONDS
 
+    def allow_ui(self, peer: ConsoleIdentity) -> bool:
+        return self.allow(peer) and not self.locked.get(peer, False)
+
     def forget(self, peer: ConsoleIdentity) -> None:
         if peer != self.agent:
             self.entries.pop(peer, None)
@@ -68,6 +73,9 @@ class ConsoleGuard:
             try:
                 checked, valid = self.pending.result()
                 if current and self._pending_agent is not None:
+                    if isinstance(valid, ConsoleAccess):
+                        self.locked[self._pending_agent] = valid.locked
+                        valid = valid.allowed
                     self.remember(self._pending_agent, checked, valid)
             except OSError:
                 if current and self._pending_agent is not None:
@@ -86,6 +94,7 @@ class ConsoleGuard:
 
     def close(self) -> None:
         self.entries.clear()
+        self.locked.clear()
         if self.owned_executor:
             self.executor.shutdown(wait=False, cancel_futures=True)
 
@@ -116,11 +125,13 @@ class HardwareServer:
         self.pipes = pipes or NativePipes(self.security)
         self.clock = clock
         self.guard = ConsoleGuard(
-            self.security.is_active, session_process, clock=clock, executor=guard_executor,
+            self.security.console_access, session_process, clock=clock, executor=guard_executor,
         )
         self.host = HardwareHost(
-            engine, authorize=self.guard.allow, session_process=session_process,
+            engine, authorize=self.guard.allow_ui, session_process=session_process,
             session_admission=session_admission,
+            session_authorize=self.guard.allow,
+            session_locked=lambda: self.guard.locked.get(self.guard.agent, False),
             control=control,
         )
         self.executor = executor or thread_executor('windows-request-auth')
@@ -230,7 +241,8 @@ class HardwareServer:
         if slot.peer is not None and slot.peer != peer:
             raise AuthenticationError('pipe client identity changed')
         slot.peer = peer
-        recovery_read = peer == slot.recovery_process
+        recovery_read = (peer == slot.recovery_process and isinstance(slot.request, dict)
+                         and slot.request.get('method') == 'get_state')
         if not recovery_read:
             self.guard.remember(peer, checked)
         request = slot.request
@@ -266,7 +278,10 @@ class HardwareServer:
             raise ProtocolError('invalid hardware request')
         slot.request = request
         recovery_process = self.host.session_process
-        slot.recovery_process = recovery_process if request.get('method') == 'get_state' else None
+        # Only fixed agent reads and receipts may authenticate while locked.
+        # Ordinary UI actions still use the unlocked-console check.
+        slot.recovery_process = (recovery_process if request.get('method') in
+                                 ('get_state', 'session_update') else None)
         recovery_read = slot.recovery_process is not None
 
         def authenticate(handle=slot.handle):

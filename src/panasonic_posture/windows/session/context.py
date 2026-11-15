@@ -54,9 +54,13 @@ class SessionPresence:
 
     @property
     def attended(self) -> bool:
+        return self.control_available and self.locked is False
+
+    @property
+    def control_available(self) -> bool:
         return (type(self.session_id) is int and 0 < self.session_id < 0xffffffff and
                 type(self.console_session_id) is int and self.session_id == self.console_session_id and
-                self.active is True and self.locked is False)
+                self.active is True and type(self.locked) is bool)
 
 
 class NativeSessionPresence:
@@ -270,7 +274,8 @@ class WindowsSessionContext:
             return self._unattended_at(self.clock())
 
     def _unattended_at(self, now: float) -> bool:
-        return self._unavailable_at(now) or self._display is False
+        return (self._unavailable_at(now) or self._display is False or
+                self._presence is None or not self._presence.attended)
 
     def control_available(self) -> bool:
         """A known off display is context, not lost session qualification."""
@@ -280,7 +285,7 @@ class WindowsSessionContext:
     def _unavailable_at(self, now: float) -> bool:
         return (self._closed or self._fatal or self._suspended or self._display is None or
                 getattr(self._power, 'error', None) is not None or
-                self._presence is None or not self._presence.attended or
+                self._presence is None or not self._presence.control_available or
                 not 0 <= now - self._checked <= PRESENCE_MAX_AGE)
 
     def snapshot(self) -> dict:

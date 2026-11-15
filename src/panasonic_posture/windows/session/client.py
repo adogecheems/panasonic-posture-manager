@@ -157,7 +157,7 @@ class WindowsSessionClient:
             # must instead revoke that ownership while preserving context.
             error_code = ErrorCode.DISPLAY_UNAVAILABLE
             error_detail = 'native-session-unavailable'
-        self._request('session_update', dict(generation=generation, ready=ready and not unattended and not unavailable,
+        self._request('session_update', dict(generation=generation, ready=ready and not unavailable,
             error_code=error_code or None, error_detail=error_detail or None, unattended=unattended))
 
     def confirm_tent(self, epoch: int) -> None:

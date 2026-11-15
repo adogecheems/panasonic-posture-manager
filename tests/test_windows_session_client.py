@@ -65,11 +65,11 @@ class SessionClientTests(unittest.TestCase):
         self.assertEqual(client.get_state().instance, 'native-one')
         self.assertEqual(len(connection.calls), 3)
 
-    def test_unattended_context_never_claims_display_ready(self):
+    def test_unattended_context_can_confirm_a_qualified_display(self):
         client, connection = self.client(unattended=lambda: True)
         client.session_update(1, True)
         self.assertEqual(connection.calls[-1][1]['unattended'], True)
-        self.assertEqual(connection.calls[-1][1]['ready'], False)
+        self.assertEqual(connection.calls[-1][1]['ready'], True)
         self.assertIsNone(connection.calls[-1][1]['error_code'])
 
     def test_lost_control_qualification_explicitly_revokes_input_preparation(self):

@@ -45,7 +45,7 @@ def validate_operation(method: object, params: object,
                                                      params['error_code'] not in ALL_ERROR_CODES) or
                 params['error_detail'] is not None and (not isinstance(params['error_detail'], str) or
                                                        len(params['error_detail']) > 512) or
-                params['ready'] and (params['unattended'] or params['error_code'] is not None or
+                params['ready'] and (params['error_code'] is not None or
                                      params['error_detail'] is not None)):
             raise ValueError('invalid session receipt')
     return method, params

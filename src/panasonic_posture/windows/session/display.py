@@ -6,7 +6,9 @@ from typing import Protocol
 
 from panasonic_posture.contracts import ErrorCode
 from panasonic_posture.model import HardwareStatus, StateSnapshot, Target
-from panasonic_posture.session.failures import DisplayError, ServiceError, TRANSIENT_CONTROL_DETAIL
+from panasonic_posture.session.failures import (
+    DisplayError, FailureKind, ServiceError, TRANSIENT_CONTROL_DETAIL,
+)
 from panasonic_posture.session.ports import DisplayBackend, DisplayRefresh
 
 
@@ -26,10 +28,10 @@ class SessionContext(Protocol):
 def transient_context_blip(context: SessionContext) -> bool:
     """True when qualification looks lost only through a stale observation.
 
-    The session is still the attended, unlocked console, so losing
+    The session is still the active local console, so losing
     ``control_available`` is a transient timing artifact (for example the WTS
     presence query taking longer than its freshness window). Genuine loss
-    (lock, suspend, console switch or a failed observer) is never a blip.
+    (suspend, console switch or a failed observer) is never a blip.
     """
 
     snapshot = getattr(context, "snapshot", None)
@@ -51,7 +53,7 @@ def transient_context_blip(context: SessionContext) -> bool:
     console = presence.get('console_session_id')
     return (type(session) is int and 0 < session < 0xffffffff
             and type(console) is int and console == session
-            and presence.get('active') is True and presence.get('locked') is False)
+            and presence.get('active') is True and type(presence.get('locked')) is bool)
 
 
 class SlatePosture(Protocol):
@@ -337,11 +339,17 @@ class QualifiedRefresh:
                 raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, TRANSIENT_CONTROL_DETAIL)
             raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'native-session-control-unavailable')
         current = self.current()
-        if (current.instance != expected.instance or current.generation != expected.generation or
+        if (current.instance != expected.instance or
                 current.target != expected.target or not current.session_connected or
                 not current.supported or current.sensor_error or current.error_code or
                 current.hardware is not False or current.hardware_status != HardwareStatus.OK):
             raise DisplayError(ErrorCode.DISPLAY_UNAVAILABLE, 'ongoing-display-target-no-longer-current')
+        if current.generation != expected.generation:
+            # Locking may select auto without changing the display target.
+            # Reject the old receipt and read the new generation; restoring a
+            # healthy identical target here would cause an avoidable rotation.
+            raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'ongoing-display-generation-changed',
+                               kind=FailureKind.UNAVAILABLE)
         return current
 
     def refresh(self, state: StateSnapshot) -> None:

@@ -1,5 +1,6 @@
 """Windows token/console authentication; never consume an identity from JSON."""
 import ctypes as C
+from dataclasses import dataclass
 import os
 import sys
 
@@ -37,6 +38,12 @@ class SecurityAttributes(C.Structure):
 
 class AuthenticationError(PermissionError):
     pass
+
+
+@dataclass(frozen=True)
+class ConsoleAccess:
+    allowed: bool
+    locked: bool = False
 
 
 def foreground_matches(peer: ConsoleIdentity, console: tuple[str, int, int], *,
@@ -174,24 +181,29 @@ class WindowsSecurity:
         return identity
 
     def is_active(self, peer: ConsoleIdentity, *, allow_locked: bool = False) -> bool:
+        access = self.console_access(peer)
+        return access.allowed and (allow_locked or not access.locked)
+
+    def console_access(self, peer: ConsoleIdentity) -> ConsoleAccess:
         token, buffer, size = HANDLE(), HANDLE(), U32()
         try:
             session = self.kernel.WTSGetActiveConsoleSessionId()
             if session in (0, 0xffffffff) or session != peer.session_id:
-                return False
+                return ConsoleAccess(False)
             if self.process_identity(peer.process_id) != peer:
-                return False
+                return ConsoleAccess(False)
             self._check(self.wts.WTSQueryUserToken(session, C.byref(token)))
             console = self.token_identity(token)
             self._check(self.wts.WTSQuerySessionInformationW(None, session, 25, C.byref(buffer), C.byref(size)))
             if size.value < C.sizeof(ExtendedInfo):
-                return False
+                return ConsoleAccess(False)
             info = C.cast(buffer, C.POINTER(ExtendedInfo)).contents
-            return foreground_matches(peer, console,
+            allowed = foreground_matches(peer, console,
                 active=info.level == 1 and info.data.session == session and info.data.state == 0,
-                unlocked=info.data.flags == 1 or (allow_locked and info.data.flags == 0))
+                unlocked=info.data.flags in (0, 1))
+            return ConsoleAccess(allowed, info.data.flags == 0)
         except (OSError, ValueError):
-            return False
+            return ConsoleAccess(False)
         finally:
             if token:
                 self.kernel.CloseHandle(token)

@@ -1,7 +1,8 @@
 """Privileged-host dispatch, isolated from the ordinary UI process.
 
 Only an OS-authenticated unlocked foreground console user may send UI operations.
-The exact registered session process may read state while locked for recovery.
+The exact registered session process may read state and renew receipts while
+locked; ordinary UI operations still require an unlocked console.
 Display receipts additionally require the exact session process registered by
 the service host, never a PID/SID supplied in an RPC request. Before the first
 physical-source observation, the registered process may renew only a not-ready
@@ -26,8 +27,13 @@ class HardwareHost:
     def __init__(self, engine: Engine, *, authorize: Callable[[ConsoleIdentity], bool],
                  session_process: ConsoleIdentity | None = None,
                  session_admission: Callable[[], bool] | None = None,
+                 session_authorize: Callable[[ConsoleIdentity], bool] | None = None,
+                 session_locked: Callable[[], bool] | None = None,
                  control: Callable[[ConsoleIdentity, bool], bool] | None = None) -> None:
         self.engine, self.authorize = engine, authorize
+        self.session_authorize = session_authorize or authorize
+        self.session_locked = session_locked or (lambda: False)
+        self._locked = False
         self.session_process = session_process
         self.session_admission = session_admission or (lambda: True)
         self.control = control
@@ -55,11 +61,16 @@ class HardwareHost:
         process = self.session_process
         if process is None:
             self._authorization_lost = False
+            self._locked = False
             return True
-        authorized = self.authorize(process)
+        authorized = self.session_authorize(process)
+        locked = authorized and self.session_locked()
+        if locked and not self._locked and self.engine.state.supported:
+            self.engine.set_mode('auto')
+        self._locked = locked
         if not authorized and not self._authorization_lost:
             # A peer disconnect can clear the owner before the next host tick
-            # observes the lock.  Reset even when ownership is already gone.
+            # observes qualification loss. Reset even if ownership is gone.
             self._authorization_lost = True
             self.engine.reset_after_session_context_loss()
         elif authorized:
@@ -69,8 +80,8 @@ class HardwareHost:
     def recovery_state(self, peer: ConsoleIdentity, request: dict) -> dict:
         """Read only, after OS authentication of the exact registered process.
 
-        Locking revokes receipts and targets, but recovery still needs a fresh
-        physical gate. This path never renews a lease or changes the engine.
+        Recovery still needs a fresh physical gate when display qualification
+        is lost. This path never renews a lease or changes the engine.
         """
         if not isinstance(peer, ConsoleIdentity) or peer != self.session_process:
             raise ServiceError(ErrorCode.ACCESS_DENIED)
@@ -83,9 +94,13 @@ class HardwareHost:
                     hardware_release_pose=self.engine.hardware_release_pose)
 
     def dispatch(self, peer: ConsoleIdentity, request: dict) -> dict:
-        if not isinstance(peer, ConsoleIdentity) or not self.authorize(peer):
+        if not isinstance(peer, ConsoleIdentity):
             raise ServiceError(ErrorCode.ACCESS_DENIED)
         method, params = validate_request(request, self.instance)
+        authorize = (self.session_authorize if peer == self.session_process and
+                     method in ('get_state', 'session_update') else self.authorize)
+        if not authorize(peer):
+            raise ServiceError(ErrorCode.ACCESS_DENIED)
         accepted = True
         if method in ('start_control', 'stop_control'):
             if self.control is None or peer == self.session_process:
@@ -108,7 +123,7 @@ class HardwareHost:
                                        'physical-switch-not-observed')
             accepted = self.engine.session_update(params['generation'], params['ready'],
                 params['error_code'], params['error_detail'], owner=peer.owner,
-                unattended=params['unattended'])
+                unattended=params['unattended'] or self.session_locked())
         elif method != 'get_state':
             dispatch_engine_operation(self.engine, method, params)
         if method != 'get_state':
