@@ -99,6 +99,7 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_packaging_metadata_matches_the_release(self) -> None:
         self.assertIn(f"当前版本：{self.project_version}", self.readme)
+        self.assertIn(f"**Current version: {self.project_version}**", read("README.en.md"))
         self.assertIn(
             f'"Project-Id-Version: panasonic-posture-manager '
             f'{self.project_version}\\n"',

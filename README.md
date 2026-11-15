@@ -4,6 +4,10 @@
 
 # 松下二合一平板电脑姿态管理工具
 
+简体中文 · [English](README.en.md)
+
+这款跨平台工具在 **Windows 和 Linux** 上都能识别翻转本的摆放姿态，并自动调整内屏方向。
+
 松下 Let's note QV 的屏幕可以翻转 360°，但机器本身无法识别帐篷和支架姿态。我们写这个程序，就是想补上这两种模式：把电脑立成帐篷时，画面能自动转正；把键盘朝下当支架时，屏幕也能保持正向。
 
 **当前版本：3.0.0** · [下载安装包](https://github.com/adogecheems/panasonic-posture-manager/releases)

@@ -192,7 +192,7 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 
 ## 发布
 
-1. 同步版本号、README、AUR 配方和翻译文件头。运行 `python packaging/common/release_version.py --tag v3.0.0`，标签换成本次版本。
+1. 同步版本号、中英文 README、AUR 配方和翻译文件头。运行 `python packaging/common/release_version.py --tag v3.0.0`，标签换成本次版本。
 2. 在 `docs/releases/v<版本>.md` 编写本次发布说明，按「简体中文」「English」分节。对照上个发布版本，写清哪些用户受影响、使用体验有何变化，以及是否需要升级后操作。两种语言应覆盖相同事实，明确区分 Windows、Linux 和实验性支持。[3.0.0 示例](docs/releases/v3.0.0.md)
 3. 审核双语正文，通过完整检查并取得发布授权后推送版本标签。工作流用该文件创建 Release，附上 Arch、Deb、RPM、两种语言的 Windows MSI 和 `SHA256SUMS`，随后更新两个 AUR 包。
 4. 重建已有版本时，从所选源码提交手动运行发布工作流并指定原标签。同名附件会被替换，已有发布正文会保留。若重建影响用户，须同步更新线上中英文说明并注明实际构建提交。
