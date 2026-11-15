@@ -1077,6 +1077,40 @@ for card, controls in translated.settings.cards:
 translated.close()
 ''')
 
+    def test_text_rendering_survives_fluent_styles_and_fractional_scaling(self):
+        for scale in ('1', '1.25', '1.5', '2'):
+            with self.subTest(scale=scale):
+                self.run_ui('''
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QLabel, QAbstractButton, QComboBox
+from qfluentwidgets import MessageBox, Theme, setTheme
+from panasonic_posture.windows.ui.widgets import style_message_box
+
+translated = Window(client=SyntheticClient(QTimer.singleShot), language='zh_CN')
+translated.show()
+translated.switchTo(translated.settings)
+dialog = MessageBox('确认 Confirm', '中文文字 English text', translated)
+style_message_box(dialog)
+dialog.show()
+for theme in (Theme.LIGHT, Theme.DARK):
+    setTheme(theme)
+    window.notify(True)
+    QTest.qWait(100)
+    for surface in (window, translated):
+        for widget in surface.findChildren((QLabel, QAbstractButton, QComboBox)):
+            if isinstance(widget, QAbstractButton) and not widget.text():
+                continue  # Native titlebar glyphs do not render text.
+            widget.ensurePolished()
+            font = widget.font()
+            assert font.hintingPreference() == QFont.HintingPreference.PreferVerticalHinting, (
+                type(widget).__name__, widget.objectName(), font.hintingPreference())
+            assert font.styleStrategy() & QFont.StyleStrategy.PreferAntialias
+            assert not font.styleStrategy() & (
+                QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
+dialog.close()
+translated.close()
+''', scale=scale)
+
     def test_compact_shell_logo_and_two_page_navigation(self):
         self.run_ui('''
 from qfluentwidgets import fontFamilies, setTheme, Theme
@@ -1086,7 +1120,7 @@ assert (window.width(), window.height()) == (500, 660)
 assert window.stackedWidget.count() == 1  # Settings page builds on first use
 assert not hasattr(window, 'navigationInterface')
 assert window.stackedWidget.currentWidget() is window.home
-assert app.font().hintingPreference() == QFont.HintingPreference.PreferDefaultHinting
+assert app.font().hintingPreference() == QFont.HintingPreference.PreferVerticalHinting
 assert app.font().styleStrategy() == QFont.StyleStrategy.PreferAntialias
 assert fontFamilies() == app.font().families()
 assert window.titleBar.titleLabel.font().families() == fontFamilies()
