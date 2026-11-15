@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -227,6 +228,13 @@ class AurBinGeneratorTests(unittest.TestCase):
 class ReleaseWorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
         self.workflow = read(".github/workflows/release.yml")
+
+    def test_linux_workflow_references_existing_test_modules(self) -> None:
+        modules = re.findall(r'tests\.(test_\w+)', read('.github/workflows/linux.yml'))
+        self.assertTrue(modules)
+        for module in modules:
+            with self.subTest(module=module):
+                self.assertTrue((ROOT / 'tests' / f'{module}.py').is_file())
 
     def test_tag_push_and_manual_rebuild_are_supported(self) -> None:
         self.assertIn("  push:\n    tags:\n      - 'v[0-9]*'", self.workflow)

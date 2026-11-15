@@ -5,6 +5,7 @@ import importlib.util
 import os
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -140,9 +141,24 @@ class ShortcutRepairTests(unittest.TestCase):
             env=environment,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        target, arguments, description = output.read_text(
+        target, arguments, _legacy_description = output.read_text(
             encoding='utf-8'
         ).splitlines()
+        # WScript also converts descriptions through the system code page.
+        # Read NAME_STRING independently from the saved MS-SHLLINK StringData:
+        # https://learn.microsoft.com/openspecs/windows_protocols/ms-shllink/17b69472-0f34-4bcf-b290-eccdb8de224b
+        data = shortcut.read_bytes()
+        self.assertEqual(struct.unpack_from('<I', data)[0], 0x4C)
+        flags = struct.unpack_from('<I', data, 0x14)[0]
+        self.assertTrue(flags & 0x04, 'shortcut must contain a description')
+        self.assertTrue(flags & 0x80, 'shortcut must store Unicode strings')
+        offset = 0x4C
+        if flags & 0x01:  # LinkTargetIDList precedes LinkInfo and StringData.
+            offset += 2 + struct.unpack_from('<H', data, offset)[0]
+        if flags & 0x02:
+            offset += struct.unpack_from('<I', data, offset)[0]
+        length = struct.unpack_from('<H', data, offset)[0]
+        description = data[offset + 2:offset + 2 + length * 2].decode('utf-16-le')
         return target, arguments, description
 
     def test_repair_writes_a_launchable_localized_shortcut(self):

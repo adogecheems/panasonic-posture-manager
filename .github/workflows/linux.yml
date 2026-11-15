@@ -56,7 +56,7 @@ jobs:
             tests.test_i18n_check \
             tests.test_journal \
             tests.test_session_refresh \
-            tests.test_display_plasma \
+            tests.test_linux_display_plasma \
             tests.test_linux_protocol \
             tests.test_linux_profile \
             tests.test_linux_settings \
