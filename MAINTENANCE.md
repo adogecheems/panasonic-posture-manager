@@ -245,6 +245,8 @@ Windows MSI 默认构建简体中文界面；正式发布同时生成简体中�
 
 含非 ASCII 文本的 PowerShell 脚本必须保存为带 BOM 的 UTF-8；Windows PowerShell 5.1 会按系统 ANSI 代码页解释无 BOM 的 UTF-8，可能破坏安装自定义动作的字符串边界。打包测试会检查 `packaging/windows/` 下的脚本。
 
+开始菜单快捷方式使用 `IShellLinkW` 和 `IPersistFile` 保存 Unicode 路径及通知身份，避免 `WScript.Shell` 在英文系统或路径包含系统代码页以外字符时保存失败；目标 Programs 目录缺失时由修复脚本创建。
+
 #### Windows 构建依赖
 
 使用 Windows x64 CPython 3.11+ 完整安装；CI 的打包解释器为 3.13，兼容性测试覆盖 3.11、3.13、3.14。先确认 `python --version` 能输出版本；若 `Get-Command python` 指向 `WindowsApps` 且无法运行，请使用已安装解释器的绝对路径。建议建立仓库专用虚拟环境，避免修改宿主 Python：

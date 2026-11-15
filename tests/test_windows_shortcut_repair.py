@@ -109,8 +109,11 @@ class ShortcutRepairTests(unittest.TestCase):
         if powershell is None:
             self.skipTest('Windows PowerShell is unavailable')
         output = self.root / 'shortcut-inspection.txt'
+        # WScript's legacy path conversion must not limit the independent reader.
+        inspection_link = self.root / 'inspection.lnk'
+        shutil.copy2(shortcut, inspection_link)
         environment = os.environ.copy()
-        environment['SHORTCUT_PATH'] = str(shortcut)
+        environment['SHORTCUT_PATH'] = str(inspection_link)
         environment['SHORTCUT_INSPECTION'] = str(output)
         result = subprocess.run(
             [
@@ -171,6 +174,35 @@ class ShortcutRepairTests(unittest.TestCase):
             self.inspect_shortcut(shortcut)[2],
             'Open Panasonic 2-in-1 Tablet Posture Management Tool',
         )
+
+    def test_missing_programs_directory_is_created(self):
+        self.programs.rmdir()
+        result = self.run_repair()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(
+            (self.programs / '松下二合一平板电脑姿态管理工具.lnk').is_file()
+        )
+
+    def test_unicode_path_outside_system_code_page_and_repair_are_supported(self):
+        self.program_data = self.root / 'Программы-😀'
+        self.programs = self.program_data / 'Microsoft/Windows/Start Menu/Programs'
+        self.programs.mkdir(parents=True)
+        for attempt in range(2):
+            with self.subTest(attempt=attempt):
+                result = self.run_repair()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                shortcut = self.programs / '松下二合一平板电脑姿态管理工具.lnk'
+                self.assertTrue(shortcut.is_file())
+                target, arguments, description = self.inspect_shortcut(shortcut)
+                self.assertTrue(os.path.samefile(target, self.runtime / 'pythonw.exe'))
+                self.assertTrue(arguments.startswith('-B -I "'))
+                self.assertTrue(arguments.endswith('\\launch.py"'))
+                self.assertTrue(
+                    os.path.samefile(arguments[7:-1], self.install / 'launch.py')
+                )
+                self.assertEqual(
+                    description, '打开 松下二合一平板电脑姿态管理工具'
+                )
 
     def test_invalid_language_is_rejected_before_creating_a_shortcut(self):
         result = self.run_repair(0x10000)

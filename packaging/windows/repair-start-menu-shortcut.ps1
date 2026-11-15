@@ -57,28 +57,44 @@ $appUserModelId = 'work.mmoe.panasonic.PostureManager'
 if (Test-Path -LiteralPath $destinationLink -PathType Leaf) {
     Remove-Item -LiteralPath $destinationLink -Force
 }
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($destinationLink)
-$shortcut.TargetPath = $target
-$shortcut.Arguments = "-B -I `"$launcher`""
-$shortcut.WorkingDirectory = $InstallFolder
-$shortcut.IconLocation = "$icon,0"
-$shortcut.Description = $shortcutDescription
-$shortcut.Save()
-
-# WScript.Shell cannot persist System.AppUserModel.ID. Without this property
-# Windows cannot associate the explicit process AUMID with the installed
-# display name and notification cards fall back to pythonw.exe's "Python"
-# identity. Keep the shortcut properties and the process identity in lockstep.
+# WScript.Shell saves through the system code page and loses characters on
+# English Windows. Use IShellLinkW and IPersistFile for Unicode paths, and keep
+# System.AppUserModel.ID on the same object so notifications retain our identity.
 if (-not ('PanasonicPosture.Windows.ShortcutIdentity' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace PanasonicPosture.Windows
 {
     public static class ShortcutIdentity
     {
+        [ComImport]
+        [Guid("000214F9-0000-0000-C000-000000000046")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IShellLinkW
+        {
+            [PreserveSig] int GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int size, IntPtr findData, uint flags);
+            [PreserveSig] int GetIDList(out IntPtr idList);
+            [PreserveSig] int SetIDList(IntPtr idList);
+            [PreserveSig] int GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder description, int size);
+            [PreserveSig] int SetDescription([MarshalAs(UnmanagedType.LPWStr)] string description);
+            [PreserveSig] int GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder directory, int size);
+            [PreserveSig] int SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string directory);
+            [PreserveSig] int GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder arguments, int size);
+            [PreserveSig] int SetArguments([MarshalAs(UnmanagedType.LPWStr)] string arguments);
+            [PreserveSig] int GetHotkey(out short hotkey);
+            [PreserveSig] int SetHotkey(short hotkey);
+            [PreserveSig] int GetShowCmd(out int showCommand);
+            [PreserveSig] int SetShowCmd(int showCommand);
+            [PreserveSig] int GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder icon, int size, out int index);
+            [PreserveSig] int SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string icon, int index);
+            [PreserveSig] int SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, uint reserved);
+            [PreserveSig] int Resolve(IntPtr window, uint flags);
+            [PreserveSig] int SetPath([MarshalAs(UnmanagedType.LPWStr)] string path);
+        }
+
         [StructLayout(LayoutKind.Sequential, Pack = 4)]
         private struct PropertyKey
         {
@@ -151,14 +167,20 @@ namespace PanasonicPosture.Windows
             }
         }
 
-        public static void Set(string shortcutPath, string appUserModelId)
+        public static void Create(string shortcutPath, string target,
+            string arguments, string workingDirectory, string icon,
+            string description, string appUserModelId)
         {
             object link = Activator.CreateInstance(
                 Type.GetTypeFromCLSID(ShellLinkClassId));
             try
             {
-                var file = (IPersistFile)link;
-                Check(file.Load(shortcutPath, 2));
+                var shellLink = (IShellLinkW)link;
+                Check(shellLink.SetPath(target));
+                Check(shellLink.SetArguments(arguments));
+                Check(shellLink.SetWorkingDirectory(workingDirectory));
+                Check(shellLink.SetIconLocation(icon, 0));
+                Check(shellLink.SetDescription(description));
                 var store = (IPropertyStore)link;
                 var value = new PropVariant();
                 value.VariantType = 31; // VT_LPWSTR
@@ -174,7 +196,7 @@ namespace PanasonicPosture.Windows
                     PropVariantClear(ref value);
                 }
                 Check(store.Commit());
-                Check(file.Save(shortcutPath, true));
+                Check(((IPersistFile)link).Save(shortcutPath, true));
             }
             finally
             {
@@ -214,8 +236,14 @@ namespace PanasonicPosture.Windows
 '@
 }
 
-[PanasonicPosture.Windows.ShortcutIdentity]::Set(
+[IO.Directory]::CreateDirectory($programs) | Out-Null
+[PanasonicPosture.Windows.ShortcutIdentity]::Create(
     $destinationLink,
+    $target,
+    "-B -I `"$launcher`"",
+    $InstallFolder,
+    $icon,
+    $shortcutDescription,
     $appUserModelId
 )
 $actualAppUserModelId = [PanasonicPosture.Windows.ShortcutIdentity]::Get(
