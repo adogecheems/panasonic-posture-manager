@@ -152,7 +152,7 @@ class WindowsSecurity:
                 self.kernel.CloseHandle(token)
             self.kernel.CloseHandle(process)
 
-    def peer(self, pipe: int) -> ConsoleIdentity:
+    def peer(self, pipe: int, *, recovery_process: ConsoleIdentity | None = None) -> ConsoleIdentity:
         self._check(self.advapi.ImpersonateNamedPipeClient(pipe))
         token = HANDLE()
         try:
@@ -168,11 +168,12 @@ class WindowsSecurity:
         pid = U32()
         self._check(self.kernel.GetNamedPipeClientProcessId(pipe, C.byref(pid)))
         identity = self.process_identity(pid.value)
-        if impersonated != (identity.sid, identity.logon_id, identity.session_id) or not self.is_active(identity):
+        if impersonated != (identity.sid, identity.logon_id, identity.session_id) or not self.is_active(
+                identity, allow_locked=identity == recovery_process):
             raise AuthenticationError('client is not the unlocked foreground console user')
         return identity
 
-    def is_active(self, peer: ConsoleIdentity) -> bool:
+    def is_active(self, peer: ConsoleIdentity, *, allow_locked: bool = False) -> bool:
         token, buffer, size = HANDLE(), HANDLE(), U32()
         try:
             session = self.kernel.WTSGetActiveConsoleSessionId()
@@ -188,7 +189,7 @@ class WindowsSecurity:
             info = C.cast(buffer, C.POINTER(ExtendedInfo)).contents
             return foreground_matches(peer, console,
                 active=info.level == 1 and info.data.session == session and info.data.state == 0,
-                unlocked=info.data.flags == 1)
+                unlocked=info.data.flags == 1 or (allow_locked and info.data.flags == 0))
         except (OSError, ValueError):
             return False
         finally:

@@ -101,6 +101,7 @@ class Slot:
     request: dict | None = None
     reply: dict | None = None
     retired: bool = False
+    recovery_process: ConsoleIdentity | None = None
 
 
 class HardwareServer:
@@ -171,6 +172,7 @@ class HardwareServer:
             return
         slot.connected, slot.serial, slot.pending = False, 0, None
         slot.request, slot.reply, slot.retired = None, None, False
+        slot.recovery_process = None
 
     def poll(self) -> None:
         if self.closed:
@@ -228,14 +230,21 @@ class HardwareServer:
         if slot.peer is not None and slot.peer != peer:
             raise AuthenticationError('pipe client identity changed')
         slot.peer = peer
-        self.guard.remember(peer, checked)
+        recovery_read = peer == slot.recovery_process
+        if not recovery_read:
+            self.guard.remember(peer, checked)
         request = slot.request
         if (not isinstance(request, dict) or type(request.get('id')) is not int or
                 request['id'] <= slot.serial):
             raise ProtocolError('replayed hardware request')
         slot.serial = request['id']
         try:
-            reply = self.host.dispatch(peer, request)
+            if recovery_read:
+                if not 0 <= self.clock() - checked < AUTH_SECONDS:
+                    raise ServiceError('access-denied')
+                reply = self.host.recovery_state(peer, request)
+            else:
+                reply = self.host.dispatch(peer, request)
             reply['error'] = None
         except ServiceError as error:
             reply = dict(
@@ -256,9 +265,14 @@ class HardwareServer:
         if not isinstance(request, dict):
             raise ProtocolError('invalid hardware request')
         slot.request = request
+        recovery_process = self.host.session_process
+        slot.recovery_process = recovery_process if request.get('method') == 'get_state' else None
+        recovery_read = slot.recovery_process is not None
 
         def authenticate(handle=slot.handle):
             checked = self.clock()
+            if recovery_read:
+                return self.security.peer(handle, recovery_process=recovery_process), checked
             return self.security.peer(handle), checked
 
         slot.pending = self.executor.submit(authenticate)

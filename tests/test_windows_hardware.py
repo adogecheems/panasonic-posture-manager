@@ -4,6 +4,7 @@ import ctypes as C
 from pathlib import Path
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -15,7 +16,9 @@ from panasonic_posture.windows.service.host import ConsoleIdentity, HardwareHost
 from panasonic_posture.windows.ipc.pipe import FILE_FLAG_OVERLAPPED, NativePipes, PipePoll
 from panasonic_posture.windows.ipc.frames import ProtocolError
 from panasonic_posture.windows.service.ipc import ConsoleGuard, HardwareServer, HardwareConnection, CLIENT_ACCESS
-from panasonic_posture.windows.common.security import foreground_matches
+from panasonic_posture.windows.common.security import (
+    AuthenticationError, ExtendedInfo, WindowsSecurity, foreground_matches,
+)
 from panasonic_posture.tasks import InlineExecutor
 try:
     from tests.windows_fixture import Simulation
@@ -46,6 +49,25 @@ class HostFixture(unittest.TestCase):
 
 
 class HardwareHostTests(HostFixture):
+    def test_recovery_read_is_exact_process_only_and_never_renews_ownership(self):
+        self.active = False
+        self.host.tick()
+        before = self.engine.state.to_dict()
+        reply = self.host.recovery_state(AGENT, self.request('get_state'))
+        self.assertTrue(reply['accepted'])
+        self.assertEqual(reply['state'], before)
+        self.assertIsNone(self.engine.session_owner)
+        self.assertEqual(self.engine.state.to_dict(), before)
+        for peer in (UI, None, ConsoleIdentity(AGENT.sid, AGENT.logon_id, 1, 43, 99999)):
+            with self.subTest(peer=peer), self.assertRaisesRegex(Exception, 'access-denied'):
+                self.host.recovery_state(peer, self.request('get_state'))
+        for method, params in (('set_mode', dict(mode='tent')), ('session_update', dict(
+                generation=self.engine.state.generation, ready=True, error_code=None,
+                error_detail=None, unattended=False))):
+            with self.subTest(method=method), self.assertRaisesRegex(Exception, 'access-denied'):
+                self.host.recovery_state(AGENT, self.request(method, **params))
+        self.assertEqual(self.engine.state.to_dict(), before)
+
     def test_control_operations_require_authenticated_ui_and_preserve_pending_result(self):
         calls = []
         self.host.control = lambda peer, enabled: calls.append((peer, enabled)) or enabled
@@ -197,6 +219,63 @@ class HardwareHostTests(HostFixture):
 
 
 class SecurityTests(unittest.TestCase):
+    def test_locked_recovery_keeps_native_console_logon_and_process_checks(self):
+        info = ExtendedInfo()
+        info.level, info.data.session, info.data.state, info.data.flags = 1, 1, 0, 0
+        security = object.__new__(WindowsSecurity)
+        console = [AGENT.sid, AGENT.logon_id, AGENT.session_id]
+        current = [AGENT]
+        session = [1]
+        def query_token(session, token):
+            token._obj.value = 12
+            return True
+        def query_info(server, session, kind, buffer, size):
+            buffer._obj.value = C.addressof(info)
+            size._obj.value = C.sizeof(info)
+            return True
+        security.kernel = SimpleNamespace(WTSGetActiveConsoleSessionId=lambda: session[0],
+                                          CloseHandle=lambda handle: None)
+        security.wts = SimpleNamespace(WTSQueryUserToken=query_token,
+            WTSQuerySessionInformationW=query_info, WTSFreeMemory=lambda buffer: None)
+        security.process_identity = lambda pid: current[0]
+        security.token_identity = lambda token: tuple(console)
+        self.assertFalse(security.is_active(AGENT))
+        self.assertTrue(security.is_active(AGENT, allow_locked=True))
+        for field, value in (('flags', -1), ('state', 1), ('session', 2)):
+            with self.subTest(field=field):
+                previous = getattr(info.data, field)
+                setattr(info.data, field, value)
+                self.assertFalse(security.is_active(AGENT, allow_locked=True))
+                setattr(info.data, field, previous)
+        console[1] = 999
+        self.assertFalse(security.is_active(AGENT, allow_locked=True))
+        console[1] = AGENT.logon_id
+        current[0] = UI
+        self.assertFalse(security.is_active(AGENT, allow_locked=True))
+        current[0] = AGENT
+        session[0] = 2
+        self.assertFalse(security.is_active(AGENT, allow_locked=True))
+
+    def test_peer_relaxes_lock_only_for_exact_registered_identity(self):
+        security = object.__new__(WindowsSecurity)
+        def pid(handle, output):
+            output._obj.value = AGENT.process_id
+            return True
+        security.kernel = SimpleNamespace(GetCurrentThread=lambda: 1,
+            GetNamedPipeClientProcessId=pid, CloseHandle=lambda handle: None)
+        security.advapi = SimpleNamespace(ImpersonateNamedPipeClient=lambda pipe: True,
+            OpenThreadToken=lambda *args: True, RevertToSelf=lambda: True)
+        security.token_identity = lambda token: (AGENT.sid, AGENT.logon_id, AGENT.session_id)
+        security.process_identity = lambda pid: AGENT
+        security.is_active = lambda peer, allow_locked=False: allow_locked
+        self.assertEqual(security.peer(1, recovery_process=AGENT), AGENT)
+        for registered in (None, UI, ConsoleIdentity(AGENT.sid, 100, 1, 43, 99999)):
+            with self.subTest(registered=registered), self.assertRaises(AuthenticationError):
+                security.peer(1, recovery_process=registered)
+        security.token_identity = lambda token: (AGENT.sid, 999, AGENT.session_id)
+        with self.assertRaises(AuthenticationError):
+            security.peer(1, recovery_process=AGENT)
+
     def test_agent_replacement_ignores_old_auth_results_without_spawning_extra_work(self):
         jobs, peers = [], []
         now = [10.]
@@ -259,6 +338,61 @@ class SecurityTests(unittest.TestCase):
 
 
 class PipeTests(HostFixture):
+    def test_recovery_read_does_not_authorize_receipts_or_break_ui_reads(self):
+        server, _, _ = self.server()
+        peer, locked = [AGENT], [True]
+        def authenticate(handle, *, recovery_process=None):
+            if locked[0] and peer[0] != recovery_process:
+                raise AuthenticationError('locked fixture')
+            return peer[0]
+        server.security.peer = authenticate
+        slot = server.slots[0]
+        server.pipes.read = lambda handle: PipePoll.ready(self.request('get_state'))
+        server._read_request(slot)
+        self.assertTrue(server._finish_authentication(slot))
+        self.assertTrue(slot.reply['accepted'])
+        self.assertFalse(server.guard.allow(AGENT))
+        with self.assertRaisesRegex(Exception, 'access-denied'):
+            server.host.dispatch(AGENT, self.request('session_update', generation=1,
+                ready=True, error_code=None, error_detail=None, unattended=False))
+        slot.peer, slot.serial = None, 0
+        peer[0] = UI
+        server._read_request(slot)
+        with self.assertRaises(AuthenticationError):
+            server._finish_authentication(slot)
+        locked[0] = False
+        server._read_request(slot)
+        self.assertTrue(server._finish_authentication(slot))
+        self.assertTrue(slot.reply['accepted'])
+
+    def test_recovery_read_rechecks_registration_after_authentication(self):
+        server, _, _ = self.server()
+        server.security.peer = lambda handle, **kwargs: AGENT
+        slot = server.slots[0]
+        server.pipes.read = lambda handle: PipePoll.ready(self.request('get_state'))
+        server._read_request(slot)
+        server.host.session_process = UI
+        self.assertTrue(server._finish_authentication(slot))
+        self.assertFalse(slot.reply['accepted'])
+        self.assertEqual(slot.reply['error'], 'access-denied')
+        self.assertFalse(server.guard.allow(AGENT))
+
+    def test_slow_recovery_authentication_cannot_use_an_expired_identity_check(self):
+        for elapsed in (-.1, 1., 5.):
+            with self.subTest(elapsed=elapsed):
+                server, _, _ = self.server()
+                server.security.peer = lambda handle, **kwargs: AGENT
+                now = [10.]
+                server.clock = lambda: now[0]
+                slot = server.slots[0]
+                server.pipes.read = lambda handle: PipePoll.ready(self.request('get_state'))
+                server._read_request(slot)
+                now[0] += elapsed
+                self.assertTrue(server._finish_authentication(slot))
+                self.assertFalse(slot.reply['accepted'])
+                self.assertEqual(slot.reply['error'], 'access-denied')
+                self.assertFalse(server.guard.allow(AGENT))
+
     def test_cancelled_slot_stays_retired_while_other_service_ticks_continue(self):
         server, _, _ = self.server()
         slot = server.slots[0]

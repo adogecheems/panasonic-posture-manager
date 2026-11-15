@@ -1,6 +1,7 @@
 """Privileged-host dispatch, isolated from the ordinary UI process.
 
-Only an OS-authenticated foreground console user may send UI operations.
+Only an OS-authenticated unlocked foreground console user may send UI operations.
+The exact registered session process may read state while locked for recovery.
 Display receipts additionally require the exact session process registered by
 the service host, never a PID/SID supplied in an RPC request. Before the first
 physical-source observation, the registered process may renew only a not-ready
@@ -64,6 +65,22 @@ class HardwareHost:
         elif authorized:
             self._authorization_lost = False
         return authorized
+
+    def recovery_state(self, peer: ConsoleIdentity, request: dict) -> dict:
+        """Read only, after OS authentication of the exact registered process.
+
+        Locking revokes receipts and targets, but recovery still needs a fresh
+        physical gate. This path never renews a lease or changes the engine.
+        """
+        if not isinstance(peer, ConsoleIdentity) or peer != self.session_process:
+            raise ServiceError(ErrorCode.ACCESS_DENIED)
+        method, _ = validate_request(request, self.instance)
+        if method != 'get_state':
+            raise ServiceError(ErrorCode.ACCESS_DENIED)
+        return dict(version=CONTROL_VERSION, channel=CHANNEL, type='response',
+                    id=request['id'], instance=self.instance, accepted=True,
+                    state=self.engine.state.to_dict(), error_detail=None,
+                    hardware_release_pose=self.engine.hardware_release_pose)
 
     def dispatch(self, peer: ConsoleIdentity, request: dict) -> dict:
         if not isinstance(peer, ConsoleIdentity) or not self.authorize(peer):

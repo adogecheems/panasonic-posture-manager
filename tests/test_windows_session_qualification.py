@@ -44,6 +44,17 @@ class QualifiedSessionClientTests(unittest.TestCase):
             ('update', 4, False, 'display-unavailable', 'native-session-unavailable'),
         ])
 
+    def test_recovery_read_does_not_renew_qualification_and_propagates_failure(self):
+        self.context.available = False
+        self.assertEqual(self.qualified.get_recovery_state(), self.client.state)
+        self.assertEqual(self.client.calls, [])
+        def fail():
+            raise ServiceError('access-denied')
+        self.client.get_state = fail
+        with self.assertRaises(ServiceError):
+            self.qualified.get_recovery_state()
+        self.assertEqual(self.client.calls, [])
+
     def test_qualification_is_rechecked_after_transmitting_a_receipt(self):
         send = self.client.session_update
         def send_then_lose(generation, ready, error_code=None, error_detail=None):

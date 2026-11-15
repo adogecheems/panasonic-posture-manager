@@ -43,6 +43,12 @@ AUTHORITY_PROOF_ATTEMPTS = 12
 AUTHORITY_PROOF_RETRY_SECONDS = .25
 
 
+def _hardware_query(client) -> SessionHardwareQuery:
+    loader = (client.get_recovery_state if isinstance(client, QualifiedSessionClient)
+              else client.get_state)
+    return SessionHardwareQuery(loader)
+
+
 def build_optional_slate(client, journal: Path) -> SlatePosture | None:
     """Open CSM output when available without making display control depend on it."""
     from panasonic_posture.windows.hardware.convertible_slate import (
@@ -55,7 +61,7 @@ def build_optional_slate(client, journal: Path) -> SlatePosture | None:
         return SlateNotifier(
             NativeSlateDevice(),
             SlateJournal(lease_path(journal)),
-            hardware_query=SessionHardwareQuery(client.get_state),
+            hardware_query=_hardware_query(client),
         )
     except (OSError, ValueError) as error:
         # CSM configuration belongs to the MSI install. If the device is still
@@ -73,7 +79,7 @@ def build_display(client, journal: Path) -> DisplayBackend:
 
     return select_native_display(
         NativeDisplay(), Journal(journal),
-        hardware_query=SessionHardwareQuery(client.get_state),
+        hardware_query=_hardware_query(client),
     )
 
 

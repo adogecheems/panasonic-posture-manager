@@ -209,6 +209,31 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(api.writes, [2])
         self.assertEqual(api.lock_writes, [True, True])
 
+    def test_lock_restores_before_unlock_instead_of_replaying_recovery_after_unlock(self):
+        from tests.test_windows_display import Api
+        from tests.windows_fixture import MemoryJournal
+        self.client.state = replace(self.client.state, hardware_status=HardwareStatus.OK)
+        api, journal = Api(), MemoryJournal()
+        api.panels = lambda: [api.current]
+        with patch('panasonic_posture.windows.session.display_backend.NativeDisplay', return_value=api), patch(
+            'panasonic_posture.session.journal_store.Journal', return_value=journal,
+        ):
+            self.agent.display_factory = lambda client: build_display(client, Path('fixture.json'))
+            self.agent.start()
+        self.agent.tick(10.)
+        self.assertEqual(api.writes, [2])
+        self.context.absent = True
+        for now in (10.6, 11., 12., 13.):
+            self.agent.tick(now)
+        self.assertEqual(api.writes, [2, 0])
+        self.assertIsNone(journal.load())
+        self.assertFalse(self.agent.runtime.ready)
+        self.context.absent = False
+        for now in (14., 15., 16., 17.):
+            self.agent.tick(now)
+        self.assertTrue(self.agent.runtime.ready)
+        self.assertEqual(api.writes, [2, 0, 2])
+
     def test_presence_aging_between_state_read_and_refresh_keeps_the_owned_display(self):
         self.client.state = replace(self.client.state, hardware_status=HardwareStatus.OK)
         self.display.needs_refresh = lambda target: target.mode == 'tent'

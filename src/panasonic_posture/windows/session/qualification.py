@@ -80,6 +80,14 @@ class QualifiedSessionClient:
             raise self._rejected()
         return state
 
+    def get_recovery_state(self) -> StateSnapshot:
+        """Keep physical recovery queries available after local lock loss.
+
+        The service still authenticates this process and limits the locked
+        connection to reads. Apply and receipts retain their qualification fence.
+        """
+        return self.client.get_state()
+
     def session_update(self, generation: int, ready: bool,
                        error_code: str | None = None,
                        error_detail: str | None = None) -> None:
