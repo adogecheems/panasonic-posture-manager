@@ -8,7 +8,7 @@
 
 This cross-platform tool recognizes how you position your convertible laptop and automatically rotates the built-in screen on **Windows and Linux**.
 
-You can prop a Panasonic Let's note QV convertible up like a tent or rest it keyboard-side down as a stand, but its built-in hardware and software don't respond correctly to either setup. We built this app so the screen orientation follows how you position the laptop. In tent mode, the picture rotates 180° so it appears upright. In stand mode, it stays in its usual landscape orientation.
+You can prop a Panasonic Let's note QV convertible up like a tent or rest it keyboard-side down as a stand, but its built-in hardware and software don't respond correctly to either setup. We built this app with two everyday uses in mind. In tent mode, the picture should rotate 180° so it appears upright. In stand mode, tapping a text field should bring up the system’s on-screen keyboard when you need to type.
 
 **Current version: 3.0.0** · [Download an installer](https://github.com/adogecheems/panasonic-posture-manager/releases)
 
@@ -31,7 +31,7 @@ The app starts at sign-in by default. Once the device is steady, the built-in sc
 | --- | --- |
 | Laptop, keyboard facing up | Stays in normal landscape orientation |
 | Tent, propped up in an inverted V | Rotates 180° |
-| Stand, keyboard facing down | Stays in normal landscape orientation |
+| Stand, keyboard facing down | When you tap a text field, your system’s touch input settings determine whether the on-screen keyboard appears. The screen stays in landscape. |
 | Tablet, screen folded all the way back | The operating system takes over automatic rotation |
 
 In tent and stand modes, Linux disables the built-in keyboard and touchpad. Windows keeps both available. When the screen is folded all the way back, the device and operating system handle input.
