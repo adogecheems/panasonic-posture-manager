@@ -21,7 +21,8 @@ class SignalLifecycleTests(unittest.TestCase):
             with self.subTest(process=process), tempfile.TemporaryDirectory() as directory:
                 with (mock.patch.object(Gio, 'bus_own_name', return_value=1),
                       mock.patch.object(Gio, 'bus_unown_name'),
-                      mock.patch('panasonic_posture.linux.service.daemon.ServiceApplication.create')):
+                      mock.patch('panasonic_posture.linux.service.daemon.ServiceApplication.create'),
+                      mock.patch.object(GLib, 'unix_signal_add', wraps=GLib.unix_signal_add) as install):
                     loop = mock.Mock()
                     if process == 'service':
                         owner = Daemon(Gio.BusType.SESSION, Path(directory) / 'settings.json')
@@ -46,8 +47,7 @@ class SignalLifecycleTests(unittest.TestCase):
                         loop.quit.assert_called_once()
 
                     loop.run.side_effect = run_loop
-                    with mock.patch.object(GLib, 'unix_signal_add', wraps=GLib.unix_signal_add) as install:
-                        self.assertEqual(run(), 0)
+                    self.assertEqual(run(), 0)
                     self.assertEqual([call.args[1] for call in install.call_args_list],
                                      [signal.SIGTERM, signal.SIGINT])
                     self.assertEqual(owner._signal_sources, [])
