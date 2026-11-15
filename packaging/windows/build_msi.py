@@ -341,6 +341,17 @@ def _append_shortcut(file_element: ET.Element) -> None:
         'Key': 'System.AppUserModel.ID',
         'Value': 'work.mmoe.panasonic.PostureManager',
     })
+    # Keep a culture-independent target for the unelevated Finish action;
+    # the visible Start menu link is localized after CreateShortcuts.
+    ET.SubElement(file_element, 'Shortcut', {
+        'Id': 'ApplicationLaunchShortcut',
+        'Directory': 'INSTALLFOLDER',
+        'Name': 'LaunchFrontend',
+        'Advertise': 'no',
+        'Arguments': '-B -I "[INSTALLFOLDER]launch.py"',
+        'WorkingDirectory': 'INSTALLFOLDER',
+        'Icon': 'ProductIcon.ico',
+    })
 
 
 def render_components(

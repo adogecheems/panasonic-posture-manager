@@ -54,6 +54,7 @@ REQUIRED_INSTALLER_STRINGS = frozenset({
     "ServiceDescription",
     "ServiceDisplayName",
     "ShortcutDescription",
+    "LaunchFrontendText",
 })
 _XML_LANG = "{http://www.w3.org/XML/1998/namespace}lang"
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")

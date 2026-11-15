@@ -34,6 +34,44 @@ def png_dimensions(path: Path) -> tuple[int, int]:
 
 
 class MsiPayloadTests(unittest.TestCase):
+    def test_finish_launch_is_optional_unelevated_and_only_for_install(self):
+        root = ET.parse(ROOT / 'packaging/windows/msi/Package.wxs').getroot()
+        actions = {e.get('Id'): e for e in root.iter() if e.tag.endswith('CustomAction')}
+        launch = actions['LaunchFrontend']
+        self.assertEqual(launch.get('DllEntry'), 'WixUnelevatedShellExec')
+        self.assertEqual(launch.get('Execute'), 'immediate')
+        self.assertEqual(launch.get('Impersonate'), 'yes')
+        self.assertEqual(launch.get('Return'), 'check')
+        properties = {e.get('Id'): e.get('Value') for e in root.iter() if e.tag.endswith('Property')}
+        self.assertEqual(actions['SetFrontendLaunchTarget'].get('Property'), 'WixUnelevatedShellExecTarget')
+        self.assertEqual(actions['SetFrontendLaunchTarget'].get('Value'), '[INSTALLFOLDER]LaunchFrontend.lnk')
+        self.assertEqual(properties['WIXUI_EXITDIALOGOPTIONALCHECKBOX'], '1')
+        self.assertEqual(properties['WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT'], '!(loc.LaunchFrontendText)')
+        publish = next(e for e in root.iter() if e.tag.endswith('Publish') and e.get('Value') == 'LaunchFrontend')
+        self.assertEqual(publish.get('Dialog'), 'ExitDialog')
+        self.assertEqual(publish.get('Control'), 'Finish')
+        self.assertEqual(publish.get('Event'), 'DoAction')
+        self.assertEqual(publish.get('Condition'), 'WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed AND NOT REMOVE')
+        self.assertEqual(publish.get('Order'), '2')
+        prepare = next(e for e in root.iter() if e.tag.endswith('Publish') and e.get('Value') == 'SetFrontendLaunchTarget')
+        self.assertEqual(prepare.get('Order'), '1')
+        self.assertEqual(prepare.get('Condition'), publish.get('Condition'))
+        for sequence in root.iter():
+            if sequence.tag.endswith(('InstallExecuteSequence', 'InstallUISequence')):
+                self.assertFalse(any(e.get('Action') == 'LaunchFrontend' for e in sequence))
+
+    def test_finish_launch_shortcut_uses_protected_python_and_isolated_entry(self):
+        root = ET.fromstring(msi.render_components(msi.payload_files(self.runtime, self.dependencies)))
+        shortcut = next(e for e in root.iter() if e.tag.endswith('Shortcut') and e.get('Id') == 'ApplicationLaunchShortcut')
+        self.assertEqual(shortcut.get('Directory'), 'INSTALLFOLDER')
+        self.assertEqual(shortcut.get('Name'), 'LaunchFrontend')
+        parents = {child: parent for parent in root.iter() for child in parent}
+        self.assertEqual(parents[shortcut].get('Id'), 'ServicePythonwExe')
+        self.assertIsNone(shortcut.get('Target'))
+        self.assertEqual(shortcut.get('Arguments'), '-B -I "[INSTALLFOLDER]launch.py"')
+        self.assertEqual(shortcut.get('WorkingDirectory'), 'INSTALLFOLDER')
+        self.assertEqual(shortcut.get('Advertise'), 'no')
+
     def setUp(self):
         # Exercise orchestration with a fake Windows host and subprocess runner;
         # patch only the builder's sys reference, never pathlib's host platform.

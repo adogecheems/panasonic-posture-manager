@@ -6,6 +6,7 @@
   <String Id="ServiceDisplayName" Value="[ProductName] 硬件服务" />
   <String Id="ServiceDescription" Value="为 [ProductName] 提供经过身份验证的 LocalSystem 硬件端点。" />
   <String Id="ShortcutDescription" Value="打开 [ProductName]" />
+  <String Id="LaunchFrontendText" Value="启动应用" />
   <String Id="DowngradeErrorMessage" Value="已安装较新版本的 [ProductName]。" />
   <String Id="LaunchConditionMessage" Value="[ProductName] 需要 64 位 Windows 10 或更高版本。" />
   <String Id="WelcomeDlgTitle" Overridable="yes"

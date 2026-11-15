@@ -32,6 +32,20 @@
     <Property Id="ARPPRODUCTICON" Value="ProductIcon.ico" />
     <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="!(loc.ExitDialogOptionalText)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="!(loc.LaunchFrontendText)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <!-- ShellExec has no argument parameter. Launch the MSI-owned shortcut so
+         the protected interpreter retains -B -I and the exact UI entry point.
+         Explorer supplies the ordinary user's token even for elevated setup. -->
+    <CustomAction Id="SetFrontendLaunchTarget" Property="WixUnelevatedShellExecTarget"
+                  Value="[INSTALLFOLDER]LaunchFrontend.lnk" />
+    <CustomAction
+        Id="LaunchFrontend"
+        BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+        DllEntry="WixUnelevatedShellExec"
+        Execute="immediate"
+        Impersonate="yes"
+        Return="check" />
     <Property Id="POSTURE_EXIT_TITLE" Value="!(loc.ExitDialogInstallTitle)" />
     <Property Id="POSTURE_EXIT_DESCRIPTION" Value="!(loc.ExitDialogInstallDescription)" />
     <Property Id="MainPathErrorFormat" Value="!(loc.MainPathErrorFormat)" />
@@ -258,6 +272,10 @@
       <DialogRef Id="UserExit" />
 
       <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="SetFrontendLaunchTarget"
+               Order="1" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed AND NOT REMOVE" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchFrontend"
+               Order="2" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed AND NOT REMOVE" />
 
       <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT Installed" />
       <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
