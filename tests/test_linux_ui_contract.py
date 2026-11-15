@@ -347,7 +347,7 @@ page.update(state(pose='unknown', target={'mode':'unavailable'}, hardware=True))
 assert page.heading.get_label() == 'Tablet'
 assert not page.detail.get_visible()
 page.update(state(target={'mode':'unavailable'}, hardware=None))
-assert 'tablet switch state is unavailable' in page.detail.get_label()
+assert page.detail.get_label() == 'Tablet switch state is unavailable. Restart the background service or check the tablet device configuration.'
 page.update(state(target={'mode':'unavailable'}, sensor_source='starting'))
 assert 'No posture data' in page.detail.get_label()
 page.update(state(supported=False))

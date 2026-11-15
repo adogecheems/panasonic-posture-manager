@@ -19,6 +19,9 @@ class ResourceTests(unittest.TestCase):
         for pose in ('laptop', 'tent', 'stand', 'tablet'):
             with self.subTest(pose=pose):
                 self.assertTrue((root / f'{pose}.svg').is_file())
+        for name in ('lets-note-window-icon.png', 'lets-note-window-icon-dark.png'):
+            with self.subTest(name=name):
+                self.assertTrue((root / name).is_file())
 
     def test_explicit_installed_ui_override_is_preserved(self):
         root = Path(__file__).resolve().parent / 'fixture'

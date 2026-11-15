@@ -87,7 +87,7 @@ class WindowsMachineProfileTests(unittest.TestCase):
         ) as engine_factory, patch(
             'panasonic_posture.windows.service.application.HardwareRuntime',
         ) as runtime_factory:
-            create_hardware_runtime(runtime=Mock(), settings=Mock(), profile=profile)
+            create_hardware_runtime(runtime=Mock(), settings=Mock(), wake=Mock(), profile=profile)
         sensor_factory.assert_called_once_with(
             mount_matrix=profile.mount_matrix,
             include_orientation=False,
