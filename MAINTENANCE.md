@@ -158,6 +158,8 @@ Windows 产品保持内置键盘和触控板可用，不加载自研输入过滤
 
 Windows 服务将检测偏好、提示偏好和传感器校准原子写入 `%ProgramData%\PanasonicPostureManager\State\settings.json`。MSI 在启动服务前为 State 目录设置仅 SYSTEM 和管理员可写的 ACL；损坏设置按共享设置存储规则隔离。
 
+Windows 外观选择独立写入当前用户的 `%LOCALAPPDATA%\PanasonicPostureManager\appearance.ini`，使用原子同步并在首次打开窗口时恢复；写入失败会恢复原选择并提示保存失败。无法读取或内容无效时使用系统外观，保留原文件；无效文件不会被设置操作覆盖。登录启动偏好保存在当前用户的 Run 值与初始化标记中。手动模式只在当前控制周期有效，锁屏、睡眠、会话失效或服务重启后回到自动，不持久化旧目标。
+
 Windows RPC v1 增加无参数的 `start_control` 和 `stop_control`，仍要求当前本地控制台身份鉴权，可信会话进程不能调用这两个 UI 操作。`stop_control` 的 `accepted=False` 表示正常等待恢复，客户端须继续查询，不能提前宣告退出成功。监管器向会话进程发送既有停止信号，保留恢复期间的 RPC 资格，进程成功退出并完成资源清理后才返回 True；超时强制结束或非零退出码均报告失败。停止只约束发起请求的登录实例，重新打开界面会发送一次 `start_control`；重连不重放启动或停止请求。
 
 MSI 只有在安装前没有产品配置标记时才注册 CSM 配置移除回滚。升级和修复沿用旧安装的恢复记录，失败回滚不得撤销该配置。

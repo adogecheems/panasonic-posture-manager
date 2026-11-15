@@ -72,7 +72,8 @@ class Window(FluentWidget):
     connection_lost = pyqtSignal()
 
     def __init__(self, *, language=None, client: UIClient | None = None,
-                 startup=None, update_checker=None, start_client: bool = True):
+                 startup=None, update_checker=None, start_client: bool = True,
+                 appearance_store=None):
         if type(start_client) is not bool:
             raise ValueError('client startup ownership must be explicit')
         configure_application_font()
@@ -107,6 +108,7 @@ class Window(FluentWidget):
             self.client = UnavailableClient()
         self.home = Home(self.client, _, self.notify, self)
         self._startup = startup
+        self._appearance_store = appearance_store
         self._update_checker = update_checker
         self._settings = None
         self.stackedWidget = QStackedWidget(self)
@@ -185,6 +187,7 @@ class Window(FluentWidget):
             settings = Settings(
                 self.client, self._, self.notify, self,
                 startup=self._startup, update_checker=self._update_checker,
+                appearance_store=self._appearance_store,
             )
             self.stackedWidget.addWidget(settings)
             self._settings = settings

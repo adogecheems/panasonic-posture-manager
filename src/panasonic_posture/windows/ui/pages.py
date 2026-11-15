@@ -241,11 +241,12 @@ class Home(Page):
 
 class Settings(Page):
     def __init__(self, client: UIClient, _, notify, parent=None, *, startup=None,
-                 update_checker=None):
+                 update_checker=None, appearance_store=None):
         super().__init__('settings', parent)
         self._render_signature = None
         self._fit_scheduled = False
         self._, self.client, self.notify = _, client, notify
+        self.appearance_store = appearance_store
         self.model = SettingsModel(client, self.render, self.action_failed)
         self.calibration = ActionRunner(self.render_calibration, self.action_failed, self.calibrated)
         self.update_checker = update_checker or UpdateChecker(
@@ -356,7 +357,7 @@ class Settings(Page):
         appearance.setAccessibleName(_('Appearance'))
         self.sync_appearance(qconfig.get(qconfig.themeMode))
         qconfig.themeChanged.connect(self.sync_appearance)
-        appearance.activated.connect(lambda index: setTheme(APPEARANCE_MODES[index]))
+        appearance.activated.connect(self.change_appearance)
         card = SettingRow(QIcon(), _('Appearance'))
         card.hBoxLayout.addWidget(appearance, 0, Qt.AlignmentFlag.AlignVCenter)
         card.hBoxLayout.addSpacing(CARD_INSET)
@@ -382,6 +383,17 @@ class Settings(Page):
 
     def sync_appearance(self, theme):
         self.appearance.setCurrentIndex(APPEARANCE_MODES.index(theme))
+
+    def change_appearance(self, index):
+        theme = APPEARANCE_MODES[index]
+        try:
+            if self.appearance_store is not None:
+                self.appearance_store.save(theme)
+        except (OSError, ValueError):
+            self.sync_appearance(qconfig.get(qconfig.themeMode))
+            self.action_failed(RuntimeError(ErrorCode.CONFIG_WRITE))
+            return
+        setTheme(theme)
 
     def add_group(self, title):
         group = SettingCardGroup(title)

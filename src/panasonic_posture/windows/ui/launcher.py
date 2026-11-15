@@ -33,16 +33,26 @@ def _configure_application(app, language) -> None:
 
 def _window_factory(*, language, client, startup):
     def create_window():
+        import logging
         from .app import Window, configure_application
+        from .appearance import AppearanceStore
         from qfluentwidgets import Theme, setTheme, setThemeColor
 
         configure_application(language)
-        setTheme(Theme.AUTO)
+        appearance_store = AppearanceStore(None)
+        theme = Theme.AUTO
+        try:
+            appearance_store = AppearanceStore(local_state_directory() / 'appearance.ini')
+            theme = appearance_store.load()
+        except (OSError, ValueError):
+            logging.getLogger(__name__).warning('cannot load appearance settings', exc_info=True)
+        setTheme(theme)
         setThemeColor('#0051f2')
         return Window(
             language=language,
             client=client,
             startup=startup,
+            appearance_store=appearance_store,
             start_client=False,
         )
 

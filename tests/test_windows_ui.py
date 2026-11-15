@@ -70,6 +70,75 @@ class CommandLineTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent UI dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def test_appearance_survives_recreating_the_production_window(self):
+        self.run_ui('''
+import subprocess
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+from qfluentwidgets import Theme, qconfig, setTheme
+from panasonic_posture.windows.ui.launcher import _window_factory
+with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=directory):
+    create = _window_factory(language='en', client=window.client, startup=None)
+    for index, theme in enumerate((Theme.AUTO, Theme.LIGHT, Theme.DARK)):
+        first = create()
+        first.settings.appearance.activated.emit(index)
+        first.close()
+        QTest.qWait(10)
+        path = os.path.join(directory, 'PanasonicPostureManager', 'appearance.ini')
+        result = subprocess.run([sys.executable, '-c',
+            'import sys; from PyQt6.QtCore import QSettings; '
+            'assert QSettings(sys.argv[1], QSettings.Format.IniFormat).value("appearance") == sys.argv[2]',
+            path, theme.value], capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0, result.stdout + result.stderr
+        setTheme(Theme.LIGHT if theme != Theme.LIGHT else Theme.DARK)
+        second = create()
+        assert qconfig.get(qconfig.themeMode) == theme
+        assert second.settings.appearance.currentIndex() == index
+        second.close()
+        QTest.qWait(10)
+''')
+
+    def test_appearance_write_failure_keeps_the_previous_selection(self):
+        self.run_ui('''
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+from qfluentwidgets import Theme, qconfig
+from panasonic_posture.windows.ui.launcher import _window_factory
+with TemporaryDirectory() as directory, patch.dict(os.environ, LOCALAPPDATA=directory):
+    other = _window_factory(language='en', client=window.client, startup=None)()
+    settings = other.settings
+    notices = []
+    settings.notify = lambda *args: notices.append(args)
+    with patch.object(settings.appearance_store, 'save', side_effect=PermissionError('denied')):
+        settings.appearance.activated.emit(2)
+    assert qconfig.get(qconfig.themeMode) == Theme.AUTO
+    assert settings.appearance.currentIndex() == 0
+    assert notices and notices[-1][0] is False
+    other.close()
+    QTest.qWait(10)
+''')
+
+    def test_invalid_appearance_is_preserved_and_cannot_be_overwritten(self):
+        self.run_ui(r'''
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from qfluentwidgets import Theme
+from panasonic_posture.windows.ui.appearance import AppearanceStore
+with TemporaryDirectory() as directory:
+    path = Path(directory) / 'appearance.ini'
+    raw = b'[General]\nappearance=invalid\n'
+    path.write_bytes(raw)
+    store = AppearanceStore(path)
+    for action in (store.load, lambda: store.save(Theme.DARK)):
+        try:
+            action()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Invalid settings must be reported')
+    assert path.read_bytes() == raw
+''')
+
     def test_lazy_window_keeps_shortcut_activation_and_repairs_reconnect_tooltip(self):
         self.run_resident('''
 class Activation:
@@ -759,10 +828,26 @@ with TemporaryDirectory() as directory:
         QTest.qWait(25)
     assert window.settings.model.state['applied']['mode'] == 'tent'
     assert window.home.heading.text() == 'Tent'
+    for field, value in (('tent_prompt', False), ('stand_prompt', True), ('tent_enabled', False)):
+        assert window.settings.switches[field].isEnabled()
+        window.settings.switches[field].setChecked(value)
+        deadline = time.monotonic() + 8
+        while (window.settings.model.state[field] != value or field in window.settings.model.active) and time.monotonic() < deadline:
+            QTest.qWait(25)
+        assert window.settings.model.state[field] == value
+        assert field not in window.settings.model.active
+        assert getattr(SettingsStore(Path(directory) / 'settings.json').load(), field) == value
     window.close()
     client._thread.join(timeout=3)
     assert not client._thread.is_alive()
     simulation.close()
+    restarted = Simulation(SettingsStore(Path(directory) / 'settings.json'), 'restarted-hardware-fixture')
+    try:
+        assert not restarted.engine.state.tent_enabled
+        assert not restarted.engine.state.tent_prompt
+        assert restarted.engine.state.stand_prompt
+    finally:
+        restarted.close()
 ''')
 
     def run_ui(self, body, scale='1'):
