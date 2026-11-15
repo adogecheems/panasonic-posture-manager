@@ -99,7 +99,7 @@ class HardwareConnection:
                     raise ProtocolError('invalid hardware response')
                 if (reply['error'] is not None and reply['accepted'] or
                         reply['error'] is None and not reply['accepted'] and
-                        method != 'session_update'):
+                        method not in ('session_update', 'stop_control')):
                     raise ProtocolError('inconsistent hardware operation result')
                 state = validated_hardware_state(reply.get('state'))
                 try:

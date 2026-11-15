@@ -18,6 +18,7 @@ class Child:
         self.resumed = self.closed = False
         self.cooperative = True
     def alive(self): return self.running
+    def successful_exit(self): return not self.running
     def resume(self): self.resumed = True; self.events.append(('resume', self.identity))
     def request_stop(self):
         self.events.append(('stop', self.identity))
@@ -56,6 +57,53 @@ class ManualExecutor:
 
 
 class SupervisorTests(unittest.TestCase):
+    def test_stop_reports_failed_restoration_instead_of_success(self):
+        supervisor = self.start()
+        self.until(lambda: supervisor.child is not None and supervisor.child.resumed)
+        peer, child = supervisor.child.identity, supervisor.child
+        child.successful_exit = lambda: False
+        self.assertFalse(supervisor.set_control(peer, False))
+        self.until(lambda: supervisor.child is None)
+        with self.assertRaisesRegex(OSError, 'restoration'):
+            supervisor.set_control(peer, False)
+        self.assertTrue(supervisor.set_control(peer, True))
+
+    def test_stop_is_scoped_to_the_logon_and_does_not_block_a_different_user(self):
+        supervisor = self.start()
+        self.until(lambda: supervisor.child is not None and supervisor.child.resumed)
+        peer = supervisor.child.identity
+        supervisor.set_control(peer, False)
+        self.until(lambda: supervisor.child is None)
+        self.launcher.user = ConsoleUser(USER.sid, USER.logon_id + 1, USER.session_id, True)
+        self.until(lambda: supervisor.child is not None and supervisor.child.resumed)
+        self.assertEqual(supervisor.user.logon_id, USER.logon_id + 1)
+
+    def test_explicit_stop_reaps_child_and_prevents_respawn_until_start(self):
+        supervisor = self.start()
+        self.until(lambda: supervisor.child is not None and supervisor.child.resumed)
+        peer, child = supervisor.child.identity, supervisor.child
+        self.assertFalse(supervisor.set_control(peer, False))
+        self.until(lambda: supervisor.set_control(peer, False))
+        self.assertTrue(child.closed)
+        for _ in range(30):
+            self.step()
+        self.assertEqual(len(self.launcher.children), 1)
+        self.assertTrue(supervisor.set_control(peer, True))
+        self.until(lambda: len(self.launcher.children) == 2 and supervisor.child is not None and supervisor.child.resumed)
+
+    def test_stop_during_pending_creation_never_resumes_the_late_child(self):
+        self.worker = ManualExecutor()
+        supervisor = self.start()
+        self.step()
+        self.worker.complete()
+        self.step()
+        peer = ConsoleIdentity(USER.sid, USER.logon_id, USER.session_id, 99, 123)
+        self.assertFalse(supervisor.set_control(peer, False))
+        self.until(lambda: supervisor.set_control(peer, False))
+        child = self.launcher.children[0]
+        self.assertTrue(child.closed)
+        self.assertFalse(child.resumed)
+
     def setUp(self):
         self.now, self.events = 10., []
         self.launcher = Launcher(self.events)

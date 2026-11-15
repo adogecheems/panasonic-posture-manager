@@ -1,11 +1,14 @@
 """Production composition root for the installed Windows hardware service."""
 from collections.abc import Callable
+import os
+from pathlib import Path
 import time
 
 from panasonic_posture.controller import Controller
 from panasonic_posture.model import DeviceInfo
 from panasonic_posture.presentation import PosePresentation
 from panasonic_posture.service.engine import Engine
+from panasonic_posture.service.settings_store import SettingsStore
 from panasonic_posture.windows.hardware.display_only_input import DisplayOnlyInput
 from panasonic_posture.windows.hardware.etw_switch import AcpiPhysicalSwitch
 from panasonic_posture.windows.service.runtime import (
@@ -44,6 +47,12 @@ def create_hardware_runtime(
 ) -> HardwareRuntime:
     """Build the production graph without starting any hardware resource."""
     runtime = runtime if runtime is not None else TrustedRuntime.current()
+    if settings is None:
+        # The MSI protects this directory before starting the SYSTEM service.
+        root = Path(os.environ.get('ProgramData', r'C:\ProgramData'))
+        if not root.is_absolute():
+            raise ValueError('ProgramData must be absolute')
+        settings = SettingsStore(root / 'PanasonicPostureManager/State/settings.json')
     resolved_profile = profile if profile is not None else resolve_windows_profile()
     sensor = WindowsSensor(
         mount_matrix=resolved_profile.mount_matrix,
@@ -76,14 +85,15 @@ def create_hardware_runtime(
     )
 
     def make_server(admission: Callable[[], bool]) -> HardwareServer:
-        return HardwareServer(engine, session_admission=admission)
+        return HardwareServer(engine, session_admission=admission,
+                              control=lambda peer, enabled: result.supervisor.set_control(peer, enabled))
 
     def make_launcher() -> NativeSessionLauncher:
         return NativeSessionLauncher(runtime)
 
     wake_event = wake if wake is not None else WakeEvent()
 
-    return HardwareRuntime(
+    result = HardwareRuntime(
         engine=engine,
         switch=switch,
         sensor=sensor,
@@ -96,6 +106,7 @@ def create_hardware_runtime(
         sleep=sleep,
         stop_timeout=stop_timeout,
     )
+    return result
 
 
 __all__ = ['create_hardware_runtime']

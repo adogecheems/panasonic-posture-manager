@@ -156,6 +156,12 @@ Windows MSI 会停止并移除服务，同时恢复安装前的平板指示器�
 
 Windows 产品保持内置键盘和触控板可用，不加载自研输入过滤驱动，不要求测试签名。源码目录不能作为特权运行时；正式服务只由 MSI 安装。
 
+Windows 服务将检测偏好、提示偏好和传感器校准原子写入 `%ProgramData%\PanasonicPostureManager\State\settings.json`。MSI 在启动服务前为 State 目录设置仅 SYSTEM 和管理员可写的 ACL；损坏设置按共享设置存储规则隔离。
+
+Windows RPC v1 增加无参数的 `start_control` 和 `stop_control`，仍要求当前本地控制台身份鉴权，可信会话进程不能调用这两个 UI 操作。`stop_control` 的 `accepted=False` 表示正常等待恢复，客户端须继续查询，不能提前宣告退出成功。监管器向会话进程发送既有停止信号，保留恢复期间的 RPC 资格，进程成功退出并完成资源清理后才返回 True；超时强制结束或非零退出码均报告失败。停止只约束发起请求的登录实例，重新打开界面会发送一次 `start_control`；重连不重放启动或停止请求。
+
+MSI 只有在安装前没有产品配置标记时才注册 CSM 配置移除回滚。升级和修复沿用旧安装的恢复记录，失败回滚不得撤销该配置。
+
 ## 开发运行
 
 Linux 依赖 Python 3.11+、C11 编译器、Make、gettext、PyGObject、GTK 4、libadwaita 和桌面 Wayland 组件。执行 `make` 构建 relay 和翻译后运行：

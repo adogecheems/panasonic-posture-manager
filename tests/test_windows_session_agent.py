@@ -74,6 +74,17 @@ class Display:
 
 
 class SessionAgentTests(unittest.TestCase):
+    def test_failed_final_recovery_reports_failure_after_closing_other_resources(self):
+        self.agent.start()
+        self.agent.tick(10.)
+        def fail_restore(normal=False):
+            raise OSError('fixture recovery failed')
+        self.display.restore = fail_restore
+        with self.assertRaisesRegex(OSError, 'recovery is incomplete'):
+            self.agent.close()
+        self.assertTrue(self.client.closed)
+        self.assertTrue(self.context.closed)
+
     def setUp(self):
         self.context, self.client, self.display = Context(), Client(), Display()
         self.created = []

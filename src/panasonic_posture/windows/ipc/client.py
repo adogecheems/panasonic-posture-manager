@@ -43,13 +43,16 @@ class _Result:
     state: StateSnapshot | None = None
     error: Exception | None = None
     lost: bool = False
+    accepted: bool | None = None
 
 
 class HardwareUIClient(UIClientOperations):
     def __init__(self, *, factory: Callable[[], RPCConnection] | None = None, timeout: float = 5.,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 resume_control: bool = False) -> None:
         self.factory = factory or (lambda: HardwareConnection(timeout=timeout, clock=clock))
         self.timeout, self.clock = timeout, clock
+        self._resume_control = resume_control
         self.instance: str | None = None
         self.pending: dict[int, tuple[Future, float]] = {}
         self._serial = self._epoch = 0
@@ -88,6 +91,7 @@ class HardwareUIClient(UIClientOperations):
         outbox: queue.Queue[tuple[int, str, dict]] = queue.Queue(MAX_PENDING)
         stop = threading.Event()
         self._inbox, self._outbox, self._stop_worker = inbox, outbox, stop
+        resume = self._resume_control
 
         def post(result: _Result) -> None:
             while not stop.is_set():
@@ -102,6 +106,12 @@ class HardwareUIClient(UIClientOperations):
             try:
                 connection = self.factory()
                 hello = connection.request('get_state', {})
+                if resume and not stop.is_set():
+                    # Consume only before transmission: a failed connection
+                    # has not sent the launch action. Once sent, never replay
+                    # it after a lost response or transport reconnect.
+                    self._resume_control = False
+                    hello = connection.request('start_control', {})
                 state = validated_hardware_state(hello.get('state'))
                 if hello.get('instance') != state.instance:
                     raise ProtocolError('hardware handshake instance mismatch')
@@ -118,7 +128,8 @@ class HardwareUIClient(UIClientOperations):
                         state = validated_hardware_state(reply.get('state'))
                         if reply.get('instance') != state.instance:
                             raise ProtocolError('hardware response instance mismatch')
-                        post(_Result(epoch, serial, self.clock(), state))
+                        post(_Result(epoch, serial, self.clock(), state,
+                                     accepted=reply['accepted'] if method == 'stop_control' else None))
                     except HardwareOperationError as error:
                         if error.code == ErrorCode.ACCESS_DENIED:
                             raise
@@ -202,7 +213,7 @@ class HardwareUIClient(UIClientOperations):
                         raise BackendUnavailable('hardware completion expired')
                     future, _ = self.pending.pop(result.serial)
                     if not future.done():
-                        future.set_exception(result.error) if result.error else future.set_result(None)
+                        future.set_exception(result.error) if result.error else future.set_result(result.accepted)
             if not self._thread.is_alive():
                 raise BackendUnavailable('hardware worker stopped')
             if self.instance is not None and not self.pending and now - self._last_received >= IDLE_REFRESH_SECONDS:
@@ -232,6 +243,10 @@ class HardwareUIClient(UIClientOperations):
 
     def _operation(self, method: str, params: dict) -> Future:
         return self._request(method, params)
+
+    def stop_control(self) -> Future:
+        """Request graceful session exit; False means restoration is pending."""
+        return self._request('stop_control', {})
 
     def refresh(self) -> None:
         self._check_owner()

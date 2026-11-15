@@ -29,6 +29,7 @@ class ManagedChild(Protocol):
 
     def resume(self) -> None: ...
     def alive(self) -> bool: ...
+    def successful_exit(self) -> bool: ...
     def request_stop(self) -> None: ...
     def close(self) -> None: ...
 
@@ -63,6 +64,35 @@ class SessionSupervisor:
         self._stop_at = self._next = 0.
         self._task: _Task | None = None
         self._cleanup_task: Future | None = None
+        self._disabled: set[tuple[str, int, int]] = set()
+        self._control_failed: set[tuple[str, int, int]] = set()
+
+    def set_control(self, peer: ConsoleIdentity, enabled: bool) -> bool:
+        """Authenticated host-only toggle, scoped to one console logon.
+
+        A stop is complete only after the child exits and its resources close.
+        Keep its RPC authority during graceful restoration; a forced stop is
+        reported as failure rather than pretending display recovery succeeded.
+        """
+        self._owner_only()
+        if not isinstance(peer, ConsoleIdentity) or type(enabled) is not bool:
+            raise ValueError('invalid control request')
+        if self.closed or self.stopping:
+            raise OSError('session supervisor is stopping')
+        key = peer.sid, peer.logon_id, peer.session_id
+        if enabled:
+            self._disabled.discard(key)
+            self._control_failed.discard(key)
+            return True
+        self._disabled.add(key)
+        if self.child is not None and self.user is not None and self.user.key == key:
+            if not self._retiring:
+                self._retiring = True
+                self._stop_at = self.clock() + STOP_GRACE_SECONDS
+                self.child.request_stop()
+        if key in self._control_failed:
+            raise OSError('session restoration did not complete successfully')
+        return self.child is None and self._task is None
 
     def _owner_only(self) -> None:
         if threading.get_ident() != self._owner:
@@ -98,7 +128,7 @@ class SessionSupervisor:
             # Retain even a late or stop-time child until it has been closed.
             self.child = task.future.result()
             self.user = task.user
-            if (self.stopping or
+            if (self.stopping or self.user.key in self._disabled or
                     not 0 <= self.clock() - task.started <= RESULT_MAX_AGE):
                 self._retire()
                 return
@@ -117,11 +147,12 @@ class SessionSupervisor:
             if self.child is not None:
                 if user is None or self.user is None or user.key != self.user.key or not self.child.alive():
                     self._retire()
-            elif user is not None and user.unlocked:
+            elif user is not None and user.unlocked and user.key not in self._disabled:
                 self._submit('create', lambda: self.launcher.create(user), user)
             self._next = self.clock() + PROBE_SECONDS
         elif task.kind == 'reap':
             task.future.result()
+            self.register(None)
             self.child = self.user = None
             self._retiring = False
             self._next = self.clock() + PROBE_SECONDS
@@ -162,6 +193,9 @@ class SessionSupervisor:
                 exited = False
                 self._stop_at = self.clock()
             if self.clock() >= self._next and (exited or not self.child.resumed or self.clock() >= self._stop_at):
+                if self.child.resumed and self.user is not None and self.user.key in self._disabled:
+                    if not exited or not self.child.successful_exit():
+                        self._control_failed.add(self.user.key)
                 self._submit('reap', self.child.close)
             return
         if self.stopping:

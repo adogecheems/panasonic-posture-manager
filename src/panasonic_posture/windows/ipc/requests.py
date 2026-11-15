@@ -8,6 +8,8 @@ from panasonic_posture.contracts import ALL_ERROR_CODES, MODES, PREFERENCES, PRO
 
 HARDWARE_SIGNATURES = {
     'get_state': (),
+    'start_control': (),
+    'stop_control': (),
     'set_mode': ('mode',),
     'set_preference': ('field', 'enabled'),
     'retry': (),

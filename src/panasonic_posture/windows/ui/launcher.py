@@ -100,7 +100,7 @@ def run(*, language=None, background=False) -> int:
         from .unavailable import UnavailableClient
         if hardware_ui:
             from ..ipc.client import HardwareUIClient
-            client = HardwareUIClient()
+            client = HardwareUIClient(resume_control=True)
         else:
             client = UnavailableClient()
 

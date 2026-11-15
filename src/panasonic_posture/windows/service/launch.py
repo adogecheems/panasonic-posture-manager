@@ -68,6 +68,7 @@ class LaunchAPI(Protocol):
     def is_active(self, peer: ConsoleIdentity) -> bool: ...
     def resume(self, thread: int) -> None: ...
     def alive(self, process: int) -> bool: ...
+    def exit_code(self, process: int) -> int: ...
     def terminate(self, process: int) -> None: ...
     def wait(self, process: int, timeout: int) -> bool: ...
     def close(self, handle: int) -> None: ...
@@ -257,6 +258,11 @@ class NativeLaunchAPI:
     def alive(self, process: int) -> bool:
         return not self.wait(process, 0)
 
+    def exit_code(self, process: int) -> int:
+        code = U32()
+        self.security._check(self.kernel.GetExitCodeProcess(process, C.byref(code)))
+        return code.value
+
     def wait(self, process: int, timeout: int) -> bool:
         result = self.kernel.WaitForSingleObject(process, timeout)
         if result not in (0, 258):
@@ -301,6 +307,9 @@ class ManagedSession:
 
     def alive(self) -> bool:
         return self.process is not None and self.api.alive(self.process)
+
+    def successful_exit(self) -> bool:
+        return self.process is not None and not self.alive() and self.api.exit_code(self.process) == 0
 
     def request_stop(self) -> None:
         if self.closed or self.signal is None:

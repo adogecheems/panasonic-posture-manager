@@ -73,6 +73,11 @@ function Configure-ServiceRecovery {
 }
 
 function Protect-ServiceLogs {
+    $stateRoot = Join-Path $env:ProgramData 'PanasonicPostureManager\State'
+    New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
+    & icacls.exe $stateRoot /inheritance:r `
+        /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot protect the hardware service state directory.' }
     $logRoot = Join-Path $env:ProgramData 'PanasonicPostureManager\Logs'
     New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
     # English SID names keep the ACL independent of Windows display language.

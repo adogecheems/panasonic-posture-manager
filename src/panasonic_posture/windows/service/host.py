@@ -24,10 +24,12 @@ from panasonic_posture.windows.common.operations import dispatch_engine_operatio
 class HardwareHost:
     def __init__(self, engine: Engine, *, authorize: Callable[[ConsoleIdentity], bool],
                  session_process: ConsoleIdentity | None = None,
-                 session_admission: Callable[[], bool] | None = None) -> None:
+                 session_admission: Callable[[], bool] | None = None,
+                 control: Callable[[ConsoleIdentity, bool], bool] | None = None) -> None:
         self.engine, self.authorize = engine, authorize
         self.session_process = session_process
         self.session_admission = session_admission or (lambda: True)
+        self.control = control
         self.instance = engine.state.instance
         self._admission_open = False
         self._admission_lost = False
@@ -68,7 +70,16 @@ class HardwareHost:
             raise ServiceError(ErrorCode.ACCESS_DENIED)
         method, params = validate_request(request, self.instance)
         accepted = True
-        if method == 'session_update':
+        if method in ('start_control', 'stop_control'):
+            if self.control is None or peer == self.session_process:
+                raise ServiceError(ErrorCode.ACCESS_DENIED)
+            try:
+                accepted = self.control(peer, method == 'start_control')
+                if method == 'stop_control' and accepted:
+                    self.engine.reset_after_session_context_loss()
+            except OSError as error:
+                raise ServiceError(ErrorCode.DISPLAY_UNAVAILABLE, 'session-stop-incomplete') from error
+        elif method == 'session_update':
             if peer != self.session_process:
                 raise ServiceError(ErrorCode.ACCESS_DENIED, 'unregistered-session-process')
             if not self._observe_admission():

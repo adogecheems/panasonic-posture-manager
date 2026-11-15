@@ -45,6 +45,20 @@ class HostFixture(unittest.TestCase):
 
 
 class HardwareHostTests(HostFixture):
+    def test_control_operations_require_authenticated_ui_and_preserve_pending_result(self):
+        calls = []
+        self.host.control = lambda peer, enabled: calls.append((peer, enabled)) or enabled
+        self.assertFalse(self.host.dispatch(UI, self.request('stop_control'))['accepted'])
+        self.assertTrue(self.host.dispatch(UI, self.request('start_control'))['accepted'])
+        self.assertEqual(calls, [(UI, False), (UI, True)])
+        for peer in (AGENT, None):
+            with self.subTest(peer=peer), self.assertRaisesRegex(Exception, 'access-denied'):
+                self.host.dispatch(peer, self.request('stop_control'))
+        self.active = False
+        with self.assertRaisesRegex(Exception, 'access-denied'):
+            self.host.dispatch(UI, self.request('stop_control'))
+        self.assertEqual(len(calls), 2)
+
     def test_invalid_physical_source_blocks_receipts_and_revokes_the_owner(self):
         admitted = [True]
         self.host.session_admission = lambda: admitted[0]
@@ -244,6 +258,20 @@ class SecurityTests(unittest.TestCase):
 
 
 class PipeTests(HostFixture):
+    def test_registration_preserves_a_validated_ui_with_authentication_in_flight(self):
+        server, resets, _ = self.server()
+        slot = server.slots[0]
+        pending = Future()
+        slot.peer, slot.connected, slot.pending = UI, True, pending
+        slot.request = self.request('get_state')
+        server.register_session_process(None)
+        self.assertTrue(slot.connected)
+        self.assertFalse(slot.retired)
+        self.assertNotIn(slot.handle, resets)
+        pending.set_result((UI, server.clock()))
+        self.assertTrue(server._finish_authentication(slot))
+        self.assertTrue(slot.reply['accepted'])
+
     def server(self):
         resets, replies = [], []
         handles = iter(range(4))

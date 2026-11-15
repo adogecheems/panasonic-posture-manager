@@ -35,6 +35,44 @@ class Connection:
 
 
 class HardwareUIClientTests(unittest.TestCase):
+    def test_unsent_launch_action_survives_an_initial_connection_failure(self):
+        attempts = []
+        def connect():
+            attempts.append(True)
+            if len(attempts) == 1:
+                raise OSError('service not ready')
+            return self.connection
+        self.client = HardwareUIClient(factory=connect, resume_control=True)
+        self.start()
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(sum(method == 'start_control' for method, _ in self.connection.calls), 1)
+
+    def test_stop_control_returns_pending_then_complete_without_stopping_transport(self):
+        self.start()
+        original = self.connection.request
+        accepted = [False]
+        def request(method, params):
+            reply = original(method, params)
+            if method == 'stop_control':
+                reply['accepted'] = accepted[0]
+            return reply
+        self.connection.request = request
+        for expected in (False, True):
+            with self.subTest(accepted=expected):
+                accepted[0] = expected
+                future = self.client.stop_control()
+                self.until(future.done)
+                self.assertIs(future.result(), expected)
+                self.assertFalse(self.connection.closed.is_set())
+
+    def test_explicit_launch_resumes_control_once(self):
+        self.client = HardwareUIClient(factory=lambda: self.connection, resume_control=True)
+        self.start()
+        self.assertEqual(self.connection.calls[:2], [('get_state', {}), ('start_control', {})])
+        self.client._lost()
+        self.until(lambda: self.client.instance is not None)
+        self.assertEqual(sum(method == 'start_control' for method, _ in self.connection.calls), 1)
+
     def setUp(self):
         self.states, self.unavailable, self.events = [], [], []
         self.owner = threading.get_ident()

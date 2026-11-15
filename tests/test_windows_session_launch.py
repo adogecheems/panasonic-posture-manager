@@ -66,6 +66,16 @@ class Api:
 
 
 class LauncherTests(unittest.TestCase):
+    def test_successful_exit_requires_a_zero_exit_status_from_the_same_process(self):
+        child = self.launcher.create(USER)
+        code = [0]
+        self.api.exit_code = lambda process: code[0]
+        self.assertFalse(child.successful_exit())
+        self.api.running = False
+        self.assertTrue(child.successful_exit())
+        code[0] = 1
+        self.assertFalse(child.successful_exit())
+
     def setUp(self):
         self.api = Api()
         self.runtime = Runtime()

@@ -108,7 +108,8 @@ class HardwareServer:
                  security: WindowsSecurity | None = None, pipes: NativePipes | None = None,
                  pipe_name: str = PIPE_NAME, clock: Callable[[], float] = time.monotonic,
                  executor: Executor | None = None, guard_executor: Executor | None = None,
-                 session_admission: Callable[[], bool] | None = None) -> None:
+                 session_admission: Callable[[], bool] | None = None,
+                 control: Callable[[ConsoleIdentity, bool], bool] | None = None) -> None:
         self.security = security or WindowsSecurity()
         self.security.require_system()
         self.pipes = pipes or NativePipes(self.security)
@@ -119,6 +120,7 @@ class HardwareServer:
         self.host = HardwareHost(
             engine, authorize=self.guard.allow, session_process=session_process,
             session_admission=session_admission,
+            control=control,
         )
         self.executor = executor or thread_executor('windows-request-auth')
         self.owned_executor = executor is None
@@ -148,7 +150,10 @@ class HardwareServer:
         # pipe. Retire it before registering the replacement; no old request
         # may run after a trusted process switch.
         for slot in self.slots:
-            self._reset(slot)
+            # A validated UI still cannot submit receipts. Keep its channel
+            # alive so a stop can finish and return its result to the caller.
+            if slot.peer in (None, old, peer):
+                self._reset(slot)
 
     def _reset(self, slot: Slot) -> None:
         if slot.peer is not None:

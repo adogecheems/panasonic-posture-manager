@@ -47,6 +47,8 @@ class ResidentTray(QObject):
         self.app = QApplication.instance()
         self.enabled = tray_factory.isSystemTrayAvailable()
         self.quitting = False
+        self._stop_future = None
+        self._stop_deadline = None
         self.sent = set()
         self.notice = None
         self._pending_notice = None
@@ -55,6 +57,8 @@ class ResidentTray(QObject):
         self._tooltip = None
         self.icon = resident_icon()
         self.timer = QTimer(self)
+        self.activation_timer = QTimer(self)
+        self.activation_timer.timeout.connect(self.check_activation)
         self._wake = None
         self._tray_activation = QTimer(self)
         self._tray_activation.setSingleShot(True)
@@ -86,16 +90,15 @@ class ResidentTray(QObject):
             self._wake = WakeWatch(self.client)
         self.app.aboutToQuit.connect(self.shutdown)
         if self.enabled:
-            if window is not None:
-                window.installEventFilter(self)
             self.app.setQuitOnLastWindowClosed(False)
             self.tray.show()
         elif window is not None:
             self._add_fallback_note(window)
+        if window is not None:
+            window.installEventFilter(self)
         if activation is not None:
-            self.timer.timeout.connect(self.check_activation)
-            self.timer.start(250)
-        elif self._lazy:
+            self.activation_timer.start(250)
+        if self._lazy:
             self.timer.start(max(1, round(TICK_SECONDS * 1000)))
 
     def _add_fallback_note(self, window):
@@ -151,6 +154,10 @@ class ResidentTray(QObject):
         return True
 
     def eventFilter(self, watched, event):
+        if watched is self.window and event.type() == QEvent.Type.Close and not self.enabled and not self.quitting:
+            event.ignore()
+            self.quit()
+            return True
         if watched is self.window and event.type() == QEvent.Type.Close and self.enabled and not self.quitting:
             event.ignore()
             self.window.hide()
@@ -239,7 +246,7 @@ class ResidentTray(QObject):
                 self.show_window()
         except OSError:
             log.exception('cannot read native window activation hint')
-            self.timer.stop()
+            self.activation_timer.stop()
             self.show_window()
 
     def update_state(self, state):
@@ -284,6 +291,7 @@ class ResidentTray(QObject):
         self._latest_state = None
         self.notice = None
         self._notice_click_until = 0.0
+        self._tooltip = None
         self.tray.setToolTip(self._title + ' · ' + self._('Connecting to background service…'))
         if self._lazy and self.window is not None:
             self.window.unavailable()
@@ -293,6 +301,7 @@ class ResidentTray(QObject):
             return
         self.quitting = True
         self.timer.stop()
+        self.activation_timer.stop()
         self._tray_activation.stop()
         self._close_wake()
         self.tray.hide()
@@ -307,6 +316,45 @@ class ResidentTray(QObject):
             self._wake = None
 
     def quit(self):
+        if self.quitting:
+            return
+        stop = getattr(self.client, 'stop_control', None)
+        if stop is not None:
+            if self._stop_future is not None:
+                return
+            if self._stop_deadline is None:
+                self._stop_deadline = time.monotonic() + 15.
+            self.quit_action.setEnabled(False)
+            self._stop_future = stop()
+            self._stop_future.add_done_callback(self._control_stopped)
+            return
+        self._finish_quit()
+
+    def _control_stopped(self, future):
+        self._stop_future = None
+        if self.quitting:
+            return
+        try:
+            stopped = future.result()
+            if not stopped:
+                if time.monotonic() >= self._stop_deadline:
+                    raise TimeoutError('session stop did not finish')
+                QTimer.singleShot(100, self.quit)
+                return
+        except Exception:
+            log.exception('cannot stop posture control')
+            self._stop_deadline = None
+            self.quit_action.setEnabled(True)
+            title = self._('Unable to complete the operation')
+            detail = self._('Something went wrong. Please try again.')
+            if self.enabled:
+                self.tray.showMessage(title, detail, self.icon, 5000)
+            else:
+                QMessageBox.critical(self.window, title, detail)
+            return
+        self._finish_quit()
+
+    def _finish_quit(self):
         self.shutdown()
         if self.window is not None:
             self.window.close()
@@ -316,6 +364,7 @@ class ResidentTray(QObject):
         if not self.quitting:
             self.quitting = True
             self.timer.stop()
+            self.activation_timer.stop()
             self._tray_activation.stop()
             self._close_wake()
             self.tray.hide()

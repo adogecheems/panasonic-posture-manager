@@ -145,6 +145,7 @@ class SessionRuntime:
         # Startup recovery may have left a journal pending. Ownership outlives
         # per-generation readiness and even a failed or superseded apply.
         self._display_needs_restore = True
+        self.restore_error: Exception | None = None
         self._restore_retry_at = 0.0
         self._hold_key: tuple[str, int] | None = None
         self._hold_until = 0.0
@@ -904,7 +905,9 @@ class SessionRuntime:
             return
         try:
             self.display.restore()
+            self.restore_error = None
         except self._adapter_errors as error:
+            self.restore_error = error
             # The journal is kept so a later attempt (or the next start) can retry.
             log.warning("display restore pending: %s", describe_error(error))
 

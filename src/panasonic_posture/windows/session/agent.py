@@ -195,6 +195,10 @@ class WindowsSessionAgent:
         def close_runtime() -> None:
             if self.runtime is not None:
                 self.runtime.close()
+                # The shared finalizer is best effort. A native process must
+                # report incomplete recovery to its trusted host on exit.
+                if self.runtime.restore_error is not None:
+                    raise OSError('native display recovery is incomplete') from self.runtime.restore_error
             else:
                 qualified.restore()
 

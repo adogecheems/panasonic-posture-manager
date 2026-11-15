@@ -70,6 +70,57 @@ class CommandLineTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('PyQt6') and importlib.util.find_spec('qfluentwidgets'),
                      'optional Fluent UI dependencies are not installed')
 class FluentWidgetTests(unittest.TestCase):
+    def test_lazy_window_keeps_shortcut_activation_and_repairs_reconnect_tooltip(self):
+        self.run_resident('''
+class Activation:
+    pending = False
+    def poll(self):
+        value, self.pending = self.pending, False
+        return value
+activation = Activation()
+resident = ResidentTray(None, window_factory=lambda: window, client=client,
+                        activation=activation, tray_factory=FakeTray, language='en')
+resident.show_window()
+assert resident.activation_timer.isActive()
+window.close()
+assert not window.isVisible()
+activation.pending = True
+QTest.qWait(350)
+assert window.isVisible()
+resident.update_state(client.state)
+expected = resident.tray.tooltip
+resident.unavailable()
+assert resident.tray.tooltip != expected
+resident.update_state(client.state)
+assert resident.tray.tooltip == expected
+resident.quit()
+''')
+
+    def test_quit_waits_for_session_recovery_and_keeps_ui_on_failure(self):
+        self.run_resident('''
+from concurrent.futures import Future
+pending = []
+def stop_control():
+    future = Future()
+    pending.append(future)
+    return future
+client.stop_control = stop_control
+resident = ResidentTray(window, tray_factory=FakeTray)
+resident.quit()
+assert not client._stopped and not resident.quitting
+pending[-1].set_result(False)
+QTest.qWait(150)
+assert len(pending) == 2 and not client._stopped
+import unittest
+with unittest.TestCase().assertLogs('panasonic_posture.windows.ui.resident', level='ERROR'):
+    pending[-1].set_exception(OSError('recovery failed'))
+assert resident.quit_action.isEnabled() and not resident.quitting
+assert resident.tray.messages[-1][0] == 'Unable to complete the operation'
+resident.quit()
+pending[-1].set_result(True)
+assert client._stopped and resident.quitting
+''')
+
     def test_reduced_motion_falls_back_before_qt_accessibility_api(self):
         self.run_ui('''
 from panasonic_posture.windows.ui.app import _prefers_reduced_motion
