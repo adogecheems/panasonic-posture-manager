@@ -445,11 +445,17 @@ class NativeSessionRuntimeTests(unittest.TestCase):
         self.assertLessEqual(len(self.client._channels), 2)
         context.screen_off = True
         beginning = self.now
-        until(lambda: self.now - beginning > .6)
+        receipt_start = len(self.receipts)
+        # A refresh can span the heartbeat interval on a busy worker. Its
+        # not-ready renewal temporarily clears applied until verification and
+        # the matching ready receipt finish; wait for that transaction too.
+        until(lambda: self.now - beginning > .6 and self.engine.state.applied is not None)
         self.assertEqual(self.engine.state.applied.mode, 'tent')
         self.assertEqual(self.api.current.transform, 2)
         self.assertTrue(self.input.running)
         self.assertIsNone(agent._qualification_task)
+        self.assertTrue(all(not params['error_code'] and rotation == 2
+                            for params, rotation in self.receipts[receipt_start:]))
         context.absent = True
         with self.assertLogs('panasonic_posture.session.runtime', level='WARNING'):
             until(lambda: agent.runtime.failure_active and self.api.current.transform == 0)

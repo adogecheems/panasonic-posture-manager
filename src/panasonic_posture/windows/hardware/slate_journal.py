@@ -10,6 +10,7 @@ import tempfile
 import time
 
 VERSION = 1
+MAX_JOURNAL_BYTES = 4096
 log = logging.getLogger(__name__)
 
 
@@ -28,7 +29,11 @@ class SlateJournal:
 
     def load(self, *, quarantine: bool = True) -> SlateLease | None:
         try:
-            document = json.loads(self.path.read_text(encoding='utf-8'))
+            with self.path.open('rb') as stream:
+                raw = stream.read(MAX_JOURNAL_BYTES + 1)
+            if len(raw) > MAX_JOURNAL_BYTES:
+                raise ValueError('slate journal exceeds the size limit')
+            document = json.loads(raw.decode('utf-8'))
         except FileNotFoundError:
             return None
         except (ValueError, RecursionError) as error:

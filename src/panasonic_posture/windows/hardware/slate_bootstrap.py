@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from concurrent.futures import Future
 import os
 from pathlib import Path
+import threading
 
 from panasonic_posture.model import SensorReading
 from panasonic_posture.policy import STAND_HOLD_MIN_FLAT, geometry
@@ -71,6 +73,38 @@ def read_bootstrap_slate_state(
         return device.read()
 
 
+class AsyncSlateReader:
+    """One read-only startup query, independent of the service owner loop.
+
+    User paths can stall even a bounded read. Keep a single daemon worker
+    alive until that read finishes; a late result never writes hardware.
+    """
+
+    def __init__(self, reader: Callable[[], bool | None]) -> None:
+        self.reader = reader
+        self._task: Future | None = None
+
+    @property
+    def pending(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    def start(self) -> None:
+        if self._task is None:
+            task = self._task = Future()
+            def read() -> None:
+                try:
+                    task.set_result(self.reader())
+                except BaseException as error:
+                    task.set_exception(error)
+            threading.Thread(target=read, name='windows-slate-bootstrap', daemon=True).start()
+
+    def __call__(self) -> bool | None:
+        self.start()
+        if not self._task.done():
+            return None
+        return self._task.result()
+
+
 class StartupPhysicalBaseline:
     """Combine a one-time CSM read with stable non-tablet geometry when needed."""
 
@@ -93,6 +127,10 @@ class StartupPhysicalBaseline:
 
     def __call__(self) -> bool | None:
         if not self._slate_loaded:
+            if isinstance(self.slate_reader, AsyncSlateReader):
+                self.slate_reader.start()
+                if self.slate_reader.pending:
+                    return None
             try:
                 self._slate = self.slate_reader()
             except (OSError, ValueError):
@@ -134,6 +172,6 @@ class StartupPhysicalBaseline:
 
 
 __all__ = [
-    'StartupPhysicalBaseline', 'pending_slate_leases',
+    'AsyncSlateReader', 'StartupPhysicalBaseline', 'pending_slate_leases',
     'read_bootstrap_slate_state',
 ]

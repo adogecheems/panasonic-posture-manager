@@ -72,6 +72,7 @@ class _Operation:
     buffer: object | None = None
     expected: int | None = None
     immediate: int | None = None
+    cancelling: bool = False
 
 
 class NativePipes:
@@ -291,30 +292,46 @@ class NativePipes:
             raise OSError('hardware pipe write was incomplete')
         return PipePoll.ready()
 
-    def reset(self, handle: int) -> None:
-        self._cancel_operations(handle)
+    def reset(self, handle: int) -> bool:
+        if not self._cancel_operations(handle):
+            return False
         self.kernel.DisconnectNamedPipe(handle)
+        return True
 
     def close(self, handle: int) -> None:
-        self._cancel_operations(handle)
+        if not self._cancel_operations(handle):
+            # Retain buffers, OVERLAPPEDs and the pipe until native completion.
+            # Closing a client or stopping the server must not wait on a driver.
+            threading.Thread(target=self._finish_close, args=(handle,),
+                             name='windows-pipe-close', daemon=True).start()
+            return
         self.kernel.CloseHandle(handle)
 
-    def _cancel_operations(self, handle: int) -> None:
+    def _finish_close(self, handle: int) -> None:
+        self._cancel_operations(handle, wait=True)
+        self.kernel.CloseHandle(handle)
+
+    def _cancel_operations(self, handle: int, *, wait: bool = False) -> bool:
         with self._lock:
             operations = [
                 (kind, operation)
                 for (candidate, kind), operation in self._operations.items()
                 if candidate == handle
             ]
-            for kind, _ in operations:
-                self._operations.pop(self._key(handle, kind), None)
-        for _, operation in operations:
+        complete = True
+        for kind, operation in operations:
             if operation.immediate is None:
-                self.kernel.CancelIoEx(handle, C.byref(operation.overlapped))
+                if not operation.cancelling:
+                    operation.cancelling = True
+                    self.kernel.CancelIoEx(handle, C.byref(operation.overlapped))
                 transfer = U32()
-                self.kernel.GetOverlappedResult(
-                    handle, C.byref(operation.overlapped), C.byref(transfer), True)
-            self.kernel.CloseHandle(operation.event)
+                if not self.kernel.GetOverlappedResult(
+                        handle, C.byref(operation.overlapped), C.byref(transfer), wait):
+                    if C.get_last_error() in (996, ERROR_IO_PENDING):
+                        complete = False
+                        continue
+            self._discard(handle, kind)
+        return complete
 
 
 __all__ = [

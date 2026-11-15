@@ -165,7 +165,10 @@ class HardwareServer:
         if slot.pending is not None and not slot.pending.done():
             slot.retired = True
             return
-        self.pipes.reset(slot.handle)
+        if self.pipes.reset(slot.handle) is False:
+            # No new operation may reuse a pipe with cancellation in flight.
+            slot.retired = True
+            return
         slot.connected, slot.serial, slot.pending = False, 0, None
         slot.request, slot.reply, slot.retired = None, None, False
 

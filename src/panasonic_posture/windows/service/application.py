@@ -24,6 +24,7 @@ from panasonic_posture.windows.hardware.machine_profile import (
 from panasonic_posture.windows.hardware.sensor import WindowsSensor
 from panasonic_posture.windows.service.launch import NativeSessionLauncher
 from panasonic_posture.windows.hardware.slate_bootstrap import (
+    AsyncSlateReader,
     StartupPhysicalBaseline,
     read_bootstrap_slate_state,
 )
@@ -59,7 +60,7 @@ def create_hardware_runtime(
         include_orientation=False,
     )
     baseline = StartupPhysicalBaseline(
-        slate_reader=read_bootstrap_slate_state,
+        slate_reader=AsyncSlateReader(read_bootstrap_slate_state),
         sensor=sensor,
         clock=clock,
     )

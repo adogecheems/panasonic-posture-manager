@@ -259,6 +259,27 @@ class SecurityTests(unittest.TestCase):
 
 
 class PipeTests(HostFixture):
+    def test_cancelled_slot_stays_retired_while_other_service_ticks_continue(self):
+        server, _, _ = self.server()
+        slot = server.slots[0]
+        complete, accepted = [False], []
+        server.pipes.reset = lambda handle: complete[0]
+        server.pipes.accept = lambda handle: accepted.append(handle) or PipePoll.pending()
+        slot.connected, slot.peer = True, AGENT
+        ticks = []
+        self.engine.tick = lambda: ticks.append(True)
+        server._reset(slot)
+        self.assertTrue(slot.retired)
+        for _ in range(4): server.poll()
+        self.assertEqual(len(ticks), 4)
+        self.assertNotIn(slot.handle, accepted)
+        complete[0] = True
+        server.poll()
+        self.assertFalse(slot.retired)
+        self.assertFalse(slot.connected)
+        server.poll()
+        self.assertIn(slot.handle, accepted)
+
     def test_registration_preserves_a_validated_ui_with_authentication_in_flight(self):
         server, resets, _ = self.server()
         slot = server.slots[0]
@@ -508,6 +529,69 @@ class PipeTests(HostFixture):
 
 
 class NativePipeReadTests(unittest.TestCase):
+    def test_close_waits_off_thread_and_retains_native_buffers_until_completion(self):
+        from panasonic_posture.windows.ipc.pipe import _Operation, Overlapped
+        entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+        closed, waits = [], []
+        owner = threading.get_ident()
+        class Kernel:
+            def CancelIoEx(self, *args): return 1
+            def GetOverlappedResult(self, handle, overlapped, transferred, wait):
+                waits.append((threading.get_ident(), wait))
+                if wait:
+                    entered.set()
+                    release.wait(2)
+                    return 1
+                C.set_last_error(996)
+                return 0
+            def CloseHandle(self, handle):
+                closed.append(handle)
+                if handle == 1: finished.set()
+                return 1
+        pipes = object.__new__(NativePipes)
+        pipes.kernel, pipes._lock = Kernel(), threading.Lock()
+        operation = _Operation(100, Overlapped(event=100), buffer=b'pending')
+        pipes._operations = {(1, 'write'): operation}
+        try:
+            pipes.close(1)
+            self.assertTrue(entered.wait(1))
+            self.assertIs(pipes._operations[(1, 'write')], operation)
+            self.assertEqual(closed, [])
+            self.assertTrue(all(thread != owner for thread, wait in waits if wait))
+        finally:
+            release.set()
+            self.assertTrue(finished.wait(2))
+        self.assertEqual(closed, [100, 1])
+        self.assertEqual(pipes._operations, {})
+
+    def test_reset_retains_pending_io_and_never_waits_for_cancellation(self):
+        from panasonic_posture.windows.ipc.pipe import _Operation, Overlapped
+        calls, closed = [], []
+        class Kernel:
+            complete = False
+            def CancelIoEx(self, *args): calls.append('cancel'); return 1
+            def GetOverlappedResult(self, handle, overlapped, transferred, wait):
+                self_test.assertFalse(wait)
+                C.set_last_error(995 if self.complete else 996)
+                return 0
+            def CloseHandle(self, handle): closed.append(handle); return 1
+            def DisconnectNamedPipe(self, handle): calls.append('disconnect'); return 1
+        self_test = self
+        pipes = object.__new__(NativePipes)
+        pipes.kernel, pipes._lock = Kernel(), threading.Lock()
+        operation = _Operation(100, Overlapped(event=100), buffer=b'pending')
+        pipes._operations = {(1, 'write'): operation}
+        for _ in range(3):
+            self.assertFalse(pipes.reset(1))
+            self.assertIs(pipes._operations[(1, 'write')], operation)
+            self.assertEqual(closed, [])
+        self.assertEqual(calls, ['cancel'])
+        pipes.kernel.complete = True
+        self.assertTrue(pipes.reset(1))
+        self.assertEqual(pipes._operations, {})
+        self.assertEqual(closed, [100])
+        self.assertEqual(calls, ['cancel', 'disconnect'])
+
     def setUp(self):
         # The injected kernel and its last-error slot form one fake native API.
         self.last_error = 0

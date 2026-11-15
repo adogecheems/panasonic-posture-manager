@@ -147,6 +147,39 @@ class Supervisor:
 
 
 class HardwareRuntimeTests(unittest.TestCase):
+    def test_blocked_bootstrap_does_not_delay_rpc_timeout_or_override_a_new_event(self):
+        from panasonic_posture.windows.hardware.slate_bootstrap import AsyncSlateReader, StartupPhysicalBaseline
+        entered, release = threading.Event(), threading.Event()
+        now = [10.]
+        def read():
+            entered.set()
+            release.wait(2)
+            return False
+        reader = AsyncSlateReader(read)
+        backend = SimpleNamespace(failure=None, start=lambda callback: None, close=lambda: None)
+        switch = AcpiPhysicalSwitch(backend, initial_reader=StartupPhysicalBaseline(
+            slate_reader=reader, sensor=None, clock=lambda: now[0]))
+        runtime, events, _, engine, _, _ = self.make(clock=lambda: now[0])
+        runtime.switch = switch
+        runtime.start()
+        try:
+            runtime.poll()
+            self.assertTrue(entered.wait(1))
+            now[0] += 5.1
+            # Avoid invoking the separate missed-power-notification boundary.
+            runtime._last_poll_at = now[0]
+            runtime.poll()
+            self.assertEqual(engine.ticks, 2)
+            self.assertEqual(events.count('server-poll'), 2)
+            self.assertEqual(switch.query(), (False, HardwareStatus.OK))
+            switch._ingest(__import__('struct').pack('<II', 0xc0, 0xcc))
+        finally:
+            release.set()
+            reader._task.result(timeout=2)
+        runtime.poll()
+        self.assertEqual(switch.query(), (True, HardwareStatus.OK))
+        runtime.close()
+
     def test_stop_deadline_does_not_wait_for_the_launcher_lock_or_unpin_live_work(self):
         entered, release, stopped = threading.Event(), threading.Event(), threading.Event()
         events, result = [], {}

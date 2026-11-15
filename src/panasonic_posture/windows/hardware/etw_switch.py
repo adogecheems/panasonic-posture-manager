@@ -249,7 +249,9 @@ class WindowsHidEventFilterBackend(EtwBackend):
         try:
             result = self._advapi.ProcessTrace(
                 C.byref(handle), 1, None, None)
-            if result and self._started:
+            # A stopped real-time session can return ERROR_SUCCESS. Any
+            # unsolicited return means that no further physical events arrive.
+            if self._started:
                 self._failure = OSError(result, 'HID Event Filter ETW processing failed')
         except BaseException as error:  # ETW thread must never escape silently.
             self._failure = error

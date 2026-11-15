@@ -1,11 +1,14 @@
 """ETW physical-switch parsing and fail-closed behavior."""
 import struct
+import ctypes as C
+from types import SimpleNamespace
 import unittest
 
 from panasonic_posture.model import HardwareStatus
 from panasonic_posture.windows.hardware.etw_switch import (
     ACPI_LAPTOP_NOTIFY, ACPI_TABLET_NOTIFY, AcpiPhysicalSwitch,
     _EventHeader, _EventRecord, parse_acpi_notification,
+    WindowsHidEventFilterBackend,
 )
 
 
@@ -28,6 +31,21 @@ class FakeBackend:
 
 
 class PayloadTests(unittest.TestCase):
+    def test_consumer_return_invalidates_physical_source_unless_stopping(self):
+        for stopping, result in ((False, 0), (False, 5), (True, 0), (True, 1223)):
+            with self.subTest(stopping=stopping, result=result):
+                backend = object.__new__(WindowsHidEventFilterBackend)
+                backend._consumer_handle = C.c_uint64(1)
+                backend._advapi = SimpleNamespace(ProcessTrace=lambda *args: result)
+                backend._started = not stopping
+                backend._failure = None
+                switch = AcpiPhysicalSwitch(backend)
+                switch._started = True
+                switch._ingest(struct.pack('<II', 0xc0, ACPI_LAPTOP_NOTIFY))
+                backend._process()
+                self.assertEqual(switch.query(),
+                    (False, HardwareStatus.OK) if stopping else (None, HardwareStatus.READ_ERROR))
+
     def test_windows_x64_etw_layout_assumptions(self):
         self.assertEqual(__import__('ctypes').sizeof(_EventHeader), 80)
         self.assertEqual(__import__('ctypes').sizeof(_EventRecord), 112)
