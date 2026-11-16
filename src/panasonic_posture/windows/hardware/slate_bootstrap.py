@@ -31,17 +31,6 @@ def _legacy_journals(users_root: Path | None):
                / 'native-display-slate.json')
 
 
-def has_legacy_slate_journal(users_root: Path | None = None) -> bool:
-    # A user's file can only narrow admission. Its contents are unnecessary.
-    for journal in _legacy_journals(users_root):
-        try:
-            journal.lstat()
-        except FileNotFoundError:
-            continue
-        return True
-    return False
-
-
 def pending_slate_leases(users_root: Path | None = None) -> tuple[SlateLease, ...]:
     """Load all readable per-user CSM recovery leases without guessing."""
 

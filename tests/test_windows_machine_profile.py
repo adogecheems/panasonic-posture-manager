@@ -70,6 +70,18 @@ class WindowsMachineProfileTests(unittest.TestCase):
         self.assertEqual(profile.id, 'generic')
         self.assertEqual(profile.support_tier, 'compatible')
 
+    def test_validated_composition_does_not_construct_an_event_consumer(self):
+        profile = resolve_windows_profile(
+            ('Panasonic Corporation', 'CFQV8'), profile_dirs=(PROFILES,))
+        with patch('panasonic_posture.windows.service.application.WindowsSensor'), \
+                patch('panasonic_posture.windows.service.application.AcpiPhysicalSwitch') as events, \
+                patch('panasonic_posture.windows.service.application.Engine'), \
+                patch('panasonic_posture.windows.service.application.HardwareRuntime') as runtime:
+            create_hardware_runtime(runtime=Mock(), settings=Mock(), wake=Mock(), profile=profile)
+        events.assert_not_called()
+        from panasonic_posture.windows.hardware.indicator_switch import IndicatorSwitch
+        self.assertIsInstance(runtime.call_args.kwargs['switch'], IndicatorSwitch)
+
     def test_hardware_composition_uses_profile_capabilities_not_a_machine_gate(self):
         profile = WindowsProfile(
             id='generic',

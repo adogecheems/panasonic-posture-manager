@@ -8,12 +8,12 @@ touching a real console or display.
 
 Startup order is part of the safety contract:
 
-1. start the physical ETW consumer;
+1. start the physical observation worker;
 2. start the WinRT sensor worker;
 3. only then create the RPC endpoint and the trusted-session supervisor.
 
-Validated models read the physical indicator while the ETW consumer is healthy.
-Generic hardware and legacy software-owned indicators require a physical event.
+Validated models read the physical indicator independently of event tracing.
+Generic hardware requires a physical event.
 Only the service publishes the software target to the machine registry.
 """
 from __future__ import annotations
@@ -238,7 +238,7 @@ class HardwareRuntime:
             self.engine.reset_after_session_context_loss()
             if not power_changed:
                 # Lost native callbacks still cannot authorize a sleep-era
-                # cache. With callbacks, preserve an ETW event already received
+                # cache. With callbacks, preserve a physical observation received
                 # after resume and before this first owner-loop iteration.
                 self.switch.invalidate()
             self._bootstrap_until = None

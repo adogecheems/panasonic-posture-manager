@@ -8,7 +8,6 @@ from unittest.mock import Mock, patch
 
 from panasonic_posture.model import HardwareStatus
 from panasonic_posture.windows.hardware.indicator_switch import IndicatorSwitch
-from panasonic_posture.windows.hardware.slate_bootstrap import has_legacy_slate_journal
 from panasonic_posture.windows.hardware.slate_journal import SlateJournal
 from panasonic_posture.windows.service.registry_slate import RegistryPosture, RegistrySlateValue
 
@@ -74,7 +73,7 @@ class RegistryPostureTests(unittest.TestCase):
 
 
 class PhysicalIndicatorTests(unittest.TestCase):
-    def start_blocking_indicator(self, readings, event_state):
+    def start_blocking_indicator(self, readings):
         # Each read waits until the test chooses its completion relative to
         # invalidation or the fake clock. The final read stays in flight.
         entered = [threading.Event() for _ in readings]
@@ -89,11 +88,8 @@ class PhysicalIndicatorTests(unittest.TestCase):
             return readings[index]
 
         device.read.side_effect = read
-        events = Mock()
-        events.query.return_value = event_state
         stamp = [1.]
-        switch = IndicatorSwitch(events, open_device=lambda: nullcontext(device),
-                                 legacy=lambda: False, clock=lambda: stamp[0])
+        switch = IndicatorSwitch(open_device=lambda: nullcontext(device), clock=lambda: stamp[0])
         switch.start()
         self.addCleanup(switch.close)
         for latch in resume:
@@ -102,7 +98,7 @@ class PhysicalIndicatorTests(unittest.TestCase):
 
     def test_stale_inflight_read_cannot_cross_resume(self):
         switch, stamp, entered, resume = self.start_blocking_indicator(
-            (True, False, False), (True, HardwareStatus.OK))
+            (True, False, False))
         self.assertTrue(entered[0].wait(2))
         switch.invalidate()
         resume[0].set()
@@ -114,34 +110,35 @@ class PhysicalIndicatorTests(unittest.TestCase):
         # Freeze the next read so the previous sample can expire.
         stamp[0] += 2.
         self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
-        switch.events.query.return_value = None, HardwareStatus.READ_ERROR
-        self.assertEqual(switch.query(), (None, HardwareStatus.READ_ERROR))
 
     def test_clean_indicator_tracks_physical_edges_without_etw_notifications(self):
         switch, _, entered, resume = self.start_blocking_indicator(
-            (False, True, True), (None, HardwareStatus.ABSENT))
+            (False, True, True))
         for index, slate in enumerate((False, True)):
             resume[index].set()
             self.assertTrue(entered[index + 1].wait(2))
             self.assertEqual(switch.query(), (slate, HardwareStatus.OK))
 
-    def test_legacy_guard_checks_presence_even_if_contents_are_invalid(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            folder = root / 'profile/AppData/Local/PanasonicPostureManager'
-            folder.mkdir(parents=True)
-            self.assertFalse(has_legacy_slate_journal(root))
-            (folder / 'native-display-slate.json').write_bytes(b'broken')
-            self.assertTrue(has_legacy_slate_journal(root))
+    def test_old_user_records_are_never_inspected(self):
+        module = 'panasonic_posture.windows.hardware.slate_bootstrap'
+        with patch(module + '._users_root', side_effect=PermissionError) as old, \
+                patch(module + '.pending_slate_leases', side_effect=PermissionError) as pending:
+            switch, _, entered, resume = self.start_blocking_indicator((True, True))
+            resume[0].set()
+            self.assertTrue(entered[1].wait(2))
+            self.assertEqual(switch.query(), (True, HardwareStatus.OK))
+            old.assert_not_called()
+            pending.assert_not_called()
 
-    def test_legacy_journal_uses_only_physical_events(self):
-        events, device = Mock(), Mock()
-        events.query.return_value = None, HardwareStatus.ABSENT
-        switch = IndicatorSwitch(events, open_device=device, legacy=lambda: True)
+    def test_device_failure_closes_admission_without_starting_etw(self):
+        attempted = threading.Event()
+
+        def unavailable():
+            attempted.set()
+            raise OSError('device absent')
+
+        switch = IndicatorSwitch(open_device=unavailable)
         switch.start()
         self.addCleanup(switch.close)
-        switch.worker.join(2)
+        self.assertTrue(attempted.wait(2))
         self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
-        events.query.return_value = True, HardwareStatus.OK
-        self.assertEqual(switch.query(), (True, HardwareStatus.OK))
-        device.assert_not_called()

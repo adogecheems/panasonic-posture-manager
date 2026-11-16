@@ -88,7 +88,7 @@ Get-Content "$env:ProgramData\PanasonicPostureManager\Logs\hardware-service.log"
 | 服务运行但桌面未就绪 | 等待最多五秒。若显示「重试」，查看桌面会话日志，区分显示失败与硬件尚未就绪。 |
 | 唤醒后未识别姿态 | 将设备放稳。QV8/QV9/QV1 在取得新的物理指示器读数后可恢复识别，包括保持折叠唤醒，其他兼容机型需要新的物理折叠事件。 |
 | 唤醒后姿态生效慢 | 对齐服务日志的电源边界、首次姿态目标和会话日志中的显示结果，分别计算识别和显示耗时。WinRT 采样中断后可立即重连一次，持续失败时每次重试前等待两秒。 |
-| 以平板姿态启动时未识别平板 | QV8/QV9/QV1 需能以只读方式打开唯一的 `ACPI\INT33D3`，并收到新鲜读数。检查安装后是否已按提示重启。旧用户目录存在 `native-display-slate.json` 或无法检查时，服务改等真实折叠事件；可展开再折回。通用机型始终需要物理事件。 |
+| 以平板姿态启动时未识别平板 | QV8/QV9/QV1 需能以只读方式打开唯一的 `ACPI\INT33D3`，并收到新鲜读数。检查安装后是否已按提示重启。指示器路径独立运行，启动时直接获取新鲜物理读数。通用机型需展开再折回以触发物理事件。 |
 | 软件姿态写入失败 | 检查服务是否能读写 `HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl` 下的 `ConvertibleSlateMode`（DWORD，0 为平板，1 为笔记本）。服务先保存 `%ProgramData%\PanasonicPostureManager\State\registry-slate.json`，再赋值并回读。保留未完成的恢复记录，恢复物理准入后由服务重试。 |
 | 平板姿态下内置键盘不能唤醒，但电源键可以 | 短按电源键唤醒并确认能否正常打字。若熄屏期间已展开为笔记本仍不能用键盘唤醒，不应仅归因于折叠时的输入限制。应用的 Windows 输入端口不禁用键盘，也不配置键盘唤醒；已知熄屏且会话仍有资格时，姿态和显示交接继续执行。实际睡眠时应另查系统唤醒路径。微软的 [Modern Standby 唤醒来源说明](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/modern-standby-wake-sources)区分处理器唤醒与屏幕点亮。 |
 | 锁屏后方向变化 | 已运行的会话会切回自动模式并继续调整方向。服务刚重启时，先解锁以启动桌面会话。 |
