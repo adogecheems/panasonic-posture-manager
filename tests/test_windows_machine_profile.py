@@ -109,9 +109,9 @@ class WindowsMachineProfileTests(unittest.TestCase):
         self.assertEqual(device.vendor, 'Another Vendor')
         self.assertEqual(device.product, 'Convertible-1')
         self.assertEqual(device.support_tier, 'compatible')
-        self.assertFalse(
-            switch_factory.call_args.kwargs['trusted_startup_baseline']
-        )
+        switch_factory.assert_not_called()
+        from panasonic_posture.windows.hardware.indicator_switch import IndicatorSwitch
+        self.assertIsInstance(runtime_factory.call_args.kwargs['switch'], IndicatorSwitch)
         runtime_factory.assert_called_once()
 
 

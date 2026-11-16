@@ -61,10 +61,9 @@ def create_hardware_runtime(
         mount_matrix=resolved_profile.mount_matrix,
         include_orientation=False,
     )
-    switch = (
-        IndicatorSwitch(clock=clock)
-        if resolved_profile.support_tier == 'validated'
-        else AcpiPhysicalSwitch(trusted_startup_baseline=False)
+    switch = IndicatorSwitch(
+        clock=clock,
+        fallback_factory=lambda: AcpiPhysicalSwitch(trusted_startup_baseline=False),
     )
     engine = Engine(
         controller=Controller(input_control=False),

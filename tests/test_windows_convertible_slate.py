@@ -10,6 +10,7 @@ from panasonic_posture.session.failures import DisplayError, FailureKind, Servic
 from panasonic_posture.windows.hardware.convertible_slate import (
     NativeSlateDevice,
     SlateError,
+    SlateDeviceAbsent,
     SlateNotifier,
     slate_instance_matches,
 )
@@ -390,6 +391,28 @@ class SlateNotifierTests(unittest.TestCase):
 
 
 class NativeSlateDeviceTests(unittest.TestCase):
+    def test_discovery_distinguishes_absence_from_ambiguity(self):
+        for instances, error in (((), SlateDeviceAbsent),
+                                 ((r'ACPI\INT33D3\a', r'ACPI\INT33D3\b'), SlateError)):
+            with self.subTest(instances=instances):
+                device = object.__new__(NativeSlateDevice)
+                device.SetupDiGetClassDevsW = mock.Mock(return_value=1)
+                device.SetupDiEnumDeviceInfo = lambda handle, index, info: index < len(instances)
+                device.SetupDiDestroyDeviceInfoList = mock.Mock()
+                identities = iter(instances)
+
+                def identity(handle, info, buffer, length, size):
+                    buffer.value = next(identities)
+                    return True
+
+                device.SetupDiGetDeviceInstanceIdW = identity
+                with mock.patch('ctypes.get_last_error', return_value=259, create=True):
+                    with self.assertRaises(error) as caught:
+                        device._physical_device_object_name(r'ACPI\INT33D3')
+                if instances:
+                    self.assertNotIsInstance(caught.exception, SlateDeviceAbsent)
+                device.SetupDiDestroyDeviceInfoList.assert_called_once_with(1)
+
     def test_physical_reader_requests_only_generic_read(self):
         device = object.__new__(NativeSlateDevice)
         device.read_only = True

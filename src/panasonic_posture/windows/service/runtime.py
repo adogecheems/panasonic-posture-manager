@@ -12,8 +12,8 @@ Startup order is part of the safety contract:
 2. start the WinRT sensor worker;
 3. only then create the RPC endpoint and the trusted-session supervisor.
 
-Validated models read the physical indicator independently of event tracing.
-Generic hardware requires a physical event.
+All models first probe the physical indicator independently of event tracing.
+Machines without that device require a physical event.
 Only the service publishes the software target to the machine registry.
 """
 from __future__ import annotations

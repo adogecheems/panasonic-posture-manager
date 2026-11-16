@@ -42,6 +42,10 @@ class SlateError(OSError):
     """The supported convertible-slate indicator is unavailable or invalid."""
 
 
+class SlateDeviceAbsent(SlateError):
+    """Enumeration completed successfully with no supported device present."""
+
+
 def slate_instance_matches(
     instance_id: object,
     hardware_id: str = SLATE_HARDWARE_ID,
@@ -226,10 +230,10 @@ class NativeSlateDevice:
                 if slate_instance_matches(buffer.value, hardware_id):
                     found.append(info)
                 index += 1
+            if not found:
+                raise SlateDeviceAbsent("convertible-slate device is absent")
             if len(found) != 1:
-                raise SlateError(
-                    "verified convertible-slate device is absent or ambiguous"
-                )
+                raise SlateError("convertible-slate device is ambiguous")
             size = wintypes.DWORD()
             buffer = C.create_unicode_buffer(512)
             kind = wintypes.DWORD()
@@ -472,6 +476,6 @@ class SlateNotifier:
 
 
 __all__ = [
-    "NativeSlateDevice", "SLATE_HARDWARE_ID", "SlateError", "SlateNotifier",
+    "NativeSlateDevice", "SLATE_HARDWARE_ID", "SlateError", "SlateDeviceAbsent", "SlateNotifier",
     "slate_instance_matches",
 ]

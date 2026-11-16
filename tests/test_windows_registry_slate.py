@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 from panasonic_posture.model import HardwareStatus
 from panasonic_posture.windows.hardware.indicator_switch import IndicatorSwitch
+from panasonic_posture.windows.hardware.convertible_slate import SlateDeviceAbsent, SlateError
 from panasonic_posture.windows.hardware.slate_journal import SlateJournal
 from panasonic_posture.windows.service.registry_slate import RegistryPosture, RegistrySlateValue
 
@@ -89,7 +90,10 @@ class PhysicalIndicatorTests(unittest.TestCase):
 
         device.read.side_effect = read
         stamp = [1.]
-        switch = IndicatorSwitch(open_device=lambda: nullcontext(device), clock=lambda: stamp[0])
+        fallback = Mock()
+        self.addCleanup(fallback.assert_not_called)
+        switch = IndicatorSwitch(open_device=lambda: nullcontext(device), clock=lambda: stamp[0],
+                                 fallback_factory=fallback)
         switch.start()
         self.addCleanup(switch.close)
         for latch in resume:
@@ -142,3 +146,90 @@ class PhysicalIndicatorTests(unittest.TestCase):
         self.addCleanup(switch.close)
         self.assertTrue(attempted.wait(2))
         self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+
+    def test_absent_device_starts_events_only_as_a_capability_fallback(self):
+        events, factory = Mock(), Mock()
+        factory.return_value = events
+        events.query.return_value = None, HardwareStatus.ABSENT
+        switch = IndicatorSwitch(open_device=Mock(side_effect=SlateDeviceAbsent()),
+                                 fallback_factory=factory)
+        switch.start()
+        self.addCleanup(switch.close)
+        switch.worker.join(2)
+        factory.assert_called_once_with()
+        events.start.assert_called_once_with()
+        self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+        events.query.return_value = True, HardwareStatus.OK
+        self.assertEqual(switch.query(), (True, HardwareStatus.OK))
+        switch.invalidate()
+        events.invalidate.assert_called_once_with()
+        events.query.return_value = None, HardwareStatus.READ_ERROR
+        self.assertEqual(switch.query(), (None, HardwareStatus.READ_ERROR))
+        switch.close()
+        events.close.assert_called_once_with()
+
+    def test_indicator_errors_do_not_enable_event_fallback(self):
+        for error in (PermissionError(), SlateError('ambiguous'), ValueError('invalid byte')):
+            with self.subTest(error=type(error).__name__):
+                attempted = threading.Event()
+                factory = Mock()
+
+                def unavailable():
+                    attempted.set()
+                    raise error
+
+                switch = IndicatorSwitch(open_device=unavailable, fallback_factory=factory)
+                switch.start()
+                self.addCleanup(switch.close)
+                self.assertTrue(attempted.wait(2))
+                self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+                switch.close()
+                factory.assert_not_called()
+
+    def test_fallback_startup_discards_sleep_era_events_and_closes_late_resources(self):
+        for stopping in (False, True):
+            with self.subTest(stopping=stopping):
+                entered, finish = threading.Event(), threading.Event()
+                events = Mock()
+                events.query.return_value = None, HardwareStatus.ABSENT
+
+                def start():
+                    entered.set()
+                    if not finish.wait(3):
+                        raise OSError('test startup timeout')
+
+                events.start.side_effect = start
+                switch = IndicatorSwitch(open_device=Mock(side_effect=SlateDeviceAbsent()),
+                                         fallback_factory=lambda: events)
+                switch.start()
+                self.addCleanup(switch.close)
+                self.addCleanup(finish.set)
+                self.assertTrue(entered.wait(2))
+                if stopping:
+                    switch.close()
+                else:
+                    switch.invalidate()
+                finish.set()
+                switch.worker.join(2)
+                self.assertFalse(switch.worker.is_alive())
+                if stopping:
+                    events.close.assert_called_once_with()
+                else:
+                    events.invalidate.assert_called_once_with()
+
+    def test_read_failure_after_open_keeps_the_selected_indicator_source(self):
+        attempted = threading.Event()
+        device, fallback = Mock(), Mock()
+
+        def gone():
+            attempted.set()
+            raise SlateDeviceAbsent('device disconnected during read')
+
+        device.read.side_effect = gone
+        switch = IndicatorSwitch(open_device=lambda: nullcontext(device), fallback_factory=fallback)
+        switch.start()
+        self.addCleanup(switch.close)
+        self.assertTrue(attempted.wait(2))
+        self.assertEqual(switch.query(), (None, HardwareStatus.ABSENT))
+        switch.close()
+        fallback.assert_not_called()
