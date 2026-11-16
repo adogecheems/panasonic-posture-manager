@@ -35,6 +35,30 @@ def png_dimensions(path: Path) -> tuple[int, int]:
 
 
 class MsiPayloadTests(unittest.TestCase):
+    def test_notification_header_registers_the_prepared_rectangular_logo(self):
+        from panasonic_posture.windows.app.identity import APP_USER_MODEL_ID
+
+        root = ET.parse(ROOT / 'packaging/windows/msi/Package.wxs').getroot()
+        component = next(e for e in root.iter()
+                         if e.tag.endswith('Component') and e.get('Id') == 'NotificationIdentity')
+        self.assertEqual(component.get('Bitness'), 'always64')
+        key = next(e for e in component if e.tag.endswith('RegistryKey'))
+        self.assertEqual(key.get('Root'), 'HKLM')
+        self.assertEqual(key.get('Key'), rf'Software\Classes\AppUserModelId\{APP_USER_MODEL_ID}')
+        # MSI removes its own values, without deleting unrelated Shell metadata.
+        self.assertIsNone(key.get('ForceDeleteOnUninstall'))
+        values = {e.get('Name'): e for e in key if e.tag.endswith('RegistryValue')}
+        icon = values['IconUri']
+        relative = 'data/assets/icons/work.mmoe.panasonic.PostureManager-square.png'
+        self.assertEqual(icon.get('Value'), '[INSTALLFOLDER]' + relative.replace('/', '\\'))
+        self.assertEqual(icon.get('KeyPath'), 'yes')
+        self.assertEqual(values['DisplayName'].get('Value'), '!(loc.ProductName)')
+        feature = next(e for e in root.iter() if e.tag.endswith('Feature'))
+        self.assertTrue(any(e.tag.endswith('ComponentRef') and e.get('Id') == 'NotificationIdentity'
+                            for e in feature))
+        groups = msi.payload_files(self.runtime, self.dependencies)
+        self.assertEqual(groups['main'][relative], ROOT / 'data/assets/windows/icons' / Path(relative).name)
+
     def test_finish_checkbox_has_no_opaque_label_background(self):
         root = ET.parse(ROOT / 'packaging/windows/msi/Package.wxs').getroot()
         dialog = next(e for e in root.iter()

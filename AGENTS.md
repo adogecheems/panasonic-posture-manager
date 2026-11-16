@@ -162,7 +162,7 @@ Linux 专用 D-Bus 集成脚本位于 `tests/integration/linux/`，包验收脚�
 通用单元测试不得混入仅针对某个平台适配器的断言。
 Linux 安装后的图片保留 `assets/{branding,icons,postures}/` 分类；Windows 安装负载
 采用相同分类并加入原生图标，源码运行通过资源解析器定位共用和平台目录。
-Windows 托盘和通知大图标使用共用的原版圆角 PNG；通知左上角小图标由 Windows Shell 单独合成为矩形，不得将矩形底色扩展到托盘和通知大图标。
+Windows 托盘和通知大图标使用共用的原版圆角 PNG；通知左上角小图标通过 MSI 的 AppUserModelId `IconUri` 显式绑定预制的 `work.mmoe.panasonic.PostureManager-square.png`，不得依赖 Shell 自动补底或将矩形资源用于托盘和通知大图标。
 
 ### 6.2 按改动选择目标测试
 

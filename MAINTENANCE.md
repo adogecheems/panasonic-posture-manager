@@ -219,6 +219,8 @@ wix extension add -g WixToolset.Util.wixext/5.0.2
 
 两平台共用的品牌图片、PNG 图标和姿态 SVG 位于 `data/assets/common/{branding,icons,postures}/`，Windows 专属图标和安装器图片位于 `data/assets/windows/`。修改共用浅色品牌图后，运行 `packaging/windows/scripts/prepare-branding.ps1` 生成深色版本并核对两种主题。Linux 安装树和 Windows 安装负载均保留图片分类。
 
+Windows MSI 在 `HKLM\Software\Classes\AppUserModelId\work.mmoe.panasonic.PostureManager` 注册通知标题区的 `DisplayName` 和 `IconUri`；后者指向主安装目录的 `data\assets\icons\work.mmoe.panasonic.PostureManager-square.png`。这是预制的矩形 logo，托盘和通知大图标仍使用共用的原版圆角 PNG。注册值由 MSI 安装、修复和卸载管理，修改后需安装新 MSI 才会生效；源码运行不能据此声明已验证通知标题区外观。
+
 Linux D-Bus 集成脚本位于 `tests/integration/linux/`，包验收脚本位于 `tests/package/linux/`；常用 Make 入口保持不变。手工验收脚本位于 `tests/manual/{linux,windows}/`，必须取得目标机验收授权后才运行；路径回归测试只解析路径表达式，不导入或执行这些脚本。
 
 #### Arch 包验证

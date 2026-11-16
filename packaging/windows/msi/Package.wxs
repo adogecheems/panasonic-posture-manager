@@ -186,7 +186,17 @@
         Sequence="ui" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager" />
+      <Directory Id="INSTALLFOLDER" Name="PanasonicPostureManager">
+        <!-- Bind the notification header independently of tray/body artwork. -->
+        <Component Id="NotificationIdentity" Guid="*" Bitness="always64">
+          <RegistryKey Root="HKLM"
+              Key="Software\Classes\AppUserModelId\work.mmoe.panasonic.PostureManager">
+            <RegistryValue Name="DisplayName" Type="string" Value="!(loc.ProductName)" />
+            <RegistryValue Name="IconUri" Type="string" KeyPath="yes"
+                Value="[INSTALLFOLDER]data\assets\icons\work.mmoe.panasonic.PostureManager-square.png" />
+          </RegistryKey>
+        </Component>
+      </Directory>
       <Directory Id="SERVICEINSTALLFOLDER" Name="PanasonicPostureManagerService" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
@@ -197,6 +207,7 @@
 
     <Feature Id="Complete" Title="!(loc.FeatureTitle)" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="PayloadComponents" />
+      <ComponentRef Id="NotificationIdentity" />
     </Feature>
 
     <ui:WixUI Id="WixUI_PostureInstallDir" InstallDirectory="INSTALLFOLDER" />

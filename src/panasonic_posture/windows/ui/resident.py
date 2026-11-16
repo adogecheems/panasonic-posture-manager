@@ -23,8 +23,8 @@ log = logging.getLogger(__name__)
 def resident_icon():
     """Use the original rounded artwork for the tray and notice body.
 
-    Windows Shell composes the small notification header separately; its
-    rectangular backing must not be baked into these larger surfaces.
+    The MSI binds the prepared rectangular logo to the notification identity
+    separately; that artwork must not replace these rounded surfaces.
     """
     return QIcon(str(
         asset_path('icons/work.mmoe.panasonic.PostureManager.png')
