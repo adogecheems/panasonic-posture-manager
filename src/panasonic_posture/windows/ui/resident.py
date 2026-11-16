@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QMenu, QMessageBox, QSystemTra
 from ...contracts import TICK_SECONDS
 from ...frontend.state import notice_confirmable, notice_token
 from .labels import mode_label
-from ..app.resources import application_name, asset_root, data_root, translator
+from ..app.resources import application_name, asset_path, data_root, translator
 from .wake import WakeWatch
 
 log = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 def resident_icon():
     """Return the opaque, square application icon shared by Shell surfaces."""
     return QIcon(str(
-        asset_root() / 'icons/work.mmoe.panasonic.PostureManager-square.png'
+        asset_path('icons/work.mmoe.panasonic.PostureManager-square.png')
     ))
 
 

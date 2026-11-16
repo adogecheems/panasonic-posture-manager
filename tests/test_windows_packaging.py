@@ -75,6 +75,9 @@ class WindowsPackagingTests(unittest.TestCase):
                 path.parent.mkdir(parents=True)
                 path.write_bytes(b'not part of the application')
             files = builder.application_files(runtime, dependencies)
+            for name in ('postures/laptop.svg', 'branding/lets-note-window-icon.png',
+                         'icons/work.mmoe.panasonic.PostureManager.png'):
+                self.assertEqual(files['data/assets/' + name], ROOT / 'data/assets/common' / name)
             for name in ('runtime/python.exe', 'runtime/pythonw.exe', 'runtime/python._pth',
                          'runtime/pythonw._pth', 'runtime/python-hardware.exe',
                          'runtime/python-hardware._pth',

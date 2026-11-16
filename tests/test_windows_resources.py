@@ -13,6 +13,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WindowsResourceTests(unittest.TestCase):
+    def test_shared_and_native_assets_resolve_without_cross_platform_copies(self):
+        from panasonic_posture.windows.app.resources import asset_path
+        with patch.dict(os.environ, PANASONIC_POSTURE_DATA_DIR=str(ROOT / 'data')):
+            for name in ('postures/laptop.svg', 'branding/lets-note-window-icon.png',
+                         'icons/work.mmoe.panasonic.PostureManager.png'):
+                with self.subTest(name=name):
+                    self.assertEqual(asset_path(name), ROOT / 'data/assets/common' / name)
+            name = 'icons/work.mmoe.panasonic.PostureManager-square.png'
+            self.assertEqual(asset_path(name), ROOT / 'data/assets/windows' / name)
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory) / 'data'
+            name = 'postures/laptop.svg'
+            path = data / 'assets' / name
+            path.parent.mkdir(parents=True)
+            path.write_text('installed asset', encoding='utf-8')
+            with patch.dict(os.environ, PANASONIC_POSTURE_DATA_DIR=str(data)):
+                self.assertEqual(asset_path(name), path)
+
     def test_assets_resolve_in_source_and_installed_layouts(self):
         from panasonic_posture.windows.app.resources import asset_root
         for layout in ('source', 'installed'):
@@ -34,7 +52,7 @@ class WindowsResourceTests(unittest.TestCase):
         # Compare decoded alpha rather than PNG bytes or encoder metadata.
         command = r'''
 Add-Type -AssemblyName System.Drawing
-$root = Join-Path (Get-Location) 'data/assets/windows/branding'
+$root = Join-Path (Get-Location) 'data/assets/common/branding'
 $light = [System.Drawing.Bitmap]::new((Join-Path $root 'lets-note-window-icon.png'))
 $dark = [System.Drawing.Bitmap]::new((Join-Path $root 'lets-note-window-icon-dark.png'))
 try {

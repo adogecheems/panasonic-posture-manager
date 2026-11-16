@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 
 class PlatformBoundaryTests(unittest.TestCase):
-    def test_service_and_session_work_without_linux_adapters(self):
+    def test_service_and_session_work_without_platform_adapters(self):
         result = subprocess.run(
             [sys.executable, "-S", str(Path(__file__).resolve())],
             capture_output=True,
@@ -24,7 +24,7 @@ def exercise_platform_boundaries():
 
     class BlockPlatformImports:
         def find_spec(self, name, path=None, target=None):
-            if name == "gi" or name.startswith("panasonic_posture.linux"):
+            if name == "gi" or name.startswith(("panasonic_posture.linux", "panasonic_posture.windows")):
                 raise AssertionError(f"Unexpected platform import: {name}")
 
     sys.meta_path.insert(0, BlockPlatformImports())

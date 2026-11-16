@@ -67,8 +67,8 @@ check-unit:
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests -p 'test_*.py' -v
 
 check-dbus:
-	dbus-run-session -- env PYTHONPATH=src $(PYTHON) tests/integration/check_dbus.py
-	dbus-run-session -- env PYTHONPATH=src $(PYTHON) tests/integration/check_agent.py
+	dbus-run-session -- env PYTHONPATH=src $(PYTHON) tests/integration/linux/check_dbus.py
+	dbus-run-session -- env PYTHONPATH=src $(PYTHON) tests/integration/linux/check_agent.py
 
 check-i18n:
 	PYTHONPATH=src $(PYTHON) tests/check_i18n.py
@@ -81,7 +81,7 @@ check-package:
 		echo "       [PREVIOUS_PACKAGE=/path/to/old.pkg.tar.zst] [PACKAGE_NO_INSTALL=1]" >&2; \
 		exit 2; \
 	}
-	PYTHONPATH=src $(PYTHON) tests/package/check_package.py \
+	PYTHONPATH=src $(PYTHON) tests/package/linux/check_package.py \
 		--package "$(PACKAGE)" $(PACKAGE_CHECK_ARGS)
 
 # These targets require the matching distribution toolchain (dpkg-deb or

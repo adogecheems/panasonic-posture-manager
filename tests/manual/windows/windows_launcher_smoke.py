@@ -27,7 +27,7 @@ from panasonic_posture.windows.service.trusted_runtime import TrustedRuntime
 def prepare(directory: Path) -> dict:
     """Hash a minimal runtime snapshot; this does not elevate or execute it."""
     WindowsSecurity().require_unprivileged()
-    repository = Path(__file__).resolve().parents[1]
+    repository = Path(__file__).resolve().parents[3]
     package = repository / 'src/panasonic_posture'
     if not package.is_dir(): raise ValueError('prepare from the source checkout')
     base = Path(sys.base_prefix)
@@ -51,7 +51,7 @@ def prepare(directory: Path) -> dict:
     directory.mkdir(parents=True, exist_ok=True)
     manifest = directory.resolve() / 'manifest.json'
     with manifest.open('xb') as stream: stream.write(json.dumps(files).encode('utf-8'))
-    helper = repository / 'tests/manual/windows/windows_launcher_admin.ps1'
+    helper = Path(__file__).with_name('windows_launcher_admin.ps1')
     return dict(manifest=str(manifest), files=len(files),
         manifest_hash=hashlib.sha256(manifest.read_bytes()).hexdigest(), helper=str(helper),
         helper_hash=hashlib.sha256(helper.read_bytes()).hexdigest())

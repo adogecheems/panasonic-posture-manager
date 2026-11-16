@@ -28,6 +28,13 @@ def asset_root() -> Path:
     return source if source.is_dir() else base / 'assets'
 
 
+def asset_path(relative: str) -> Path:
+    """Resolve shared checkout artwork or native assets in the installed tree."""
+    base = data_root() / 'assets'
+    shared = base / 'common' / relative
+    return shared if shared.is_file() else asset_root() / relative
+
+
 def _windows_language() -> str | None:
     if os.name != 'nt':
         return None

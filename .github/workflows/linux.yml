@@ -38,6 +38,7 @@ jobs:
             tests.test_platform_imports \
             tests.test_platform_boundaries \
             tests.test_platform_separation \
+            tests.test_linux_platform_separation \
             tests.test_model \
             tests.test_policy \
             tests.test_controller \

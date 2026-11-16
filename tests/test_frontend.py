@@ -295,8 +295,8 @@ from panasonic_posture.frontend import ports, state, actions
     def test_widget_pages_do_not_encode_transport_messages(self):
         import ast
         from pathlib import Path
-        root = Path(__file__).resolve().parents[1] / 'src/panasonic_posture/linux/ui'
-        for filename in ('posture.py', 'settings.py'):
+        root = Path(__file__).resolve().parents[1] / 'src/panasonic_posture'
+        for filename in ('linux/ui/posture.py', 'linux/ui/settings.py', 'windows/ui/pages.py'):
             tree = ast.parse((root / filename).read_text(encoding='utf-8'))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):

@@ -13,7 +13,7 @@ from qfluentwidgets import (
 )
 from qfluentwidgets.common.style_sheet import addStyleSheet
 
-from ..app.resources import asset_root
+from ..app.resources import asset_path
 
 WINDOW_LIGHT = '#f6f7f9'
 WINDOW_DARK = '#22252b'
@@ -179,7 +179,7 @@ class Illustration(QWidget):
         return renderer
 
     def paintEvent(self, event):
-        path = asset_root() / 'postures' / f'{self.pose}.svg'
+        path = asset_path(f'postures/{self.pose}.svg')
         dark = isDarkTheme()
         renderer = self._renderer(path, dark)
         painter = QPainter(self)

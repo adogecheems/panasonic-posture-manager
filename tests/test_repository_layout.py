@@ -1,5 +1,6 @@
 """Platform layout contracts for native and packaging assets."""
 
+import ast
 from pathlib import Path
 import unittest
 
@@ -24,6 +25,45 @@ def payload_directories(directory: Path) -> set[str]:
 
 
 class RepositoryLayoutTests(unittest.TestCase):
+    def test_script_source_and_sibling_paths_resolve_without_running_scripts(self):
+        # Execute only path expressions: importing these scripts can contact
+        # real services, alter modes or require administrator privileges.
+        scripts = {
+            'integration/linux/check_agent.py': ('REPO_ROOT', 'SRC_DIR', 'DAEMON'),
+            'integration/linux/check_dbus.py': ('REPO_ROOT', 'SRC_DIR', 'DAEMON'),
+            'integration/linux/session_daemon.py': ('REPO_ROOT', 'SRC_DIR'),
+            'package/linux/check_package.py': ('REPO_ROOT',),
+            'manual/linux/check_live.py': ('REPO_ROOT', '_SRC_DIR'),
+            'manual/linux/check_faults.py': ('REPO_ROOT', '_SRC_DIR'),
+            'manual/linux/manual_reset_guard.py': ('REPO_ROOT', '_SRC_DIR'),
+            'manual/linux/check_absent_switch.py': ('REPO_ROOT', '_SRC_DIR', 'HELPER'),
+            'manual/windows/windows_hardware_smoke.py': (),
+            'manual/windows/windows_etw_switch_smoke.py': (),
+            'manual/windows/windows_launcher_smoke.py': ('repository', 'package', 'helper'),
+        }
+        for relative, names in scripts.items():
+            path = ROOT / 'tests' / relative
+            with self.subTest(script=relative):
+                tree = ast.parse(path.read_text(encoding='utf-8'))
+                scope = {'Path': Path, '__file__': str(path)}
+                for name in names:
+                    node = next(node for node in ast.walk(tree)
+                                if isinstance(node, ast.Assign)
+                                and any(isinstance(target, ast.Name) and target.id == name
+                                        for target in node.targets))
+                    scope[name] = eval(compile(ast.Expression(node.value), str(path), 'eval'), scope)
+                    if name in ('REPO_ROOT', 'repository'):
+                        self.assertEqual(scope[name], ROOT)
+                    else:
+                        self.assertTrue(scope[name].exists(), scope[name])
+                if not names:
+                    insertion = next(node for node in ast.walk(tree)
+                                     if isinstance(node, ast.Call)
+                                     and isinstance(node.func, ast.Attribute)
+                                     and node.func.attr == 'insert')
+                    source = Path(eval(compile(ast.Expression(insertion.args[1]), str(path), 'eval'), scope))
+                    self.assertEqual(source, ROOT / 'src')
+
     def test_native_backend_is_split_by_platform(self):
         backend = ROOT / "backend"
         self.assertEqual(payload_directories(backend), {"linux", "windows"})
@@ -60,11 +100,36 @@ class RepositoryLayoutTests(unittest.TestCase):
 
     def test_runtime_assets_are_split_by_platform(self):
         assets = ROOT / "data" / "assets"
-        self.assertEqual(payload_directories(assets), {"linux", "windows"})
-        self.assertTrue((assets / "linux" / "laptop.svg").is_file())
+        self.assertEqual(payload_directories(assets), {"common", "windows"})
+        self.assertTrue((assets / "common" / "postures" / "laptop.svg").is_file())
         self.assertTrue(
             (assets / "windows" / "icons" / "work.mmoe.panasonic.PostureManager.ico").is_file()
         )
+
+    def test_shared_artwork_has_one_authoritative_copy(self):
+        assets = ROOT / 'data/assets'
+        common = assets / 'common'
+        self.assertEqual(payload_directories(common), {'branding', 'icons', 'postures'})
+        shared = {path.relative_to(common).as_posix(): path.read_bytes()
+                  for path in common.rglob('*') if path.is_file()}
+        self.assertEqual(len(shared), 7)
+        for path in (assets / 'windows').rglob('*'):
+            if path.is_file():
+                with self.subTest(path=path):
+                    self.assertNotIn(path.relative_to(assets / 'windows').as_posix(), shared)
+                    self.assertNotIn(path.read_bytes(), shared.values())
+
+    def test_linux_validation_scripts_have_platform_homes(self):
+        for kind, names in {
+            'integration': ('check_agent.py', 'check_dbus.py', 'session_daemon.py'),
+            'package': ('check_package.py', 'check_aur_bin.py'),
+        }.items():
+            with self.subTest(kind=kind):
+                base = ROOT / 'tests' / kind
+                self.assertEqual(payload_directories(base), {'linux'})
+                self.assertFalse(list(base.glob('*.py')))
+                for name in names:
+                    self.assertTrue((base / 'linux' / name).is_file())
 
     def test_platform_tests_have_explicit_names_and_homes(self):
         tests = ROOT / "tests"
@@ -101,6 +166,9 @@ class RepositoryLayoutTests(unittest.TestCase):
         self.assertIn("backend/linux/tests/relay_test.c", makefile)
         self.assertIn("packaging/linux/scripts/build-deb.sh", makefile)
         self.assertIn("packaging/linux/scripts/build-rpm.sh", makefile)
+        self.assertIn("tests/integration/linux/check_dbus.py", makefile)
+        self.assertIn("tests/integration/linux/check_agent.py", makefile)
+        self.assertIn("tests/package/linux/check_package.py", makefile)
 
         workflow = (
             ROOT / ".github" / "workflows" / "release.yml"
@@ -108,10 +176,13 @@ class RepositoryLayoutTests(unittest.TestCase):
         self.assertIn("packaging/linux/aur/PKGBUILD", workflow)
         self.assertIn("packaging/common/release_version.py", workflow)
         self.assertIn("packaging/windows/build_msi.py", workflow)
+        self.assertIn("tests/package/linux/check_aur_bin.py", workflow)
+        self.assertIn("assets/postures/laptop.svg", workflow)
         windows = (
             ROOT / ".github" / "workflows" / "windows.yml"
         ).read_text(encoding="utf-8")
         self.assertNotIn("panasonic_posture/fluent", windows)
+        self.assertIn("tests.test_repository_layout tests.test_platform_imports", windows)
         self.assertTrue(
             (ROOT / ".github" / "workflows" / "linux.yml").is_file()
         )

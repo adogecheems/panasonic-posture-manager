@@ -13,7 +13,7 @@ import time
 import traceback
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'src'))
 
 from panasonic_posture.controller import Controller
 from panasonic_posture.model import DeviceInfo, SensorInfo, SensorReading, HardwareStatus

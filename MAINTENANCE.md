@@ -204,7 +204,9 @@ wix extension add -g WixToolset.Util.wixext/5.0.2
 
 切换解释器时重新创建依赖目录。`--check-environment` 校验运行时、UI 依赖及许可证，实际构建另行验证 WiX 扩展和 MSI。修改安装器时保留依赖许可证，含非 ASCII 文本的 PowerShell 脚本使用带 BOM 的 UTF-8。
 
-Windows 品牌图片位于 `data/assets/windows/`。修改浅色标题栏标志后，运行 `packaging/windows/prepare-branding.ps1` 生成深色版本并核对两种主题。
+两平台共用的品牌图片、PNG 图标和姿态 SVG 位于 `data/assets/common/{branding,icons,postures}/`，Windows 专属图标和安装器图片位于 `data/assets/windows/`。修改共用浅色品牌图后，运行 `packaging/windows/prepare-branding.ps1` 生成深色版本并核对两种主题。Linux 安装树和 Windows 安装负载均保留图片分类。
+
+Linux D-Bus 集成脚本位于 `tests/integration/linux/`，包验收脚本位于 `tests/package/linux/`；常用 Make 入口保持不变。手工验收脚本位于 `tests/manual/{linux,windows}/`，必须取得目标机验收授权后才运行；路径回归测试只解析路径表达式，不导入或执行这些脚本。
 
 #### Arch 包验证
 

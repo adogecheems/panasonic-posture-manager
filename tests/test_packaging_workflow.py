@@ -23,7 +23,7 @@ PACKAGE_SCRIPTS = (
     "packaging/linux/scripts/publish-aur.sh",
 )
 AUR_BIN_GENERATOR = ROOT / "packaging/linux/scripts/generate-aur-bin.sh"
-AUR_BIN_CHECK = ROOT / "tests/package/check_aur_bin.py"
+AUR_BIN_CHECK = ROOT / "tests/package/linux/check_aur_bin.py"
 
 
 def read(relative: str) -> str:
@@ -70,16 +70,67 @@ class ReleaseVersionTests(unittest.TestCase):
 
 
 class DistributionPackagingTests(unittest.TestCase):
+    def test_staged_linux_assets_match_shared_sources(self):
+        bash = shutil.which('bash')
+        if bash is None and sys.platform == 'win32':
+            candidate = Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Git/bin/bash.exe'
+            bash = str(candidate) if candidate.is_file() else None
+        if bash is None:
+            self.skipTest('Bash is unavailable')
+        # Exercise the real staging script. Only the wheel installer and its
+        # prerequisite build outputs are fixtures; no package is installed.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = Path('packaging/linux/scripts/stage-install-tree.sh')
+            (root / script).parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / script, root / script)
+            shutil.copytree(ROOT / 'data', root / 'data')
+            shutil.copytree(ROOT / 'packaging/linux', root / 'packaging/linux', dirs_exist_ok=True)
+            for name in ('backend/linux/relay', 'locale/zh_CN/LC_MESSAGES/panasonic-posture-manager.mo',
+                         'fixture.whl', 'LICENSE'):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('#!/usr/bin/env bash\nexit 0\n', encoding='utf-8', newline='\n')
+                path.chmod(0o755)
+            installer = root / 'fixture-bin/python3'
+            installer.parent.mkdir()
+            installer.write_text('''#!/usr/bin/env bash
+if [[ $1 == -c ]]; then exit 1; fi
+while [[ $# -gt 0 ]]; do
+  if [[ $1 == --destdir ]]; then shift; destdir=$1; fi
+  shift
+done
+mkdir -p "$destdir/usr/bin"
+for name in panasonic-posture-manager panasonic-posture-manager-probe; do
+  printf '#!/usr/bin/python3\\n' > "$destdir/usr/bin/$name"
+done
+''', encoding='utf-8', newline='\n')
+            installer.chmod(0o755)
+            command = 'PATH="$PWD/fixture-bin:$PATH" bash packaging/linux/scripts/stage-install-tree.sh stage fixture.whl'
+            result = subprocess.run([bash, '-c', command], cwd=root, text=True,
+                                    capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            assets = root / 'stage/usr/share/panasonic-posture-manager/assets'
+            sources = ROOT / 'data/assets/common'
+            expected = {path.relative_to(sources) for path in sources.rglob('*') if path.is_file()}
+            self.assertEqual({path.relative_to(assets) for path in assets.rglob('*') if path.is_file()}, expected)
+            for name in expected:
+                self.assertEqual((assets / name).read_bytes(), (sources / name).read_bytes())
+            self.assertEqual(
+                (root / 'stage/usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png').read_bytes(),
+                (sources / 'icons/work.mmoe.panasonic.PostureManager.png').read_bytes(),
+            )
+
     def test_arch_payload_maps_linux_resources_to_the_runtime_asset_directory(self):
         spec = importlib.util.spec_from_file_location(
-            'check_arch_payload', ROOT / 'tests/package/check_package.py')
+            'check_arch_payload', ROOT / 'tests/package/linux/check_package.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         checker = module.PackageAcceptance(ROOT / 'unused.pkg.tar.zst',
             source_root=ROOT, previous=None, install=False)
         copies = checker.expected_source_copies()
-        self.assertEqual(copies['usr/share/panasonic-posture-manager/assets/laptop.svg'],
-                         ROOT / 'data/assets/linux/laptop.svg')
+        self.assertEqual(copies['usr/share/panasonic-posture-manager/assets/postures/laptop.svg'],
+                         ROOT / 'data/assets/common/postures/laptop.svg')
         self.assertEqual(copies['usr/share/panasonic-posture-manager/profiles/cfqv8.json'],
                          ROOT / 'data/profiles/cfqv8.json')
         self.assertFalse(any('/assets/windows/' in str(path) for path in copies.values()))

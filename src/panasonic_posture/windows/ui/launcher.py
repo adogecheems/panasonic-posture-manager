@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import sys
 
-from ..app.resources import application_name, asset_root, data_root
+from ..app.resources import application_name, asset_path, data_root
 
 
 def local_state_directory() -> Path:
@@ -120,7 +120,7 @@ def run(*, language=None, background=False) -> int:
         app = QApplication([sys.argv[0]])
         _configure_application(app, language)
         app.setWindowIcon(QIcon(str(
-            asset_root() / 'icons/work.mmoe.panasonic.PostureManager.png'
+            asset_path('icons/work.mmoe.panasonic.PostureManager.png')
         )))
         if hardware_ui:
             from ..app.identity import APP_USER_MODEL_ID

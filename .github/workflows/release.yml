@@ -104,7 +104,7 @@ jobs:
               su - builder -c \
                 "cd /tmp/ppm-arch/packaging/linux/aur-bin && makepkg --printsrcinfo > SRCINFO"
               su - builder -c \
-                "cd /tmp/ppm-arch && python3 tests/package/check_aur_bin.py --source $package --binary $bin_package --metadata /tmp/ppm-arch/packaging/linux/aur-bin"
+                "cd /tmp/ppm-arch && python3 tests/package/linux/check_aur_bin.py --source $package --binary $bin_package --metadata /tmp/ppm-arch/packaging/linux/aur-bin"
               install -m644 /tmp/ppm-arch/packaging/linux/aur-bin/SRCINFO \
                 /work/dist/aur-bin/SRCINFO
               install -m644 /tmp/ppm-arch/packaging/linux/aur-bin/PKGBUILD \
@@ -174,7 +174,7 @@ jobs:
               dpkg-deb --extract "$package" "$extract"
               test -x "$extract/usr/lib/panasonic-posture-manager/relay"
               test -f "$extract/usr/lib/python3/dist-packages/panasonic_posture/__init__.py"
-              test -f "$extract/usr/share/panasonic-posture-manager/assets/laptop.svg"
+              test -f "$extract/usr/share/panasonic-posture-manager/assets/postures/laptop.svg"
               grep -q "^ExecStart=/usr/bin/python3 " \
                 "$extract/usr/lib/systemd/system/panasonic-posture-manager.service"
               grep -q "^ExecStart=/usr/bin/python3 " \

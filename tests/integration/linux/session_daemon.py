@@ -1,7 +1,7 @@
 #!/usr/bin/python
 """Launch the system daemon on the *session* bus for integration tests only.
 
-This helper is spawned by ``tests/integration/check_dbus.py`` inside
+This helper is spawned by ``tests/integration/linux/check_dbus.py`` inside
 ``dbus-run-session``.  It starts the real daemon implementation (not a fake)
 with a private settings file and without touching the system bus, so the
 D-Bus contract and state serialization can be tested without root. The agent
@@ -19,7 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_DIR = REPO_ROOT / "src"
 if SRC_DIR.is_dir() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))

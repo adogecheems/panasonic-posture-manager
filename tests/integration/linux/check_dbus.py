@@ -3,7 +3,7 @@
 
 Run by ``make check`` inside ``dbus-run-session``:
 
-    dbus-run-session -- env PYTHONPATH=src python tests/integration/check_dbus.py
+    dbus-run-session -- env PYTHONPATH=src python tests/integration/linux/check_dbus.py
 
 The real daemon runs on the *session* bus (``--session-bus``), so logind/polkit
 authorization and the privileged relay are skipped.  This test covers the
@@ -27,7 +27,7 @@ from pathlib import Path
 
 from gi.repository import Gio, GLib
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_DIR = REPO_ROOT / "src"
 if SRC_DIR.is_dir() and str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))

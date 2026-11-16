@@ -26,7 +26,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Sequence
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_NAME = "panasonic-posture-manager"
 INTERFACE = "work.mmoe.panasonic.Posture"
 META_FILES = {".PKGINFO", ".BUILDINFO", ".MTREE", ".INSTALL"}
@@ -475,7 +475,7 @@ class PackageAcceptance:
         copies: dict[str, Path] = {}
         data_root = self.source_root / "data"
         for source_dir, installed in ((data_root / 'profiles', 'profiles'),
-                                      (data_root / 'assets/linux', 'assets')):
+                                      (data_root / 'assets/common', 'assets')):
             for source in source_dir.rglob('*'):
                 if source.is_file():
                     copies[
@@ -483,7 +483,7 @@ class PackageAcceptance:
                     ] = source
         copies[
             "usr/share/icons/hicolor/512x512/apps/work.mmoe.panasonic.PostureManager.png"
-        ] = data_root / "assets/linux/work.mmoe.panasonic.PostureManager.png"
+        ] = data_root / "assets/common/icons/work.mmoe.panasonic.PostureManager.png"
         copies.update(
             {
                 "usr/lib/modules-load.d/panasonic-posture-manager.conf": self.source_root

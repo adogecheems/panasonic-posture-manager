@@ -135,8 +135,8 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | Linux 原生后端 | `backend/linux/` | C relay、evdev、switch 和 uinput |
 | Windows 原生后端 | `backend/windows/` | 原生输入控制和驱动辅助代码 |
 | 数据与资源 | `data/profiles/` | 两平台共用的机型 profile |
-| Linux 数据与资源 | `data/assets/linux/` | 姿态 SVG 和 Linux 图标 |
-| Windows 数据与资源 | `data/assets/windows/` | `icons/` 应用与托盘图标、`branding/` 标题栏标志、`postures/` 姿态插图、`installer/` MSI 图片；安装负载只包含前三类 |
+| 共用图片资源 | `data/assets/common/` | `branding/` 浅深色品牌图、`icons/` 通用 PNG 图标、`postures/` 姿态 SVG；同一图片只保留一份 |
+| Windows 数据与资源 | `data/assets/windows/` | `icons/` Windows ICO 和方形托盘图标、`installer/` MSI 图片；安装负载合并共用图片和 Windows 图标，不携带安装器图片 |
 | 公共打包 | `packaging/common/` | 跨平台版本更新脚本 |
 | Linux 打包 | `packaging/linux/` | AUR、Deb、RPM、systemd、D-Bus、polkit、desktop、模块加载、AUR CI 和 Linux 发布脚本 |
 | Windows 打包 | `packaging/windows/` | 便携组装、MSI、WiX、硬件服务和 Windows 发布脚本 |
@@ -154,6 +154,12 @@ Windows 域依赖由 `test_platform_imports.py` 强制：`app -> common`、
 Linux 域依赖同样由测试强制：`app -> ui`、`hardware/service -> contracts`
 （service 另可依赖 hardware）、`session -> contracts`、`ui -> contracts/session`；
 不得形成反向或跨层环。
+
+Linux 专用 D-Bus 集成脚本位于 `tests/integration/linux/`，包验收脚本位于
+`tests/package/linux/`；真机脚本继续按 `tests/manual/{linux,windows}/` 分开。
+通用单元测试不得混入仅针对某个平台适配器的断言。
+Linux 安装后的图片保留 `assets/{branding,icons,postures}/` 分类；Windows 安装负载
+采用相同分类并加入原生图标，源码运行通过资源解析器定位共用和平台目录。
 
 ### 6.2 按改动选择目标测试
 
@@ -266,6 +272,7 @@ Windows 目标：
 ```powershell
 $env:PYTHONPATH = "src"
 python -m compileall -q src/panasonic_posture/windows
+python -m unittest tests.test_repository_layout tests.test_platform_imports tests.test_platform_boundaries tests.test_platform_separation -v
 python -m unittest discover -s tests -p "test_windows*.py" -v
 python -m unittest discover -s tests -p "test_session_refresh.py" -v
 python -m unittest discover -s tests -p "test_frontend.py" -v
