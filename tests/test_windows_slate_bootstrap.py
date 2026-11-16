@@ -168,13 +168,59 @@ class SlateBootstrapTests(unittest.TestCase):
                 )
 
         baseline = StartupPhysicalBaseline(
-            slate_reader=lambda: True,
+            slate_reader=lambda: None,
             sensor=Sensor(),
             clock=lambda: now[0],
         )
         for _ in range(8):
             self.assertIsNone(baseline())
             now[0] += .1
+
+    def test_clean_tablet_indicator_establishes_startup_without_a_fold_event(self):
+        for reading in (SensorReading((0., 0., 9.81), 10., 'iio'),
+                        SensorReading(None, None, 'iio'),
+                        SensorReading((0., 0., -9.81), 1., 'iio')):
+            with self.subTest(reading=reading):
+                sensor = Mock()
+                sensor.reading.return_value = reading
+                reader = Mock(return_value=True)
+                baseline = StartupPhysicalBaseline(
+                    slate_reader=reader, sensor=sensor, clock=lambda: 10.,
+                )
+                self.assertIs(baseline(), True)
+                self.assertIs(baseline(), True)
+                reader.assert_called_once_with()
+
+    def test_pending_lease_cannot_establish_tablet_startup_from_geometry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            users = Path(directory)
+            journal = users / 'user/AppData/Local/PanasonicPostureManager/native-display-slate.json'
+            journal.parent.mkdir(parents=True)
+            journal.write_text('{"version":1,"original":true,"desired":true}', encoding='utf-8')
+            device = Mock()
+            now = [0.]
+            sensor = Mock()
+            sensor.reading.side_effect = lambda: SensorReading((0., 0., 9.81), now[0], 'iio')
+            baseline = StartupPhysicalBaseline(
+                slate_reader=lambda: read_bootstrap_slate_state(users_root=users, device_factory=device),
+                sensor=sensor, clock=lambda: now[0],
+            )
+            for _ in range(8):
+                self.assertIsNone(baseline())
+                now[0] += .1
+            device.assert_not_called()
+
+    def test_lost_sensor_does_not_clear_an_observed_startup_conflict(self):
+        for reading in (SensorReading(None, None, 'iio'),
+                        SensorReading((0., 0., 0.), .1, 'iio')):
+            with self.subTest(reading=reading):
+                sensor = Mock()
+                sensor.reading.side_effect = [SensorReading((0., 0., -9.81), .1, 'iio'), reading]
+                baseline = StartupPhysicalBaseline(
+                    slate_reader=lambda: True, sensor=sensor, clock=lambda: .1,
+                )
+                self.assertIsNone(baseline())
+                self.assertIsNone(baseline())
 
     def test_stable_tent_geometry_establishes_a_non_tablet_baseline(self):
         now = [0.]

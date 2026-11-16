@@ -106,7 +106,7 @@ class AsyncSlateReader:
 
 
 class StartupPhysicalBaseline:
-    """Combine a one-time CSM read with stable non-tablet geometry when needed."""
+    """Accept a clean startup indicator, checking conflicting geometry."""
 
     def __init__(
         self,
@@ -122,6 +122,7 @@ class StartupPhysicalBaseline:
         self.minimum_stamp = minimum_stamp
         self._slate_loaded = False
         self._slate: bool | None = None
+        self._geometry_conflict = False
         self._stable_since: float | None = None
         self._last_stamp: float | None = None
 
@@ -153,7 +154,8 @@ class StartupPhysicalBaseline:
             and (self.minimum_stamp is None or reading.stamp > self.minimum_stamp)
         ):
             self._stable_since = self._last_stamp = None
-            return None
+            # A missing sample cannot clear a conflict already observed.
+            return None if self._geometry_conflict else self._slate
         try:
             flat = geometry(reading.vector)[4]
         except ValueError:
@@ -161,7 +163,12 @@ class StartupPhysicalBaseline:
         if flat is None or flat >= STAND_HOLD_MIN_FLAT:
             self._stable_since = None
             self._last_stamp = reading.stamp
-            return None
+            # Only the clean read-only startup query can supply True. A
+            # pending recovery lease supplies None, so geometry alone never
+            # asserts tablet state. Without a conflict, preserve the queried
+            # indicator instead of falling through to the timeout's False.
+            return None if flat is None and self._geometry_conflict else self._slate
+        self._geometry_conflict = True
         if self._last_stamp is None or reading.stamp > self._last_stamp:
             self._last_stamp = reading.stamp
             if self._stable_since is None:

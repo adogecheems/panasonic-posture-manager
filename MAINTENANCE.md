@@ -87,6 +87,8 @@ Get-Content "$env:ProgramData\PanasonicPostureManager\Logs\hardware-service.log"
 | 服务缺失或界面断线 | 在本地控制台以普通用户打开界面。若服务缺失或启动失败，检查服务日志，用 MSI 修复并按提示重启。特权服务只能从受保护的安装目录运行。 |
 | 服务运行但桌面未就绪 | 等待最多五秒。若显示「重试」，查看桌面会话日志，区分显示失败与硬件尚未就绪。 |
 | 唤醒后未识别姿态 | 将设备放稳。QV8/QV9/QV1 可在笔记本或帐篷姿态恢复识别，其他兼容机型需要新的物理折叠事件。 |
+| 以平板姿态启动时未识别平板 | QV8/QV9/QV1 在没有旧 CSM 恢复记录且没有新鲜非平板几何冲突时，使用一次只读指示器查询建立启动平板基线，无需再次折叠。旧记录、读取失败或冲突仍走安全校验；通用机型仍需合法物理事件。此查询不用于睡眠恢复。 |
+| 平板姿态下内置键盘不能唤醒，但电源键可以 | 先短按电源键唤醒，再展开为笔记本姿态比较。应用的 Windows 输入端口不禁用键盘，也不配置键盘唤醒；完全折回时的唤醒能力由设备及 Windows 管理。微软的 [Modern Standby 唤醒来源说明](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/modern-standby-wake-sources)要求不可见的内置键盘不唤醒设备。尚需真机区分单纯熄屏和实际睡眠。 |
 | 锁屏后方向变化 | 已运行的会话会切回自动模式并继续调整方向。服务刚重启时，先解锁以启动桌面会话。 |
 
 检测偏好与校准位于 `%ProgramData%\PanasonicPostureManager\State\settings.json`，由服务写入。外观设置和显示日志位于当前用户的 `%LOCALAPPDATA%\PanasonicPostureManager`。排查恢复失败时保留恢复记录和日志。

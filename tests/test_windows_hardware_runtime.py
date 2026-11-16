@@ -147,6 +147,23 @@ class Supervisor:
 
 
 class HardwareRuntimeTests(unittest.TestCase):
+    def test_clean_tablet_startup_is_admitted_and_survives_the_startup_deadline(self):
+        from panasonic_posture.model import SensorReading
+        from panasonic_posture.windows.hardware.slate_bootstrap import StartupPhysicalBaseline
+        now = [10.]
+        runtime, _, _, _, _, _ = self.make(clock=lambda: now[0])
+        backend = SimpleNamespace(failure=None, start=lambda callback: None, close=lambda: None)
+        sensor = SimpleNamespace(reading=lambda: SensorReading((0., 0., 9.81), now[0], 'iio'))
+        runtime.switch = AcpiPhysicalSwitch(backend, initial_reader=StartupPhysicalBaseline(
+            slate_reader=lambda: True, sensor=sensor, clock=lambda: now[0]))
+        runtime.start()
+        self.addCleanup(runtime.close)
+        for _ in range(60):
+            runtime.poll()
+            self.assertTrue(runtime.admitted())
+            self.assertEqual(runtime.switch.query(), (True, HardwareStatus.OK))
+            now[0] += .1
+
     def test_blocked_bootstrap_does_not_delay_rpc_timeout_or_override_a_new_event(self):
         from panasonic_posture.windows.hardware.slate_bootstrap import AsyncSlateReader, StartupPhysicalBaseline
         entered, release = threading.Event(), threading.Event()
