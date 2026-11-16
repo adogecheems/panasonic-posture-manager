@@ -22,6 +22,7 @@ class ProductionSettingsTests(unittest.TestCase):
                                   support_tier='validated', id='test', vendor='test', product='test')
         with TemporaryDirectory() as directory, patch.dict(os.environ, ProgramData=directory), \
                 patch('panasonic_posture.windows.service.application.WindowsSensor', return_value=sensor), \
+                patch('panasonic_posture.windows.service.application.AcpiPhysicalSwitch'), \
                 patch('panasonic_posture.windows.service.application.IndicatorSwitch',
                       return_value=SimpleNamespace(query=lambda: (False, HardwareStatus.OK))):
             first = create_hardware_runtime(runtime=Mock(), profile=profile, wake=Mock(), clock=lambda: now[0])
