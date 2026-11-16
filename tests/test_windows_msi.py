@@ -21,7 +21,7 @@ from panasonic_posture.windows.app.shortcut_locale import (
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
-    'windows_msi_build', ROOT / 'packaging/windows/build_msi.py'
+    'windows_msi_build', ROOT / 'packaging/windows/scripts/build_msi.py'
 )
 msi = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(msi)
@@ -141,6 +141,15 @@ class MsiPayloadTests(unittest.TestCase):
         )
 
     def test_payload_contains_runtime_and_excludes_manual_service_helpers(self):
+        roles = msi.payload_files(self.runtime, self.dependencies)
+        for name, source in {
+            'configure-slate-device.ps1': 'service/configure-slate-device.ps1',
+            'hardware-service.ps1': 'service/hardware-service.ps1',
+            'repair-start-menu-shortcut.ps1': 'msi/repair-start-menu-shortcut.ps1',
+        }.items():
+            with self.subTest(script=name):
+                self.assertEqual(roles['service'][name], ROOT / 'packaging/windows' / source)
+                self.assertNotIn(name, roles['main'])
         payload = self.root / 'payload'
         manifest = msi.stage_payload(payload, self.runtime, self.dependencies)
         main = manifest['main']
@@ -814,7 +823,7 @@ class MsiPayloadTests(unittest.TestCase):
 
     def test_shortcut_repair_uses_the_programs_root_and_migrates_old_folders(self):
         source = (
-            ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
+            ROOT / 'packaging/windows/msi/repair-start-menu-shortcut.ps1'
         ).read_text(encoding='utf-8')
         self.assertIn(
             '$destinationLink = Join-Path $programs "$displayName.lnk"',

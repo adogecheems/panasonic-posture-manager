@@ -1,6 +1,7 @@
 """Platform layout contracts for native and packaging assets."""
 
 import ast
+import re
 from pathlib import Path
 import unittest
 
@@ -25,6 +26,55 @@ def payload_directories(directory: Path) -> set[str]:
 
 
 class RepositoryLayoutTests(unittest.TestCase):
+    def test_windows_packaging_checkout_relative_paths(self):
+        windows = ROOT / 'packaging/windows'
+        for name in ('scripts/build.py', 'scripts/build_msi.py', 'dev/build-driver.py',
+                     'dev/launch-hardware.py'):
+            with self.subTest(entry=name):
+                path = windows / name
+                tree = ast.parse(path.read_text(encoding='utf-8'))
+                if name.endswith('launch-hardware.py'):
+                    call = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                                and isinstance(node.func, ast.Attribute) and node.func.attr == 'insert')
+                    expression, expected = call.args[1], ROOT / 'src'
+                else:
+                    assignment = next(node for node in tree.body if isinstance(node, ast.Assign)
+                                      and any(isinstance(target, ast.Name) and target.id == 'ROOT'
+                                              for target in node.targets))
+                    expression, expected = assignment.value, ROOT
+                actual = eval(compile(ast.Expression(expression), str(path), 'eval'),
+                              {'Path': Path, '__file__': str(path)})
+                self.assertEqual(Path(actual), expected)
+        entry = windows / 'dev/run.cmd'
+        command = entry.read_text(encoding='utf-8')
+        relative = re.search(r'cd /d "%~dp0([^"\r\n]+)"', command).group(1)
+        self.assertEqual((entry.parent / relative.replace('\\', '/').lstrip('/')).resolve(), ROOT)
+        branding = windows / 'scripts/prepare-branding.ps1'
+        defaults = re.findall(r"Join-Path \$PSScriptRoot '([^']+)'", branding.read_text(encoding='utf-8-sig'))
+        self.assertEqual(len(defaults), 2)
+        for relative in defaults:
+            self.assertTrue((branding.parent / relative.replace('\\', '/')).resolve().is_file())
+        wrapper = windows / 'service/configure-slate-device.cmd'
+        self.assertTrue(wrapper.with_suffix('.ps1').is_file())
+
+    def test_windows_packaging_files_have_role_directories(self):
+        windows = ROOT / 'packaging/windows'
+        roles = {
+            'scripts': {'build.py', 'build_msi.py', 'prepare-branding.ps1'},
+            'dependencies': {'requirements-ui.txt', 'PyQt6-LICENSE'},
+            'service': {'hardware-service.ps1', 'configure-slate-device.ps1',
+                        'configure-slate-device.cmd'},
+            'dev': {'run.cmd', 'launch-hardware.py', 'build-driver.py'},
+            'msi': {'Package.wxs', 'main-path-actions.js', 'repair-start-menu-shortcut.ps1',
+                    'LICENSE.rtf', 'LICENSE.zh-CN.rtf', 'Setup.en-US.wxl', 'Setup.zh-CN.wxl'},
+        }
+        self.assertEqual(payload_directories(windows), set(roles))
+        self.assertFalse([path for path in windows.iterdir() if path.is_file()])
+        for role, names in roles.items():
+            with self.subTest(role=role):
+                self.assertEqual({path.name for path in (windows / role).iterdir()
+                                  if path.is_file()}, names)
+
     def test_script_source_and_sibling_paths_resolve_without_running_scripts(self):
         # Execute only path expressions: importing these scripts can contact
         # real services, alter modes or require administrator privileges.
@@ -96,7 +146,7 @@ class RepositoryLayoutTests(unittest.TestCase):
                 / "panasonic-posture-manager.service"
             ).is_file()
         )
-        self.assertTrue((packaging / "windows" / "build_msi.py").is_file())
+        self.assertTrue((packaging / "windows" / "scripts" / "build_msi.py").is_file())
 
     def test_runtime_assets_are_split_by_platform(self):
         assets = ROOT / "data" / "assets"
@@ -175,7 +225,7 @@ class RepositoryLayoutTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("packaging/linux/aur/PKGBUILD", workflow)
         self.assertIn("packaging/common/release_version.py", workflow)
-        self.assertIn("packaging/windows/build_msi.py", workflow)
+        self.assertIn("packaging/windows/scripts/build_msi.py", workflow)
         self.assertIn("tests/package/linux/check_aur_bin.py", workflow)
         self.assertIn("assets/postures/laptop.svg", workflow)
         windows = (

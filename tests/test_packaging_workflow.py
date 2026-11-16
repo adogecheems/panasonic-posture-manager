@@ -411,7 +411,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("runs-on: windows-latest", windows)
         self.assertIn("dotnet tool install --global wix --version 5.0.2", windows)
         self.assertIn("WixToolset.UI.wixext/5.0.2", windows)
-        self.assertIn("python packaging/windows/build_msi.py", windows)
+        self.assertIn("python packaging/windows/scripts/build_msi.py", windows)
         self.assertIn("--culture all", windows)
         self.assertIn("name: windows-package", windows)
         self.assertIn("dist/windows/*.msi", windows)
@@ -421,7 +421,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
     def test_windows_ci_does_not_treat_portable_zip_as_contract(self) -> None:
         windows = read(".github/workflows/windows.yml")
         self.assertNotIn(
-            "python packaging/windows/build.py --dependencies",
+            "python packaging/windows/scripts/build.py --dependencies",
             windows,
         )
         self.assertNotIn(
@@ -436,7 +436,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             source = read(workflow)
             with self.subTest(workflow=workflow):
                 self.assertIn("cache: pip", source)
-                self.assertIn("cache-dependency-path: packaging/windows/requirements-ui.txt", source)
+                self.assertIn("cache-dependency-path: packaging/windows/dependencies/requirements-ui.txt", source)
                 self.assertIn("pip install --no-compile --target build/windows-dependencies", source)
                 self.assertIn("--culture all", source)
 

@@ -153,7 +153,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             "packaging/linux/aur/PKGBUILD",
             "packaging/linux/aur/.SRCINFO",
             "packaging/linux/aur/panasonic-posture-manager.install",
-            "packaging/windows/build_msi.py",
+            "packaging/windows/scripts/build_msi.py",
             "packaging/windows/msi/Package.wxs",
             "packaging/windows/msi/LICENSE.rtf",
             "packaging/windows/msi/main-path-actions.js",

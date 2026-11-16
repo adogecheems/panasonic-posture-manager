@@ -22,9 +22,9 @@ jobs:
           python-version: '3.13'
           architecture: x64
           cache: pip
-          cache-dependency-path: packaging/windows/requirements-ui.txt
+          cache-dependency-path: packaging/windows/dependencies/requirements-ui.txt
       - name: Install Windows UI dependencies
-        run: python -m pip install -r packaging/windows/requirements-ui.txt
+        run: python -m pip install -r packaging/windows/dependencies/requirements-ui.txt
       - name: Check Windows hardware, frontend and Qt widgets
         run: |
           python -m compileall -q src/panasonic_posture/windows
@@ -42,7 +42,7 @@ jobs:
           python tests/check_i18n.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Stage third-party packages with licenses
-        run: python -m pip install --no-compile --target build/windows-dependencies -r packaging/windows/requirements-ui.txt
+        run: python -m pip install --no-compile --target build/windows-dependencies -r packaging/windows/dependencies/requirements-ui.txt
       - name: Install WiX
         run: |
           dotnet tool install --global wix --version 5.0.2
@@ -58,7 +58,7 @@ jobs:
         run: |
           $version = python packaging/common/release_version.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python packaging/windows/build_msi.py --dependencies build/windows-dependencies --version $version --culture all
+          python packaging/windows/scripts/build_msi.py --dependencies build/windows-dependencies --version $version --culture all
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Verify MSI administrative payload
         run: |

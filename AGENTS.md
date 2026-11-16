@@ -139,7 +139,7 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | Windows 数据与资源 | `data/assets/windows/` | `icons/` Windows ICO 和方形托盘图标、`installer/` MSI 图片；安装负载合并共用图片和 Windows 图标，不携带安装器图片 |
 | 公共打包 | `packaging/common/` | 跨平台版本更新脚本 |
 | Linux 打包 | `packaging/linux/` | AUR、Deb、RPM、systemd、D-Bus、polkit、desktop、模块加载、AUR CI 和 Linux 发布脚本 |
-| Windows 打包 | `packaging/windows/` | 便携组装、MSI、WiX、硬件服务和 Windows 发布脚本 |
+| Windows 打包 | `packaging/windows/` | `scripts/` 负载组装、MSI 构建和品牌图生成；`dependencies/` 依赖清单和配套许可证；`msi/` WiX 资源与快捷方式修复；`service/` 服务与 CSM 安装维护；`dev/` 源码启动与驱动开发工具 |
 
 禁止在共享模块内用 `sys.platform` 选择服务职责；平台组合应由入口和适配器完成。
 新增平台依赖必须同步更新 `test_platform_imports.py` 的双向边界断言。
@@ -148,6 +148,8 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 `contracts/`、`hardware/`、`service/`、`session/` 或 `ui/`。
 `backend/` 根目录只允许 `linux/` 和 `windows/`；`packaging/` 根目录只允许
 `common/`、`linux/` 和 `windows/`。
+`packaging/windows/` 根目录不放文件；按 `scripts/`、`dependencies/`、`msi/`、
+`service/`、`dev/` 归位。此划分只约束源码组织，MSI 安装后的固定脚本路径不随之变化。
 Windows 域依赖由 `test_platform_imports.py` 强制：`app -> common`、
 `hardware -> common/ipc`、`ipc -> common`、`service/session -> common/hardware/ipc`、
 `ui -> app/common/ipc`；不得形成反向或跨层环。
@@ -203,7 +205,7 @@ Linux 安装后的图片保留 `assets/{branding,icons,postures}/` 分类；Wind
 
 运行期只支持英文和简体中文；`zh_CN`、`zh_Hans`、`zh_SG` 使用同一份目录，繁体中文及其他语言回退英文。Windows 正式发布同时提供 `zh-CN` 和 `en-US` MSI，二者同一版本共享 ProductCode，产物文件名必须包含 culture。测试安装的同一 build 跨 culture 共享 ProductCode，不同 build 使用不同 ProductCode；所有安装包始终共享 UpgradeCode，以便通过 major upgrade 替换新负载。
 
-每次安装测试必须使用独立的 `build<N>` 编号，用户可见版本为 `<版本>-build<N>`，例如 `2.5.0-build1`；MSI 内部四段版本为 `2.5.0.1`。测试构建通过 `packaging/windows/build_msi.py --test-build` 自动取下一个编号或显式指定编号，不得伪装成正式版本；正式发布包不得带 `build` 后缀。
+每次安装测试必须使用独立的 `build<N>` 编号，用户可见版本为 `<版本>-build<N>`，例如 `2.5.0-build1`；MSI 内部四段版本为 `2.5.0.1`。测试构建通过 `packaging/windows/scripts/build_msi.py --test-build` 自动取下一个编号或显式指定编号，不得伪装成正式版本；正式发布包不得带 `build` 后缀。
 
 ## 8. 系统不变量
 

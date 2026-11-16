@@ -181,7 +181,7 @@ class LoginStartupTests(unittest.TestCase):
             (root / 'launch.py').unlink()
             with self.assertRaises(StartupError): startup_command(executable=runtime / 'python.exe', root=root)
             (root / 'src/panasonic_posture').mkdir(parents=True)
-            entry = root / 'packaging/windows/launch-hardware.py'
+            entry = root / 'packaging/windows/dev/launch-hardware.py'
             entry.parent.mkdir(parents=True)
             entry.touch()
             self.assertEqual(startup_command(executable=runtime / 'python.exe', root=root),

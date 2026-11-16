@@ -14,7 +14,7 @@ def main(argv=None) -> int:
         from .app import run
     except ModuleNotFoundError as error:
         if error.name and error.name.startswith(('PyQt6', 'qfluentwidgets', 'qframelesswindow')):
-            print('Install the optional UI dependencies from packaging/windows/requirements-ui.txt.', file=sys.stderr)
+            print('Install the optional UI dependencies from packaging/windows/dependencies/requirements-ui.txt.', file=sys.stderr)
             return 2
         raise
     return run(language=options.language, background=options.background)

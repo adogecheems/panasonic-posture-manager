@@ -20,8 +20,8 @@ import sys
 import tempfile
 import zipfile
 
-ROOT = Path(__file__).resolve().parents[2]
-PYQT6_LICENSE = ROOT / 'packaging/windows/PyQt6-LICENSE'
+ROOT = Path(__file__).resolve().parents[3]
+PYQT6_LICENSE = ROOT / 'packaging/windows/dependencies/PyQt6-LICENSE'
 PYWIN32_REQUIRED_FILES = (
     'win32/win32api.pyd',
     'win32/win32gui.pyd',

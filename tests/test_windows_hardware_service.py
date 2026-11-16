@@ -60,7 +60,7 @@ class HardwareServiceRunnerTests(unittest.TestCase):
     def test_manual_service_install_localizes_simplified_chinese_labels(self):
         source = (
             Path(__file__).resolve().parents[1]
-            / 'packaging/windows/hardware-service.ps1'
+            / 'packaging/windows/service/hardware-service.ps1'
         ).read_text(encoding='utf-8')
         self.assertIn(
             "[Globalization.CultureInfo]::CurrentUICulture.Name -match "
@@ -73,7 +73,7 @@ class HardwareServiceRunnerTests(unittest.TestCase):
     def test_manual_installer_checks_the_restructured_service_module(self):
         source = (
             Path(__file__).resolve().parents[1]
-            / 'packaging/windows/hardware-service.ps1'
+            / 'packaging/windows/service/hardware-service.ps1'
         ).read_text(encoding='utf-8')
         self.assertIn(
             r"'app\panasonic_posture\windows\service\daemon.py'",
@@ -84,7 +84,7 @@ class HardwareServiceRunnerTests(unittest.TestCase):
     def test_service_uses_non_delayed_automatic_start(self):
         source = (
             Path(__file__).resolve().parents[1]
-            / 'packaging/windows/hardware-service.ps1'
+            / 'packaging/windows/service/hardware-service.ps1'
         ).read_text(encoding='utf-8')
         self.assertEqual(
             source.count('sc.exe config $ServiceName start= auto obj= LocalSystem'),
@@ -96,7 +96,7 @@ class HardwareServiceRunnerTests(unittest.TestCase):
     def test_recovery_covers_reported_failures_and_checks_each_configuration_step(self):
         source = (
             Path(__file__).resolve().parents[1]
-            / 'packaging/windows/hardware-service.ps1'
+            / 'packaging/windows/service/hardware-service.ps1'
         ).read_text(encoding='utf-8')
         helper = source[source.index('function Configure-ServiceRecovery'):source.index('function Protect-ServiceLogs')]
         configure = source[source.index("if ($Action -eq 'Configure')"):source.index("if ($Action -eq 'Remove')")]
@@ -134,7 +134,7 @@ class HardwareServiceRunnerTests(unittest.TestCase):
     def test_service_start_is_bounded_so_a_failure_cannot_hang_install(self):
         source = (
             Path(__file__).resolve().parents[1]
-            / 'packaging/windows/hardware-service.ps1'
+            / 'packaging/windows/service/hardware-service.ps1'
         ).read_text(encoding='utf-8')
         self.assertIn('function Start-InstalledService', source)
         self.assertIn('$service.Start()', source)

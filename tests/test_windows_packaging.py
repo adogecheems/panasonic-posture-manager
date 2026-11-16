@@ -3,16 +3,28 @@ import codecs
 import importlib.util
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('windows_build', ROOT / 'packaging/windows/build.py')
+spec = importlib.util.spec_from_file_location('windows_build', ROOT / 'packaging/windows/scripts/build.py')
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
 
 class WindowsPackagingTests(unittest.TestCase):
+    def test_build_entries_support_help_outside_the_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ('scripts/build.py', 'scripts/build_msi.py', 'dev/build-driver.py'):
+                with self.subTest(entry=name):
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(ROOT / 'packaging/windows' / name), '--help'],
+                        cwd=directory, text=True, capture_output=True, timeout=10,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('--output', result.stdout)
+
     def test_packaged_powershell_with_non_ascii_is_utf8_bom(self):
         for script in sorted((ROOT / 'packaging/windows').rglob('*.ps1')):
             with self.subTest(script=script.relative_to(ROOT).as_posix()):
@@ -25,7 +37,7 @@ class WindowsPackagingTests(unittest.TestCase):
                     )
 
     def test_ui_requirements_pin_the_supported_qt_lts_runtime(self):
-        requirements = (ROOT / 'packaging/windows/requirements-ui.txt').read_text(
+        requirements = (ROOT / 'packaging/windows/dependencies/requirements-ui.txt').read_text(
             encoding='utf-8'
         )
         for requirement in (
@@ -106,7 +118,7 @@ class WindowsPackagingTests(unittest.TestCase):
             self.assertFalse(any(name.startswith('data/assets/installer/') for name in files))
             self.assertEqual(
                 files['runtime/Lib/site-packages/PyQt6-6.8.1.dist-info/LICENSE'],
-                ROOT / 'packaging/windows/PyQt6-LICENSE',
+                ROOT / 'packaging/windows/dependencies/PyQt6-LICENSE',
             )
             self.assertFalse(any('host_secret' in name or 'pip.exe' in name for name in files))
             self.assertFalse(any('/qml/' in name for name in files))

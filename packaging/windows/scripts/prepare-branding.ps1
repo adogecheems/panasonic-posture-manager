@@ -1,6 +1,6 @@
 param(
-    [string]$Source = (Join-Path $PSScriptRoot '..\..\data\assets\common\branding\lets-note-window-icon.png'),
-    [string]$Destination = (Join-Path $PSScriptRoot '..\..\data\assets\common\branding\lets-note-window-icon-dark.png')
+    [string]$Source = (Join-Path $PSScriptRoot '..\..\..\data\assets\common\branding\lets-note-window-icon.png'),
+    [string]$Destination = (Join-Path $PSScriptRoot '..\..\..\data\assets\common\branding\lets-note-window-icon-dark.png')
 )
 
 $ErrorActionPreference = 'Stop'

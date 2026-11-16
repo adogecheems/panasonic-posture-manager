@@ -140,8 +140,8 @@ Windows 使用 64 位 Python 3.11+。在本地控制台用普通用户启动界�
 
 ```bat
 py -3 -m venv .venv-windows
-.venv-windows\Scripts\python -m pip install -r packaging\windows\requirements-ui.txt
-packaging\windows\run.cmd --language zh_CN
+.venv-windows\Scripts\python -m pip install -r packaging\windows\dependencies\requirements-ui.txt
+packaging\windows\dev\run.cmd --language zh_CN
 ```
 
 界面支持 `--language en|zh_CN`，Windows 另支持 `--background`。
@@ -172,13 +172,25 @@ Windows 使用 Python 3.13 x64，运行 Windows、共享界面、会话刷新和
 
 Windows 首次构建前先按下方“Windows 构建依赖”准备 Python 依赖和 WiX。
 
+Windows 打包文件按职责放在 `packaging/windows/` 的以下子目录：
+
+| 目录 | 职责 |
+| --- | --- |
+| `scripts/` | 应用负载组装、MSI 构建和品牌图生成 |
+| `dependencies/` | UI 依赖清单和随包分发的第三方许可证 |
+| `msi/` | WiX 定义、安装器语言与许可资源、快捷方式修复脚本 |
+| `service/` | 硬件服务和 CSM 配置的安装维护脚本 |
+| `dev/` | 源码启动入口和不随正式包发布的驱动开发工具 |
+
+这些是仓库路径；构建器仍将安装所需脚本放到 MSI 约定的固定位置，开发工具不进入正式负载。
+
 | 平台 | 命令 | 输出 |
 | --- | --- | --- |
 | Arch | `(cd packaging/linux/aur && makepkg --cleanbuild)` | 当前目录 |
 | Debian / Ubuntu | `make package-deb` | `dist/packages/` |
 | Fedora | `make package-rpm` | `dist/packages/` |
-| Windows MSI（正式） | `python packaging\windows\build_msi.py --dependencies build\windows-dependencies --culture all` | `dist/windows/` 下两个带 culture 的文件名 |
-| Windows MSI（安装测试） | 运行 `python packaging\windows\build_msi.py --dependencies build\windows-dependencies --test-build` | `dist/windows/` 下带 `build<N>` 的文件名 |
+| Windows MSI（正式） | `python packaging\windows\scripts\build_msi.py --dependencies build\windows-dependencies --culture all` | `dist/windows/` 下两个带 culture 的文件名 |
+| Windows MSI（安装测试） | 运行 `python packaging\windows\scripts\build_msi.py --dependencies build\windows-dependencies --test-build` | `dist/windows/` 下带 `build<N>` 的文件名 |
 
 Windows 正式发布提供简体中文和英文 MSI。每次安装测试使用新的 `--test-build` 编号（也可指定，如 `--test-build 7`）。自动编号依据同版本已有构建，请保留输出目录。测试版高于相同基础版本的正式包，安装该正式包前需先卸载测试版。
 
@@ -193,18 +205,18 @@ MSI 完整交互界面在检测旧版本前显示 WiX 的非模态准备页，�
 ```powershell
 # python 应为可运行的 x64 CPython；也可替换为其绝对路径。
 python -m venv .venv-windows
-& .\.venv-windows\Scripts\python.exe -m pip install -r packaging\windows\requirements-ui.txt
-& .\.venv-windows\Scripts\python.exe -m pip install --no-compile --target build\windows-dependencies -r packaging\windows\requirements-ui.txt
+& .\.venv-windows\Scripts\python.exe -m pip install -r packaging\windows\dependencies\requirements-ui.txt
+& .\.venv-windows\Scripts\python.exe -m pip install --no-compile --target build\windows-dependencies -r packaging\windows\dependencies\requirements-ui.txt
 dotnet tool install --global wix --version 5.0.2
 wix extension add -g WixToolset.UI.wixext/5.0.2
 wix extension add -g WixToolset.Util.wixext/5.0.2
-& .\.venv-windows\Scripts\python.exe packaging\windows\build_msi.py --dependencies build\windows-dependencies --check-environment
-& .\.venv-windows\Scripts\python.exe packaging\windows\build_msi.py --dependencies build\windows-dependencies --culture all
+& .\.venv-windows\Scripts\python.exe packaging\windows\scripts\build_msi.py --dependencies build\windows-dependencies --check-environment
+& .\.venv-windows\Scripts\python.exe packaging\windows\scripts\build_msi.py --dependencies build\windows-dependencies --culture all
 ```
 
 切换解释器时重新创建依赖目录。`--check-environment` 校验运行时、UI 依赖及许可证，实际构建另行验证 WiX 扩展和 MSI。修改安装器时保留依赖许可证，含非 ASCII 文本的 PowerShell 脚本使用带 BOM 的 UTF-8。
 
-两平台共用的品牌图片、PNG 图标和姿态 SVG 位于 `data/assets/common/{branding,icons,postures}/`，Windows 专属图标和安装器图片位于 `data/assets/windows/`。修改共用浅色品牌图后，运行 `packaging/windows/prepare-branding.ps1` 生成深色版本并核对两种主题。Linux 安装树和 Windows 安装负载均保留图片分类。
+两平台共用的品牌图片、PNG 图标和姿态 SVG 位于 `data/assets/common/{branding,icons,postures}/`，Windows 专属图标和安装器图片位于 `data/assets/windows/`。修改共用浅色品牌图后，运行 `packaging/windows/scripts/prepare-branding.ps1` 生成深色版本并核对两种主题。Linux 安装树和 Windows 安装负载均保留图片分类。
 
 Linux D-Bus 集成脚本位于 `tests/integration/linux/`，包验收脚本位于 `tests/package/linux/`；常用 Make 入口保持不变。手工验收脚本位于 `tests/manual/{linux,windows}/`，必须取得目标机验收授权后才运行；路径回归测试只解析路径表达式，不导入或执行这些脚本。
 

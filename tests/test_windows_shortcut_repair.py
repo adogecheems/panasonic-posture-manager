@@ -13,12 +13,12 @@ import unittest
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-REPAIR_SCRIPT = ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
+REPAIR_SCRIPT = ROOT / 'packaging/windows/msi/repair-start-menu-shortcut.ps1'
 APP_IDENTITY_SOURCE = ROOT / 'src/panasonic_posture/windows/app/identity.py'
 APP_USER_MODEL_ID = 'work.mmoe.panasonic.PostureManager'
 MSI_BUILDER_SPEC = importlib.util.spec_from_file_location(
     'windows_shortcut_msi_build',
-    ROOT / 'packaging/windows/build_msi.py',
+    ROOT / 'packaging/windows/scripts/build_msi.py',
 )
 MSI_BUILDER = importlib.util.module_from_spec(MSI_BUILDER_SPEC)
 MSI_BUILDER_SPEC.loader.exec_module(MSI_BUILDER)

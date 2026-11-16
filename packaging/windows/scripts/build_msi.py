@@ -23,7 +23,7 @@ import tomllib
 import uuid
 import xml.etree.ElementTree as ET
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_WXS = ROOT / 'packaging/windows/msi/Package.wxs'
 WIX_NAMESPACE = 'http://wixtoolset.org/schemas/v4/wxs'
 COMPONENT_NAMESPACE = uuid.UUID('2D4F313E-76E4-4E38-A886-B14075283C26')
@@ -75,7 +75,7 @@ FIXED_FILE_IDS = {
 
 def _bundle_builder():
     spec = importlib.util.spec_from_file_location(
-        'windows_bundle_build', ROOT / 'packaging/windows/build.py'
+        'windows_bundle_build', ROOT / 'packaging/windows/scripts/build.py'
     )
     if spec is None or spec.loader is None:
         raise RuntimeError('cannot load the Windows bundle builder')
@@ -213,13 +213,13 @@ def payload_files(
     """Split the selectable UI from the fixed, protected service runtime."""
     application = _bundle_builder().application_files(runtime, dependencies)
     application['configure-slate-device.ps1'] = (
-        ROOT / 'packaging/windows/configure-slate-device.ps1'
+        ROOT / 'packaging/windows/service/configure-slate-device.ps1'
     )
     application['hardware-service.ps1'] = (
-        ROOT / 'packaging/windows/hardware-service.ps1'
+        ROOT / 'packaging/windows/service/hardware-service.ps1'
     )
     application['repair-start-menu-shortcut.ps1'] = (
-        ROOT / 'packaging/windows/repair-start-menu-shortcut.ps1'
+        ROOT / 'packaging/windows/msi/repair-start-menu-shortcut.ps1'
     )
     selected = {
         name: value for name, value in application.items()
