@@ -18,11 +18,11 @@ Get-FileHash -Algorithm SHA256 -Path .\*.msi | Format-List Path, Hash
 
 | 平台 | 安装命令 |
 | --- | --- |
-| Arch Linux | `sudo pacman -U ./panasonic-posture-manager-3.0.2-1-x86_64.pkg.tar.zst` |
-| Ubuntu / Debian | `sudo apt install ./panasonic-posture-manager_3.0.2-1_amd64.deb` |
-| Fedora | `sudo dnf install ./panasonic-posture-manager-3.0.2-1.x86_64.rpm` |
-| Windows（简体中文） | 双击 `panasonic-posture-manager-3.0.2-zh-CN-windows-x64.msi`，按提示重启 |
-| Windows（英文） | 双击 `panasonic-posture-manager-3.0.2-en-US-windows-x64.msi`，按提示重启 |
+| Arch Linux | `sudo pacman -U ./panasonic-posture-manager-3.1.0-1-x86_64.pkg.tar.zst` |
+| Ubuntu / Debian | `sudo apt install ./panasonic-posture-manager_3.1.0-1_amd64.deb` |
+| Fedora | `sudo dnf install ./panasonic-posture-manager-3.1.0-1.x86_64.rpm` |
+| Windows（简体中文） | 双击 `panasonic-posture-manager-3.1.0-zh-CN-windows-x64.msi`，按提示重启 |
+| Windows（英文） | 双击 `panasonic-posture-manager-3.1.0-en-US-windows-x64.msi`，按提示重启 |
 
 文件名以实际发布版本为准。Ubuntu/Debian 需要 GTK 4.12+ 和 libadwaita 1.4+，依赖由包管理器安装。
 
@@ -236,7 +236,7 @@ make check-package PACKAGE=/path/to/package.pkg.tar.zst PACKAGE_NO_INSTALL=1
 
 ## 发布
 
-1. 同步版本号、中英文 README、AUR 配方和翻译文件头。运行 `python packaging/common/release_version.py --tag v3.0.2`，标签换成本次版本。
+1. 同步版本号、中英文 README、AUR 配方和翻译文件头。运行 `python packaging/common/release_version.py --tag v3.1.0`，标签换成本次版本。
 2. 复制[简短双语模板](docs/releases/TEMPLATE.md)为 `docs/releases/v<版本>.md`，按下方规则整理自上个发布版本以来的变化，再翻译成英文并核对事实一致。
 3. 审核双语正文，通过完整检查并取得发布授权后推送版本标签。工作流用该文件创建 Release，附上 Arch、Deb、RPM、两种语言的 Windows MSI 和 `SHA256SUMS`，随后更新两个 AUR 包。
 4. 重建已有版本时，从所选源码提交手动运行发布工作流并指定原标签。同名附件会被替换，已有发布正文会保留。若重建影响用户，须同步更新线上中英文说明并注明实际构建提交。
