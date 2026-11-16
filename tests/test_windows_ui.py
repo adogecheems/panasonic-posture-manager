@@ -542,7 +542,8 @@ from PyQt6 import sip
 resident = ResidentTray(window, tray_factory=FakeTray)
 assert resident.enabled and resident.tray.visible
 assert not resident.tray.icon.pixmap(16, 16).isNull()
-assert resident.tray.icon.cacheKey() != window.windowIcon().cacheKey()
+for size in (16, 24, 32, 48):
+    assert resident.tray.icon.pixmap(size, size).toImage() == window.windowIcon().pixmap(size, size).toImage()
 assert resident.tray.icon.cacheKey() == resident.icon.cacheKey()
 assert not app.quitOnLastWindowClosed()
 assert not any('system tray' in label.text().lower() for label in window.findChildren(QLabel))
@@ -601,13 +602,8 @@ assert isinstance(resident.tray.messages[0][2], QIcon)
 assert resident.tray.messages[0][2].cacheKey() == resident.icon.cacheKey()
 notice = resident.tray.messages[0][2].pixmap(256, 256).toImage()
 original = window.windowIcon().pixmap(256, 256).toImage()
-assert notice.pixelColor(0, 0).getRgb() == (255, 255, 255, 255)
-assert notice.pixelColor(0, 0).alpha() == 255
-assert min(notice.pixelColor(x, y).alpha() for y in range(0, notice.height(), 16)
-           for x in range(0, notice.width(), 16)) == 255
-center = notice.width() // 2
-notice_center, original_center = notice.pixelColor(center, center), original.pixelColor(center, center)
-assert max(abs(a - b) for a, b in zip(notice_center.getRgb()[:3], original_center.getRgb()[:3])) <= 4
+assert notice == original
+assert notice.pixelColor(0, 0).alpha() == 0
 epoch = client.state['pending_notification']
 client.state['pending_notification'] = None
 client.refresh()
