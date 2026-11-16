@@ -49,6 +49,6 @@ In tent and stand modes, Linux disables the built-in keyboard and touchpad. Wind
 | The screen doesn't rotate | Click **Retry**. If an external display is connected, check display mirroring and arrangement. |
 | The keyboard or touchpad stays disabled | Return the device to laptop posture and choose **Automatic** under **Settings → Mode selection**. |
 | The device doesn't enter tablet posture when fully folded | Unfold the screen, then fold it all the way back again. |
-| The built-in keyboard cannot wake Windows after the screen turns off in tablet posture | Briefly press the power button to wake it. The built-in keyboard may not wake the device when fully folded back; unfold it into laptop posture to use the keyboard. |
+| The built-in keyboard cannot wake Windows after the screen turns off in tablet posture | Briefly press the power button to wake it. The built-in keyboard may not wake the device when fully folded back. If it still cannot wake the device after unfolding into laptop posture while the screen is off, further investigation is needed; note whether typing works after waking with the power button. |
 
 [Installation, removal and maintenance guide (Chinese)](MAINTENANCE.md) · [License (AGPL-3.0-or-later)](LICENSE)

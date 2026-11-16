@@ -164,6 +164,42 @@ class NativeScreenTests(unittest.TestCase):
         self.assertIsNone(self.backend.snapshot()['pending_notification'])
         self.assertTrue(self.context.control_available())
 
+    def test_screen_off_tablet_exit_publishes_laptop_without_waiting_for_screen_on(self):
+        from panasonic_posture.windows.hardware.convertible_slate import SlateNotifier
+        from panasonic_posture.windows.hardware.slate_journal import SlateJournal
+
+        class Device:
+            state = False
+            def read(self): return self.state
+            def set(self, state):
+                changed = self.state != state
+                self.state = state
+                return changed
+            def close(self): pass
+
+        self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'laptop')
+        device = Device()
+        journal = SlateJournal(Path(self.directory.name) / 'slate.json')
+        notifier = SlateNotifier(device, journal,
+            hardware_query=lambda: (self.hardware, HardwareStatus.OK))
+        self.backend.screen.qualified.slate = notifier
+        try:
+            self.hardware = True
+            self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'hardware')
+            self.assertTrue(device.state)
+            self.context.screen_off = True
+            self.advance()
+            self.hardware = False
+            self.until(lambda: (self.backend.snapshot()['applied'] or {}).get('mode') == 'laptop')
+            self.assertTrue(self.context.screen_off)
+            self.assertTrue(self.context.control_available())
+            self.assertFalse(device.state)
+            self.assertIsNone(journal.load())
+            self.assertFalse(self.backend.snapshot()['applied']['disable_internal_input'])
+        finally:
+            self.backend.close()
+            notifier.close()
+
 
 class HardwareReleasePreparationTests(unittest.TestCase):
     def test_coordinator_never_prepares_or_reports_a_prelocked_target(self):

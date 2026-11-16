@@ -88,10 +88,22 @@ Get-Content "$env:ProgramData\PanasonicPostureManager\Logs\hardware-service.log"
 | 服务运行但桌面未就绪 | 等待最多五秒。若显示「重试」，查看桌面会话日志，区分显示失败与硬件尚未就绪。 |
 | 唤醒后未识别姿态 | 将设备放稳。QV8/QV9/QV1 可在笔记本或帐篷姿态恢复识别，其他兼容机型需要新的物理折叠事件。 |
 | 以平板姿态启动时未识别平板 | QV8/QV9/QV1 在没有旧 CSM 恢复记录且没有新鲜非平板几何冲突时，使用一次只读指示器查询建立启动平板基线，无需再次折叠。旧记录、读取失败或冲突仍走安全校验；通用机型仍需合法物理事件。此查询不用于睡眠恢复。 |
-| 平板姿态下内置键盘不能唤醒，但电源键可以 | 先短按电源键唤醒，再展开为笔记本姿态比较。应用的 Windows 输入端口不禁用键盘，也不配置键盘唤醒；完全折回时的唤醒能力由设备及 Windows 管理。微软的 [Modern Standby 唤醒来源说明](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/modern-standby-wake-sources)要求不可见的内置键盘不唤醒设备。尚需真机区分单纯熄屏和实际睡眠。 |
+| 平板姿态下内置键盘不能唤醒，但电源键可以 | 短按电源键唤醒并确认能否正常打字。若熄屏期间已展开为笔记本仍不能用键盘唤醒，不应仅归因于折叠时的输入限制。应用的 Windows 输入端口不禁用键盘，也不配置键盘唤醒；已知熄屏且会话仍有资格时，姿态和 CSM 交接继续执行。实际睡眠时应另查系统唤醒路径。微软的 [Modern Standby 唤醒来源说明](https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/modern-standby-wake-sources)区分处理器唤醒与屏幕点亮。 |
 | 锁屏后方向变化 | 已运行的会话会切回自动模式并继续调整方向。服务刚重启时，先解锁以启动桌面会话。 |
 
 检测偏好与校准位于 `%ProgramData%\PanasonicPostureManager\State\settings.json`，由服务写入。外观设置和显示日志位于当前用户的 `%LOCALAPPDATA%\PanasonicPostureManager`。排查恢复失败时保留恢复记录和日志。
+
+排查「熄屏期间展开后键盘不能唤醒」时，先记录复现时间，再只读检查电源能力和系统事件：
+
+```powershell
+powercfg /a
+powercfg /devicequery wake_armed
+powercfg /devicequery wake_programmable
+Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Kernel-Power'; Id=506,507} -MaxEvents 16 |
+    Select-Object TimeCreated, Id, Message
+```
+
+将进入/退出 Modern Standby 的时间及唤醒原因与服务日志中的物理状态、目标变化和会话日志对齐。退出待机记录本身不证明屏幕已点亮，设备列表也不足以单独归因。区分单纯熄屏、实际待机、键盘恢复打字和键盘触发唤醒；需要真机比较应用运行与正常退出后的同一折叠顺序，自动化 fixture 不代替此项验收。
 
 ## 卸载
 
