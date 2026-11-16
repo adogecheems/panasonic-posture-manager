@@ -51,28 +51,27 @@
 
 ### 硬件服务
 
-- `HardwareRuntime` 以 LocalSystem 运行。启动顺序为 ETW 物理源、注入查询的共用 Engine、WinRT 传感器、RPC 端点和可信会话监管器。
-- Windows 机型 profile 只选择已知设备与朝向语义，不授予硬件访问；未命中 profile 时回退到 `generic/compatible`，由实际传感器、ETW、CSM 和显示端口决定可用能力。
-- 明确 QV8/QV9/QV1 profile 只允许一次只读平板指示器/恢复记录基线。存在旧恢复记录或结果冲突时，用稳定笔记本/帐篷几何校验；五秒内仍不明确时使用非平板安全基线，不等待首个 ETW 事件。通用能力探测机型必须先收到一次合法 ETW Event 115 才开放物理准入，不得用超时伪造成健康状态。
-- 运行期物理变化来自 Intel HID Event Filter Event 115：`0xCC` 平板、`0xCD` 笔记本；`0xCA/0xCB` 不改变状态。挂起失效后的已验证机型可按下述恢复规则重建非平板基线；不得借此覆盖已收到的合法事件。
-- `ACPI\INT33D3` 按 ACPI 硬件 ID 唯一发现，不绑定固定实例后缀，只用于向 Windows 发布软件帐篷/支架姿态，不能反推物理状态。所有写入、恢复和恢复记录清理必须先取得健康 ETW 门禁。
-- 相同目标的 CSM 租约应直接复用；不同目标或真正释放时才恢复 `pending.original`。
-- 平板指示器无法打开时可降级为仅显示模式；不得创建写入器、伪造 CSM 成功或触碰其恢复记录。
+- `HardwareRuntime` 以 LocalSystem 运行。启动顺序为物理源、注入查询的共用 Engine、WinRT 传感器、RPC 端点和可信会话监管器。
+- Windows 机型 profile 只选择已知设备与朝向语义，不授予硬件访问；未命中 profile 时回退到 `generic/compatible`，由实际传感器、ETW 和显示端口决定可用能力。
+- QV8/QV9/QV1 按硬件 ID 唯一发现 `ACPI\INT33D3`。服务以只读句柄持续采样，原始字节 0 表示平板、1 表示笔记本。启动、运行和唤醒均使用新鲜样本。样本过期、设备读取失败或 ETW 消费器故障时关闭准入。
+- 发现旧版本的用户 CSM 恢复记录或无法检查记录时，该次服务运行使用独立的 Intel HID Event Filter Event 115。通用机型同样需要合法物理事件（`0xCC` 平板、`0xCD` 笔记本），`0xCA/0xCB` 不改变状态。
+- LocalSystem 服务从当前目标、实测物理状态和已鉴权的会话租约决定是否写入固定的 HKLM PriorityControl 下的 `ConvertibleSlateMode` DWORD。帐篷/支架为 0，软件笔记本为 1。只通过读回 DWORD 核对软件输出。
+- 服务在受保护的 State 目录保存 `registry-slate.json`。首次改值前记录原值；相同目标只核对输出。释放时恢复原值，已发生真实折叠时优先交还平板值。物理状态未知时保留恢复记录，等待新的可信样本。注册表操作失败时状态不能确认已应用。
 
 ### 调用方身份与锁屏
 
 - 用户界面、会话进程和普通入口必须在访问用户状态前拒绝提权、远程会话和非本地控制台。
 - 命名管道只接受通过令牌、登录实例、进程创建时间、本地控制台和会话状态校验的调用方。客户端不得创建服务端实例，也不能请求任意设备写入或命令。
-- 单纯锁屏时，仅服务预登记的精确会话进程可继续 `get_state` 和 `session_update`、显示旋转、补锁及 CSM 姿态控制；仍须校验令牌、登录实例、进程创建时间和活动本地控制台，未知会话状态拒绝访问。普通界面及其他 RPC 操作仍要求解锁。锁屏由服务端观察后切回自动模式，但不撤销健康租约或恢复原方向；只读恢复查询自身不会续租。无人值守与显示资格独立，锁屏和熄屏可以提交经过验证的显示回执，且不弹出姿态提示。
+- 单纯锁屏时，仅服务预登记的精确会话进程可继续 `get_state` 和 `session_update`、显示旋转和补锁；仍须校验令牌、登录实例、进程创建时间和活动本地控制台，未知会话状态拒绝访问。普通界面及其他 RPC 操作仍要求解锁。锁屏由服务端观察后切回自动模式，但不撤销健康租约或恢复原方向；只读恢复查询自身不会续租。无人值守与显示资格独立，锁屏和熄屏可以提交经过验证的显示回执，且不弹出姿态提示。
 - 只有可信主机预登记的精确会话进程可提交显示回执。界面不能自行取得回执资格。
-- 会话资格只在快照瞬时过旧时失效（会话仍属于活动本地控制台，锁屏状态已知）按瞬时故障处理：宽限期内不撤销就绪、不恢复显示、不释放 CSM 租约，也不向服务上报资格丢失。挂起、控制台切换或观察器故障仍立即撤销。
-- 会话进程使用非提权交互令牌，先证明回执资格，再创建显示和 CSM 后端。用户切换或资格失效时撤销租约并恢复显示；单纯锁屏或熄屏不等同于资格丢失。新会话进程仍只在解锁的本地控制台启动。
+- 会话资格只在快照瞬时过旧时失效（会话仍属于活动本地控制台，锁屏状态已知）按瞬时故障处理：宽限期内不撤销就绪、不恢复显示、不释放服务持有的姿态输出，也不向服务上报资格丢失。挂起、控制台切换或观察器故障仍立即撤销。
+- 会话进程使用非提权交互令牌，先证明回执资格，再创建显示后端。用户切换或资格失效时撤销租约并恢复显示；单纯锁屏或熄屏不等同于资格丢失。新会话进程仍只在解锁的本地控制台启动。
 
 ### 管道、保活与界面刷新
 
 - 服务端和客户端使用 overlapped I/O。鉴权和写回复不得阻塞唯一 owner loop。
 - 命名管道重置只轮询取消完成，不等待驱动；取消未完成时保留句柄、缓冲区和 OVERLAPPED，禁止复用实例。关闭时由后台清理线程保留这些资源直到原生 I/O 完成。
-- 会话启动的授权证明、显示恢复、后续显示写入和最终恢复/CSM 释放必须复用同一显示工作线程及其 RPC 通道；lease worker 使用另一通道，不得因主线程构造或恢复显示而耗尽有界通道。
+- 会话启动的授权证明、显示恢复、后续显示写入和最终显示恢复必须复用同一显示工作线程及其 RPC 通道；lease worker 使用另一通道，不得因主线程构造或恢复显示而耗尽有界通道。
 - 会话的 lease 通道空闲时每约 3 秒发送一次轻量 `get_state` 保活，避免服务端空闲超时重置管道实例后在姿态切换瞬间产生瞬时断连。
 - 硬件服务在已发布状态签名（代次、目标、`applied`、提示和物理状态等）变化时置位一个仅信号用途的全局命名事件（`windows/ipc/wake.py`，无数据、无权限放大）；界面观察器由此唤醒并立即经鉴权 RPC 取回经过校验的快照。事件不可用或丢失时，界面按 0.1 秒空闲刷新兜底，绝不以事件本身承载或确认状态。
 
@@ -80,16 +79,14 @@
 
 - 睡眠和休眠是姿态事务边界。服务 owner loop 发现时钟跳变、或授权/物理准入首次失效时，必须清除旧代次、租约和手动模式；恢复后自动模式只接受新的稳定姿态，稳定前不得发布临时笔记本目标。
 - ETW 健康状态失效时立即撤销物理准入和当前会话租约，保留可恢复的显示日志。
-- ETW 消费线程在未请求关闭时退出，即使返回成功码也视为物理源失效。启动恢复记录与指示器查询只允许一个后台只读任务；恢复记录最多读取 4096 字节，迟到结果不得覆盖已收到的 ETW 事件或延长五秒启动期限。
-- 挂起及首次恢复通知立即作废物理开关缓存。新的合法 ETW Event 115 优先；明确 QV8/QV9/QV1 profile 还可由 owner loop 使用恢复轮询之后的新鲜传感器样本，连续稳定约 0.5 秒的笔记本/帐篷几何重建非平板基线。恢复不得读取 CSM 输出、重用旧样本或使用启动阶段的超时默认值；几何不明确、ETW 不健康和通用机型仍等待新物理事件。服务的电源回调只作废受锁保护的缓存并标记 owner loop 工作，不调用 Engine 或显示。时钟跳变仍作漏通知兜底；正常通知路径不得丢弃恢复通知后、首次恢复轮询前已收到的新物理事件。同一轮唤醒的自动恢复和用户恢复通知必须幂等，下一次挂起才重新开放恢复处理。
+- ETW 消费线程在未请求关闭时退出，即使返回成功码也视为物理源失效。已验证机型的指示器由单个后台线程读取，每约 0.1 秒采一次样。样本满一秒即失效；挂起或首次恢复作废缓存，跨越该边界的迟到读取直接丢弃。
+- 服务电源回调只作废缓存并标记 owner loop 工作。时钟跳变仍作漏通知兜底。通用机型和使用旧记录兼容路径的服务在恢复后等待新的合法物理事件。同一轮唤醒的重复通知必须幂等。
 
 ### 显示事务与姿态交接
 
 - Windows 显示只拥有内屏方向和全局自动旋转锁。没有活动内屏且有活动外屏时，可只读保留外屏拓扑；存在未恢复的内屏日志时，不得借此忽略旧所有权。
 - 平板退出前不再预锁方向。真机日志证实 Windows 在释放 convertible-slate 指示器时会覆盖旋转锁并把面板转到桌面原生方向，预锁的方向无法存活，且预锁失败路径的回滚会额外产生一次可见转动。退出后只读等待最多两秒，等待期间每次补锁以阻止 Windows 覆盖锁，但不改方向；等待不因硬件状态短暂不可读而提前结束；目标稳定后一次写入方向。等待不得续期，也不能确认 `applied`。
-- 物理平板接管显示时，不得把旧软件目标或启动值重新发布到 CSM。
-- 已成功发布的 CSM 目标在显示回滚、平台改写或有限重试期间保留租约；只有会话资格丢失、CSM 通知自身失败、目标真正释放或进程退出时才恢复启动值。
-- 软件帐篷和支架先发布 CSM 姿态并等待约 0.5 秒让 Windows 的响应落地，再一次性写入方向和旋转锁并核对；真机日志证明先写方向会导致每次切换两次可见转动。软件笔记本仍先完成方向和旋转锁事务，再发布 CSM。平台此后重新开启自动旋转时，由既有显示刷新线程按当前服务代次持续补锁；只有方向也被平台改写时才允许一次有界重发。
+- 服务在每次写入前核对当前物理准入和会话归属。真实折叠优先于软件目标。软件帐篷和支架由服务先发布到注册表，会话等待约 0.5 秒再应用方向和旋转锁。软件笔记本先完成显示事务，由服务在匹配的显示回执后发布。显示刷新线程继续核对方向并补锁。
 
 ### 托盘、退出与登录启动
 
@@ -129,8 +126,8 @@ Python 路径以 `src/panasonic_posture/` 为起点，测试对应 `tests/test_*
 | Windows 应用层 | `windows/app/` | 启动、应用身份、本地化、资源和更新检查；不得依赖 Linux 或 Windows 服务入口 |
 | Windows 硬件 | `windows/hardware/` | WinRT 传感器、ETW、CSM、输入、朝向、机型身份和设备探测 |
 | Windows IPC | `windows/ipc/` | 命名管道、帧、请求/状态契约、RPC 和 UI 客户端；不得导入特权服务入口 |
-| Windows 服务 | `windows/service/` | LocalSystem 组合根、SCM 入口、鉴权、可信运行时和会话监管 |
-| Windows 会话 | `windows/session/` | 非提权会话进程、显示、资格校验和 CSM 通知；不得导入服务入口 |
+| Windows 服务 | `windows/service/` | LocalSystem 组合根、注册表姿态输出、SCM 入口、鉴权、可信运行时和会话监管 |
+| Windows 会话 | `windows/session/` | 非提权会话进程、显示和资格校验；不得导入服务入口 |
 | Windows 界面 | `windows/ui/` | PyQt6/Fluent Widgets、托盘、页面和本地资源 |
 | Linux 原生后端 | `backend/linux/` | C relay、evdev、switch 和 uinput |
 | Windows 原生后端 | `backend/windows/` | 原生输入控制和驱动辅助代码 |
@@ -178,8 +175,8 @@ Windows 托盘和通知大图标使用共用的原版圆角 PNG；通知左上�
 | Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_linux_desktop`、`test_linux_display*`、`test_journal`、`test_linux_agent` |
 | 平台界面 | `linux/ui/`、`windows/ui/`、共享 `frontend/` | `test_linux_ui_contract`、`test_windows_ui`、`test_frontend`、`make check-i18n` |
 | Windows 硬件组合与 RPC | `windows/service/{application,runtime,host,server}.py`、`windows/ipc/` | `test_windows_architecture`、`test_windows_hardware*` |
-| Windows ETW 与启动基线 | `windows/hardware/{etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_etw_switch`、`test_windows_slate_bootstrap` |
-| Windows 显示、CSM 和会话 | `windows/hardware/{convertible_slate,slate_journal}.py`、`windows/session/` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
+| Windows 物理指示器与 ETW | `windows/hardware/{indicator_switch,etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_registry_slate`、`test_windows_etw_switch`、`test_windows_slate_bootstrap` |
+| Windows 显示、注册表和会话 | `windows/service/registry_slate.py`、`windows/hardware/{convertible_slate,slate_journal}.py`、`windows/session/` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
 | Windows 服务与可信启动 | `windows/service/{daemon,trusted_runtime,supervisor,launch}.py`、`windows/common/{identity,security,stop_event}.py` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_*` |
 | Windows 界面、托盘和自启动 | `windows/app/{activation,identity,startup,update_check}.py`、`windows/common/instance.py`、`windows/ui/` | `test_windows_startup`、`test_windows_ui` |
 | Windows 打包与发布 | `packaging/windows/`、`.github/workflows/` | `test_windows_msi`、`test_windows_packaging`、`test_packaging_workflow`、`test_release` |

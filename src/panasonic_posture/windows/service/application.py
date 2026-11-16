@@ -23,11 +23,9 @@ from panasonic_posture.windows.hardware.machine_profile import (
 )
 from panasonic_posture.windows.hardware.sensor import WindowsSensor
 from panasonic_posture.windows.service.launch import NativeSessionLauncher
-from panasonic_posture.windows.hardware.slate_bootstrap import (
-    AsyncSlateReader,
-    StartupPhysicalBaseline,
-    read_bootstrap_slate_state,
-)
+from panasonic_posture.windows.hardware.indicator_switch import IndicatorSwitch
+from panasonic_posture.windows.hardware.slate_journal import SlateJournal
+from panasonic_posture.windows.service.registry_slate import RegistryPosture, RegistrySlateValue
 from panasonic_posture.windows.service.trusted_runtime import TrustedRuntime
 from panasonic_posture.windows.ipc.wake import WakeEvent
 
@@ -48,31 +46,25 @@ def create_hardware_runtime(
 ) -> HardwareRuntime:
     """Build the production graph without starting any hardware resource."""
     runtime = runtime if runtime is not None else TrustedRuntime.current()
-    if settings is None:
-        # The MSI protects this directory before starting the SYSTEM service.
-        root = Path(os.environ.get('ProgramData', r'C:\ProgramData'))
+    # The MSI protects this directory before starting the SYSTEM service.
+    root = Path(os.environ.get('ProgramData', r'C:\ProgramData'))
+
+    def state_path(name: str) -> Path:
         if not root.is_absolute():
             raise ValueError('ProgramData must be absolute')
-        settings = SettingsStore(root / 'PanasonicPostureManager/State/settings.json')
+        return root / 'PanasonicPostureManager' / 'State' / name
+
+    if settings is None:
+        settings = SettingsStore(state_path('settings.json'))
     resolved_profile = profile if profile is not None else resolve_windows_profile()
     sensor = WindowsSensor(
         mount_matrix=resolved_profile.mount_matrix,
         include_orientation=False,
     )
-    baseline = StartupPhysicalBaseline(
-        slate_reader=AsyncSlateReader(read_bootstrap_slate_state),
-        sensor=sensor,
-        clock=clock,
-    )
-    switch = AcpiPhysicalSwitch(
-        initial_reader=baseline,
-        trusted_startup_baseline=resolved_profile.support_tier == 'validated',
-        resume_reader_factory=lambda: StartupPhysicalBaseline(
-            slate_reader=lambda: None,
-            sensor=sensor,
-            clock=clock,
-            minimum_stamp=clock(),
-        ),
+    events = AcpiPhysicalSwitch(trusted_startup_baseline=False)
+    switch = (
+        IndicatorSwitch(events, clock=clock)
+        if resolved_profile.support_tier == 'validated' else events
     )
     engine = Engine(
         controller=Controller(input_control=False),
@@ -92,7 +84,9 @@ def create_hardware_runtime(
     )
 
     def make_server(admission: Callable[[], bool]) -> HardwareServer:
-        return HardwareServer(engine, session_admission=admission,
+        registry = RegistryPosture(RegistrySlateValue(), SlateJournal(state_path('registry-slate.json')))
+        return HardwareServer(engine, registry=registry, physical_state=result.physical_state,
+                              session_admission=admission,
                               control=lambda peer, enabled: result.supervisor.set_control(peer, enabled))
 
     def make_launcher() -> NativeSessionLauncher:

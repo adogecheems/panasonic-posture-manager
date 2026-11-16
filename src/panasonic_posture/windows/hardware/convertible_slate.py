@@ -94,6 +94,7 @@ class NativeSlateDevice:
         self,
         *,
         expected_hardware_id: str = SLATE_HARDWARE_ID,
+        read_only: bool = False,
         sleep=time.sleep,
     ) -> None:
         if sys.platform != "win32":
@@ -101,6 +102,7 @@ class NativeSlateDevice:
         if not isinstance(expected_hardware_id, str) or not expected_hardware_id.strip():
             raise ValueError("a convertible-slate hardware ID is required")
         self.expected_hardware_id = expected_hardware_id.strip()
+        self.read_only = read_only
         self.sleep = sleep
         self.handle = None
         self._bind()
@@ -262,7 +264,7 @@ class NativeSlateDevice:
         path = r"\\.\GLOBALROOT" + pdo_name
         handle = self.CreateFileW(
             path,
-            _GENERIC_READ | _GENERIC_WRITE,
+            _GENERIC_READ if self.read_only else _GENERIC_READ | _GENERIC_WRITE,
             _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
             None,
             _OPEN_EXISTING,

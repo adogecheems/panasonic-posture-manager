@@ -15,7 +15,6 @@ from panasonic_posture.tasks import InlineExecutor
 from panasonic_posture.windows.session.agent import (
     WindowsSessionAgent,
     build_display,
-    build_optional_slate,
     main,
 )
 from panasonic_posture.windows.common.security import WindowsSecurity, AuthenticationError
@@ -563,18 +562,6 @@ class SessionAgentTests(unittest.TestCase):
         self.assertEqual(self.display.current, 2)
         self.assertTrue(agent.runtime.ready)
 
-    def test_unavailable_csm_returns_none_before_any_indicator_object_exists(self):
-        class Denied:
-            def __init__(self):
-                raise OSError('LaptopSlateExclusiveAccess=1')
-
-        with tempfile.TemporaryDirectory() as directory, \
-                patch('panasonic_posture.windows.hardware.convertible_slate.NativeSlateDevice', Denied), \
-                self.assertLogs('panasonic_posture.windows.session.agent', level='WARNING') as logged:
-            result = build_optional_slate(self.client, Path(directory) / 'display.json')
-        self.assertIsNone(result)
-        self.assertIn('continuing without CSM', '\n'.join(logged.output))
-
     def test_display_recovery_is_gated_by_the_authenticated_physical_query(self):
         state = StateSnapshot(hardware=None, hardware_status=HardwareStatus.ABSENT)
         client = SimpleNamespace(get_state=lambda: state)
@@ -585,29 +572,15 @@ class SessionAgentTests(unittest.TestCase):
         query = display.call_args.kwargs['hardware_query']
         self.assertEqual(query(), (None, HardwareStatus.ABSENT))
 
-    def test_available_csm_receives_the_shared_hardware_query(self):
-        created = {}
-
-        class Device:
-            pass
-
-        class Notifier:
-            def __init__(self, device, journal, *, hardware_query):
-                created.update(device=device, journal=journal, query=hardware_query)
-
-        class Client:
-            @staticmethod
-            def get_state():
-                return 'snapshot'
-
-        with tempfile.TemporaryDirectory() as directory, \
-                patch('panasonic_posture.windows.hardware.convertible_slate.NativeSlateDevice', Device), \
-                patch('panasonic_posture.windows.hardware.convertible_slate.SlateNotifier', Notifier):
-            result = build_optional_slate(Client(), Path(directory) / 'display.json')
-        self.assertIsInstance(created['device'], Device)
-        self.assertIsInstance(result, Notifier)
-        from panasonic_posture.windows.session.display import SessionHardwareQuery
-        self.assertIsInstance(created['query'], SessionHardwareQuery)
+    def test_service_registry_settles_before_applying_tent(self):
+        from panasonic_posture.windows.session.display import QualifiedDisplay
+        from panasonic_posture.model import Target
+        events = []
+        display = SimpleNamespace(apply=lambda target: events.append(target.mode))
+        backend = QualifiedDisplay(display, self.context, service_registry=True,
+                                   settle=events.append)
+        backend.apply(Target(mode='tent'))
+        self.assertEqual(events, [.5, 'tent'])
 
 
 class NativeAgentTokenTests(unittest.TestCase):

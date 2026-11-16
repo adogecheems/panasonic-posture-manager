@@ -12,12 +12,9 @@ Startup order is part of the safety contract:
 2. start the WinRT sensor worker;
 3. only then create the RPC endpoint and the trusted-session supervisor.
 
-The CSM is an output only. Generic hardware requires the first valid ETW
-event before display admission; explicit profiles may use their one-time
-read-only startup baseline while ETW is healthy. Until admission opens, the
-host accepts only not-ready session heartbeats. The desktop agent may start
-before admission, but cannot confirm a display or CSM transition. A later
-ETW failure revokes admission without re-reading a software-owned indicator.
+Validated models read the physical indicator while the ETW consumer is healthy.
+Generic hardware and legacy software-owned indicators require a physical event.
+Only the service publishes the software target to the machine registry.
 """
 from __future__ import annotations
 
@@ -163,24 +160,27 @@ class HardwareRuntime:
         self.started = self.closed = False
 
     def admitted(self) -> bool:
-        """Return whether a trusted session may currently own a display lease."""
+        return self.physical_state() is not None
+
+    def physical_state(self) -> bool | None:
+        """Return the current trusted observation inside the active power epoch."""
         with self._power_lock:
             if (self._suspended or self._power_epoch != self._power_epoch_seen
                     or getattr(self._power, 'error', None) is not None):
-                return False
+                return None
         try:
             value, status = self.switch.query()
         except (OSError, ValueError, RuntimeError):
-            return False
-        return status == HardwareStatus.OK and type(value) is bool
+            return None
+        return value if status == HardwareStatus.OK and type(value) is bool else None
 
     def start(self) -> None:
         if self.started or self.closed:
             raise RuntimeError('hardware runtime already started or closed')
         self.started = True
         try:
-            # ETW is the only physical input.  It must be live before the
-            # sensor, RPC endpoint or any session display writer exists.
+            # Start the physical observation path before creating the
+            # sensor, RPC endpoint or session display writer.
             self.switch.start()
             self._power = self._power_factory(self._power_event)
             self.engine.start()
@@ -263,7 +263,7 @@ class HardwareRuntime:
             self._publish_wake()
 
     def _publish_wake(self) -> None:
-        signature = _state_signature(self.engine.state)
+        signature = _state_signature(getattr(self.server, 'published_state', self.engine.state))
         if signature == self._wake_signature:
             return
         self._wake_signature = signature

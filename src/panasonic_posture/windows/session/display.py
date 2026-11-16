@@ -124,9 +124,11 @@ class QualifiedDisplay:
         context: SessionContext,
         slate: SlatePosture | None = None,
         *,
+        service_registry: bool = False,
         settle: Callable[[float], None] = time.sleep,
     ) -> None:
         self.display, self.context, self.slate = display, context, slate
+        self.service_registry = service_registry
         self.settle = settle
         self._last_unavailable_log = float('-inf')
 
@@ -252,7 +254,7 @@ class QualifiedDisplay:
                 self._sync_slate(target)
                 self._require_available()
                 self.display.apply(target)
-            elif self.slate is not None and target.mode in ('tent', 'stand'):
+            elif (self.service_registry or self.slate is not None) and target.mode in ('tent', 'stand'):
                 # Windows re-enables automatic rotation and moves the panel to
                 # its native direction right after the slate posture is
                 # published. Writing the fixed direction first provably caused
@@ -282,7 +284,7 @@ class QualifiedDisplay:
                     self._sync_slate_mode('hardware')
                 else:
                     self._sync_slate(target)
-                if self.slate is not None and not native_handoff:
+                if (self.service_registry or self.slate is not None) and not native_handoff:
                     self._verify_after_slate(target)
             if not self.context.control_available():
                 raise DisplayError(

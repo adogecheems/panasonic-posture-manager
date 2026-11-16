@@ -390,6 +390,13 @@ class SlateNotifierTests(unittest.TestCase):
 
 
 class NativeSlateDeviceTests(unittest.TestCase):
+    def test_physical_reader_requests_only_generic_read(self):
+        device = object.__new__(NativeSlateDevice)
+        device.read_only = True
+        device.CreateFileW = mock.Mock(return_value=123)
+        self.assertEqual(device._open_pdo(r'\Device\PDO-test'), 123)
+        self.assertEqual(device.CreateFileW.call_args.args[1], 0x80000000)
+
     def test_slate_capability_uses_the_unique_hardware_id_not_one_instance(self):
         for instance in (
             r"ACPI\INT33D3\2&DABA3FF&0",

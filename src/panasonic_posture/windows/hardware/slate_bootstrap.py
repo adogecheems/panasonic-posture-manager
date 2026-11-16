@@ -24,21 +24,34 @@ def _users_root() -> Path:
     return Path(drive + '\\Users')
 
 
+def _legacy_journals(users_root: Path | None):
+    root = Path(users_root) if users_root is not None else _users_root()
+    for profile in root.iterdir():
+        yield (profile / 'AppData' / 'Local' / 'PanasonicPostureManager'
+               / 'native-display-slate.json')
+
+
+def has_legacy_slate_journal(users_root: Path | None = None) -> bool:
+    # A user's file can only narrow admission. Its contents are unnecessary.
+    for journal in _legacy_journals(users_root):
+        try:
+            journal.lstat()
+        except FileNotFoundError:
+            continue
+        return True
+    return False
+
+
 def pending_slate_leases(users_root: Path | None = None) -> tuple[SlateLease, ...]:
     """Load all readable per-user CSM recovery leases without guessing."""
 
-    root = Path(users_root) if users_root is not None else _users_root()
     try:
-        profiles = tuple(root.iterdir())
+        journals = tuple(_legacy_journals(users_root))
     except OSError as error:
         raise SlateError('cannot inspect Windows user profiles') from error
     leases: list[SlateLease] = []
     unreadable = False
-    for profile in profiles:
-        journal = (
-            profile / 'AppData' / 'Local' / 'PanasonicPostureManager'
-            / 'native-display-slate.json'
-        )
+    for journal in journals:
         try:
             if journal.is_file():
                 # Bootstrap is read-only even for malformed user records;

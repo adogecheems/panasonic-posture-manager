@@ -8,6 +8,7 @@ from panasonic_posture.service.engine import Engine, ServiceError
 from panasonic_posture.tasks import thread_executor
 from panasonic_posture.windows.common.identity import ConsoleIdentity
 from panasonic_posture.windows.service.host import HardwareHost
+from panasonic_posture.windows.service.registry_slate import RegistryPosture
 from panasonic_posture.windows.ipc.pipe import (
     MAX_CLIENTS,
     NativePipes,
@@ -119,6 +120,8 @@ class HardwareServer:
                  pipe_name: str = PIPE_NAME, clock: Callable[[], float] = time.monotonic,
                  executor: Executor | None = None, guard_executor: Executor | None = None,
                  session_admission: Callable[[], bool] | None = None,
+                 registry: RegistryPosture | None = None,
+                 physical_state: Callable[[], bool | None] | None = None,
                  control: Callable[[ConsoleIdentity, bool], bool] | None = None) -> None:
         self.security = security or WindowsSecurity()
         self.security.require_system()
@@ -132,7 +135,7 @@ class HardwareServer:
             session_admission=session_admission,
             session_authorize=self.guard.allow,
             session_locked=lambda: self.guard.locked.get(self.guard.agent, False),
-            control=control,
+            control=control, registry=registry, physical_state=physical_state,
         )
         self.executor = executor or thread_executor('windows-request-auth')
         self.owned_executor = executor is None
@@ -144,6 +147,10 @@ class HardwareServer:
         except BaseException:
             self.close()
             raise
+
+    @property
+    def published_state(self):
+        return self.host.state
 
     def register_session_process(self, peer: ConsoleIdentity | None) -> None:
         """Host-only lifecycle operation, never a method on the RPC channel."""
@@ -263,7 +270,7 @@ class HardwareServer:
                 version=1, channel=CHANNEL, type='response', id=request['id'],
                 instance=self.host.instance, accepted=False, error=error.code,
                 error_detail=error.detail,
-                state=self.host.engine.state.to_dict(),
+                state=self.host.state.to_dict(),
                 hardware_release_pose=self.host.engine.hardware_release_pose,
             )
         slot.reply = reply

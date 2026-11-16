@@ -49,28 +49,6 @@ def _hardware_query(client) -> SessionHardwareQuery:
     return SessionHardwareQuery(loader)
 
 
-def build_optional_slate(client, journal: Path) -> SlatePosture | None:
-    """Open CSM output when available without making display control depend on it."""
-    from panasonic_posture.windows.hardware.convertible_slate import (
-        NativeSlateDevice,
-        SlateNotifier,
-    )
-    from panasonic_posture.windows.hardware.slate_journal import SlateJournal, lease_path
-
-    try:
-        return SlateNotifier(
-            NativeSlateDevice(),
-            SlateJournal(lease_path(journal)),
-            hardware_query=_hardware_query(client),
-        )
-    except (OSError, ValueError) as error:
-        # CSM configuration belongs to the MSI install. If the device is still
-        # unavailable, keep direction control usable and never attempt a write
-        # against an unverified indicator.
-        log.warning('convertible-slate output unavailable; continuing without CSM: %s', error)
-        return None
-
-
 def build_display(client, journal: Path) -> DisplayBackend:
     """Create display recovery behind the same physical-state gate as apply."""
     from panasonic_posture.session.journal_store import Journal
@@ -92,6 +70,7 @@ def _native_context() -> WindowsSessionContext:
 class WindowsSessionAgent:
     def __init__(self, *, display_factory: Callable[[ClosableClient], DisplayBackend],
                  slate_factory: Callable[[ClosableClient], SlatePosture] | None = None,
+                 service_registry: bool = False,
                  context_factory: Callable[[], SessionContext] = _native_context,
                  client_factory: Callable[
                      [Callable[[], bool], Callable[[], bool]], ReleaseAwareSessionClient
@@ -102,6 +81,7 @@ class WindowsSessionAgent:
                      )),
                  executor: Executor | None = None, lease_executor: Executor | None = None) -> None:
         self.display_factory, self.slate_factory = display_factory, slate_factory
+        self.service_registry = service_registry
         self.context_factory, self.client_factory = context_factory, client_factory
         self.executor, self.lease_executor = executor, lease_executor
         self.runtime: SessionRuntime | None = None
@@ -196,7 +176,7 @@ class WindowsSessionAgent:
                     closing.result()
 
             self._stack.callback(close_slate)
-        qualified = _QualifiedDisplay(display, self.context, slate)
+        qualified = _QualifiedDisplay(display, self.context, slate, service_registry=self.service_registry)
 
         def close_runtime() -> None:
             if self.runtime is not None:
@@ -288,10 +268,7 @@ def main(argv=None) -> int:
     def display_factory(client):
         return build_display(client, options.journal)
 
-    def slate_factory(client):
-        return build_optional_slate(client, options.journal)
-
-    agent = WindowsSessionAgent(display_factory=display_factory, slate_factory=slate_factory)
+    agent = WindowsSessionAgent(display_factory=display_factory, service_registry=True)
     try:
         with ExitStack() as stack:
             stop = NativeStopSignal.open(options.stop_event) if options.stop_event is not None else None

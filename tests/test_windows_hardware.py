@@ -6,7 +6,7 @@ import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from panasonic_posture.model import HardwareStatus, Mode, Target
 from panasonic_posture.service.hardware_monitor import HardwareMonitor
@@ -54,6 +54,51 @@ class HostFixture(unittest.TestCase):
 
 
 class HardwareHostTests(HostFixture):
+    def test_registry_follows_owned_target_and_physical_handoff(self):
+        writer = Mock()
+        physical = [False]
+        self.host = HardwareHost(self.engine, authorize=lambda peer: self.active,
+                                 session_process=AGENT, registry=writer,
+                                 physical_state=lambda: physical[0])
+        self.engine.revoke_session(self.engine.session_owner)
+        self.host.dispatch(UI, self.request('set_mode', mode='tent'))
+        writer.apply.assert_not_called()
+        def receipt(ready):
+            return self.host.dispatch(AGENT, self.request('session_update',
+                generation=self.engine.state.generation, ready=ready, unattended=False,
+                error_code=None, error_detail=None))
+        receipt(False)
+        writer.apply.assert_called_with(True)
+        self.host.dispatch(UI, self.request('set_mode', mode='laptop'))
+        writer.apply.reset_mock()
+        self.host.tick()
+        writer.apply.assert_not_called()
+        receipt(True)
+        writer.apply.assert_called_with(False)
+        physical[0] = True
+        self.host.tick()
+        writer.release.assert_called_with(True)
+        physical[0] = None
+        self.host.tick()
+        writer.release.assert_called_with(None)
+
+    def test_registry_failure_withholds_applied_and_is_retried(self):
+        self.engine.revoke_session(self.engine.session_owner)
+        writer = Mock()
+        writer.apply.side_effect = OSError('write denied')
+        self.host = HardwareHost(self.engine, authorize=lambda peer: True,
+                                 session_process=AGENT, registry=writer, physical_state=lambda: False)
+        self.host.dispatch(UI, self.request('set_mode', mode='tent'))
+        self.host.dispatch(AGENT, self.request('session_update', generation=self.engine.state.generation,
+                           ready=False, error_code=None, error_detail=None, unattended=False))
+        reply = self.host.dispatch(UI, self.request('get_state'))
+        writer.release.assert_called_with(False)
+        self.assertEqual(reply['state']['error_detail'], 'registry-posture')
+        self.assertIsNone(reply['state']['applied'])
+        writer.apply.side_effect = None
+        self.host.tick()
+        self.assertIsNone(self.host.state.error_code)
+
     def test_lock_switches_to_auto_without_releasing_the_registered_session(self):
         self.engine.revoke_session(self.engine.session_owner)
         self.engine.set_mode('tent')
