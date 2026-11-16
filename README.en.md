@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="data/assets/linux/work.mmoe.panasonic.PostureManager.png" alt="Panasonic 2-in-1 Tablet Posture Management Tool" width="144" height="144">
+  <img src="data/assets/common/icons/work.mmoe.panasonic.PostureManager.png" alt="Panasonic 2-in-1 Tablet Posture Management Tool" width="144" height="144">
 </p>
 
 # Panasonic 2-in-1 Tablet Posture Management Tool
