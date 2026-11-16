@@ -32,6 +32,7 @@ from panasonic_posture.windows.hardware.orientation import (
 SAMPLE_MAX_AGE = 2.0
 STARTUP_TIMEOUT = 20.0
 RETRY_SECONDS = 2.0
+RESUME_FRAME_WAIT = .3
 CLOCK_TOLERANCE = .25
 IDENTITY = (1., 0., 0., 0., 1., 0., 0., 0., 1.)
 
@@ -54,9 +55,7 @@ $asTask=[System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
 } | Select-Object -First 1
 __ORIENTATION_SETUP__
 $selector=[Windows.Devices.Sensors.Accelerometer]::GetDeviceSelector([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
-$sensor=[Windows.Devices.Sensors.Accelerometer]::GetDefault([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
-if ($null -eq $sensor) { throw 'Windows accelerometer is unavailable' }
-$deviceId=$sensor.DeviceId
+$sensor=$null
 $ids=@()
 $identityCheck=[Diagnostics.Stopwatch]::StartNew()
 while (-not $parent.HasExited) {
@@ -65,7 +64,18 @@ while (-not $parent.HasExited) {
     if ($ids.Count -eq 0 -or $identityCheck.Elapsed.TotalSeconds -ge 2) {
         $operation=[Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($selector)
         $task=$asTask.MakeGenericMethod([Windows.Devices.Enumeration.DeviceInformationCollection]).Invoke($null,@($operation))
+        $opening=$null -eq $sensor
+        if ($opening) {
+            $sensor=[Windows.Devices.Sensors.Accelerometer]::GetDefault([Windows.Devices.Sensors.AccelerometerReadingType]::Standard)
+            if ($null -eq $sensor) { throw 'Windows accelerometer is unavailable' }
+            $deviceId=$sensor.DeviceId
+        }
         if (-not $task.Wait(2000)) { throw 'Accelerometer enumeration timed out' }
+        # If opening the sensor was slow, refresh discovery once against the
+        # opened sensor before publishing the first sample.
+        if ($opening -and $identityCheck.Elapsed.TotalSeconds -ge 2) {
+            continue
+        }
         $ids=@($task.Result | ForEach-Object { $_.Id })
         if ($ids.Count -ne 1 -or $ids[0] -ne $deviceId) { throw 'Accelerometer identity is ambiguous or changed' }
         $identityCheck.Restart()
@@ -330,6 +340,8 @@ class WindowsSensor:
                     self._orientation.reset(str(error))
 
     def _run(self) -> None:
+        retry_delay = 0.
+        fast_retry_after = self.clock()
         while not self._stop.is_set():
             source = None
             try:
@@ -345,6 +357,8 @@ class WindowsSensor:
                     self._orientation.reset()
                 source = self.source_factory()
                 started = self.clock()
+                last_poll = started
+                resume_deadline = None
                 while not self._stop.is_set():
                     try:
                         frame, received, wall = source.read(timeout=.1)
@@ -360,9 +374,22 @@ class WindowsSensor:
                         pass
                     with self._lock:
                         latest = self.tracker.latest.stamp
-                    if self.clock() - (latest if latest is not None else started) > (
+                    now = self.clock()
+                    if (latest is not None and resume_deadline is None
+                            and now - last_poll > SAMPLE_MAX_AGE):
+                        # A suspended worker may drain a pre-sleep frame before
+                        # WinRT delivers a new one. Keep the source open briefly;
+                        # reading() still rejects the expired measurement.
+                        resume_deadline = now + RESUME_FRAME_WAIT
+                    last_poll = now
+                    if now - (latest if latest is not None else started) > (
                             SAMPLE_MAX_AGE if latest is not None else STARTUP_TIMEOUT):
+                        if resume_deadline is not None and now < resume_deadline:
+                            continue
                         raise SensorError('sensor stream stopped producing fresh samples')
+                    resume_deadline = None
+                    if latest is not None and now >= fast_retry_after:
+                        retry_delay = 0.
             except (OSError, ValueError) as error:
                 with self._lock:
                     self._error = str(error)[:200]
@@ -376,7 +403,12 @@ class WindowsSensor:
                             self._cleanup_error = error
             if self._cleanup_error is not None:
                 return
-            self._stop.wait(RETRY_SECONDS)
+            if retry_delay == 0.:
+                # A brief disconnect can recover immediately. Limit fast
+                # restarts even when a flapping device supplies one frame.
+                fast_retry_after = self.clock() + RETRY_SECONDS
+            self._stop.wait(retry_delay)
+            retry_delay = RETRY_SECONDS
 
     @property
     def info(self) -> SensorInfo:

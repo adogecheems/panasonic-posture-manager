@@ -8,7 +8,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from panasonic_posture.windows.hardware.sensor import SampleTracker, SensorError, PowerShellSource, WindowsSensor
 
@@ -82,6 +82,9 @@ class SourceTests(unittest.TestCase):
         spawn.assert_not_called()
         from panasonic_posture.windows.hardware.sensor import STREAM_SCRIPT
         self.assertIn('FindAllAsync', STREAM_SCRIPT)
+        first_query = STREAM_SCRIPT.index('::FindAllAsync($selector)')
+        self.assertLess(first_query, STREAM_SCRIPT.index('::GetDefault('))
+        self.assertLess(STREAM_SCRIPT.index('::GetDefault('), STREAM_SCRIPT.index('$task.Wait('))
         self.assertIn('$identityCheck.Elapsed.TotalSeconds -ge 2', STREAM_SCRIPT)
         self.assertLess(STREAM_SCRIPT.index('$identityCheck=[Diagnostics.Stopwatch]::StartNew()'),
                         STREAM_SCRIPT.index('while (-not $parent.HasExited)'))
@@ -138,6 +141,67 @@ class SourceTests(unittest.TestCase):
 
 
 class ManagerTests(unittest.TestCase):
+    def test_live_stream_can_supply_a_fresh_frame_after_sleep(self):
+        for fresh in (True, False):
+            with self.subTest(fresh=fresh):
+                now = [50.]
+                source = Mock()
+                manager = WindowsSensor(mount_matrix=IDENTITY, source_factory=lambda: source,
+                                        clock=lambda: now[0])
+                def samples():
+                    yield frame(), 50., 1000.02
+                    now[0] += 60.
+                    yield frame(), now[0], 1060.02
+                    self.assertFalse(manager.reading().valid)
+                    now[0] += .1
+                    if fresh:
+                        yield frame(1060.1), now[0], 1060.12
+                        self.assertTrue(manager.reading().valid)
+                    else:
+                        yield frame(), now[0], 1060.12
+                        now[0] += 1.
+                        yield frame(), now[0], 1061.12
+                        self.fail('stale stream outlived its recovery window')
+                    manager._stop.set()
+                    raise queue.Empty
+                source.read.side_effect = samples()
+                source.close.side_effect = manager._stop.set
+                manager._run()
+                self.assertEqual(source.read.call_count, 4)
+                source.close.assert_called_once()
+
+    def test_first_retry_at_startup_and_after_recovery_has_no_backoff(self):
+        clock = [50.]
+        stop = Mock(wraps=threading.Event())
+        waits = []
+
+        def wait(seconds):
+            waits.append(seconds)
+            clock[0] += seconds
+            if len(waits) == 4:
+                stop.set()
+
+        stop.wait.side_effect = wait
+        source = Mock()
+        source.read.side_effect = [
+            (frame(), 52., 1000.02), SensorError('wake disconnect'),
+        ]
+        flapping = Mock()
+        flapping.read.side_effect = [
+            (frame(1000.1), 52.1, 1000.12), SensorError('brief reconnect'),
+        ]
+        factory = Mock(side_effect=[
+            SensorError('starting'), SensorError('still starting'), source, flapping,
+        ])
+        manager = WindowsSensor(mount_matrix=IDENTITY, source_factory=factory,
+                                clock=lambda: clock[0])
+        manager._stop = stop
+        manager._run()
+        self.assertEqual(waits, [0., 2., 0., 2.])
+        source.close.assert_called_once()
+        flapping.close.assert_called_once()
+        self.assertFalse(manager.reading().valid)
+
     def until(self, predicate):
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
