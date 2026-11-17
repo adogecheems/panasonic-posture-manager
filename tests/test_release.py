@@ -73,8 +73,12 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_arch_package_version_and_source_tag_match(self) -> None:
         pkgver = match(r"^pkgver=(\S+)$", self.pkgbuild, "PKGBUILD pkgver")
+        pkgrel = match(r"^pkgrel=(\S+)$", self.pkgbuild, "PKGBUILD pkgrel")
         srcinfo_version = match(
             r"^\s+pkgver = (\S+)$", self.srcinfo, ".SRCINFO pkgver"
+        )
+        srcinfo_pkgrel = match(
+            r"^\s+pkgrel = (\S+)$", self.srcinfo, ".SRCINFO pkgrel"
         )
         srcinfo_tag = match(
             r"^\s+source = .*#tag=v(\S+)$",
@@ -82,6 +86,7 @@ class ReleaseMetadataTests(unittest.TestCase):
             ".SRCINFO source tag",
         )
         self.assertIn("#tag=v${pkgver}", self.pkgbuild)
+        self.assertEqual(pkgrel, srcinfo_pkgrel)
         self.assertEqual(
             {self.project_version, pkgver, srcinfo_version, srcinfo_tag},
             {self.project_version},

@@ -260,10 +260,13 @@ done
 class AurBinGeneratorTests(unittest.TestCase):
     def test_generator_writes_versioned_pkgbuild_and_checksum(self) -> None:
         version = read("pyproject.toml").split('version = "', 1)[1].split('"', 1)[0]
+        pkgrel = re.search(
+            r"^pkgrel=(\S+)$", read("packaging/linux/aur/PKGBUILD"), re.MULTILINE
+        ).group(1)
         payload = b"verified arch package"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            package = root / f"panasonic-posture-manager-{version}-1-x86_64.pkg.tar.zst"
+            package = root / f"panasonic-posture-manager-{version}-{pkgrel}-x86_64.pkg.tar.zst"
             package.write_bytes(payload)
             output = root / "metadata"
             result = subprocess.run(
@@ -276,6 +279,7 @@ class AurBinGeneratorTests(unittest.TestCase):
             pkgbuild = (output / "PKGBUILD").read_text(encoding="utf-8")
             self.assertIn("pkgname=panasonic-posture-manager-bin", pkgbuild)
             self.assertIn(f"pkgver={version}", pkgbuild)
+            self.assertIn(f"pkgrel={pkgrel}", pkgbuild)
             self.assertIn(hashlib.sha256(payload).hexdigest(), pkgbuild)
             self.assertIn("provides=('panasonic-posture-manager')", pkgbuild)
             self.assertIn("conflicts=('panasonic-posture-manager')", pkgbuild)
@@ -295,9 +299,12 @@ class AurBinGeneratorTests(unittest.TestCase):
 
     def test_generator_rejects_a_mismatched_tag(self) -> None:
         version = read("pyproject.toml").split('version = "', 1)[1].split('"', 1)[0]
+        pkgrel = re.search(
+            r"^pkgrel=(\S+)$", read("packaging/linux/aur/PKGBUILD"), re.MULTILINE
+        ).group(1)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            package = root / f"panasonic-posture-manager-{version}-1-x86_64.pkg.tar.zst"
+            package = root / f"panasonic-posture-manager-{version}-{pkgrel}-x86_64.pkg.tar.zst"
             package.write_bytes(b"package")
             result = subprocess.run(
                 [str(AUR_BIN_GENERATOR), "v0.0.0", str(package), str(root / "metadata")],

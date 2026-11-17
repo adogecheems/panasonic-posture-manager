@@ -1,7 +1,7 @@
 pkgbase = panasonic-posture-manager
 	pkgdesc = Posture management and screen orientation for convertible Linux 2-in-1 laptops
 	pkgver = 3.1.1
-	pkgrel = 1
+	pkgrel = 2
 	url = https://github.com/adogecheems/panasonic-posture-manager
 	install = panasonic-posture-manager.install
 	arch = x86_64

@@ -20,7 +20,7 @@ from panasonic_posture.model import StateSnapshot, Target
 from panasonic_posture.linux.ui.errors import describe_error, ServiceUnavailable
 from panasonic_posture.linux.session.errors import ERROR_MESSAGES, error_text
 from panasonic_posture.linux.ui.service import PostureService, parse_state
-from panasonic_posture.linux.ui.common import DATA_ROOT
+from panasonic_posture.linux.ui.common import DATA_ROOT, _
 from gi.repository import GLib
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,7 +83,7 @@ class ProtocolTests(unittest.TestCase):
             message = describe_error(Exception(f'GDBus.Error:work.mmoe.panasonic.Posture.Error: {code}: PRIVATE'))
             self.assertEqual(message, error_text(code))
             self.assertNotIn('PRIVATE', message)
-        self.assertIn('unavailable', describe_error(ServiceUnavailable()))
+        self.assertEqual(describe_error(ServiceUnavailable()), _('Background service unavailable'))
         self.assertEqual(describe_error(Exception('AccessDenied: PRIVATE')), error_text('access-denied'))
 
     def test_removed_suspend_wake_fields_do_not_reappear_in_state(self):

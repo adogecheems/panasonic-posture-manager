@@ -16,7 +16,12 @@ package=$2
 output_dir=$3
 
 version=$(python3 "$repo_root/packaging/common/release_version.py" --tag "$tag")
-expected="panasonic-posture-manager-${version}-1-x86_64.pkg.tar.zst"
+pkgrel=$(sed -n 's/^pkgrel=//p' "$repo_root/packaging/linux/aur/PKGBUILD")
+if [[ ! $pkgrel =~ ^[0-9]+$ ]]; then
+  echo "error: source PKGBUILD has no valid pkgrel" >&2
+  exit 1
+fi
+expected="panasonic-posture-manager-${version}-${pkgrel}-x86_64.pkg.tar.zst"
 archive=$(basename -- "$package")
 
 if [[ ! -f $package ]]; then
@@ -37,6 +42,7 @@ fi
 mkdir -p "$output_dir"
 sed \
   -e "s/@VERSION@/${version}/g" \
+  -e "s/@PKGREL@/${pkgrel}/g" \
   -e "s/@SHA256@/${sha256}/g" \
   "$repo_root/packaging/linux/aur-bin/PKGBUILD.in" >"$output_dir/PKGBUILD"
 install -m644 \
