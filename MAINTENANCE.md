@@ -57,6 +57,8 @@ systemctl status panasonic-posture-manager.service
 journalctl -b -u panasonic-posture-manager.service
 ```
 
+排查挂起恢复时「先旋转再转回」：对齐系统服务的 `PrepareForSleep`、目标变化和用户会话的显示错误，检查 `${XDG_STATE_HOME:-$HOME/.local/state}/panasonic-posture-manager/display.json`。旧记录可能在笔记本方向为 0 时仍把帐篷或平板方向保存为 `original_transform`，导致挂起释放时先恢复旧方向，唤醒后再转回。成功完成并回读的笔记本显示事务会将方向恢复基准更新为 0，同时保留原有旋转锁偏好；事务或记录写入失败仍回滚至此前基准。不要手动改写恢复记录；排障时保留原文件和日志。
+
 KDE Plasma 6 Wayland 为实验性支持，尚未完成真实 Plasma 会话或真机验收；自动化测试通过不代表兼容性验收通过。Plasma 6 需要 `kscreenctl` 或 `kscreen-doctor`；两者都缺失时检查发行版的 KScreen 软件包。
 
 只读硬件探测：
@@ -156,6 +158,13 @@ Linux 完整检查：
 
 ```sh
 make WERROR=1 check
+```
+
+在可见真实硬件的开发宿主上，`check-dbus` 的会话总线本身不会隔离设备探测。应在屏蔽真实 `/sys` 和设备节点的环境中运行；安装了 Bubblewrap 时可单独执行以下检查，根文件系统只读，临时配置仍写入 `/tmp`：
+
+```sh
+bwrap --ro-bind / / --tmpfs /sys --dev /dev --proc /proc --bind /tmp /tmp \
+    --unshare-pid --die-with-parent --setenv PYTHONDONTWRITEBYTECODE 1 make check-dbus
 ```
 
 按改动选择目标测试、Windows 完整检查和跳过项记录方法，见 [AGENTS.md 第 6、10 节](AGENTS.md)。

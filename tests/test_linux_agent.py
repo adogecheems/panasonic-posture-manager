@@ -220,6 +220,34 @@ class Harness:
 
 
 class AdapterTickTests(unittest.TestCase):
+    def test_laptop_suspend_resume_does_not_replay_an_old_tent_direction(self):
+        from tests.test_linux_display import Harness as DisplayHarness
+
+        desktop = DisplayHarness(transform=2, locked=True)
+        desktop.display.apply(Target(mode="tent"))
+        laptop = Target(mode="laptop", tablet=False, rotation=0)
+        harness = Harness(make_state(target=laptop), display=desktop.display)
+        harness.tick(0.0)
+        self.assertTrue(harness.agent.ready)
+        self.assertEqual(desktop.mutter.transform, 0)
+        desktop.mutter.transforms.clear()
+
+        for generation, connected in ((2, False), (3, True)):
+            harness.set_state(make_state(
+                generation=generation, target=Target(mode="unavailable"),
+                session_connected=connected,
+            ))
+            harness.tick(generation * 0.1)
+            self.assertFalse(harness.agent.ready)
+            self.assertFalse(harness.client.updates[-1][1])
+        harness.set_state(make_state(generation=4, target=laptop))
+        harness.tick(0.4)
+
+        self.assertTrue(harness.agent.ready)
+        self.assertEqual(desktop.mutter.transform, 0)
+        self.assertEqual(desktop.mutter.transforms, [])
+        self.assertEqual(desktop.journal.document["original_transform"], 0)
+
     def test_generation_change_applies_target_and_reports_ready(self):
         harness = Harness(make_state(pending_notification=7))
         harness.tick(0.0)

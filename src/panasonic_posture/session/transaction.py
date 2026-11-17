@@ -182,6 +182,16 @@ class SoftwareDisplay:
                         ErrorCode.DISPLAY_IDENTITY, "internal-monitor-identity-changed"
                     )
                 self._write_owned_lock(current, False)
+            if mode == "laptop" and self.owned["original_transform"] != transform:
+                # A verified laptop direction is the native desktop baseline.
+                # Replaying an older tent/tablet direction during suspend
+                # would rotate away and back when the laptop target resumes.
+                # Keep the old baseline until this save succeeds so a failed
+                # transaction still rolls back to its previous direction.
+                document = self.owned.copy()
+                document["original_transform"] = transform
+                self.journal.save(document)
+                self.owned = document
         except (DisplayError, OSError, ValueError):
             self._rollback()
             raise

@@ -36,6 +36,7 @@
 - `policy.py` 判断姿态，`controller.py` 生成目标和代次，`service/engine.py` 管理租约与执行。`target` 是期望状态，`applied` 只能由匹配代次、租约和会话回执确认。
 - 硬件物理姿态优先。传感器、租约或执行器失效时，必须撤销软件接管并恢复桌面原生状态。
 - 显示写入统一经过 `session/transaction.py`：保留所有权检查、写前日志、回读、回滚和崩溃恢复。
+- 笔记本显示事务成功后，将已验证的正常方向保存为后续恢复基准，保留原旋转锁偏好；事务或日志保存失败仍回滚至此前基准，不能在挂起或租约释放时重放旧帐篷/平板方向。
 - 平台适配实现 `service/ports.py`、`session/ports.py` 和 `frontend/ports.py`，不得用平台特例绕开共用事务。
 - `frontend/` 只依赖标准库；页面只读取经过校验的快照。断线后旧连接的结果必须失效，写入不得自动重放。
 
@@ -172,11 +173,11 @@ Windows 托盘和通知大图标使用共用的原版圆角 PNG；通知左上�
 | 传感器、机型配置和设备发现 | `linux/service/sensor*.py`、`linux/hardware/`、`machine_profile.py`、`data/profiles/` | `test_linux_sensor`、`test_linux_iio`、`test_linux_sysfs`、`test_linux_profile` |
 | Linux C relay 与内置输入 | `backend/linux/`、`linux/service/actuator.py` | `make check-c`、`test_linux_actuator` |
 | Windows 原生输入 | `backend/windows/`、`windows/hardware/actuator.py` | `test_windows_actuator` |
-| Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_linux_desktop`、`test_linux_display*`、`test_journal`、`test_linux_agent` |
+| Linux 显示与恢复 | `linux/session/{desktop,display,plasma}.py`、`session/{transaction,journal_store,runtime}.py`、`linux/session/journal.py` | `test_display_transaction`、`test_linux_desktop`、`test_linux_display*`、`test_journal`、`test_linux_agent` |
 | 平台界面 | `linux/ui/`、`windows/ui/`、共享 `frontend/` | `test_linux_ui_contract`、`test_windows_ui`、`test_frontend`、`make check-i18n` |
 | Windows 硬件组合与 RPC | `windows/service/{application,runtime,host,server}.py`、`windows/ipc/` | `test_windows_architecture`、`test_windows_hardware*` |
 | Windows 物理指示器与 ETW | `windows/hardware/{indicator_switch,etw_switch,slate_bootstrap,machine_identity,machine_profile}.py` | `test_windows_registry_slate`、`test_windows_etw_switch`、`test_windows_slate_bootstrap` |
-| Windows 显示、注册表和会话 | `windows/service/registry_slate.py`、`windows/hardware/{convertible_slate,slate_journal}.py`、`windows/session/` | `test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
+| Windows 显示、注册表和会话 | `windows/service/registry_slate.py`、`windows/hardware/{convertible_slate,slate_journal}.py`、`windows/session/` | `test_display_transaction`、`test_windows_display`、`test_windows_screen_session`、`test_windows_session_*`、`test_windows_convertible_slate` |
 | Windows 服务与可信启动 | `windows/service/{daemon,trusted_runtime,supervisor,launch}.py`、`windows/common/{identity,security,stop_event}.py` | `test_windows_hardware_service`、`test_windows_trusted_runtime`、`test_windows_session_*` |
 | Windows 界面、托盘和自启动 | `windows/app/{activation,identity,startup,update_check}.py`、`windows/common/instance.py`、`windows/ui/` | `test_windows_startup`、`test_windows_ui` |
 | Windows 打包与发布 | `packaging/windows/`、`.github/workflows/` | `test_windows_msi`、`test_windows_packaging`、`test_packaging_workflow`、`test_release` |
