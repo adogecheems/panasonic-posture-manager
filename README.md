@@ -10,7 +10,7 @@
 
 松下 Let's note QV 系列翻转本可以立成帐篷，也可以把键盘朝下摆成支架，原有的软硬件却无法正确响应这两种用法。我们开发这款应用，就是希望电脑立成帐篷时，画面能自动翻转 180°；用作支架时，轻点输入框，系统就能在需要打字时弹出屏幕键盘。
 
-**当前版本：3.1.1** · [下载安装包](https://github.com/adogecheems/panasonic-posture-manager/releases)
+**当前版本：3.1.2** · [下载安装包](https://github.com/adogecheems/panasonic-posture-manager/releases)
 
 ## 适用设备与安装
 
