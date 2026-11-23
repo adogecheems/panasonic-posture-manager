@@ -12,6 +12,12 @@ You can prop a Panasonic Let's note QV convertible up like a tent or rest it key
 
 **Current version: 3.1.2** · [Download an installer](https://github.com/adogecheems/panasonic-posture-manager/releases)
 
+## Screenshots
+
+| Linux (GNOME) | Windows |
+| --- | --- |
+| ![Linux current posture page awaiting confirmation to enter tent mode](docs/screenshots/linux-en.png) | ![Windows current posture page awaiting confirmation to enter tent mode](docs/screenshots/windows-en.png) |
+
 ## Supported devices and installation
 
 The tool has been verified on the Panasonic Let's note QV8, QV9 and QV1 series. On other 360° convertibles, available features depend on the hardware. The app is available in English and Simplified Chinese.

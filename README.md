@@ -12,6 +12,12 @@
 
 **当前版本：3.1.2** · [下载安装包](https://github.com/adogecheems/panasonic-posture-manager/releases)
 
+## 界面截图
+
+| Linux（GNOME） | Windows |
+| --- | --- |
+| ![Linux 当前姿态页面，等待确认进入帐篷模式](docs/screenshots/linux-zh.png) | ![Windows 当前姿态页面，等待确认进入帐篷模式](docs/screenshots/windows-zh.png) |
+
 ## 适用设备与安装
 
 已验证松下 Let's note QV8、QV9 和 QV1 系列。其他 360° 翻转本能使用哪些功能，取决于设备兼容性。应用提供简体中文和英文界面。
